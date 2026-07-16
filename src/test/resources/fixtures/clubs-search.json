@@ -1,0 +1,27 @@
+[
+  {
+    "clubId": "1104972",
+    "wins": "14",
+    "losses": "8",
+    "ties": "1",
+    "gamesPlayed": "23",
+    "gamesPlayedPlayoff": "0",
+    "goals": "66",
+    "goalsAgainst": "58",
+    "cleanSheets": "3",
+    "points": "26",
+    "reputationtier": "3",
+    "promotions": "2",
+    "relegations": "0",
+    "bestDivision": "4",
+    "clubInfo": {
+      "name": "Associação BF",
+      "clubId": 1104972,
+      "regionId": 1396788530,
+      "teamId": 1629
+    },
+    "platform": "common-gen5",
+    "clubName": "Associação BF",
+    "currentDivision": "4"
+  }
+]

@@ -1,0 +1,41 @@
+app:
+  ea:
+    base-url: https://proclubs.ea.com/api/fc
+    platform: common-gen5
+    club-id: "1104972"
+    club-name: "Associação BF"
+    match-type: leagueMatch   # friendlyMatch | leagueMatch | playoffMatch
+    max-result-count: 5
+    # EA's endpoint returns 403 without a browser-like User-Agent.
+    # Verified by community projects. Change here if EA updates bot detection.
+    user-agent: >-
+      Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+      AppleWebKit/537.36 (KHTML, like Gecko)
+      Chrome/124.0.0.0 Safari/537.36
+    # Gateway implementation: "playwright" (default) or "webclient"
+    # Playwright uses a real headed Chromium browser to bypass Akamai's TLS
+    # fingerprinting and JavaScript sensor. On Linux servers, launch with:
+    #   xvfb-run -a java -jar app.jar
+    client: playwright
+    playwright:
+      headless: false
+      nav-timeout-ms: 30000
+      fetch-timeout-ms: 30000
+      startup-retries: 1
+      initial-page-url: https://proclubs.ea.com
+
+  polling:
+    enabled: false
+    interval-ms: 300000
+    publish-existing-on-first-run: false
+
+  store:
+    path: ./data/published-matches.json
+
+  discord:
+    webhook-url: ${DISCORD_WEBHOOK_URL:}
+
+logging:
+  level:
+    com.eafc26: INFO
+    com.eafc26.discordstats.ea.EaResponseParser: WARN

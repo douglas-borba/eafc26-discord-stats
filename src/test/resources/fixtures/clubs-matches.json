@@ -1,0 +1,122 @@
+[
+  {
+    "matchId": "345758684140013",
+    "timestamp": 1718500000,
+    "matchType": "leagueMatch",
+    "clubs": {
+      "12345": {
+        "details": {
+          "name": "Test FC",
+          "clubId": "12345"
+        },
+        "score": "3",
+        "goalsAgainst": "1",
+        "result": "1"
+      },
+      "99999": {
+        "details": {
+          "name": "Opponent Club",
+          "clubId": "99999"
+        },
+        "score": "1",
+        "goalsAgainst": "3",
+        "result": "0"
+      }
+    },
+    "players": {
+      "12345": {
+        "player_abc": {
+          "playername": "Striker99",
+          "pos": "25",
+          "goals": "2",
+          "assists": "1",
+          "rating": "8.5",
+          "mom": "1",
+          "shots": "4",
+          "passattempts": "20",
+          "passesmade": "17",
+          "tackleattempts": "2",
+          "tacklesmade": "1",
+          "redcards": "0",
+          "saves": "0"
+        },
+        "player_def": {
+          "playername": "Midfielder7",
+          "pos": "14",
+          "goals": "1",
+          "assists": "2",
+          "rating": "7.8",
+          "mom": "0",
+          "shots": "2",
+          "passattempts": "35",
+          "passesmade": "30",
+          "tackleattempts": "5",
+          "tacklesmade": "4",
+          "redcards": "0",
+          "saves": "0"
+        }
+      },
+      "99999": {
+        "player_xyz": {
+          "playername": "OpponentPlayer",
+          "pos": "25",
+          "goals": "1",
+          "assists": "0",
+          "rating": "6.5",
+          "mom": "0",
+          "shots": "3",
+          "passattempts": "18",
+          "passesmade": "12",
+          "tackleattempts": "1",
+          "tacklesmade": "0",
+          "redcards": "0",
+          "saves": "0"
+        }
+      }
+    }
+  },
+  {
+    "matchId": "345758684139900",
+    "timestamp": 1718413600,
+    "matchType": "leagueMatch",
+    "clubs": {
+      "12345": {
+        "details": {
+          "name": "Test FC",
+          "clubId": "12345"
+        },
+        "score": "0",
+        "goalsAgainst": "2",
+        "result": "0"
+      },
+      "77777": {
+        "details": {
+          "name": "Rival Squad",
+          "clubId": "77777"
+        },
+        "score": "2",
+        "goalsAgainst": "0",
+        "result": "1"
+      }
+    },
+    "players": {
+      "12345": {
+        "player_abc": {
+          "playername": "Striker99",
+          "pos": "25",
+          "goals": "0",
+          "assists": "0",
+          "rating": "5.9",
+          "mom": "0",
+          "shots": "1",
+          "passattempts": "15",
+          "passesmade": "10",
+          "tackleattempts": "0",
+          "tacklesmade": "0",
+          "redcards": "0",
+          "saves": "0"
+        }
+      }
+    }
+  }
+]
