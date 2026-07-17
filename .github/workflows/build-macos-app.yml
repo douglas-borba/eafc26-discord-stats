@@ -27,9 +27,6 @@ jobs:
           chmod +x gradlew
           chmod +x scripts/package-macos.sh
 
-      - name: Build application
-        run: ./gradlew clean bootJar -x test
-
       - name: Package macOS application
         run: ./scripts/package-macos.sh
 
@@ -43,19 +40,19 @@ jobs:
         run: |
           mkdir -p release
 
-          if [ -d "app-bundle/EAFC26 Discord Stats.app" ]; then
-            ditto -c -k --sequesterRsrc --keepParent \
-              "app-bundle/EAFC26 Discord Stats.app" \
-              "release/EAFC26-Discord-Stats-macOS.zip"
-          elif [ -d "dist/EAFC26 Discord Stats.app" ]; then
-            ditto -c -k --sequesterRsrc --keepParent \
-              "dist/EAFC26 Discord Stats.app" \
-              "release/EAFC26-Discord-Stats-macOS.zip"
-          else
+          APP_PATH="$(find app-bundle dist -type d -name "*.app" -maxdepth 4 2>/dev/null | head -n 1)"
+
+          if [ -z "$APP_PATH" ]; then
             echo "ERROR: .app bundle was not found."
-            find . -name "*.app" -print
+            find . -type d -name "*.app" -print
             exit 1
           fi
+
+          echo "Found app at: $APP_PATH"
+
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$APP_PATH" \
+            "release/EAFC26-Discord-Stats-macOS.zip"
 
       - name: Upload macOS app
         uses: actions/upload-artifact@v4
