@@ -1,0 +1,66 @@
+name: Build macOS App
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Grant execute permission
+        run: |
+          chmod +x gradlew
+          chmod +x scripts/package-macos.sh
+
+      - name: Build application
+        run: ./gradlew clean bootJar -x test
+
+      - name: Package macOS application
+        run: ./scripts/package-macos.sh
+
+      - name: Inspect generated files
+        run: |
+          echo "Generated files:"
+          find app-bundle -maxdepth 4 -print || true
+          find dist -maxdepth 4 -print || true
+
+      - name: Create distribution ZIP
+        run: |
+          mkdir -p release
+
+          if [ -d "app-bundle/EAFC26 Discord Stats.app" ]; then
+            ditto -c -k --sequesterRsrc --keepParent \
+              "app-bundle/EAFC26 Discord Stats.app" \
+              "release/EAFC26-Discord-Stats-macOS.zip"
+          elif [ -d "dist/EAFC26 Discord Stats.app" ]; then
+            ditto -c -k --sequesterRsrc --keepParent \
+              "dist/EAFC26 Discord Stats.app" \
+              "release/EAFC26-Discord-Stats-macOS.zip"
+          else
+            echo "ERROR: .app bundle was not found."
+            find . -name "*.app" -print
+            exit 1
+          fi
+
+      - name: Upload macOS app
+        uses: actions/upload-artifact@v4
+        with:
+          name: EAFC26-Discord-Stats-macOS
+          path: release/EAFC26-Discord-Stats-macOS.zip
+          if-no-files-found: error
+          retention-days: 14
