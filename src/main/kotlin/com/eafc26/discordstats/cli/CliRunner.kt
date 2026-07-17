@@ -1,26 +1,25 @@
 package com.eafc26.discordstats.cli
 
 import com.eafc26.discordstats.config.AppProperties
-import com.eafc26.discordstats.discord.DiscordDeliveryException
-import com.eafc26.discordstats.discord.DiscordEmbedBuilder
-import com.eafc26.discordstats.discord.DiscordWebhookClient
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
+import com.eafc26.discordstats.service.NotifyLatestService
+import com.eafc26.discordstats.service.NotifyResult
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.stereotype.Component
 import java.io.PrintStream
 import java.nio.charset.StandardCharsets
-import kotlin.system.exitProcess
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.system.exitProcess
 
 @Component
 class CliRunner(
     private val client: EaClubsGateway,
     private val props: AppProperties,
-    private val discord: DiscordWebhookClient,
+    private val notifyLatestService: NotifyLatestService,
     private val out: PrintStream = PrintStream(System.out, true, StandardCharsets.UTF_8),
     private val exit: (Int) -> Unit = { code -> exitProcess(code) },
 ) : ApplicationRunner {
@@ -127,49 +126,35 @@ class CliRunner(
 
         out.println("Fetching latest match for club-id=$clubId ...")
 
-        val match = when (val result = client.getLatestMatches(clubId)) {
-            is EaApiResult.Success -> result.data.maxByOrNull { it.timestamp } ?: run {
-                out.println("No matches returned for club-id=$clubId.")
+        when (val result = notifyLatestService.notifyLatest()) {
+            is NotifyResult.Sent -> {
+                out.println("SUCCESS: Match notification sent to Discord. (${result.summary})")
                 exit(0)
-                return
             }
-            EaApiResult.NoMatches -> {
+            is NotifyResult.SentPersistenceError -> {
+                out.println("SUCCESS: Match notification sent to Discord, but local history could not be saved. (${result.summary})")
+                exit(0)
+            }
+            is NotifyResult.AlreadyPublished -> {
+                out.println("INFO: Match already published, skipped. (${result.summary})")
+                exit(0)
+            }
+            NotifyResult.NoMatches -> {
                 out.println("No matches found for club-id=$clubId.")
                 exit(0)
-                return
             }
-            is EaApiResult.Unavailable -> {
-                out.println("EA API unavailable (HTTP ${result.statusCode}): ${result.message}")
+            NotifyResult.EaUnavailable -> {
+                out.println("ERROR: EA API unavailable. The endpoint may be down. Try again later.")
                 exit(1)
-                return
             }
-            is EaApiResult.UnexpectedPayload -> {
-                out.println("EA API returned an unexpected response: ${result.cause.message}")
+            NotifyResult.DiscordError -> {
+                out.println("ERROR: Discord delivery failed.")
                 exit(1)
-                return
             }
-        }
-
-        out.println("Building Discord embed for match ${match.matchId} ...")
-
-        val payload = try {
-            DiscordEmbedBuilder.build(match, clubId)
-        } catch (ex: Exception) {
-            out.println("ERROR: Failed to build Discord embed: ${ex.message}")
-            exit(1)
-            return
-        }
-
-        try {
-            discord.send(payload)
-            out.println("SUCCESS: Match ${match.matchId} notification sent to Discord.")
-            exit(0)
-        } catch (ex: IllegalStateException) {
-            out.println("ERROR: ${ex.message}")
-            exit(1)
-        } catch (ex: DiscordDeliveryException) {
-            out.println("ERROR: Discord delivery failed: ${ex.message}")
-            exit(1)
+            NotifyResult.Busy -> {
+                out.println("ERROR: Another notification is already in progress.")
+                exit(1)
+            }
         }
     }
 

@@ -3,3 +3,4 @@ build/
 *.class
 *.jar
 !gradle/wrapper/gradle-wrapper.jar
+jar-contents.txt

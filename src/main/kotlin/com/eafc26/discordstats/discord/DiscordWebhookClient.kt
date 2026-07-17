@@ -1,9 +1,8 @@
 package com.eafc26.discordstats.discord
 
-import com.eafc26.discordstats.config.AppProperties
+import com.eafc26.discordstats.config.WebhookConfigService
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientResponseException
@@ -11,13 +10,13 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 /**
  * Sends a Discord embed to the configured webhook URL.
  *
- * The webhook URL is read from the DISCORD_WEBHOOK_URL environment variable
- * via application.yml: `app.discord.webhook-url: ${DISCORD_WEBHOOK_URL:}`.
- * A blank URL produces a clear configuration error rather than a network failure.
+ * The URL is managed by [WebhookConfigService] and can be updated at runtime
+ * via the /setup page without restarting the application.
+ * A blank URL throws [IllegalStateException] with a setup redirect hint.
  */
 @Component
 class DiscordWebhookClient(
-    private val props: AppProperties,
+    private val webhookConfigService: WebhookConfigService,
     private val objectMapper: ObjectMapper,
     private val webClient: WebClient = WebClient.create(),
 ) {
@@ -30,11 +29,10 @@ class DiscordWebhookClient(
      * @throws DiscordDeliveryException if Discord rejects the request.
      */
     fun send(payload: DiscordPayload) {
-        val url = props.discord.webhookUrl
+        val url = webhookConfigService.getWebhookUrl()
         if (url.isBlank()) {
             throw IllegalStateException(
-                "Discord webhook URL is not configured. " +
-                "Set the DISCORD_WEBHOOK_URL environment variable."
+                "Discord webhook URL is not configured. Open http://localhost:8080/setup to configure it."
             )
         }
 

@@ -2,6 +2,7 @@ package com.eafc26.discordstats.discord
 
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.config.DiscordProperties
+import com.eafc26.discordstats.config.WebhookConfigService
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import okhttp3.mockwebserver.MockResponse
@@ -16,7 +17,6 @@ import org.springframework.web.reactive.function.client.WebClient
 class DiscordWebhookClientTest {
 
     private lateinit var server: MockWebServer
-    private lateinit var client: DiscordWebhookClient
     private val om = ObjectMapper().registerModule(KotlinModule.Builder().build())
 
     @BeforeEach
@@ -35,7 +35,7 @@ class DiscordWebhookClientTest {
         val c = makeClient(webhookUrl = "")
         assertThatThrownBy { c.send(emptyPayload()) }
             .isInstanceOf(IllegalStateException::class.java)
-            .hasMessageContaining("DISCORD_WEBHOOK_URL")
+            .hasMessageContaining("not configured")
     }
 
     @Test
@@ -76,7 +76,8 @@ class DiscordWebhookClientTest {
 
     private fun makeClient(webhookUrl: String): DiscordWebhookClient {
         val props = AppProperties(discord = DiscordProperties(webhookUrl = webhookUrl))
-        return DiscordWebhookClient(props, om, WebClient.create())
+        val service = WebhookConfigService(props)
+        return DiscordWebhookClient(service, om, WebClient.create())
     }
 
     private fun emptyPayload() = DiscordPayload(embeds = listOf(

@@ -1,39 +1,66 @@
 package com.eafc26.discordstats.scheduler
 
 import com.eafc26.discordstats.service.MatchNotifierService
+import com.eafc26.discordstats.service.NotifyLatestService
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
-import java.util.concurrent.atomic.AtomicBoolean
+import java.time.Instant
 
 /**
- * Drives [MatchNotifierService.process] on a fixed delay.
+ * Drives [MatchNotifierService.process] on a fixed delay of 120 seconds.
  *
- * The overlap guard uses an [AtomicBoolean] so that if EA or Discord is slow
- * and the previous cycle has not finished, the new firing is skipped rather
- * than stacking up parallel runs. EA or Discord failures inside process() are
- * caught there and never propagate here, keeping the scheduler alive.
+ * Concurrency is controlled exclusively by [NotifyLatestService.runIfIdle], which is
+ * the same guard used by the manual web button. Manual and automatic executions
+ * therefore share a single lock — they can never run simultaneously.
+ *
+ * First execution runs immediately after Spring startup (no initial delay).
+ * Subsequent executions are separated by [intervalMs] from the completion of the
+ * previous one (fixed delay, not fixed rate).
  */
 @Component
 @ConditionalOnProperty(name = ["app.polling.enabled"], havingValue = "true", matchIfMissing = true)
-class MatchPollingScheduler(private val service: MatchNotifierService) {
-
+class MatchPollingScheduler(
+    private val matchNotifierService: MatchNotifierService,
+    private val notifyLatestService: NotifyLatestService,
+    private val statusHolder: PollingStatusHolder,
+) {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val running = AtomicBoolean(false)
 
-    @Scheduled(fixedDelayString = "\${app.polling.interval-ms:300000}")
+    companion object {
+        private const val intervalMs = 120_000L
+    }
+
+    init {
+        statusHolder.enabled = true
+        statusHolder.intervalSeconds = (intervalMs / 1000).toInt()
+    }
+
+    @Scheduled(fixedDelayString = "\${app.polling.interval-ms:120000}", initialDelay = 0)
     fun poll() {
-        if (!running.compareAndSet(false, true)) {
-            log.warn("Previous poll cycle still running — skipping this firing")
-            return
+        val now = Instant.now()
+        statusHolder.lastCheck = now
+        statusHolder.running = true
+        statusHolder.lastResult = "Consultando a EA..."
+
+        val ran = notifyLatestService.runIfIdle {
+            try {
+                matchNotifierService.process { msg ->
+                    statusHolder.lastResult = msg
+                }
+            } catch (ex: Exception) {
+                log.error("Unhandled error in poll cycle", ex)
+                statusHolder.lastResult = "EA indisponível. Nova tentativa em 2 minutos."
+            }
         }
-        try {
-            service.process()
-        } catch (ex: Exception) {
-            log.error("Unhandled error in poll cycle", ex)
-        } finally {
-            running.set(false)
+
+        if (!ran) {
+            log.info("Scheduled poll skipped — manual verification in progress")
+            statusHolder.lastResult = "Uma verificação já está em andamento."
         }
+
+        statusHolder.running = false
+        statusHolder.nextCheck = Instant.now().plusMillis(intervalMs)
     }
 }

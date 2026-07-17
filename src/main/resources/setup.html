@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Configuração inicial — EA FC 26</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 480px;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #58a6ff;
+      margin-bottom: 0.5rem;
+    }
+
+    p.subtitle {
+      font-size: 0.9rem;
+      color: #8b949e;
+      margin-bottom: 1.5rem;
+      line-height: 1.5;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: #8b949e;
+      margin-bottom: 0.4rem;
+    }
+
+    input[type="password"] {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      font-size: 0.95rem;
+      padding: 0.65rem 0.85rem;
+      margin-bottom: 1rem;
+      outline: none;
+    }
+
+    input[type="password"]:focus { border-color: #58a6ff; }
+
+    button {
+      width: 100%;
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 0.8rem;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+
+    button:hover:not(:disabled) { background: #2ea043; }
+    button:disabled { opacity: 0.6; cursor: default; }
+
+    #feedback {
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      border-radius: 6px;
+      padding: 0.7rem 0.9rem;
+      display: none;
+    }
+
+    #feedback.error { background: #3a1010; border: 1px solid #f85149; color: #f85149; }
+    #feedback.info  { background: #0d2a1f; border: 1px solid #238636; color: #adf7b6; }
+
+    .hint {
+      margin-top: 1.5rem;
+      font-size: 0.78rem;
+      color: #484f58;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Configuração inicial</h1>
+    <p class="subtitle">Cole abaixo o URL do webhook do Discord para o canal onde as partidas serão publicadas.</p>
+
+    <label for="webhook-input">URL do Webhook do Discord</label>
+    <input
+      id="webhook-input"
+      type="password"
+      placeholder="https://discord.com/api/webhooks/..."
+      autocomplete="off"
+      autocorrect="off"
+      spellcheck="false"
+    />
+
+    <button id="save-btn" onclick="save()">Salvar e continuar</button>
+
+    <div id="feedback"></div>
+
+    <p class="hint">
+      O URL é salvo localmente no seu Mac e nunca é enviado para servidores externos.<br/>
+      Ele não aparecerá nesta tela novamente após salvo.
+    </p>
+  </div>
+
+  <script>
+    async function save() {
+      const input = document.getElementById('webhook-input');
+      const btn = document.getElementById('save-btn');
+      const feedback = document.getElementById('feedback');
+      const url = input.value.trim();
+
+      feedback.style.display = 'none';
+
+      if (!url) {
+        showError('Por favor, cole o URL do webhook.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Salvando...';
+
+      try {
+        const res = await fetch('/api/setup/webhook', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ webhookUrl: url }),
+          redirect: 'manual'
+        });
+
+        if (res.status === 0 || res.type === 'opaqueredirect' || res.redirected || res.status === 302) {
+          showInfo('Webhook salvo. Redirecionando...');
+          window.location.href = '/';
+        } else if (res.ok) {
+          showInfo('Webhook salvo. Redirecionando...');
+          window.location.href = '/';
+        } else {
+          const data = await res.json().catch(() => ({}));
+          showError(data.error || 'Erro ao salvar. Verifique o URL e tente novamente.');
+        }
+      } catch (e) {
+        showError('Erro de rede. Verifique a conexão.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Salvar e continuar';
+        input.value = '';
+      }
+    }
+
+    function showError(msg) {
+      const f = document.getElementById('feedback');
+      f.className = 'error';
+      f.textContent = msg;
+      f.style.display = 'block';
+    }
+
+    function showInfo(msg) {
+      const f = document.getElementById('feedback');
+      f.className = 'info';
+      f.textContent = msg;
+      f.style.display = 'block';
+    }
+
+    document.getElementById('webhook-input').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') save();
+    });
+  </script>
+</body>
+</html>

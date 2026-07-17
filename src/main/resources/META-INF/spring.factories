@@ -1,0 +1,2 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+  com.eafc26.discordstats.config.LocalConfigPostProcessor

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EA FC 26 — Associação BF</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    h1 {
+      font-size: clamp(1.2rem, 4vw, 1.8rem);
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 2rem;
+      color: #58a6ff;
+    }
+
+    #btn {
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      padding: 0.9rem 2rem;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+      min-width: 220px;
+    }
+
+    #btn:hover:not(:disabled) { background: #2ea043; }
+    #btn:disabled { opacity: 0.6; cursor: default; }
+
+    #result {
+      margin-top: 1.5rem;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      min-height: 3rem;
+    }
+
+    .msg {
+      padding: 0.8rem 1rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    .msg.sent        { background: #0d4a1f; border: 1px solid #238636; }
+    .msg.already     { background: #1a2a3a; border: 1px solid #58a6ff; }
+    .msg.no-matches  { background: #1a1a2a; border: 1px solid #484f58; color: #8b949e; }
+    .msg.error       { background: #3a1010; border: 1px solid #f85149; color: #f85149; }
+    .msg.busy        { background: #2a2010; border: 1px solid #d29922; color: #d29922; }
+
+    .summary { font-weight: 700; margin-top: 0.4rem; font-size: 1rem; }
+
+    #settings-link {
+      margin-top: 2rem;
+      font-size: 0.85rem;
+      color: #8b949e;
+      text-decoration: none;
+    }
+    #settings-link:hover { color: #58a6ff; }
+
+    #network-url {
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: #8b949e;
+    }
+    #network-url a { color: #58a6ff; }
+
+    #polling-status {
+      margin-top: 1.5rem;
+      max-width: 420px;
+      width: 100%;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      font-size: 0.82rem;
+      color: #8b949e;
+      line-height: 1.7;
+    }
+    #polling-status strong { color: #e6edf3; }
+    .poll-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #58a6ff;
+      margin-bottom: 0.4rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>EA FC 26 — Associação BF</h1>
+
+  <button id="btn" onclick="notify()">Enviar última partida</button>
+
+  <div id="result"></div>
+
+  <div id="polling-status">
+    <div class="poll-title">Monitoramento automático</div>
+    <div>Estado: <strong id="ps-enabled">—</strong></div>
+    <div>Intervalo: <strong id="ps-interval">—</strong></div>
+    <div>Última verificação: <strong id="ps-last">Ainda não executada</strong></div>
+    <div>Próxima verificação: <strong id="ps-next">—</strong></div>
+    <div>Último resultado: <strong id="ps-result">—</strong></div>
+  </div>
+
+  <div id="network-url"></div>
+
+  <a id="settings-link" href="/settings">⚙️ Configurações</a>
+
+  <script>
+    (function () {
+      fetch('/api/settings/info')
+        .then(r => r.json())
+        .then(info => {
+          if (info.networkUrl) {
+            document.getElementById('network-url').innerHTML =
+              'Acesso local: <a href="' + esc(info.networkUrl) + '">' + esc(info.networkUrl) + '</a>';
+          }
+        })
+        .catch(() => {});
+    })();
+
+    async function notify() {
+      const btn = document.getElementById('btn');
+      const resultDiv = document.getElementById('result');
+
+      btn.disabled = true;
+      btn.textContent = 'Buscando a última partida...';
+      resultDiv.innerHTML = '';
+
+      try {
+        const res = await fetch('/api/matches/notify-latest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        renderResult(data, res.status);
+      } catch (e) {
+        resultDiv.innerHTML = '<div class="msg error">Erro de rede. Verifique a conexão.</div>';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Enviar última partida';
+      }
+    }
+
+    function renderResult(data, status) {
+      const resultDiv = document.getElementById('result');
+      let cls, text;
+
+      if (data.status === 'sent') {
+        cls = 'sent'; text = '✅ Notificação enviada com sucesso!';
+      } else if (data.status === 'sent_persistence_error') {
+        cls = 'sent'; text = '⚠️ A partida foi enviada ao Discord, mas não foi possível salvar o histórico local.';
+      } else if (data.status === 'already_published') {
+        cls = 'already'; text = 'ℹ️ Partida já publicada anteriormente.';
+      } else if (data.status === 'no_matches') {
+        cls = 'no-matches'; text = '⚽ Nenhuma partida encontrada.';
+      } else if (data.status === 'busy') {
+        cls = 'busy'; text = '⏳ ' + data.message;
+      } else {
+        cls = 'error'; text = '❌ ' + (data.message || 'Erro desconhecido.');
+      }
+
+      const summary = data.summary ? `<div class="summary">${esc(data.summary)}</div>` : '';
+      resultDiv.innerHTML = `<div class="msg ${cls}">${text}${summary}</div>`;
+    }
+
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function fmtTime(iso) {
+      if (!iso) return '—';
+      try {
+        return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      } catch (_) { return iso; }
+    }
+
+    function refreshPollingStatus() {
+      fetch('/api/polling/status')
+        .then(r => r.json())
+        .then(d => {
+          document.getElementById('ps-enabled').textContent = d.enabled ? 'Ativo' : 'Inativo';
+          document.getElementById('ps-interval').textContent = d.intervalSeconds ? (d.intervalSeconds / 60) + ' minutos' : '—';
+          document.getElementById('ps-last').textContent = fmtTime(d.lastCheck) || 'Ainda não executada';
+          document.getElementById('ps-next').textContent = fmtTime(d.nextCheck) || '—';
+          document.getElementById('ps-result').textContent = d.lastResult || '—';
+        })
+        .catch(() => {});
+    }
+
+    refreshPollingStatus();
+    setInterval(refreshPollingStatus, 15000);
+  </script>
+</body>
+</html>

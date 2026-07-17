@@ -2,8 +2,6 @@ package com.eafc26.discordstats.cli
 
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.config.EaProperties
-import com.eafc26.discordstats.discord.DiscordDeliveryException
-import com.eafc26.discordstats.discord.DiscordWebhookClient
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.ClubDetails
@@ -11,11 +9,11 @@ import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.ClubSearchResult
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
+import com.eafc26.discordstats.service.NotifyLatestService
+import com.eafc26.discordstats.service.NotifyResult
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.mockito.kotlin.any
-import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
@@ -27,7 +25,7 @@ import java.io.PrintStream
 class CliRunnerTest {
 
     private lateinit var client: EaClubsGateway
-    private lateinit var discord: DiscordWebhookClient
+    private lateinit var notifyLatestService: NotifyLatestService
     private lateinit var output: ByteArrayOutputStream
     private lateinit var out: PrintStream
     private val exitCodes = mutableListOf<Int>()
@@ -35,17 +33,15 @@ class CliRunnerTest {
     @BeforeEach
     fun setUp() {
         client = mock()
-        discord = mock()
+        notifyLatestService = mock()
         output = ByteArrayOutputStream()
         out = PrintStream(output)
         exitCodes.clear()
     }
 
     private fun runner(clubName: String = "Test FC", clubId: String = "12345"): CliRunner {
-        val props = AppProperties(
-            ea = EaProperties(clubName = clubName, clubId = clubId)
-        )
-        return CliRunner(client, props, discord, out, exit = { exitCodes.add(it) })
+        val props = AppProperties(ea = EaProperties(clubName = clubName, clubId = clubId))
+        return CliRunner(client, props, notifyLatestService, out, exit = { exitCodes.add(it) })
     }
 
     private fun printed(): String = output.toString(Charsets.UTF_8)
@@ -234,85 +230,56 @@ class CliRunnerTest {
     //   notify-latest
 
     @Test
-    fun `notify-latest success - sends embed and prints success message`() {
-        whenever(client.getLatestMatches("12345")).thenReturn(EaApiResult.Success(listOf(latestMatch())))
+    fun `notify-latest Sent - prints success and exits 0`() {
+        whenever(notifyLatestService.notifyLatest())
+            .thenReturn(NotifyResult.Sent("Test FC 2 × 0 Opponent"))
 
         runner().run(args("notify-latest"))
 
-        verify(discord).send(any())
         val text = printed()
         assertThat(text).contains("SUCCESS")
-        assertThat(text).contains("match-99")
+        assertThat(text).contains("Test FC 2 × 0 Opponent")
         assertThat(exitCodes).containsExactly(0)
     }
 
     @Test
-    fun `notify-latest picks most recent match when multiple returned`() {
-        val matches = listOf(latestMatch("older", ts = 1000L), latestMatch("newer", ts = 9000L))
-        whenever(client.getLatestMatches("12345")).thenReturn(EaApiResult.Success(matches))
+    fun `notify-latest AlreadyPublished - prints info and exits 0`() {
+        whenever(notifyLatestService.notifyLatest())
+            .thenReturn(NotifyResult.AlreadyPublished("Test FC 2 × 0 Opponent"))
 
         runner().run(args("notify-latest"))
 
-        verify(discord).send(any())
         val text = printed()
-        assertThat(text).contains("newer")
-        assertThat(exitCodes).containsExactly(0)
-    }
-
-    @Test
-    fun `notify-latest does not modify the store`() {
-        whenever(client.getLatestMatches("12345")).thenReturn(EaApiResult.Success(listOf(latestMatch())))
-
-        runner().run(args("notify-latest"))
-
-        // No PublishedMatchStore is involved in CliRunner - this is enforced by design
-        // (store is not a dependency of CliRunner). Verify discord was called but no
-        // store interaction can happen.
-        verify(discord).send(any())
+        assertThat(text).contains("INFO")
+        assertThat(text).contains("already published")
         assertThat(exitCodes).containsExactly(0)
     }
 
     @Test
     fun `notify-latest NoMatches - prints message and exits 0`() {
-        whenever(client.getLatestMatches("12345")).thenReturn(EaApiResult.NoMatches)
+        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.NoMatches)
 
         runner().run(args("notify-latest"))
 
-        verify(discord, never()).send(any())
         assertThat(printed()).contains("No matches found")
         assertThat(exitCodes).containsExactly(0)
     }
 
     @Test
-    fun `notify-latest EA unavailable - prints error and exits 1`() {
-        whenever(client.getLatestMatches("12345")).thenReturn(EaApiResult.Unavailable(503, "down"))
-
-        runner().run(args("notify-latest"))
-
-        verify(discord, never()).send(any())
-        val text = printed()
-        assertThat(text).contains("EA API unavailable")
-        assertThat(text).contains("503")
-        assertThat(exitCodes).containsExactly(1)
-    }
-
-    @Test
-    fun `notify-latest missing webhook URL - prints config error and exits 1`() {
-        whenever(client.getLatestMatches("12345")).thenReturn(EaApiResult.Success(listOf(latestMatch())))
-        doThrow(IllegalStateException("Discord webhook URL is not configured")).whenever(discord).send(any())
+    fun `notify-latest EaUnavailable - prints error and exits 1`() {
+        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.EaUnavailable)
 
         runner().run(args("notify-latest"))
 
         val text = printed()
         assertThat(text).contains("ERROR")
-        assertThat(text).contains("webhook URL is not configured")
+        assertThat(text).contains("EA API unavailable")
         assertThat(exitCodes).containsExactly(1)
     }
 
     @Test
-    fun `notify-latest Discord delivery failure - prints error and exits 1`() {
-        whenever(client.getLatestMatches("12345")).thenReturn(EaApiResult.Success(listOf(latestMatch())))
-        doThrow(DiscordDeliveryException("HTTP 429: Too many requests")).whenever(discord).send(any())
+    fun `notify-latest DiscordError - prints error and exits 1`() {
+        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.DiscordError)
 
         runner().run(args("notify-latest"))
 
@@ -323,16 +290,29 @@ class CliRunnerTest {
     }
 
     @Test
-    fun `notify-latest blank club-id - prints config error and exits 1`() {
+    fun `notify-latest Busy - prints error and exits 1`() {
+        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.Busy)
+
+        runner().run(args("notify-latest"))
+
+        val text = printed()
+        assertThat(text).contains("ERROR")
+        assertThat(text).contains("already in progress")
+        assertThat(exitCodes).containsExactly(1)
+    }
+
+    @Test
+    fun `notify-latest blank club-id - does not call service and exits 1`() {
         runner(clubId = "").run(args("notify-latest"))
 
-        verify(discord, never()).send(any())
+        verify(notifyLatestService, never()).notifyLatest()
         assertThat(printed()).contains("app.ea.club-id is not set")
         assertThat(exitCodes).containsExactly(1)
     }
 
     // -- Helpers --
 
+    @Suppress("unused")
     private fun latestMatch(id: String = "match-99", ts: Long = 5000L) = MatchResponse(
         matchId = id,
         timestamp = ts,

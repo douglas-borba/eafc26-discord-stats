@@ -1,3 +1,7 @@
+server:
+  address: 127.0.0.1   # overridden at runtime by LocalConfigPostProcessor
+  port: 8080
+
 app:
   ea:
     base-url: https://proclubs.ea.com/api/fc
@@ -25,15 +29,15 @@ app:
       initial-page-url: https://proclubs.ea.com
 
   polling:
-    enabled: false
-    interval-ms: 300000
+    enabled: true
+    interval-ms: 120000
     publish-existing-on-first-run: false
 
-  store:
-    path: ./data/published-matches.json
-
   discord:
-    webhook-url: ${DISCORD_WEBHOOK_URL:}
+    webhook-url: ""   # configured at runtime via /setup — never commit a real URL here
+
+  web:
+    network-enabled: false   # overridden by local config file at startup
 
 logging:
   level:

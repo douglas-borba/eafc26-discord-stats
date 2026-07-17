@@ -13,331 +13,579 @@ class DiscordEmbedBuilderTest {
     private val ourClubId = "12345"
     private val zone = ZoneOffset.UTC
 
-    // -- Result + color -------------------------------------------------------
+    // -- Título ---------------------------------------------------------------
 
     @Test
-    fun `win result shows Win and green color`() {
+    fun `titulo contem nomes dos clubes e placar com sinal de multiplicacao`() {
+        val embed = buildEmbed(ourName = "Associação BF", oppName = "Rival FC", ourScore = "2", oppScore = "1").embeds[0]
+        assertThat(embed.title).isEqualTo("🏆 Associação BF 2 × 1 Rival FC")
+    }
+
+    @Test
+    fun `titulo contem trofeu e sinal de multiplicacao`() {
+        val embed = buildEmbed().embeds[0]
+        assertThat(embed.title).contains("🏆")
+        assertThat(embed.title).contains("×")
+    }
+
+    // -- Descrição (resultado + data) ----------------------------------------
+
+    @Test
+    fun `descricao contem emoji verde e Vitoria`() {
         val embed = buildEmbed(ourResult = "1").embeds[0]
-        assertThat(embed.fields.field("Result").value).isEqualTo("Win")
-        assertThat(embed.color).isEqualTo(0x2ECC71)
+        assertThat(embed.description).contains("🟢")
+        assertThat(embed.description).contains("Vitória")
     }
 
     @Test
-    fun `draw result shows Draw and grey color`() {
+    fun `descricao contem emoji amarelo e Empate`() {
         val embed = buildEmbed(ourResult = "2").embeds[0]
-        assertThat(embed.fields.field("Result").value).isEqualTo("Draw")
-        assertThat(embed.color).isEqualTo(0x95A5A6)
+        assertThat(embed.description).contains("🟡")
+        assertThat(embed.description).contains("Empate")
     }
 
     @Test
-    fun `loss result shows Loss and red color`() {
+    fun `descricao contem emoji vermelho e Derrota`() {
         val embed = buildEmbed(ourResult = "0").embeds[0]
-        assertThat(embed.fields.field("Result").value).isEqualTo("Loss")
-        assertThat(embed.color).isEqualTo(0xE74C3C)
+        assertThat(embed.description).contains("🔴")
+        assertThat(embed.description).contains("Derrota")
     }
 
-    // -- Score ----------------------------------------------------------------
-
     @Test
-    fun `score field shows our score vs opponent score`() {
-        val embed = buildEmbed(ourScore = "3", oppScore = "1").embeds[0]
-        assertThat(embed.fields.field("Score").value).isEqualTo("3 – 1")
+    fun `descricao contem data com bullet e formato pt-BR`() {
+        val embed = buildEmbed().embeds[0]
+        // timestamp 1718500000 = 2024-06-16 01:06 UTC
+        assertThat(embed.description).contains("📅")
+        assertThat(embed.description).contains("•")
+        assertThat(embed.description).matches("(?s).*\\d{2} [a-z]+\\.? \\d{4} • \\d{2}:\\d{2}.*")
     }
 
-    // -- Title ----------------------------------------------------------------
-
     @Test
-    fun `title contains our name vs opponent name`() {
-        val embed = buildEmbed(ourName = "Associação BF", oppName = "Rival FC").embeds[0]
-        assertThat(embed.title).isEqualTo("Associação BF vs Rival FC")
+    fun `nao ha campos separados de RESULTADO PLACAR ou DATA`() {
+        val embed = buildEmbed().embeds[0]
+        val names = embed.fields.map { it.name }
+        assertThat(names).doesNotContain("RESULTADO")
+        assertThat(names).doesNotContain("PLACAR")
+        assertThat(names).doesNotContain("DATA")
     }
 
-    // -- Footer ---------------------------------------------------------------
+    // -- Cores ----------------------------------------------------------------
 
     @Test
-    fun `footer contains match ID`() {
+    fun `cor verde para vitoria`() {
+        assertThat(buildEmbed(ourResult = "1").embeds[0].color).isEqualTo(0x2ECC71)
+    }
+
+    @Test
+    fun `cor cinza para empate`() {
+        assertThat(buildEmbed(ourResult = "2").embeds[0].color).isEqualTo(0x95A5A6)
+    }
+
+    @Test
+    fun `cor vermelha para derrota`() {
+        assertThat(buildEmbed(ourResult = "0").embeds[0].color).isEqualTo(0xE74C3C)
+    }
+
+    // -- Rodapé ---------------------------------------------------------------
+
+    @Test
+    fun `rodape ausente`() {
         val embed = buildEmbed(matchId = "999888777").embeds[0]
-        assertThat(embed.footer?.text).isEqualTo("Match ID: 999888777")
+        assertThat(embed.footer).isNull()
     }
 
-    // -- Goal Scorers ---------------------------------------------------------
+    // -- Separadores ----------------------------------------------------------
 
     @Test
-    fun `goal scorers section lists players with goals`() {
+    fun `separadores aparecem entre secoes presentes`() {
         val embed = buildEmbedWithPlayers(
-            player("Striker",    goals = "2"),
-            player("Midfielder", goals = "1"),
-            player("Defender",   goals = "0"),
+            player("Atacante", goals = "1", rating = "8.0"),
+            player("Meia",     assists = "1", rating = "7.0"),
         ).embeds[0]
-        val field = embed.fields.fieldOrNull("Goal Scorers")
-        assertThat(field).isNotNull
-        assertThat(field!!.value).contains("Striker (2)")
-        assertThat(field.value).contains("Midfielder (1)")
-        assertThat(field.value).doesNotContain("Defender")
+        val seps = embed.fields.filter { it.name == "​" }
+        assertThat(seps).isNotEmpty()
+        assertThat(seps[0].value).isEqualTo("──────────────────────────────")
     }
 
     @Test
-    fun `goal scorers section is omitted when nobody scored`() {
-        val embed = buildEmbedWithPlayers(player("Defender", goals = "0")).embeds[0]
-        assertThat(embed.fields.fieldOrNull("Goal Scorers")).isNull()
-    }
-
-    // -- Assists --------------------------------------------------------------
-
-    @Test
-    fun `assists section lists players with assists`() {
+    fun `primeiro campo do embed e um separador`() {
         val embed = buildEmbedWithPlayers(
-            player("Midfielder", assists = "2"),
-            player("Striker",    assists = "0"),
+            player("Atacante", goals = "1", rating = "8.0"),
         ).embeds[0]
-        val field = embed.fields.fieldOrNull("Assists")
-        assertThat(field).isNotNull
-        assertThat(field!!.value).contains("Midfielder (2)")
-        assertThat(field.value).doesNotContain("Striker")
+        assertThat(embed.fields).isNotEmpty()
+        assertThat(embed.fields[0].name).isEqualTo("​")
     }
 
-    @Test
-    fun `assists section is omitted when nobody assisted`() {
-        val embed = buildEmbedWithPlayers(player("Striker", assists = "0")).embeds[0]
-        assertThat(embed.fields.fieldOrNull("Assists")).isNull()
-    }
-
-    // -- Top 3 highlights -----------------------------------------------------
+    // -- Gols -----------------------------------------------------------------
 
     @Test
-    fun `top 3 shows players sorted by rating descending`() {
+    fun `secao GOLS usa formato x-N e lista marcadores`() {
         val embed = buildEmbedWithPlayers(
-            player("B", rating = "7.0"),
-            player("A", rating = "8.5"),
-            player("C", rating = "6.0"),
+            player("Atacante", goals = "2"),
+            player("Meia",     goals = "1"),
+            player("Zagueiro", goals = "0"),
         ).embeds[0]
-        val text = embed.fields.field("🏅 Destaques").value
-        assertThat(text.indexOf("A")).isLessThan(text.indexOf("B"))
-        assertThat(text.indexOf("B")).isLessThan(text.indexOf("C"))
+        val gols = embed.fields.field("⚽ GOLS").value
+        assertThat(gols).contains("Atacante ×2")
+        assertThat(gols).contains("Meia ×1")
+        assertThat(gols).doesNotContain("Zagueiro")
     }
 
     @Test
-    fun `top 3 contains no more than three players`() {
+    fun `secao GOLS omitida quando ninguem marcou`() {
+        val embed = buildEmbedWithPlayers(player("Defensor", goals = "0")).embeds[0]
+        assertThat(embed.fields.none { it.name == "⚽ GOLS" }).isTrue()
+    }
+
+    @Test
+    fun `secao GOLS ordenada por gols decrescente`() {
         val embed = buildEmbedWithPlayers(
-            player("P1", rating = "9.0"),
-            player("P2", rating = "8.0"),
-            player("P3", rating = "7.0"),
-            player("P4", rating = "6.0"),
-            player("P5", rating = "5.0"),
+            player("Um",   goals = "1"),
+            player("Dois", goals = "2"),
         ).embeds[0]
-        val text = embed.fields.field("🏅 Destaques").value
+        val text = embed.fields.field("⚽ GOLS").value
+        assertThat(text.indexOf("Dois")).isLessThan(text.indexOf("Um"))
+    }
+
+    // -- Assistências ---------------------------------------------------------
+
+    @Test
+    fun `secao ASSISTENCIAS usa formato x-N e lista assistentes`() {
+        val embed = buildEmbedWithPlayers(
+            player("Passador", assists = "2"),
+            player("SemPasse", assists = "0"),
+        ).embeds[0]
+        val field = embed.fields.field("🎯 ASSISTÊNCIAS")
+        assertThat(field.value).contains("Passador ×2")
+        assertThat(field.value).doesNotContain("SemPasse")
+    }
+
+    @Test
+    fun `secao ASSISTENCIAS omitida quando ninguem deu assistencia`() {
+        val embed = buildEmbedWithPlayers(player("Atacante", assists = "0")).embeds[0]
+        assertThat(embed.fields.none { it.name == "🎯 ASSISTÊNCIAS" }).isTrue()
+    }
+
+    // -- Destaques + Média do time --------------------------------------------
+
+    @Test
+    fun `secao DESTAQUES mostra top 3 com medalhas`() {
+        val embed = buildEmbedWithPlayers(
+            player("Ouro",   rating = "9.5"),
+            player("Prata",  rating = "8.5"),
+            player("Bronze", rating = "7.5"),
+            player("Quarto", rating = "6.5"),
+        ).embeds[0]
+        val text = embed.fields.field("🥇 DESTAQUES").value
         assertThat(text).contains("🥇").contains("🥈").contains("🥉")
-        assertThat(text).contains("P1").contains("P2").contains("P3")
-        assertThat(text).doesNotContain("P4").doesNotContain("P5")
+        assertThat(text).contains("Ouro").contains("Prata").contains("Bronze")
+        assertThat(text).doesNotContain("Quarto")
     }
 
     @Test
-    fun `MOTM player is marked with star and MOTM tag in top 3`() {
+    fun `secao DESTAQUES formato contem palavra Nota`() {
+        val embed = buildEmbedWithPlayers(player("Jogador", rating = "8.5")).embeds[0]
+        val text = embed.fields.field("🥇 DESTAQUES").value
+        assertThat(text).contains("Jogador — Nota")
+    }
+
+    @Test
+    fun `craque da partida marcado na secao DESTAQUES`() {
         val embed = buildEmbedWithPlayers(
-            player("Hero",  rating = "9.0", mom = "1"),
-            player("Other", rating = "7.0"),
+            player("MVP",  rating = "9.0", mom = "1"),
+            player("Dois", rating = "7.0"),
         ).embeds[0]
-        val text = embed.fields.field("🏅 Destaques").value
-        assertThat(text).contains("Hero")
-        assertThat(text).contains("MOTM")
-        assertThat(text).doesNotContain("Other.*MOTM".toRegex().pattern)
+        val text = embed.fields.field("🥇 DESTAQUES").value
+        assertThat(text).contains("Craque da Partida")
+        assertThat(text).doesNotContain("MOTM")
     }
 
     @Test
-    fun `top 3 section is omitted when no ratings present`() {
-        val embed = buildEmbedWithPlayers(player("A", rating = null)).embeds[0]
-        assertThat(embed.fields.fieldOrNull("🏅 Destaques")).isNull()
-    }
-
-    // -- Seconds played -------------------------------------------------------
-
-    @Test
-    fun `players with zero seconds played are excluded from all sections`() {
+    fun `craque da partida tem frase motivacional no DESTAQUES`() {
         val embed = buildEmbedWithPlayers(
-            player("Playing", goals = "1", rating = "8.0", secondsPlayed = "900"),
-            player("Unused",  goals = "0", rating = "6.0", secondsPlayed = "0"),
+            player("MVP",     rating = "9.0", mom = "1"),
+            player("Segundo", rating = "7.0"),
         ).embeds[0]
-        val ratings = embed.fields.field("🏅 Destaques").value
-        assertThat(ratings).contains("Playing")
-        assertThat(ratings).doesNotContain("Unused")
+        val text = embed.fields.field("🥇 DESTAQUES").value
+        assertThat(text).contains("💬 \"")
     }
 
     @Test
-    fun `players with null seconds played are included`() {
-        val embed = buildEmbedWithPlayers(
-            player("NullSecs", rating = "7.5", secondsPlayed = null),
-        ).embeds[0]
-        assertThat(embed.fields.field("🏅 Destaques").value).contains("NullSecs")
-    }
-
-    // -- Goalkeeper section ---------------------------------------------------
-
-    @Test
-    fun `goalkeeper section shows saves, rating, and goals conceded when non-zero`() {
-        val embed = buildEmbedWithPlayers(
-            goalkeeper("Keeper", saves = "7", rating = "8.5", goalsConceded = "2"),
-            player("Outfield", rating = "7.0"),
-        ).embeds[0]
-        val field = embed.fields.field("🥅 Goleiro")
-        assertThat(field.value).contains("Keeper")
-        assertThat(field.value).contains("7 defesas")
-        assertThat(field.value).contains("Nota: 8.5")
-        assertThat(field.value).contains("Gols sofridos: 2")
+    fun `jogador sem mom nao tem frase motivacional`() {
+        val embed = buildEmbedWithPlayers(player("Normal", rating = "8.0")).embeds[0]
+        val text = embed.fields.field("🥇 DESTAQUES").value
+        assertThat(text).doesNotContain("💬")
     }
 
     @Test
-    fun `goalkeeper section omits goals conceded when zero`() {
-        val embed = buildEmbedWithPlayers(
-            goalkeeper("CleanSheet", saves = "5", rating = "9.0", goalsConceded = "0"),
-            player("Outfield", rating = "7.0"),
-        ).embeds[0]
-        val field = embed.fields.field("🥅 Goleiro")
-        assertThat(field.value).doesNotContain("Gols sofridos")
+    fun `nota usa virgula decimal nos destaques`() {
+        val embed = buildEmbedWithPlayers(player("Jogador", rating = "8.4")).embeds[0]
+        val text = embed.fields.field("🥇 DESTAQUES").value
+        assertThat(text).contains("8,40")
+        assertThat(text).doesNotContain("8.40")
     }
 
     @Test
-    fun `goalkeeper section is omitted when no goalkeeper played`() {
-        val embed = buildEmbedWithPlayers(
-            player("Midfielder", rating = "7.0"),
-        ).embeds[0]
-        assertThat(embed.fields.fieldOrNull("🥅 Goleiro")).isNull()
+    fun `secao DESTAQUES omitida quando nenhum jogador tem nota`() {
+        val embed = buildEmbedWithPlayers(player("SemNota", rating = null)).embeds[0]
+        assertThat(embed.fields.none { it.name == "🥇 DESTAQUES" }).isTrue()
     }
 
     @Test
-    fun `when two goalkeepers played shows the one with most seconds`() {
+    fun `goleiro nao aparece nos destaques top 3`() {
         val embed = buildEmbedWithPlayers(
-            goalkeeper("GK_Short", saves = "1", rating = "7.0", secondsPlayed = "600"),
-            goalkeeper("GK_Long",  saves = "5", rating = "8.0", secondsPlayed = "1200"),
-            player("Outfield", rating = "6.5"),
+            goalkeeper("SuperGK", rating = "9.9"),
+            player("Linha1",      rating = "8.0"),
+            player("Linha2",      rating = "7.5"),
+            player("Linha3",      rating = "7.0"),
         ).embeds[0]
-        val field = embed.fields.field("🥅 Goleiro")
-        assertThat(field.value).contains("GK_Long")
-        assertThat(field.value).doesNotContain("GK_Short")
-    }
-
-    // -- Goalkeeper eligibility -----------------------------------------------
-
-    @Test
-    fun `goalkeeper is never selected as Bagre even with the lowest rating`() {
-        val embed = buildEmbedWithPlayers(
-            goalkeeper("BadGK",     rating = "4.0", secondsPlayed = "900"),
-            player("BetterOutfield", rating = "7.0"),
-        ).embeds[0]
-        val bagre = embed.fields.field("🍍 Bagre da Partida")
-        assertThat(bagre.value).doesNotContain("BadGK")
-        assertThat(bagre.value).contains("BetterOutfield")
+        val text = embed.fields.field("🥇 DESTAQUES").value
+        assertThat(text).doesNotContain("SuperGK")
+        assertThat(text).contains("Linha1")
     }
 
     @Test
-    fun `goalkeeper can appear in Top 3 highlights`() {
+    fun `media do time aparece dentro da secao DESTAQUES`() {
         val embed = buildEmbedWithPlayers(
-            goalkeeper("StarGK",   rating = "9.5", secondsPlayed = "900"),
-            player("Outfield1",    rating = "7.0"),
-            player("Outfield2",    rating = "6.5"),
+            player("A", rating = "8.0"),
+            player("B", rating = "6.0"),
         ).embeds[0]
-        val destaques = embed.fields.field("🏅 Destaques")
-        assertThat(destaques.value).contains("StarGK")
+        val text = embed.fields.field("🥇 DESTAQUES").value
+        assertThat(text).contains("Média do time")
+        assertThat(text).contains("7,00")
+    }
+
+    @Test
+    fun `media do time exclui jogadores com zero segundos`() {
+        val embed = buildEmbedWithPlayers(
+            player("Ativo",   rating = "6.0", secondsPlayed = "900"),
+            player("Inativo", rating = "9.0", secondsPlayed = "0"),
+        ).embeds[0]
+        val text = embed.fields.field("🥇 DESTAQUES").value
+        assertThat(text).contains("Média do time")
+        assertThat(text).contains("6,00")
+        assertThat(text).doesNotContain("9,00")
+    }
+
+    @Test
+    fun `media do time inclui goleiro ativo`() {
+        val embed = buildEmbedWithPlayers(
+            goalkeeper("GK",  rating = "8.0"),
+            player("Linha",   rating = "6.0"),
+        ).embeds[0]
+        // avg = (8.0 + 6.0) / 2 = 7.0
+        val text = embed.fields.field("🥇 DESTAQUES").value
+        assertThat(text).contains("7,00")
+    }
+
+    @Test
+    fun `media do time usa virgula decimal`() {
+        val embed = buildEmbedWithPlayers(
+            player("A", rating = "8.4"),
+            player("B", rating = "7.0"),
+        ).embeds[0]
+        val text = embed.fields.field("🥇 DESTAQUES").value
+        assertThat(text).doesNotContain("7.70")
+    }
+
+    // -- Jogadores inativos --------------------------------------------------
+
+    @Test
+    fun `jogadores com zero segundos excluidos de todas as secoes`() {
+        val embed = buildEmbedWithPlayers(
+            player("Ativo",   rating = "8.0", goals = "1", secondsPlayed = "900"),
+            player("Inativo", rating = "3.0", goals = "1", secondsPlayed = "0"),
+        ).embeds[0]
+        val allText = embed.fields.joinToString("\n") { it.value }
+        assertThat(allText).contains("Ativo")
+        assertThat(allText).doesNotContain("Inativo")
+    }
+
+    @Test
+    fun `jogadores com secondsPlayed nulo sao incluidos`() {
+        val embed = buildEmbedWithPlayers(
+            player("SemCampo", rating = "7.5", secondsPlayed = null),
+        ).embeds[0]
+        assertThat(embed.fields.field("🥇 DESTAQUES").value).contains("SemCampo")
+    }
+
+    // -- Muralha da Partida --------------------------------------------------
+
+    @Test
+    fun `secao MURALHA mostra defesas realizadas`() {
+        val embed = buildEmbedWithPlayers(
+            goalkeeper("Guardião", saves = "7", rating = "8.5", goalsConceded = "2"),
+            player("Linha", rating = "7.0"),
+        ).embeds[0]
+        val text = embed.fields.field("🧤 MURALHA DA PARTIDA").value
+        assertThat(text).contains("Defesas realizadas: 7")
+    }
+
+    @Test
+    fun `secao MURALHA nao mostra nome nem nota do goleiro`() {
+        val embed = buildEmbedWithPlayers(
+            goalkeeper("Guardião", saves = "5", rating = "8.5"),
+            player("Linha", rating = "7.0"),
+        ).embeds[0]
+        val text = embed.fields.field("🧤 MURALHA DA PARTIDA").value
+        assertThat(text).doesNotContain("Guardião")
+        assertThat(text).doesNotContain("8,50")
+    }
+
+    @Test
+    fun `secao MURALHA contem frase dinamica`() {
+        val embed = buildEmbedWithPlayers(
+            goalkeeper("GK", saves = "3"),
+            player("Linha", rating = "7.0"),
+        ).embeds[0]
+        val text = embed.fields.field("🧤 MURALHA DA PARTIDA").value
+        assertThat(text).contains("💬 \"")
+    }
+
+    @Test
+    fun `secao MURALHA omitida quando nenhum goleiro jogou`() {
+        val embed = buildEmbedWithPlayers(player("Meia", rating = "7.0")).embeds[0]
+        assertThat(embed.fields.none { it.name == "🧤 MURALHA DA PARTIDA" }).isTrue()
+    }
+
+    @Test
+    fun `quando dois goleiros jogaram muralha usa o com mais minutos`() {
+        val embed = buildEmbedWithPlayers(
+            goalkeeper("GK_Curto", saves = "1", rating = "7.0", secondsPlayed = "600"),
+            goalkeeper("GK_Longo", saves = "5", rating = "8.0", secondsPlayed = "1200"),
+            player("Linha", rating = "6.5"),
+        ).embeds[0]
+        assertThat(embed.fields.field("🧤 MURALHA DA PARTIDA").value).contains("Defesas realizadas: 5")
+    }
+
+    @Test
+    fun `secao GOLEIRO nao existe mais`() {
+        val embed = buildEmbedWithPlayers(
+            goalkeeper("GK", saves = "3"),
+            player("Linha", rating = "7.0"),
+        ).embeds[0]
+        assertThat(embed.fields.none { it.name == "🧤 GOLEIRO" }).isTrue()
     }
 
     // -- Bagre da Partida -----------------------------------------------------
 
     @Test
-    fun `outfield player with lowest rating is selected as Bagre`() {
+    fun `jogador de linha com menor nota e o Bagre`() {
         val embed = buildEmbedWithPlayers(
-            player("BadPlayer",  rating = "5.0"),
-            player("GoodPlayer", rating = "8.0"),
-            player("OkPlayer",   rating = "7.0"),
+            player("PiorJogador", rating = "5.0"),
+            player("BomJogador",  rating = "8.0"),
         ).embeds[0]
-        val bagre = embed.fields.field("🍍 Bagre da Partida")
-        assertThat(bagre.value).contains("BadPlayer")
-        assertThat(bagre.value).doesNotContain("GoodPlayer")
-        assertThat(bagre.value).doesNotContain("OkPlayer")
+        val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
+        assertThat(text).contains("PiorJogador")
+        assertThat(text).doesNotContain("BomJogador")
     }
 
     @Test
-    fun `pass percentage and missed passes are calculated correctly in Bagre`() {
+    fun `goleiro nunca e Bagre mesmo com a menor nota`() {
+        val embed = buildEmbedWithPlayers(
+            goalkeeper("GKRuim", rating = "3.0"),
+            player("Linha",      rating = "7.0"),
+        ).embeds[0]
+        val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
+        assertThat(text).doesNotContain("GKRuim")
+        assertThat(text).contains("Linha")
+    }
+
+    @Test
+    fun `bagre omitido quando so ha goleiro`() {
+        val embed = buildEmbedWithPlayers(
+            goalkeeper("SoGoleiro", rating = "6.0"),
+        ).embeds[0]
+        assertThat(embed.fields.none { it.name == "🍍 BAGRE DA PARTIDA" }).isTrue()
+    }
+
+    @Test
+    fun `nota do Bagre usa virgula decimal`() {
+        val embed = buildEmbedWithPlayers(player("Bagre", rating = "6.70")).embeds[0]
+        val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
+        assertThat(text).contains("6,70")
+        assertThat(text).doesNotContain("6.70")
+    }
+
+    @Test
+    fun `bagre contem frase de rating`() {
+        val embed = buildEmbedWithPlayers(player("Bagre", rating = "5.0")).embeds[0]
+        val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
+        assertThat(text).contains("💬 \"")
+    }
+
+    @Test
+    fun `bagre subsecao Passes usa formato compacto`() {
         val embed = buildEmbedWithPlayers(
             player("Bagre", rating = "5.0", passAttempts = "21", passesMade = "15"),
         ).embeds[0]
-        val text = embed.fields.field("🍍 Bagre da Partida").value
-        // 15 * 100 / 21 = 71 (integer division)
-        assertThat(text).contains("15/21")
-        assertThat(text).contains("71%")
-        assertThat(text).contains("Passes errados: 6")
+        val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
+        assertThat(text).contains("📉 Passes")
+        assertThat(text).contains("• 15/21 certos (71%)")
+        assertThat(text).contains("• 6 passes errados")
     }
 
     @Test
-    fun `tackle percentage and missed tackles are calculated correctly in Bagre`() {
+    fun `bagre subsecao Passes contem frase`() {
+        val embed = buildEmbedWithPlayers(
+            player("Bagre", rating = "5.0", passAttempts = "10", passesMade = "3"),
+        ).embeds[0]
+        val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
+        val passIdx = text.indexOf("📉 Passes")
+        assertThat(text.substring(passIdx)).contains("💬 \"")
+    }
+
+    @Test
+    fun `bagre subsecao Desarmes usa formato compacto`() {
         val embed = buildEmbedWithPlayers(
             player("Bagre", rating = "5.0", tackleAttempts = "14", tacklesMade = "2"),
         ).embeds[0]
-        val text = embed.fields.field("🍍 Bagre da Partida").value
-        // 2 * 100 / 14 = 14 (integer division)
-        assertThat(text).contains("2/14")
-        assertThat(text).contains("14%")
-        assertThat(text).contains("Desarmes perdidos: 12")
+        val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
+        assertThat(text).contains("🛡️ Desarmes")
+        assertThat(text).contains("• 2/14 certos (14%)")
+        assertThat(text).contains("• 12 tentativas perdidas")
     }
 
     @Test
-    fun `zero pass attempts means no pass lines in Bagre`() {
+    fun `bagre subsecao Desarmes contem frase`() {
         val embed = buildEmbedWithPlayers(
-            player("Bagre", rating = "5.0", passAttempts = "0", passesMade = "0"),
+            player("Bagre", rating = "5.0", tackleAttempts = "10", tacklesMade = "2"),
         ).embeds[0]
-        val text = embed.fields.field("🍍 Bagre da Partida").value
-        assertThat(text).doesNotContain("Passes:")
-        assertThat(text).doesNotContain("Passes errados")
+        val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
+        val tackleIdx = text.indexOf("🛡️ Desarmes")
+        assertThat(text.substring(tackleIdx)).contains("💬 \"")
     }
 
     @Test
-    fun `zero tackle attempts means no tackle lines in Bagre`() {
+    fun `bagre subsecao Finalizacoes usa chutes`() {
         val embed = buildEmbedWithPlayers(
-            player("Bagre", rating = "5.0", tackleAttempts = "0", tacklesMade = "0"),
+            player("Bagre", rating = "5.0", shots = "3", goals = "0", assists = "1"),
         ).embeds[0]
-        val text = embed.fields.field("🍍 Bagre da Partida").value
-        assertThat(text).doesNotContain("Desarmes:")
-        assertThat(text).doesNotContain("Desarmes perdidos")
+        val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
+        assertThat(text).contains("🎯 Finalizações")
+        assertThat(text).contains("• 3 chutes")
+        assertThat(text).contains("• 0 gols")
+        assertThat(text).contains("• 1 assistências")
     }
 
     @Test
-    fun `shots section is shown in Bagre when player had shots`() {
+    fun `bagre subsecao Finalizacoes contem frase`() {
         val embed = buildEmbedWithPlayers(
-            player("Bagre", rating = "5.0", shots = "3", goals = "0"),
+            player("Bagre", rating = "5.0", shots = "4", goals = "0"),
         ).embeds[0]
-        val text = embed.fields.field("🍍 Bagre da Partida").value
-        assertThat(text).contains("Finalizações: 3")
-        assertThat(text).contains("Gols: 0")
+        val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
+        val shotsIdx = text.indexOf("🎯 Finalizações")
+        assertThat(text.substring(shotsIdx)).contains("💬 \"")
     }
 
     @Test
-    fun `shots section is omitted from Bagre when player had no shots`() {
-        val embed = buildEmbedWithPlayers(
-            player("Bagre", rating = "5.0", shots = "0"),
-        ).embeds[0]
-        val text = embed.fields.field("🍍 Bagre da Partida").value
-        assertThat(text).doesNotContain("Finalizações")
-        assertThat(text).doesNotContain("Gols:")
-    }
-
-    // -- Team average ---------------------------------------------------------
-
-    @Test
-    fun `team average excludes players with zero seconds played`() {
-        val embed = buildEmbedWithPlayers(
-            player("Active",   rating = "6.0", secondsPlayed = "900"),
-            player("Inactive", rating = "9.0", secondsPlayed = "0"),
-        ).embeds[0]
-        // Only Active (6.0) is counted; if Inactive were included average would be 7.50
-        assertThat(embed.fields.field("⭐ Média do time").value).isEqualTo("6.00")
+    fun `bagre subsecao Passes omitida quando zero tentativas`() {
+        val embed = buildEmbedWithPlayers(player("Bagre", rating = "5.0")).embeds[0]
+        val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
+        assertThat(text).doesNotContain("Passes")
+        assertThat(text).doesNotContain("passes errados")
     }
 
     @Test
-    fun `goalkeeper contributes to team average when secondsPlayed is greater than zero`() {
+    fun `bagre subsecao Desarmes omitida quando zero tentativas`() {
+        val embed = buildEmbedWithPlayers(player("Bagre", rating = "5.0")).embeds[0]
+        val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
+        assertThat(text).doesNotContain("Desarmes")
+        assertThat(text).doesNotContain("tentativas perdidas")
+    }
+
+    @Test
+    fun `bagre subsecao Finalizacoes omitida quando zero chutes`() {
+        val embed = buildEmbedWithPlayers(player("Bagre", rating = "5.0", shots = "0")).embeds[0]
+        val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
+        assertThat(text).doesNotContain("chutes")
+    }
+
+    @Test
+    fun `bagre cartao vermelho aparece quando presente`() {
         val embed = buildEmbedWithPlayers(
-            goalkeeper("GK",       rating = "8.0", secondsPlayed = "900"),
-            player("Outfield",     rating = "6.0", secondsPlayed = "900"),
+            player("Expulso", rating = "4.0", redCards = "1"),
         ).embeds[0]
-        // (8.0 + 6.0) / 2 = 7.0
-        assertThat(embed.fields.field("⭐ Média do time").value).isEqualTo("7.00")
+        assertThat(embed.fields.field("🍍 BAGRE DA PARTIDA").value).contains("🟥 Cartão vermelho: 1")
+    }
+
+    // -- Xerife da Partida ----------------------------------------------------
+
+    @Test
+    fun `secao XERIFE mostra nome e numero de desarmes`() {
+        val embed = buildEmbedWithPlayers(
+            player("Xerife", rating = "7.0", tackleAttempts = "10", tacklesMade = "8"),
+            player("Outro",  rating = "7.5", tackleAttempts = "5",  tacklesMade = "2"),
+        ).embeds[0]
+        val text = embed.fields.field("🚧 XERIFE DA PARTIDA").value
+        assertThat(text).contains("Xerife")
+        assertThat(text).contains("8/10 desarmes")
+    }
+
+    @Test
+    fun `secao XERIFE mostra aproveitamento percentual`() {
+        val embed = buildEmbedWithPlayers(
+            player("Xerife", rating = "7.0", tackleAttempts = "10", tacklesMade = "8"),
+        ).embeds[0]
+        val text = embed.fields.field("🚧 XERIFE DA PARTIDA").value
+        assertThat(text).contains("Aproveitamento: 80%")
+    }
+
+    @Test
+    fun `secao XERIFE contem frase dinamica`() {
+        val embed = buildEmbedWithPlayers(
+            player("Xerife", rating = "7.0", tackleAttempts = "5", tacklesMade = "4"),
+        ).embeds[0]
+        val text = embed.fields.field("🚧 XERIFE DA PARTIDA").value
+        assertThat(text).contains("💬 \"")
+    }
+
+    @Test
+    fun `goleiro nunca e Xerife`() {
+        val embed = buildEmbedWithPlayers(
+            goalkeeper("GKXerife", rating = "8.0", saves = "5"),
+            player("Linha", rating = "7.0", tackleAttempts = "3", tacklesMade = "2"),
+        ).embeds[0]
+        val text = embed.fields.field("🚧 XERIFE DA PARTIDA").value
+        assertThat(text).doesNotContain("GKXerife")
+        assertThat(text).contains("Linha")
+    }
+
+    @Test
+    fun `secao XERIFE omitida quando nenhum outfield tem desarmes`() {
+        val embed = buildEmbedWithPlayers(player("SemDesarme", rating = "7.0")).embeds[0]
+        assertThat(embed.fields.none { it.name == "🚧 XERIFE DA PARTIDA" }).isTrue()
+    }
+
+    @Test
+    fun `XERIFE selecionado por maior numero de desarmes`() {
+        val embed = buildEmbedWithPlayers(
+            player("CampeaoDesarme", rating = "6.0", tackleAttempts = "12", tacklesMade = "10"),
+            player("PoucosDesarmes", rating = "9.0", tackleAttempts = "4",  tacklesMade = "3"),
+        ).embeds[0]
+        val text = embed.fields.field("🚧 XERIFE DA PARTIDA").value
+        assertThat(text).contains("CampeaoDesarme")
+        assertThat(text).doesNotContain("PoucosDesarmes")
+    }
+
+    // -- Sem rótulos em inglês ------------------------------------------------
+
+    @Test
+    fun `nenhum label em ingles no embed completo`() {
+        val embed = buildEmbedWithPlayers(
+            goalkeeper("Guardiao",  rating = "8.0", saves = "3", goalsConceded = "1"),
+            player("Artilheiro",   rating = "9.0", goals = "2", assists = "1", mom = "1"),
+            player("Assistente",   rating = "7.5", assists = "1"),
+            player("Bagre",        rating = "5.0", shots = "3", passAttempts = "10", passesMade = "4"),
+        ).embeds[0]
+        val allText = embed.fields.joinToString("\n") { "${it.name}\n${it.value}" }
+        val desc = embed.description ?: ""
+        assertThat(allText + desc).doesNotContain("Result")
+        assertThat(allText + desc).doesNotContain("Score")
+        assertThat(allText + desc).doesNotContain("Goal Scorers")
+        assertThat(allText + desc).doesNotContain("Assists\n")
+        assertThat(allText + desc).doesNotContain("MOTM")
+        assertThat(embed.footer).isNull()
     }
 
     // -- Helpers --------------------------------------------------------------
@@ -379,42 +627,40 @@ class DiscordEmbedBuilderTest {
                 ourClubId to ClubMatchEntry(details = ClubDetails(name = "Our Club"), score = "2", result = "1"),
                 "99999"   to ClubMatchEntry(details = ClubDetails(name = "Opp"),      score = "0", result = "0"),
             ),
-            players = mapOf(ourClubId to players.associateBy { it.playerName ?: "p" }),
+            players = mapOf(ourClubId to players.mapIndexed { i, p -> "p$i" to p }.toMap()),
         )
         return DiscordEmbedBuilder.build(match, ourClubId, zone)
     }
 
-    /** Outfield player — pos is null (not "goalkeeper"), so always eligible for Bagre. */
     private fun player(
         name: String,
-        goals: String?         = "0",
-        assists: String?        = "0",
-        rating: String?         = "7.0",
-        mom: String?            = "0",
-        secondsPlayed: String?  = "900",
-        shots: String?          = null,
-        passAttempts: String?   = null,
-        passesMade: String?     = null,
-        tackleAttempts: String? = null,
-        tacklesMade: String?    = null,
-        redCards: String?       = null,
+        goals: String?          = "0",
+        assists: String?         = "0",
+        rating: String?          = "7.0",
+        mom: String?             = "0",
+        secondsPlayed: String?   = "900",
+        shots: String?           = null,
+        passAttempts: String?    = null,
+        passesMade: String?      = null,
+        tackleAttempts: String?  = null,
+        tacklesMade: String?     = null,
+        redCards: String?        = null,
     ) = PlayerEntry(
-        playerName    = name,
-        position      = null,
-        goals         = goals,
-        assists       = assists,
-        rating        = rating,
-        manOfTheMatch = mom,
-        secondsPlayed = secondsPlayed,
-        shots         = shots,
-        passAttempts  = passAttempts,
-        passesMade    = passesMade,
+        playerName     = name,
+        position       = null,
+        goals          = goals,
+        assists        = assists,
+        rating         = rating,
+        manOfTheMatch  = mom,
+        secondsPlayed  = secondsPlayed,
+        shots          = shots,
+        passAttempts   = passAttempts,
+        passesMade     = passesMade,
         tackleAttempts = tackleAttempts,
-        tacklesMade   = tacklesMade,
-        redCards      = redCards,
+        tacklesMade    = tacklesMade,
+        redCards       = redCards,
     )
 
-    /** Goalkeeper — pos = "goalkeeper", ineligible for Bagre. */
     private fun goalkeeper(
         name: String,
         saves: String?         = "0",
@@ -434,6 +680,4 @@ class DiscordEmbedBuilderTest {
 
     private fun List<EmbedField>.field(name: String) =
         firstOrNull { it.name == name } ?: error("Field '$name' not found in ${map { it.name }}")
-
-    private fun List<EmbedField>.fieldOrNull(name: String) = firstOrNull { it.name == name }
 }

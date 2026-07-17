@@ -114,19 +114,19 @@ class MatchNotifierServiceTest {
         whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(matches))
         whenever(store.loadIds()).thenReturn(setOf("published"))
 
-        val order = mutableListOf<String>()
-        whenever(discord.send(any())).thenAnswer { inv ->
-            val payload = inv.getArgument<com.eafc26.discordstats.discord.DiscordPayload>(0)
-            // Footer text is "Match ID: <matchId>"
-            order += payload.embeds[0].footer?.text ?: ""
+        val savedOrder = mutableListOf<Set<String>>()
+        whenever(store.saveIds(any())).thenAnswer { inv ->
+            savedOrder += inv.getArgument<Set<String>>(0).toSet()
             Unit
         }
 
         makeService().process()
 
-        assertThat(order).hasSize(2)
-        assertThat(order[0]).contains("older")
-        assertThat(order[1]).contains("newer")
+        // service processes oldest-first and persists after each send
+        assertThat(savedOrder).hasSize(2)
+        assertThat(savedOrder[0]).contains("older")
+        assertThat(savedOrder[0]).doesNotContain("newer")
+        assertThat(savedOrder[1]).contains("older", "newer")
     }
 
     @Test

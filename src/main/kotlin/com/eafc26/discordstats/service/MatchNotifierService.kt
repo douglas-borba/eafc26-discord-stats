@@ -6,6 +6,7 @@ import com.eafc26.discordstats.discord.DiscordEmbedBuilder
 import com.eafc26.discordstats.discord.DiscordWebhookClient
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
+import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.store.PublishedMatchStore
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -20,27 +21,28 @@ class MatchNotifierService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * One polling cycle:
-     * 1. Fetch latest matches from EA.
-     * 2. On first run (empty store) establish a baseline or publish all, per config.
-     * 3. Otherwise, send each unpublished match oldest-first.
-     *    A match is marked published only after Discord confirms delivery.
+     * One polling cycle. [statusCallback] receives a human-readable result message
+     * that the scheduler can expose via the status endpoint. Defaults to a no-op so
+     * existing callers (CLI, tests) remain unchanged.
      */
-    fun process() {
+    fun process(statusCallback: (String) -> Unit = {}) {
         val clubId = props.ea.clubId
 
         val matches = when (val result = gateway.getLatestMatches(clubId)) {
             is EaApiResult.Success -> result.data
             EaApiResult.NoMatches -> {
                 log.info("No matches found for club-id={}", clubId)
+                statusCallback("Nenhuma partida nova.")
                 return
             }
             is EaApiResult.Unavailable -> {
                 log.warn("EA API unavailable (HTTP {}): {}", result.statusCode, result.message)
+                statusCallback("EA indisponível. Nova tentativa em 2 minutos.")
                 return
             }
             is EaApiResult.UnexpectedPayload -> {
                 log.error("EA API returned unexpected payload", result.cause)
+                statusCallback("EA indisponível. Nova tentativa em 2 minutos.")
                 return
             }
         }
@@ -48,7 +50,7 @@ class MatchNotifierService(
         val publishedIds = store.loadIds()
 
         if (publishedIds.isEmpty()) {
-            handleFirstRun(matches)
+            handleFirstRun(matches, statusCallback)
             return
         }
 
@@ -58,31 +60,43 @@ class MatchNotifierService(
 
         if (newMatches.isEmpty()) {
             log.debug("No new matches to publish")
+            statusCallback("Nenhuma partida nova.")
             return
         }
 
         log.info("Found {} new match(es) to publish", newMatches.size)
 
         val updatedIds = publishedIds.toMutableSet()
+        var lastStatus = "Nenhuma partida nova."
         for (match in newMatches) {
             try {
                 val payload = DiscordEmbedBuilder.build(match, clubId)
                 discord.send(payload)
                 updatedIds += match.matchId
-                store.saveIds(updatedIds)
-                log.info("Published match {}", match.matchId)
+                try {
+                    store.saveIds(updatedIds)
+                    log.info("Published match {}", match.matchId)
+                    lastStatus = "Partida enviada com sucesso."
+                } catch (ex: Exception) {
+                    log.error("Persistence failed after Discord delivery for match {}", match.matchId, ex)
+                    lastStatus = "Partida enviada, mas o histórico local não pôde ser salvo."
+                }
             } catch (ex: IllegalStateException) {
                 log.error("Discord webhook not configured — aborting cycle: {}", ex.message)
+                statusCallback("EA indisponível. Nova tentativa em 2 minutos.")
                 return
             } catch (ex: DiscordDeliveryException) {
                 log.warn("Discord delivery failed for match {} — will retry next cycle: {}", match.matchId, ex.message)
+                lastStatus = "EA indisponível. Nova tentativa em 2 minutos."
             } catch (ex: Exception) {
                 log.error("Unexpected error publishing match {}", match.matchId, ex)
+                lastStatus = "EA indisponível. Nova tentativa em 2 minutos."
             }
         }
+        statusCallback(lastStatus)
     }
 
-    private fun handleFirstRun(matches: List<com.eafc26.discordstats.ea.model.MatchResponse>) {
+    private fun handleFirstRun(matches: List<MatchResponse>, statusCallback: (String) -> Unit) {
         if (props.polling.publishExistingOnFirstRun) {
             log.info("First run with publish-existing-on-first-run=true: will publish {} match(es)", matches.size)
             val publishedIds = mutableSetOf<String>()
@@ -103,12 +117,11 @@ class MatchNotifierService(
                     log.error("Unexpected error publishing match {}", match.matchId, ex)
                 }
             }
+            statusCallback("Partida enviada com sucesso.")
         } else {
-            log.info(
-                "First run: establishing baseline of {} match(es), not publishing existing matches",
-                matches.size,
-            )
+            log.info("Automatic polling baseline established with {} matches.", matches.size)
             store.saveIds(matches.map { it.matchId }.toSet())
+            statusCallback("Histórico inicial configurado. Aguardando novas partidas.")
         }
     }
 }

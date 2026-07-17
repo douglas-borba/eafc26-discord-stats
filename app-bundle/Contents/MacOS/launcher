@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# EA FC 26 Discord Stats — macOS launcher
+# Launched when the user double-clicks the .app bundle.
+set -euo pipefail
+
+BUNDLE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+JAR="$BUNDLE_DIR/Resources/eafc26-discord-stats.jar"
+APP_NAME="EA FC 26 Discord Stats"
+PID_FILE="$HOME/Library/Application Support/EAFC26DiscordStats/app.pid"
+LOG_DIR="$HOME/Library/Logs/EAFC26DiscordStats"
+LOG_FILE="$LOG_DIR/app.log"
+PORT=8080
+BASE_URL="http://localhost:$PORT"
+
+# ── Duplicate-process guard ──────────────────────────────────────────────────
+mkdir -p "$(dirname "$PID_FILE")"
+if [ -f "$PID_FILE" ]; then
+    OLD_PID=$(cat "$PID_FILE")
+    if kill -0 "$OLD_PID" 2>/dev/null; then
+        # Already running — just open the browser
+        open "$BASE_URL"
+        exit 0
+    fi
+    rm -f "$PID_FILE"
+fi
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+mkdir -p "$LOG_DIR"
+
+# ── Find Java 21+ ────────────────────────────────────────────────────────────
+find_java() {
+    local candidates=(
+        # Bundled JRE next to the app
+        "$BUNDLE_DIR/Resources/jre/bin/java"
+        # JAVA_HOME if set
+        "${JAVA_HOME:-}/bin/java"
+        # Homebrew
+        /opt/homebrew/opt/openjdk@21/bin/java
+        /opt/homebrew/opt/openjdk/bin/java
+        # SDKMAN default
+        "$HOME/.sdkman/candidates/java/current/bin/java"
+        # macOS system java_home
+    )
+    for j in "${candidates[@]}"; do
+        if [ -x "$j" ]; then
+            echo "$j"
+            return 0
+        fi
+    done
+    # Try /usr/libexec/java_home
+    local jh
+    jh=$(/usr/libexec/java_home -v 21 2>/dev/null || true)
+    if [ -n "$jh" ] && [ -x "$jh/bin/java" ]; then
+        echo "$jh/bin/java"
+        return 0
+    fi
+    return 1
+}
+
+JAVA_BIN=$(find_java) || {
+    osascript -e "display dialog \"$APP_NAME requer Java 21 ou superior.\nInstale via https://adoptium.net/ e tente novamente.\" with title \"$APP_NAME\" buttons {\"OK\"} default button \"OK\" with icon stop" 2>/dev/null || true
+    exit 1
+}
+
+# ── Launch the Spring Boot JAR ───────────────────────────────────────────────
+"$JAVA_BIN" -jar "$JAR" >> "$LOG_FILE" 2>&1 &
+APP_PID=$!
+echo "$APP_PID" > "$PID_FILE"
+
+# ── Wait for the server to be ready (up to 60 s) ─────────────────────────────
+SECONDS_WAITED=0
+until curl -sf "$BASE_URL/api/health" > /dev/null 2>&1; do
+    sleep 1
+    SECONDS_WAITED=$((SECONDS_WAITED + 1))
+    if [ $SECONDS_WAITED -ge 60 ]; then
+        osascript -e "display dialog \"$APP_NAME demorou muito para iniciar.\nVerifique o log em: $LOG_FILE\" with title \"$APP_NAME\" buttons {\"OK\"} default button \"OK\" with icon stop" 2>/dev/null || true
+        exit 1
+    fi
+    # Check if process died
+    if ! kill -0 "$APP_PID" 2>/dev/null; then
+        osascript -e "display dialog \"$APP_NAME não pôde iniciar.\nVerifique o log em: $LOG_FILE\" with title \"$APP_NAME\" buttons {\"OK\"} default button \"OK\" with icon stop" 2>/dev/null || true
+        exit 1
+    fi
+done
+
+# ── Open the browser ─────────────────────────────────────────────────────────
+open "$BASE_URL"

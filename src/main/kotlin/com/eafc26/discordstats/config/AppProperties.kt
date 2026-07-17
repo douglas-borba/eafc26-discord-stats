@@ -6,18 +6,18 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 data class AppProperties(
     val ea: EaProperties = EaProperties(),
     val polling: PollingProperties = PollingProperties(),
-    val store: StoreProperties = StoreProperties(),
     val discord: DiscordProperties = DiscordProperties(),
+    val web: WebProperties = WebProperties(),
+)
+
+data class WebProperties(
+    val networkEnabled: Boolean = false,
 )
 
 data class PollingProperties(
     val enabled: Boolean = true,
     val intervalMs: Long = 300_000,
     val publishExistingOnFirstRun: Boolean = false,
-)
-
-data class StoreProperties(
-    val path: String = "./data/published-matches.json",
 )
 
 data class DiscordProperties(
