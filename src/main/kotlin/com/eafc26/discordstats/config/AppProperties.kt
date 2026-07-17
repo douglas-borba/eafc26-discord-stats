@@ -56,4 +56,17 @@ data class PlaywrightProperties(
     val startupRetries: Int = 1,
     /** Page to navigate on startup so Akamai can establish its session cookies. */
     val initialPageUrl: String = "https://proclubs.ea.com",
+    /**
+     * Extra Chromium launch arguments. Defaults reduce visual footprint on macOS:
+     * tiny window, start minimized, suppress first-run UI.
+     */
+    val launchArgs: List<String> = listOf(
+        "--window-size=1,1",
+        "--window-position=0,0",
+        "--start-minimized",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-extensions",
+        "--disable-infobars",
+    ),
 )

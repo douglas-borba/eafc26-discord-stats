@@ -115,6 +115,44 @@
 
     #back-link { margin-top: 1rem; font-size: 0.85rem; color: #8b949e; text-decoration: none; }
     #back-link:hover { color: #58a6ff; }
+
+    .phrase-group { margin-bottom: 1.25rem; }
+    .phrase-label { font-size: 0.82rem; color: #8b949e; margin-bottom: 0.3rem; }
+    .phrase-textarea {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      font-size: 0.82rem;
+      font-family: inherit;
+      padding: 0.5rem 0.7rem;
+      resize: vertical;
+      min-height: 80px;
+    }
+    .phrase-textarea:focus { outline: none; border-color: #58a6ff; }
+    #phrases-save-btn {
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.55rem 1.4rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #phrases-save-btn:hover { background: #2ea043; }
+    #phrases-save-btn:disabled { opacity: 0.6; cursor: default; }
+    #phrases-feedback {
+      margin-top: 0.75rem;
+      font-size: 0.82rem;
+      border-radius: 6px;
+      padding: 0.5rem 0.7rem;
+      display: none;
+    }
+    #phrases-feedback.error { background: #3a1010; border: 1px solid #f85149; color: #f85149; }
+    #phrases-feedback.info  { background: #0d2a1f; border: 1px solid #238636; color: #adf7b6; }
   </style>
 </head>
 <body>
@@ -158,6 +196,18 @@
     </div>
 
     <div id="feedback"></div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">Frases Personalizadas</div>
+    <p style="font-size:0.8rem;color:#8b949e;margin-bottom:1rem">
+      Uma frase por linha. Deixe em branco para usar os padrões.
+    </p>
+
+    <div id="phrases-container"></div>
+
+    <button id="phrases-save-btn" onclick="savePhrases()">Salvar frases</button>
+    <div id="phrases-feedback"></div>
   </div>
 
   <a id="back-link" href="/">← Voltar</a>
@@ -223,6 +273,70 @@
       f.className = 'info';
       f.textContent = msg;
       f.style.display = 'block';
+    }
+
+    const PHRASE_LABELS = {
+      rating:     'Comentário de nota (Bagre)',
+      pass:       'Passes errados (Bagre)',
+      tackle:     'Desarmes (Bagre)',
+      shooting:   'Chutes (Bagre)',
+      mvp:        'Craque da Partida (MVP)',
+      xerife:     'Xerife (melhor defensor)',
+      goalkeeper: 'Muralha (goleiro)',
+    };
+    const PHRASE_KEYS = Object.keys(PHRASE_LABELS);
+
+    (function loadPhrases() {
+      fetch('/api/settings/phrases')
+        .then(r => r.json())
+        .then(data => {
+          const container = document.getElementById('phrases-container');
+          container.innerHTML = '';
+          PHRASE_KEYS.forEach(key => {
+            const lines = (data[key] || []).join('\n');
+            const group = document.createElement('div');
+            group.className = 'phrase-group';
+            group.innerHTML =
+              '<div class="phrase-label">' + esc(PHRASE_LABELS[key]) + '</div>' +
+              '<textarea class="phrase-textarea" data-key="' + esc(key) + '" rows="5">' +
+              esc(lines) + '</textarea>';
+            container.appendChild(group);
+          });
+        })
+        .catch(() => {});
+    })();
+
+    async function savePhrases() {
+      const btn = document.getElementById('phrases-save-btn');
+      const fb  = document.getElementById('phrases-feedback');
+      btn.disabled = true;
+      fb.style.display = 'none';
+
+      const payload = {};
+      document.querySelectorAll('.phrase-textarea').forEach(ta => {
+        payload[ta.dataset.key] = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+      });
+
+      try {
+        const res = await fetch('/api/settings/phrases', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          fb.className = 'info';
+          fb.textContent = 'Frases salvas com sucesso.';
+        } else {
+          fb.className = 'error';
+          fb.textContent = 'Erro ao salvar frases.';
+        }
+      } catch (_) {
+        fb.className = 'error';
+        fb.textContent = 'Erro de rede ao salvar frases.';
+      } finally {
+        fb.style.display = 'block';
+        btn.disabled = false;
+      }
     }
   </script>
 </body>

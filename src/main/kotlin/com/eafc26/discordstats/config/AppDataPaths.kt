@@ -11,4 +11,5 @@ object AppDataPaths {
 
     val storeFile: Path get() = appSupportDir.resolve("published-matches.json")
     val configFile: Path get() = appSupportDir.resolve("config.properties")
+    val phrasesFile: Path get() = appSupportDir.resolve("phrases.json")
 }

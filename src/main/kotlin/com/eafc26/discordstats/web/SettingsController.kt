@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.web
 
+import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.WebhookConfigService
 import org.springframework.core.io.ClassPathResource
 import org.springframework.http.HttpStatus
@@ -13,7 +14,10 @@ import reactor.core.publisher.Mono
 import java.net.URI
 
 @RestController
-class SettingsController(private val webhookConfigService: WebhookConfigService) {
+class SettingsController(
+    private val webhookConfigService: WebhookConfigService,
+    private val phraseBank: PhraseBank,
+) {
 
     @GetMapping("/settings", produces = [MediaType.TEXT_HTML_VALUE])
     fun settingsPage(): ResponseEntity<ClassPathResource> =
@@ -57,6 +61,19 @@ class SettingsController(private val webhookConfigService: WebhookConfigService)
                     "message" to "Configuração salva. Reinicie o aplicativo para aplicar.",
                 )
             )
+        }
+
+    @GetMapping("/api/settings/phrases", produces = [MediaType.APPLICATION_JSON_VALUE])
+    fun getPhrases(): Mono<ResponseEntity<Map<String, List<String>>>> =
+        Mono.fromCallable { ResponseEntity.ok(phraseBank.getAll()) }
+
+    @PostMapping("/api/settings/phrases", produces = [MediaType.APPLICATION_JSON_VALUE])
+    fun savePhrases(
+        @RequestBody body: Map<String, List<String>>,
+    ): Mono<ResponseEntity<Map<String, String>>> =
+        Mono.fromCallable {
+            phraseBank.saveAll(body)
+            ResponseEntity.ok(mapOf("status" to "saved"))
         }
 
     private fun localNetworkUrl(): String {

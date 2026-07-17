@@ -114,6 +114,7 @@ class PlaywrightBrowserFetcher(
         browser = playwright!!.chromium().launch(
             com.microsoft.playwright.BrowserType.LaunchOptions()
                 .setHeadless(pw.headless)
+                .setArgs(pw.launchArgs)
         )
         context = browser!!.newContext()
         page = context!!.newPage()
