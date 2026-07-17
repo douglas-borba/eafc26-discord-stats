@@ -63,6 +63,28 @@ class SettingsController(
             )
         }
 
+    /** Returns whether the history webhook is configured — never the URL itself. */
+    @GetMapping("/api/settings/history-webhook", produces = [MediaType.APPLICATION_JSON_VALUE])
+    fun getHistoryWebhookStatus(): Mono<ResponseEntity<Map<String, Any>>> =
+        Mono.fromCallable {
+            ResponseEntity.ok(mapOf<String, Any>("configured" to webhookConfigService.isHistoryConfigured()))
+        }
+
+    /** Saves or clears the history webhook URL. Pass blank url to clear. */
+    @PostMapping("/api/settings/history-webhook", produces = [MediaType.APPLICATION_JSON_VALUE])
+    fun saveHistoryWebhook(
+        @RequestBody body: HistoryWebhookRequest,
+    ): Mono<ResponseEntity<Map<String, String>>> =
+        Mono.fromCallable {
+            try {
+                webhookConfigService.configureHistory(body.url)
+                ResponseEntity.ok(mapOf("status" to if (body.url.isBlank()) "cleared" else "saved"))
+            } catch (ex: IllegalArgumentException) {
+                ResponseEntity.badRequest()
+                    .body(mapOf("error" to (ex.message ?: "URL inválida")))
+            }
+        }
+
     @GetMapping("/api/settings/phrases", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun getPhrases(): Mono<ResponseEntity<Map<String, List<String>>>> =
         Mono.fromCallable { ResponseEntity.ok(phraseBank.getAll()) }
@@ -87,3 +109,4 @@ class SettingsController(
 }
 
 data class NetworkSettingRequest(val enabled: Boolean = false)
+data class HistoryWebhookRequest(val url: String = "")

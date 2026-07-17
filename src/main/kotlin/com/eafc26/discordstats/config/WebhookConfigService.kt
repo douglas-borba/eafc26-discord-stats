@@ -33,9 +33,17 @@ class WebhookConfigService(private val props: AppProperties) {
     @Volatile
     private var webhookUrl: String = props.discord.webhookUrl
 
+    @Volatile
+    private var historyWebhookUrl: String =
+        loadProps().getProperty("discord.history-webhook.url", "").trim()
+
     fun isConfigured(): Boolean = webhookUrl.isNotBlank()
 
     fun getWebhookUrl(): String = webhookUrl
+
+    fun isHistoryConfigured(): Boolean = historyWebhookUrl.isNotBlank()
+
+    fun getHistoryWebhookUrl(): String = historyWebhookUrl
 
     /**
      * Validates, persists, and activates a new webhook URL.
@@ -53,6 +61,14 @@ class WebhookConfigService(private val props: AppProperties) {
         persistProperty("discord.webhook.url", "")
         webhookUrl = ""
         log.info("Discord webhook cleared — setup required")
+    }
+
+    /** Saves and activates the history webhook URL. Blank URL clears it. */
+    fun configureHistory(url: String) {
+        if (url.isNotBlank()) validateUrl(url)
+        persistProperty("discord.history-webhook.url", url)
+        historyWebhookUrl = url.trim()
+        log.info("History webhook {}", if (url.isBlank()) "cleared" else "configured and saved")
     }
 
     fun isNetworkEnabled(): Boolean =

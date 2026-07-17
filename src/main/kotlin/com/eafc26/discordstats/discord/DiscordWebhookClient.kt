@@ -55,6 +55,28 @@ class DiscordWebhookClient(
             )
         }
     }
+
+    /**
+     * Sends [payload] to the history webhook if configured.
+     * Never throws — logs a warning on failure so the main notification flow is unaffected.
+     */
+    fun sendHistory(payload: DiscordPayload) {
+        val url = webhookConfigService.getHistoryWebhookUrl()
+        if (url.isBlank()) return
+        val body = objectMapper.writeValueAsString(payload)
+        try {
+            webClient.post()
+                .uri(url)
+                .header("Content-Type", "application/json")
+                .bodyValue(body)
+                .retrieve()
+                .toBodilessEntity()
+                .block()
+            log.debug("History webhook delivery succeeded")
+        } catch (ex: Exception) {
+            log.warn("History webhook delivery failed (non-fatal): {}", ex.message)
+        }
+    }
 }
 
 class DiscordDeliveryException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)

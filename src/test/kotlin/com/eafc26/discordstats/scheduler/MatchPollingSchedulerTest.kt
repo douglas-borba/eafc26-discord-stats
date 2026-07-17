@@ -1,7 +1,10 @@
 package com.eafc26.discordstats.scheduler
 
 import com.eafc26.discordstats.service.MatchNotifierService
+import com.eafc26.discordstats.service.NotifyLatestService
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.any
 import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.times
@@ -14,18 +17,30 @@ import java.util.concurrent.TimeUnit
 class MatchPollingSchedulerTest {
 
     private val service: MatchNotifierService = mock()
+    private val notifyLatestService: NotifyLatestService = mock()
+    private val statusHolder: PollingStatusHolder = PollingStatusHolder()
+
+    @BeforeEach
+    fun setUp() {
+        // Default: runIfIdle always runs the action
+        whenever(notifyLatestService.runIfIdle(any())).doAnswer { invocation ->
+            val action = invocation.getArgument<() -> Unit>(0)
+            action()
+            true
+        }
+    }
 
     @Test
     fun `poll invokes service process`() {
-        val scheduler = MatchPollingScheduler(service)
+        val scheduler = MatchPollingScheduler(service, notifyLatestService, statusHolder)
         scheduler.poll()
-        verify(service).process()
+        verify(service).process(any())
     }
 
     @Test
     fun `exception from service does not propagate out of poll`() {
-        whenever(service.process()).thenThrow(RuntimeException("boom"))
-        val scheduler = MatchPollingScheduler(service)
+        whenever(service.process(any())).thenThrow(RuntimeException("boom"))
+        val scheduler = MatchPollingScheduler(service, notifyLatestService, statusHolder)
         scheduler.poll() // must not throw
     }
 
@@ -34,12 +49,23 @@ class MatchPollingSchedulerTest {
         val started = CountDownLatch(1)
         val release = CountDownLatch(1)
 
-        doAnswer {
-            started.countDown()
-            release.await(5, TimeUnit.SECONDS)
-        }.whenever(service).process()
+        // The first call runs the action after signaling start
+        var firstCall = true
+        whenever(notifyLatestService.runIfIdle(any())).doAnswer { invocation ->
+            if (firstCall) {
+                firstCall = false
+                val action = invocation.getArgument<() -> Unit>(0)
+                started.countDown()
+                release.await(5, TimeUnit.SECONDS)
+                action()
+                true
+            } else {
+                // Second call while first is running — return false (busy)
+                false
+            }
+        }
 
-        val scheduler = MatchPollingScheduler(service)
+        val scheduler = MatchPollingScheduler(service, notifyLatestService, statusHolder)
         val executor = Executors.newFixedThreadPool(2)
 
         try {
@@ -54,6 +80,6 @@ class MatchPollingSchedulerTest {
             executor.shutdownNow()
         }
 
-        verify(service, times(1)).process()
+        verify(service, times(1)).process(any())
     }
 }

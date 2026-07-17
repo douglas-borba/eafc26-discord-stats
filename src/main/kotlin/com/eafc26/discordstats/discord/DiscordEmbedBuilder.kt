@@ -39,7 +39,7 @@ data class EmbedFooter(val text: String)
 // Builder
 // --------------------------------------------------------------------------
 
-private val PT_BR = Locale("pt", "BR")
+private val PT_BR = Locale.forLanguageTag("pt-BR")
 private val DATE_FMT = DateTimeFormatter.ofPattern("dd MMM yyyy '•' HH:mm", PT_BR)
 
 private const val COLOR_WIN  = 0x2ECC71

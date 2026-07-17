@@ -2,11 +2,33 @@ package com.eafc26.discordstats.config
 
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 
 class WebhookConfigServiceTest {
+
+    @TempDir
+    lateinit var tempDir: Path
+
+    private var originalUserHome: String? = null
+
+    @BeforeEach
+    fun setUp() {
+        // Override user.home so WebhookConfigService.configDir resolves to temp directory
+        originalUserHome = System.getProperty("user.home")
+        System.setProperty("user.home", tempDir.toString())
+    }
+
+    @AfterEach
+    fun tearDown() {
+        // Restore original user.home
+        if (originalUserHome != null) {
+            System.setProperty("user.home", originalUserHome!!)
+        }
+    }
 
     private fun makeService(webhookUrl: String = ""): WebhookConfigService {
         val props = AppProperties(discord = DiscordProperties(webhookUrl = webhookUrl))
@@ -58,19 +80,19 @@ class WebhookConfigServiceTest {
             .isInstanceOf(IllegalArgumentException::class.java)
     }
 
-    // -- configure & reset (using temp configDir) --
+    // -- configure & reset --
 
     @Test
-    fun `configure saves webhook and makes isConfigured true`(@TempDir tempDir: Path) {
-        val service = makeServiceWithDir(tempDir)
+    fun `configure saves webhook and makes isConfigured true`() {
+        val service = makeService()
         service.configure("https://discord.com/api/webhooks/111/mytoken")
         assertThat(service.isConfigured()).isTrue()
         assertThat(service.getWebhookUrl()).isEqualTo("https://discord.com/api/webhooks/111/mytoken")
     }
 
     @Test
-    fun `reset clears webhook and makes isConfigured false`(@TempDir tempDir: Path) {
-        val service = makeServiceWithDir(tempDir)
+    fun `reset clears webhook and makes isConfigured false`() {
+        val service = makeService()
         service.configure("https://discord.com/api/webhooks/111/mytoken")
         service.reset()
         assertThat(service.isConfigured()).isFalse()
@@ -78,47 +100,36 @@ class WebhookConfigServiceTest {
     }
 
     @Test
-    fun `configure persists webhook to config file`(@TempDir tempDir: Path) {
-        val service = makeServiceWithDir(tempDir)
+    fun `configure persists webhook to config file`() {
+        val service = makeService()
         service.configure("https://discord.com/api/webhooks/222/persistedtoken")
 
-        val reloaded = makeServiceWithDir(tempDir)
-        // The persisted file is read via loadProps inside isNetworkEnabled / setNetworkEnabled
-        // but the webhookUrl itself is initialised from props at construction time.
-        // Verify that configure() wrote the file so a fresh service can read it.
+        // Verify that configure() wrote the file
+        val configPath = tempDir.resolve("Library/Application Support/EAFC26DiscordStats/config.properties")
         val props = java.util.Properties()
-        tempDir.resolve("config.properties").toFile().inputStream().use { props.load(it) }
+        configPath.toFile().inputStream().use { props.load(it) }
         assertThat(props.getProperty("discord.webhook.url"))
             .isEqualTo("https://discord.com/api/webhooks/222/persistedtoken")
     }
 
     @Test
-    fun `network-enabled defaults to false`(@TempDir tempDir: Path) {
-        val service = makeServiceWithDir(tempDir)
+    fun `network-enabled defaults to false`() {
+        val service = makeService()
         assertThat(service.isNetworkEnabled()).isFalse()
     }
 
     @Test
-    fun `setNetworkEnabled persists true`(@TempDir tempDir: Path) {
-        val service = makeServiceWithDir(tempDir)
+    fun `setNetworkEnabled persists true`() {
+        val service = makeService()
         service.setNetworkEnabled(true)
         assertThat(service.isNetworkEnabled()).isTrue()
     }
 
     @Test
-    fun `setNetworkEnabled can be toggled back to false`(@TempDir tempDir: Path) {
-        val service = makeServiceWithDir(tempDir)
+    fun `setNetworkEnabled can be toggled back to false`() {
+        val service = makeService()
         service.setNetworkEnabled(true)
         service.setNetworkEnabled(false)
         assertThat(service.isNetworkEnabled()).isFalse()
-    }
-
-    // -- helpers --
-
-    private fun makeServiceWithDir(dir: Path): WebhookConfigService {
-        val props = AppProperties(discord = DiscordProperties(webhookUrl = ""))
-        return object : WebhookConfigService(props) {
-            override val configDir: Path = dir
-        }
     }
 }

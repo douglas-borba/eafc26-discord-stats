@@ -4,6 +4,7 @@ import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.discord.DiscordDeliveryException
 import com.eafc26.discordstats.discord.DiscordEmbedBuilder
 import com.eafc26.discordstats.discord.DiscordWebhookClient
+import com.eafc26.discordstats.discord.HistoryEmbedBuilder
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.MatchResponse
@@ -96,6 +97,9 @@ class NotifyLatestService(
             log.warn("Discord delivery failed for match {}: {}", latest.matchId, ex.message)
             return NotifyResult.DiscordError
         }
+
+        // History webhook — optional, fire-and-forget, never affects the main result.
+        webhookClient.sendHistory(HistoryEmbedBuilder.build(latest, clubId))
 
         // Discord delivery confirmed — now persist. A persistence failure must not
         // suppress the delivery confirmation or trigger a second Discord send.
