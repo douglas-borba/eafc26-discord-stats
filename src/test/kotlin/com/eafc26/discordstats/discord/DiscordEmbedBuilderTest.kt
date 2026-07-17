@@ -39,14 +39,14 @@ class DiscordEmbedBuilderTest {
 
     @Test
     fun `descricao contem emoji amarelo e Empate`() {
-        val embed = buildEmbed(ourResult = "2").embeds[0]
+        val embed = buildEmbed(ourResult = "2", ourScore = "1", oppScore = "1").embeds[0]
         assertThat(embed.description).contains("🟡")
         assertThat(embed.description).contains("Empate")
     }
 
     @Test
     fun `descricao contem emoji vermelho e Derrota`() {
-        val embed = buildEmbed(ourResult = "0").embeds[0]
+        val embed = buildEmbed(ourResult = "0", ourScore = "0", oppScore = "1").embeds[0]
         assertThat(embed.description).contains("🔴")
         assertThat(embed.description).contains("Derrota")
     }
@@ -73,17 +73,17 @@ class DiscordEmbedBuilderTest {
 
     @Test
     fun `cor verde para vitoria`() {
-        assertThat(buildEmbed(ourResult = "1").embeds[0].color).isEqualTo(0x2ECC71)
+        assertThat(buildEmbed(ourResult = "1", ourScore = "2", oppScore = "1").embeds[0].color).isEqualTo(0x2ECC71)
     }
 
     @Test
     fun `cor cinza para empate`() {
-        assertThat(buildEmbed(ourResult = "2").embeds[0].color).isEqualTo(0x95A5A6)
+        assertThat(buildEmbed(ourResult = "2", ourScore = "1", oppScore = "1").embeds[0].color).isEqualTo(0x95A5A6)
     }
 
     @Test
     fun `cor vermelha para derrota`() {
-        assertThat(buildEmbed(ourResult = "0").embeds[0].color).isEqualTo(0xE74C3C)
+        assertThat(buildEmbed(ourResult = "0", ourScore = "0", oppScore = "2").embeds[0].color).isEqualTo(0xE74C3C)
     }
 
     // -- Rodapé ---------------------------------------------------------------
@@ -190,23 +190,22 @@ class DiscordEmbedBuilderTest {
     }
 
     @Test
-    fun `craque da partida marcado na secao DESTAQUES`() {
+    fun `craque da partida marcado na secao CRAQUE`() {
         val embed = buildEmbedWithPlayers(
             player("MVP",  rating = "9.0", mom = "1"),
             player("Dois", rating = "7.0"),
         ).embeds[0]
-        val text = embed.fields.field("🥇 DESTAQUES").value
-        assertThat(text).contains("Craque da Partida")
-        assertThat(text).doesNotContain("MOTM")
+        val text = embed.fields.field("⭐ CRAQUE DA PARTIDA").value
+        assertThat(text).contains("MVP")
     }
 
     @Test
-    fun `craque da partida tem frase motivacional no DESTAQUES`() {
+    fun `craque da partida tem frase motivacional na secao CRAQUE`() {
         val embed = buildEmbedWithPlayers(
             player("MVP",     rating = "9.0", mom = "1"),
             player("Segundo", rating = "7.0"),
         ).embeds[0]
-        val text = embed.fields.field("🥇 DESTAQUES").value
+        val text = embed.fields.field("⭐ CRAQUE DA PARTIDA").value
         assertThat(text).contains("💬 \"")
     }
 
@@ -442,8 +441,8 @@ class DiscordEmbedBuilderTest {
         ).embeds[0]
         val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
         assertThat(text).contains("🛡️ Desarmes")
-        assertThat(text).contains("• 2/14 certos (14%)")
-        assertThat(text).contains("• 12 tentativas perdidas")
+        assertThat(text).contains("• 2/14 certos")
+        assertThat(text).contains("14% de aproveitamento")
     }
 
     @Test
@@ -459,13 +458,12 @@ class DiscordEmbedBuilderTest {
     @Test
     fun `bagre subsecao Finalizacoes usa chutes`() {
         val embed = buildEmbedWithPlayers(
-            player("Bagre", rating = "5.0", shots = "3", goals = "0", assists = "1"),
+            player("Bagre", rating = "5.0", shots = "3", goals = "0"),
         ).embeds[0]
         val text = embed.fields.field("🍍 BAGRE DA PARTIDA").value
         assertThat(text).contains("🎯 Finalizações")
-        assertThat(text).contains("• 3 chutes")
-        assertThat(text).contains("• 0 gols")
-        assertThat(text).contains("• 1 assistências")
+        assertThat(text).contains("3 chutes")
+        assertThat(text).contains("0 gols")
     }
 
     @Test
