@@ -4,3 +4,6 @@ build/
 *.jar
 !gradle/wrapper/gradle-wrapper.jar
 jar-contents.txt
+# Pacotes gerados
+dist/
+*.zip

@@ -288,22 +288,41 @@
 
     (function loadPhrases() {
       fetch('/api/settings/phrases')
-        .then(r => r.json())
-        .then(data => {
+        .then(function(r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function(data) {
           const container = document.getElementById('phrases-container');
           container.innerHTML = '';
-          PHRASE_KEYS.forEach(key => {
+          PHRASE_KEYS.forEach(function(key) {
             const lines = (data[key] || []).join('\n');
+
             const group = document.createElement('div');
             group.className = 'phrase-group';
-            group.innerHTML =
-              '<div class="phrase-label">' + esc(PHRASE_LABELS[key]) + '</div>' +
-              '<textarea class="phrase-textarea" data-key="' + esc(key) + '" rows="5">' +
-              esc(lines) + '</textarea>';
+
+            const lbl = document.createElement('div');
+            lbl.className = 'phrase-label';
+            lbl.textContent = PHRASE_LABELS[key];
+
+            const ta = document.createElement('textarea');
+            ta.className = 'phrase-textarea';
+            ta.dataset.key = key;
+            ta.rows = 5;
+            ta.value = lines;
+
+            group.appendChild(lbl);
+            group.appendChild(ta);
             container.appendChild(group);
           });
         })
-        .catch(() => {});
+        .catch(function(err) {
+          console.error('Failed to load phrases:', err);
+          const fb = document.getElementById('phrases-feedback');
+          fb.className = 'error';
+          fb.textContent = 'Erro ao carregar frases: ' + err.message;
+          fb.style.display = 'block';
+        });
     })();
 
     async function savePhrases() {
