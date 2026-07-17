@@ -4,6 +4,7 @@ import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.discord.DiscordDeliveryException
 import com.eafc26.discordstats.discord.DiscordEmbedBuilder
 import com.eafc26.discordstats.discord.DiscordWebhookClient
+import com.eafc26.discordstats.discord.HistoryEmbedBuilder
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.MatchResponse
@@ -72,6 +73,7 @@ class MatchNotifierService(
             try {
                 val payload = DiscordEmbedBuilder.build(match, clubId)
                 discord.send(payload)
+                discord.sendHistory(HistoryEmbedBuilder.build(match, clubId))
                 updatedIds += match.matchId
                 try {
                     store.saveIds(updatedIds)
@@ -105,6 +107,7 @@ class MatchNotifierService(
                 try {
                     val payload = DiscordEmbedBuilder.build(match, props.ea.clubId)
                     discord.send(payload)
+                    discord.sendHistory(HistoryEmbedBuilder.build(match, props.ea.clubId))
                     publishedIds += match.matchId
                     store.saveIds(publishedIds)
                     log.info("Published match {}", match.matchId)

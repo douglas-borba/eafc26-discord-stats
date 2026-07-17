@@ -156,6 +156,94 @@ class NotifyLatestServiceTest {
         assertThat(firstResult).isInstanceOf(NotifyResult.Sent::class.java)
     }
 
+    // -- Immediate EA call (manual refresh) --
+
+    @Test
+    fun `notifyLatest calls EA API immediately without waiting for scheduler`() {
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.NoMatches)
+
+        // Must return synchronously; if it waited 2 minutes the test would time out.
+        service.notifyLatest()
+
+        verify(gateway).getLatestMatches(clubId)
+    }
+
+    @Test
+    fun `runIfIdle succeeds after notifyLatest completes - lock is released`() {
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.NoMatches)
+        service.notifyLatest()
+
+        var ran = false
+        val acquired = service.runIfIdle { ran = true }
+
+        assertThat(acquired).isTrue()
+        assertThat(ran).isTrue()
+    }
+
+    @Test
+    fun `scheduler can run normally after manual refresh completes`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+
+        // Manual refresh publishes m1
+        service.notifyLatest()
+
+        // Now simulate a scheduler cycle via runIfIdle — it must not be locked out
+        var schedulerRan = false
+        val acquired = service.runIfIdle { schedulerRan = true }
+
+        assertThat(acquired).isTrue()
+        assertThat(schedulerRan).isTrue()
+    }
+
+    // -- History webhook --
+
+    @Test
+    fun `history webhook is called for newly published match`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+
+        service.notifyLatest()
+
+        verify(webhookClient).sendHistory(any())
+    }
+
+    @Test
+    fun `history webhook is not called for already published match`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        whenever(store.loadIds()).thenReturn(setOf("m1"))
+
+        service.notifyLatest()
+
+        verify(webhookClient, never()).sendHistory(any())
+    }
+
+    @Test
+    fun `history webhook failure does not affect main delivery result`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        // sendHistory is fire-and-forget and never throws — verify main result is Sent regardless
+        org.mockito.kotlin.doNothing().whenever(webhookClient).sendHistory(any())
+
+        val result = service.notifyLatest()
+
+        assertThat(result).isInstanceOf(NotifyResult.Sent::class.java)
+        verify(webhookClient).send(any())
+    }
+
+    @Test
+    fun `manual refresh does not send already published match to history`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        whenever(store.loadIds()).thenReturn(setOf("m1"))
+
+        service.notifyLatest()
+
+        verify(webhookClient, never()).send(any())
+        verify(webhookClient, never()).sendHistory(any())
+    }
+
     // -- Helpers --
 
     private fun match(id: String, ts: Long = 5000L) = MatchResponse(

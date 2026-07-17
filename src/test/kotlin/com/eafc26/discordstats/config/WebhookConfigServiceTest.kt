@@ -2,8 +2,6 @@ package com.eafc26.discordstats.config
 
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -13,26 +11,9 @@ class WebhookConfigServiceTest {
     @TempDir
     lateinit var tempDir: Path
 
-    private var originalUserHome: String? = null
-
-    @BeforeEach
-    fun setUp() {
-        // Override user.home so WebhookConfigService.configDir resolves to temp directory
-        originalUserHome = System.getProperty("user.home")
-        System.setProperty("user.home", tempDir.toString())
-    }
-
-    @AfterEach
-    fun tearDown() {
-        // Restore original user.home
-        if (originalUserHome != null) {
-            System.setProperty("user.home", originalUserHome!!)
-        }
-    }
-
     private fun makeService(webhookUrl: String = ""): WebhookConfigService {
         val props = AppProperties(discord = DiscordProperties(webhookUrl = webhookUrl))
-        return WebhookConfigService(props)
+        return WebhookConfigService(props, configDirOverride = tempDir.resolve("Library/Application Support/EAFC26DiscordStats"))
     }
 
     // -- isConfigured --

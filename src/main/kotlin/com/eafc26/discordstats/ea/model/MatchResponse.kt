@@ -76,4 +76,5 @@ data class PlayerEntry(
     @JsonProperty("saves") val saves: String? = null,
     @JsonProperty("goalsconceded") val goalsConceded: String? = null,
     @JsonProperty("secondsplayed") val secondsPlayed: String? = null,
+    @JsonProperty("status") val status: String? = null,
 )

@@ -19,11 +19,14 @@ import java.util.Properties
  * On non-macOS platforms the directory simply lives at the equivalent home path.
  */
 @Service
-class WebhookConfigService(private val props: AppProperties) {
+class WebhookConfigService(
+    private val props: AppProperties,
+    configDirOverride: Path? = null,
+) {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    open val configDir: Path = Path.of(
+    val configDir: Path = configDirOverride ?: Path.of(
         System.getProperty("user.home"),
         "Library", "Application Support", "EAFC26DiscordStats",
     )

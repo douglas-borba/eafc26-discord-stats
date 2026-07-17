@@ -120,7 +120,7 @@ enum class PhraseCategory(val key: String, val displayName: String, val defaults
             "Craque dentro e fora das estatísticas.",
             "Hoje fez parecer fácil.",
             "Colocou o time nas costas.",
-            "The controller understood the assignment.",
+            "Hoje o controle estava obedecendo.",
             "Hoje o futebol sorriu para ele.",
             "Fez o que precisava ser feito, quando precisava.",
             "Diferença entre tentar e conseguir? Ele mostrou.",

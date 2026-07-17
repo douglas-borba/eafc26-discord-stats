@@ -156,6 +156,77 @@ class MatchNotifierServiceTest {
         verify(discord, times(1)).send(any())
     }
 
+    // -- History webhook --
+
+    @Test
+    fun `history webhook is called for each newly published match`() {
+        val matches = listOf(match("m2"))
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(matches))
+        whenever(store.loadIds()).thenReturn(setOf("m1"))
+
+        makeService().process()
+
+        verify(discord).send(any())
+        verify(discord).sendHistory(any())
+    }
+
+    @Test
+    fun `history webhook is not called for already published match`() {
+        val matches = listOf(match("m1"))
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(matches))
+        whenever(store.loadIds()).thenReturn(setOf("m1"))
+
+        makeService().process()
+
+        verify(discord, never()).send(any())
+        verify(discord, never()).sendHistory(any())
+    }
+
+    @Test
+    fun `history webhook failure does not prevent persistence of successful send`() {
+        val matches = listOf(match("m2"))
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(matches))
+        whenever(store.loadIds()).thenReturn(setOf("m1"))
+        // sendHistory never throws (it's fire-and-forget), but simulate a no-op to be explicit
+        org.mockito.kotlin.doNothing().whenever(discord).sendHistory(any())
+
+        makeService().process()
+
+        // Main send and persistence must still complete
+        verify(discord).send(any())
+        verify(store).saveIds(setOf("m1", "m2"))
+    }
+
+    @Test
+    fun `history is called once per match — not again when already published on next cycle`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        whenever(store.loadIds()).thenReturn(setOf("baseline"))
+
+        val service = makeService()
+
+        // First cycle: m1 is new, should publish and send history
+        service.process()
+        verify(discord, times(1)).sendHistory(any())
+
+        // Second cycle: m1 now in store, should be skipped entirely
+        whenever(store.loadIds()).thenReturn(setOf("baseline", "m1"))
+        service.process()
+        verify(discord, times(1)).sendHistory(any()) // still only 1 total
+    }
+
+    @Test
+    fun `history is sent for each match when multiple new matches are published`() {
+        val matches = listOf(match("m2", ts = 2000), match("m3", ts = 3000))
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(matches))
+        whenever(store.loadIds()).thenReturn(setOf("m1"))
+        whenever(store.saveIds(any())).thenAnswer { Unit }
+
+        makeService().process()
+
+        verify(discord, times(2)).sendHistory(any())
+    }
+
     // -- Helpers --
 
     private fun match(id: String, ts: Long = 1000L) = MatchResponse(

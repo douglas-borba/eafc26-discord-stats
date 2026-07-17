@@ -107,7 +107,7 @@
 <body>
   <h1>EA FC 26 — Associação BF</h1>
 
-  <button id="btn" onclick="notify()">Enviar última partida</button>
+  <button id="btn" onclick="notify()">Atualizar agora</button>
 
   <div id="result"></div>
 
@@ -142,7 +142,7 @@
       const resultDiv = document.getElementById('result');
 
       btn.disabled = true;
-      btn.textContent = 'Buscando a última partida...';
+      btn.textContent = 'Verificando...';
       resultDiv.innerHTML = '';
 
       try {
@@ -156,7 +156,7 @@
         resultDiv.innerHTML = '<div class="msg error">Erro de rede. Verifique a conexão.</div>';
       } finally {
         btn.disabled = false;
-        btn.textContent = 'Enviar última partida';
+        btn.textContent = 'Atualizar agora';
       }
     }
 

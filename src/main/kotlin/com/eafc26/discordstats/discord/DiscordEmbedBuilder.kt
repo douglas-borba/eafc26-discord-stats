@@ -4,6 +4,7 @@ import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.PhraseCategory
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
+import com.eafc26.discordstats.ea.model.PlayerStatisticsEligibility
 import com.fasterxml.jackson.annotation.JsonInclude
 import java.time.Instant
 import java.time.ZoneId
@@ -70,9 +71,9 @@ object DiscordEmbedBuilder {
 
         val date = Instant.ofEpochSecond(match.timestamp).atZone(zoneId).format(DATE_FMT)
 
-        val allActive = (match.players[ourClubId] ?: emptyMap())
-            .values
-            .filter { (it.secondsPlayed?.toIntOrNull() ?: 1) > 0 }
+        val allActive = PlayerStatisticsEligibility.eligiblePlayers(
+            (match.players[ourClubId] ?: emptyMap()).values
+        )
 
         val goalkeeper = allActive
             .filter { it.position == "goalkeeper" }
@@ -94,6 +95,8 @@ object DiscordEmbedBuilder {
         addSection(top3AndAvgField(outfield, allActive, matchId))
         addSection(bagreField(outfield, matchId))
         addSection(xerifeField(outfield, matchId))
+        addSection(chutouField(outfield))
+        addSection(correioField(outfield))
         addSection(muralhaField(goalkeeper, matchId))
 
         return DiscordPayload(listOf(DiscordEmbed(
@@ -221,6 +224,35 @@ object DiscordEmbedBuilder {
 
         val value = "$name\n\n🛡️ $tacklesMade/$tackleAttempts desarmes\n📈 Aproveitamento: $pct%\n\n💬 \"$phrase\""
         return EmbedField("🚧 XERIFE DA PARTIDA", value)
+    }
+
+    private fun chutouField(outfield: Collection<PlayerEntry>): EmbedField? {
+        // maxWithOrNull + compareBy (ascending) -> highest shots wins
+        // thenByDescending (name) -> alphabetically-first name wins on tie
+        val winner = outfield
+            .filter { (it.goals?.toIntOrNull() ?: 0) == 0 && (it.shots?.toIntOrNull() ?: 0) > 0 }
+            .maxWithOrNull(
+                compareBy<PlayerEntry> { it.shots?.toIntOrNull() ?: 0 }
+                    .thenByDescending { it.playerName ?: "" }
+            ) ?: return null
+        val shots = winner.shots?.toIntOrNull() ?: return null
+        val name  = winner.playerName ?: "Desconhecido"
+        return EmbedField("🎯 CHUTOU, MAS NÃO ENTROU", "$name — $shots finalizações e nenhum gol")
+    }
+
+    private fun correioField(outfield: Collection<PlayerEntry>): EmbedField? {
+        val candidates = outfield.mapNotNull { p ->
+            val attempted = p.passAttempts?.toIntOrNull() ?: return@mapNotNull null
+            val made      = p.passesMade?.toIntOrNull()  ?: return@mapNotNull null
+            val failed    = maxOf(attempted - made, 0)
+            if (failed == 0) null else Pair(p, failed)
+        }
+        val best = candidates.maxWithOrNull(
+            compareBy<Pair<PlayerEntry, Int>> { it.second }
+                .thenByDescending { it.first.playerName ?: "" }
+        ) ?: return null
+        val name = best.first.playerName ?: "Desconhecido"
+        return EmbedField("📮 CORREIO EXTRAVIADO", "$name — ${best.second} passes errados")
     }
 
     private fun muralhaField(gk: PlayerEntry?, matchId: String): EmbedField? {

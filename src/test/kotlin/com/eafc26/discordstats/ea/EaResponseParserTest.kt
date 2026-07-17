@@ -108,6 +108,15 @@ class EaResponseParserTest {
         assertThat(result).isInstanceOf(EaApiResult.UnexpectedPayload::class.java)
     }
 
+    @Test
+    fun `parseMatches parses secondsplayed from fixture`() {
+        val matches = (parser.parseMatches(fixture("clubs-matches.json")) as EaApiResult.Success).data
+        val players = matches[0].players["12345"]!!
+
+        assertThat(players["player_abc"]!!.secondsPlayed).isEqualTo("5400")
+        assertThat(players["player_short"]!!.secondsPlayed).isEqualTo("900")
+    }
+
     private fun fixture(name: String): String =
         javaClass.classLoader!!
             .getResourceAsStream("fixtures/$name")

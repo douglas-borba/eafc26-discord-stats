@@ -38,7 +38,9 @@
           "tackleattempts": "2",
           "tacklesmade": "1",
           "redcards": "0",
-          "saves": "0"
+          "saves": "0",
+          "goalsconceded": "0",
+          "secondsplayed": "5400"
         },
         "player_def": {
           "playername": "Midfielder7",
@@ -53,7 +55,26 @@
           "tackleattempts": "5",
           "tacklesmade": "4",
           "redcards": "0",
-          "saves": "0"
+          "saves": "0",
+          "goalsconceded": "0",
+          "secondsplayed": "5400"
+        },
+        "player_short": {
+          "playername": "LateSubstitute",
+          "pos": "14",
+          "goals": "0",
+          "assists": "0",
+          "rating": "6.1",
+          "mom": "0",
+          "shots": "0",
+          "passattempts": "5",
+          "passesmade": "3",
+          "tackleattempts": "1",
+          "tacklesmade": "0",
+          "redcards": "0",
+          "saves": "0",
+          "goalsconceded": "0",
+          "secondsplayed": "900"
         }
       },
       "99999": {
@@ -70,7 +91,9 @@
           "tackleattempts": "1",
           "tacklesmade": "0",
           "redcards": "0",
-          "saves": "0"
+          "saves": "0",
+          "goalsconceded": "3",
+          "secondsplayed": "5400"
         }
       }
     }
@@ -114,7 +137,9 @@
           "tackleattempts": "0",
           "tacklesmade": "0",
           "redcards": "0",
-          "saves": "0"
+          "saves": "0",
+          "goalsconceded": "0",
+          "secondsplayed": "5400"
         }
       }
     }

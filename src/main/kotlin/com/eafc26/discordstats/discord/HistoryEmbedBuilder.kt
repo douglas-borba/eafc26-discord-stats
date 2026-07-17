@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.discord
 
 import com.eafc26.discordstats.ea.model.MatchResponse
+import com.eafc26.discordstats.ea.model.PlayerStatisticsEligibility
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -38,9 +39,9 @@ object HistoryEmbedBuilder {
         fields += EmbedField("📅 Data", date, inline = true)
         fields += EmbedField("🏆 Resultado", "$resultEmoji $resultLabel $ourScore × $oppScore", inline = true)
 
-        val mvp = (match.players[ourClubId] ?: emptyMap()).values
-            .filter { (it.secondsPlayed?.toIntOrNull() ?: 1) > 0 }
-            .firstOrNull { it.manOfTheMatch == "1" }
+        val mvp = PlayerStatisticsEligibility.eligiblePlayers(
+            (match.players[ourClubId] ?: emptyMap()).values
+        ).firstOrNull { it.manOfTheMatch == "1" }
 
         if (mvp != null) {
             val name   = mvp.playerName ?: "Desconhecido"
@@ -49,7 +50,7 @@ object HistoryEmbedBuilder {
         }
 
         return DiscordPayload(listOf(DiscordEmbed(
-            title     = "📚 Match History",
+            title     = "📚 Histórico de Partidas",
             color     = color,
             fields    = fields,
             timestamp = Instant.ofEpochSecond(match.timestamp).toString(),

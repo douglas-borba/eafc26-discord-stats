@@ -40,7 +40,7 @@ class MatchControllerTest {
             .expectBody(String::class.java)
             .value { body ->
                 assert(body.contains("EA FC 26")) { "Expected title in HTML" }
-                assert(body.contains("Enviar última partida")) { "Expected button label in HTML" }
+                assert(body.contains("Atualizar agora")) { "Expected button label in HTML" }
             }
     }
 
