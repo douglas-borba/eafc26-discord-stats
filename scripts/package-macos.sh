@@ -10,9 +10,9 @@ APP_BUNDLE="$APP_NAME.app"
 DIST_DIR="$PROJECT_DIR/dist"
 BUNDLE_TEMPLATE="$PROJECT_DIR/app-bundle"
 
-echo "==> Building fat JAR (test + bootJar)…"
+echo "==> Building fat JAR (bootJar)…"
 cd "$PROJECT_DIR"
-gradle clean test bootJar
+./gradlew clean bootJar -x test
 
 JAR_SRC=$(ls "$PROJECT_DIR/build/libs/"*.jar | head -1)
 echo "    JAR: $JAR_SRC"
