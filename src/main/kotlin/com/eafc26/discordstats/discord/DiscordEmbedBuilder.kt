@@ -45,6 +45,9 @@ private val DATE_FMT = DateTimeFormatter.ofPattern("dd MMM yyyy '•' HH:mm", PT
 
 private val SEPARATOR = EmbedField("​", "──────────────────────────────")
 
+// Zero-width space for forcing blank lines in Discord
+private const val BLANK = "\u200B"
+
 object DiscordEmbedBuilder {
 
     @Volatile
@@ -82,14 +85,16 @@ object DiscordEmbedBuilder {
             fields += field
         }
 
+        // Section order as requested:
+        // 🥇 DESTAQUES, ⭐ CRAQUE, 🔥 PERIGO CONSTANTE, 🍍 BAGRE, 🚧 XERIFE, 🎯 PASSE DE PRECISÃO, 📮 CORREIO
         addSection(goalsField(allActive))
         addSection(assistsField(allActive))
         addSection(top3AndAvgField(outfield, allActive))
         addSection(craqueField(outfield, matchId))
+        addSection(perigoConstanteField(outfield, matchId))
         addSection(bagreField(outfield, matchId))
         addSection(xerifeField(outfield, matchId))
-        addSection(passePrecisaoField(outfield))
-        addSection(chutouField(outfield))
+        addSection(passePrecisaoField(outfield, matchId))
         addSection(correioField(outfield))
         addSection(muralhaField(goalkeeper, matchId))
 
@@ -109,10 +114,11 @@ object DiscordEmbedBuilder {
             .filter { (it.goals?.toIntOrNull() ?: 0) > 0 }
             .sortedByDescending { it.goals?.toIntOrNull() ?: 0 }
         if (scorers.isEmpty()) return null
+        // Goals: ONE blank line after title, then players
         val lines = scorers.joinToString("\n") {
             "• ${it.playerName ?: "Desconhecido"} ×${it.goals?.toIntOrNull() ?: 0}"
         }
-        return EmbedField("⚽ GOLS", lines)
+        return EmbedField("⚽ GOLS", "\n$lines")
     }
 
     private fun assistsField(players: Collection<PlayerEntry>): EmbedField? {
@@ -120,10 +126,11 @@ object DiscordEmbedBuilder {
             .filter { (it.assists?.toIntOrNull() ?: 0) > 0 }
             .sortedByDescending { it.assists?.toIntOrNull() ?: 0 }
         if (assisters.isEmpty()) return null
+        // Assists: ONE blank line after title, then players
         val lines = assisters.joinToString("\n") {
             "• ${it.playerName ?: "Desconhecido"} ×${it.assists?.toIntOrNull() ?: 0}"
         }
-        return EmbedField("🎯 ASSISTÊNCIAS", lines)
+        return EmbedField("🎯 ASSISTÊNCIAS", "\n$lines")
     }
 
     private fun top3AndAvgField(
@@ -149,7 +156,7 @@ object DiscordEmbedBuilder {
             parts += "⭐ Média do time: ${fmtRating("%.2f".format(allRatings.average()))}"
         }
 
-        return EmbedField("🥇 DESTAQUES", parts.joinToString("\n\n"))
+        return EmbedField("🥇 DESTAQUES", "\n" + parts.joinToString("\n\n"))
     }
 
     private fun craqueField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
@@ -157,9 +164,10 @@ object DiscordEmbedBuilder {
         val name = selection.player.playerName ?: "Desconhecido"
         val phrase = pickFromCategory(PhraseCategory.MVP, matchId, name)
 
+        // Format: blank line, name, blank line, stats, blank line, quote
         val value = buildString {
-            append("$name\n\n")
-            append("${selection.reason}\n\n")
+            append("$BLANK\n$name\n$BLANK\n")
+            append("${selection.reason}\n$BLANK\n")
             append("💬 \"$phrase\"")
         }
 
@@ -170,7 +178,8 @@ object DiscordEmbedBuilder {
         val evaluation = BagrePerformanceEvaluator.evaluate(outfield, matchId, phraseBank)
             ?: return null
 
-        return EmbedField("🍍 BAGRE DA PARTIDA", evaluation.sections.joinToString("\n\n"))
+        // Format: blank line prefix and BLANK for separating sections
+        return EmbedField("🍍 BAGRE DA PARTIDA", "$BLANK\n" + evaluation.sections.joinToString("\n$BLANK\n"))
     }
 
     private fun xerifeField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
@@ -178,28 +187,47 @@ object DiscordEmbedBuilder {
         val name = selection.player.playerName ?: "Desconhecido"
         val phrase = pickFromCategory(PhraseCategory.XERIFE, matchId, name)
 
-        val value = "$name\n\n🛡️ ${selection.tacklesMade}/${selection.tackleAttempts} desarmes\n📈 Aproveitamento: ${selection.successRate}%\n\n💬 \"$phrase\""
+        // Format: blank line, name, blank line, stats, blank line, quote
+        val value = buildString {
+            append("$BLANK\n$name\n$BLANK\n")
+            append("🛡️ ${selection.tacklesMade}/${selection.tackleAttempts} desarmes\n")
+            append("📈 Aproveitamento: ${selection.successRate}%\n$BLANK\n")
+            append("💬 \"$phrase\"")
+        }
         return EmbedField("🚧 XERIFE DA PARTIDA", value)
     }
 
-    private fun passePrecisaoField(outfield: Collection<PlayerEntry>): EmbedField? {
+    private fun passePrecisaoField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
         val selection = PassePrecisaoSelector.select(outfield) ?: return null
         val name = selection.player.playerName ?: "Desconhecido"
+        val phrase = pickFromCategory(PhraseCategory.PASSE_PRECISAO, matchId, name)
 
-        val value = "$name\n\n📊 ${selection.passesMade}/${selection.passAttempts} passes certos\n📈 Aproveitamento: ${selection.accuracy}%"
+        // Format: blank line, name, blank line, stats, blank line, quote
+        val value = buildString {
+            append("$BLANK\n$name\n$BLANK\n")
+            append("📊 ${selection.passesMade}/${selection.passAttempts} passes certos\n")
+            append("📈 Aproveitamento: ${selection.accuracy}%\n$BLANK\n")
+            append("💬 \"$phrase\"")
+        }
         return EmbedField("🎯 PASSE DE PRECISÃO", value)
     }
 
-    private fun chutouField(outfield: Collection<PlayerEntry>): EmbedField? {
-        val winner = outfield
-            .filter { (it.goals?.toIntOrNull() ?: 0) == 0 && (it.shots?.toIntOrNull() ?: 0) > 0 }
-            .maxWithOrNull(
-                compareBy<PlayerEntry> { it.shots?.toIntOrNull() ?: 0 }
-                    .thenByDescending { it.playerName ?: "" }
-            ) ?: return null
-        val shots = winner.shots?.toIntOrNull() ?: return null
-        val name = winner.playerName ?: "Desconhecido"
-        return EmbedField("🎯 CHUTOU, MAS NÃO ENTROU", "$name — $shots finalizações e nenhum gol")
+    private fun perigoConstanteField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
+        val selection = PerigoConstanteSelector.select(outfield) ?: return null
+        val name = selection.player.playerName ?: "Desconhecido"
+
+        // Choose phrase category based on efficiency
+        val category = if (selection.efficient) PhraseCategory.PERIGO_EFICIENTE else PhraseCategory.PERIGO_VOLUME
+        val phrase = pickFromCategory(category, matchId, name)
+
+        // Format: blank line, name, blank line, stats, blank line, quote
+        val value = buildString {
+            append("$BLANK\n$name\n$BLANK\n")
+            append("🥅 ${selection.shots} finalizações\n")
+            append("⚽ ${selection.goals} ${if (selection.goals == 1) "gol" else "gols"}\n$BLANK\n")
+            append("💬 \"$phrase\"")
+        }
+        return EmbedField("🔥 PERIGO CONSTANTE", value)
     }
 
     private fun correioField(outfield: Collection<PlayerEntry>): EmbedField? {
@@ -214,14 +242,20 @@ object DiscordEmbedBuilder {
                 .thenByDescending { it.first.playerName ?: "" }
         ) ?: return null
         val name = best.first.playerName ?: "Desconhecido"
-        return EmbedField("📮 CORREIO EXTRAVIADO", "$name — ${best.second} passes errados")
+        return EmbedField("📮 CORREIO EXTRAVIADO", "$BLANK\n$name — ${best.second} passes errados")
     }
 
     private fun muralhaField(gk: PlayerEntry?, matchId: String): EmbedField? {
         gk ?: return null
         val saves = gk.saves?.toIntOrNull() ?: 0
         val phrase = pickFromCategory(PhraseCategory.GOALKEEPER, matchId, gk.playerName ?: "goleiro")
-        return EmbedField("🧤 MURALHA DA PARTIDA", "🧤 Defesas realizadas: $saves\n\n💬 \"$phrase\"")
+        
+        // Format: blank line, stats, blank line, quote
+        val value = buildString {
+            append("$BLANK\n🧤 Defesas realizadas: $saves\n$BLANK\n")
+            append("💬 \"$phrase\"")
+        }
+        return EmbedField("🧤 MURALHA DA PARTIDA", value)
     }
 
     // -- Helpers -----------------------------------------------------------

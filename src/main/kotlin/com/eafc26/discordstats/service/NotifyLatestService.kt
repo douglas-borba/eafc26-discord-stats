@@ -37,7 +37,24 @@ class NotifyLatestService(
             return NotifyResult.Busy
         }
         return try {
-            execute()
+            execute(forceResend = false)
+        } finally {
+            busy.set(false)
+        }
+    }
+
+    /**
+     * Force-resend the latest match to Discord, bypassing the deduplication check.
+     * The match ID is NOT removed from or added to the published set.
+     * This allows testing the Discord output without affecting normal polling.
+     */
+    fun resendLatest(): NotifyResult {
+        if (!busy.compareAndSet(false, true)) {
+            log.info("resendLatest skipped — another execution is already in progress")
+            return NotifyResult.Busy
+        }
+        return try {
+            execute(forceResend = true)
         } finally {
             busy.set(false)
         }
@@ -58,7 +75,7 @@ class NotifyLatestService(
         return true
     }
 
-    private fun execute(): NotifyResult {
+    private fun execute(forceResend: Boolean): NotifyResult {
         val clubId = props.ea.clubId
 
         val matches = when (val result = gateway.getLatestMatches(clubId)) {
@@ -81,8 +98,10 @@ class NotifyLatestService(
             ?: return NotifyResult.NoMatches
 
         val summary = buildSummary(latest)
+        val alreadyPublished = store.loadIds().contains(latest.matchId)
 
-        if (store.loadIds().contains(latest.matchId)) {
+        // For normal flow, skip if already published
+        if (!forceResend && alreadyPublished) {
             log.info("Match {} already published, skipping", latest.matchId)
             return NotifyResult.AlreadyPublished(summary)
         }
@@ -100,6 +119,12 @@ class NotifyLatestService(
 
         // History webhook — optional, fire-and-forget, never affects the main result.
         webhookClient.sendHistory(HistoryEmbedBuilder.build(latest, clubId))
+
+        // For force-resend, don't modify the published IDs store
+        if (forceResend) {
+            log.info("Force-resent match {} (already published: {})", latest.matchId, alreadyPublished)
+            return NotifyResult.ForceSent(summary)
+        }
 
         // Discord delivery confirmed — now persist. A persistence failure must not
         // suppress the delivery confirmation or trigger a second Discord send.

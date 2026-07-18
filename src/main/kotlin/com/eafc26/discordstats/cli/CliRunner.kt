@@ -139,6 +139,10 @@ class CliRunner(
                 out.println("INFO: Match already published, skipped. (${result.summary})")
                 exit(0)
             }
+            is NotifyResult.ForceSent -> {
+                out.println("SUCCESS: Match force-resent to Discord. (${result.summary})")
+                exit(0)
+            }
             NotifyResult.NoMatches -> {
                 out.println("No matches found for club-id=$clubId.")
                 exit(0)

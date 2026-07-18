@@ -41,6 +41,41 @@ class MatchController(
                         ResponseEntity.ok(NotifyResponse("sent_persistence_error", "A partida foi enviada ao Discord, mas não foi possível salvar o histórico local.", result.summary))
                     is NotifyResult.AlreadyPublished ->
                         ResponseEntity.ok(NotifyResponse("already_published", "Partida já publicada anteriormente.", result.summary))
+                    is NotifyResult.ForceSent ->
+                        ResponseEntity.ok(NotifyResponse("force_sent", "Partida reenviada com sucesso.", result.summary))
+                    NotifyResult.NoMatches ->
+                        ResponseEntity.ok(NotifyResponse("no_matches", "Nenhuma partida encontrada."))
+                    NotifyResult.EaUnavailable ->
+                        ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                            .body(NotifyResponse("ea_unavailable", "API da EA indisponível. Tente novamente mais tarde."))
+                    NotifyResult.DiscordError ->
+                        ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                            .body(NotifyResponse("discord_error", "Falha ao enviar para o Discord."))
+                    NotifyResult.Busy ->
+                        ResponseEntity.status(HttpStatus.CONFLICT)
+                            .body(NotifyResponse("busy", "Outra notificação já está em andamento."))
+                }
+            }
+
+    /**
+     * Force-resend the latest match to Discord, bypassing the deduplication check.
+     * This is useful for testing the Discord output without affecting normal polling.
+     */
+    @PostMapping("/api/matches/resend-latest", produces = [MediaType.APPLICATION_JSON_VALUE])
+    fun resendLatest(): Mono<ResponseEntity<NotifyResponse>> =
+        Mono.fromCallable { notifyLatestService.resendLatest() }
+            .subscribeOn(Schedulers.boundedElastic())
+            .map { result ->
+                when (result) {
+                    is NotifyResult.ForceSent ->
+                        ResponseEntity.ok(NotifyResponse("force_sent", "Partida reenviada com sucesso.", result.summary))
+                    is NotifyResult.Sent ->
+                        ResponseEntity.ok(NotifyResponse("force_sent", "Partida reenviada com sucesso.", result.summary))
+                    is NotifyResult.SentPersistenceError ->
+                        ResponseEntity.ok(NotifyResponse("force_sent", "Partida reenviada com sucesso.", result.summary))
+                    is NotifyResult.AlreadyPublished ->
+                        // Should not happen for resend, but handle gracefully
+                        ResponseEntity.ok(NotifyResponse("force_sent", "Partida reenviada com sucesso.", result.summary))
                     NotifyResult.NoMatches ->
                         ResponseEntity.ok(NotifyResponse("no_matches", "Nenhuma partida encontrada."))
                     NotifyResult.EaUnavailable ->

@@ -43,6 +43,23 @@
     #btn:hover:not(:disabled) { background: #2ea043; }
     #btn:disabled { opacity: 0.6; cursor: default; }
 
+    #resend-btn {
+      background: #1f6feb;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 0.7rem 1.5rem;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+      min-width: 200px;
+      margin-top: 0.75rem;
+    }
+
+    #resend-btn:hover:not(:disabled) { background: #388bfd; }
+    #resend-btn:disabled { opacity: 0.6; cursor: default; }
+
     #result {
       margin-top: 1.5rem;
       max-width: 420px;
@@ -59,6 +76,7 @@
     }
 
     .msg.sent        { background: #0d4a1f; border: 1px solid #238636; }
+    .msg.force-sent  { background: #0d3a4f; border: 1px solid #1f6feb; }
     .msg.already     { background: #1a2a3a; border: 1px solid #58a6ff; }
     .msg.no-matches  { background: #1a1a2a; border: 1px solid #484f58; color: #8b949e; }
     .msg.error       { background: #3a1010; border: 1px solid #f85149; color: #f85149; }
@@ -108,6 +126,7 @@
   <h1>EA FC 26 — Associação BF</h1>
 
   <button id="btn" onclick="notify()">Atualizar agora</button>
+  <button id="resend-btn" onclick="resend()">🔄 Reenviar última partida</button>
 
   <div id="result"></div>
 
@@ -139,9 +158,11 @@
 
     async function notify() {
       const btn = document.getElementById('btn');
+      const resendBtn = document.getElementById('resend-btn');
       const resultDiv = document.getElementById('result');
 
       btn.disabled = true;
+      resendBtn.disabled = true;
       btn.textContent = 'Verificando...';
       resultDiv.innerHTML = '';
 
@@ -156,7 +177,34 @@
         resultDiv.innerHTML = '<div class="msg error">Erro de rede. Verifique a conexão.</div>';
       } finally {
         btn.disabled = false;
+        resendBtn.disabled = false;
         btn.textContent = 'Atualizar agora';
+      }
+    }
+
+    async function resend() {
+      const btn = document.getElementById('btn');
+      const resendBtn = document.getElementById('resend-btn');
+      const resultDiv = document.getElementById('result');
+
+      btn.disabled = true;
+      resendBtn.disabled = true;
+      resendBtn.textContent = 'Reenviando...';
+      resultDiv.innerHTML = '';
+
+      try {
+        const res = await fetch('/api/matches/resend-latest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        renderResult(data, res.status);
+      } catch (e) {
+        resultDiv.innerHTML = '<div class="msg error">Erro de rede. Verifique a conexão.</div>';
+      } finally {
+        btn.disabled = false;
+        resendBtn.disabled = false;
+        resendBtn.textContent = '🔄 Reenviar última partida';
       }
     }
 
@@ -166,6 +214,8 @@
 
       if (data.status === 'sent') {
         cls = 'sent'; text = '✅ Notificação enviada com sucesso!';
+      } else if (data.status === 'force_sent') {
+        cls = 'force-sent'; text = '🔄 Partida reenviada com sucesso!';
       } else if (data.status === 'sent_persistence_error') {
         cls = 'sent'; text = '⚠️ A partida foi enviada ao Discord, mas não foi possível salvar o histórico local.';
       } else if (data.status === 'already_published') {

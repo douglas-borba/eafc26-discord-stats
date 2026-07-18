@@ -149,4 +149,78 @@ class MatchControllerTest {
             .expectBody()
             .jsonPath("$.summary").doesNotExist()
     }
+
+    // -- POST /api/matches/resend-latest --
+
+    @Test
+    fun `resend-latest returns force_sent with summary`() {
+        whenever(notifyLatestService.resendLatest())
+            .thenReturn(NotifyResult.ForceSent("Test FC 2 × 0 Opp"))
+
+        webClient.post().uri("/api/matches/resend-latest")
+            .exchange()
+            .expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.status").isEqualTo("force_sent")
+            .jsonPath("$.summary").isEqualTo("Test FC 2 × 0 Opp")
+            .jsonPath("$.message").isEqualTo("Partida reenviada com sucesso.")
+    }
+
+    @Test
+    fun `resend-latest returns no_matches`() {
+        whenever(notifyLatestService.resendLatest()).thenReturn(NotifyResult.NoMatches)
+
+        webClient.post().uri("/api/matches/resend-latest")
+            .exchange()
+            .expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.status").isEqualTo("no_matches")
+    }
+
+    @Test
+    fun `resend-latest returns ea_unavailable as 502`() {
+        whenever(notifyLatestService.resendLatest()).thenReturn(NotifyResult.EaUnavailable)
+
+        webClient.post().uri("/api/matches/resend-latest")
+            .exchange()
+            .expectStatus().isEqualTo(502)
+            .expectBody()
+            .jsonPath("$.status").isEqualTo("ea_unavailable")
+    }
+
+    @Test
+    fun `resend-latest returns discord_error as 502`() {
+        whenever(notifyLatestService.resendLatest()).thenReturn(NotifyResult.DiscordError)
+
+        webClient.post().uri("/api/matches/resend-latest")
+            .exchange()
+            .expectStatus().isEqualTo(502)
+            .expectBody()
+            .jsonPath("$.status").isEqualTo("discord_error")
+    }
+
+    @Test
+    fun `resend-latest returns busy as 409`() {
+        whenever(notifyLatestService.resendLatest()).thenReturn(NotifyResult.Busy)
+
+        webClient.post().uri("/api/matches/resend-latest")
+            .exchange()
+            .expectStatus().isEqualTo(409)
+            .expectBody()
+            .jsonPath("$.status").isEqualTo("busy")
+    }
+
+    // -- notify-latest with ForceSent (should not happen but handle gracefully) --
+
+    @Test
+    fun `notify-latest handles ForceSent result gracefully`() {
+        whenever(notifyLatestService.notifyLatest())
+            .thenReturn(NotifyResult.ForceSent("Test FC 2 × 0 Opp"))
+
+        webClient.post().uri("/api/matches/notify-latest")
+            .exchange()
+            .expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.status").isEqualTo("force_sent")
+    }
 }

@@ -244,6 +244,160 @@ class NotifyLatestServiceTest {
         verify(webhookClient, never()).sendHistory(any())
     }
 
+    // -- resendLatest (force-resend) --
+
+    @Test
+    fun `resendLatest sends match even when already published`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        whenever(store.loadIds()).thenReturn(setOf("m1"))
+
+        val result = service.resendLatest()
+
+        assertThat(result).isInstanceOf(NotifyResult.ForceSent::class.java)
+        verify(webhookClient).send(any())
+    }
+
+    @Test
+    fun `resendLatest does not modify published IDs store`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        whenever(store.loadIds()).thenReturn(setOf("m1"))
+
+        service.resendLatest()
+
+        verify(store, never()).saveIds(any())
+    }
+
+    @Test
+    fun `resendLatest does not remove match from published IDs`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        whenever(store.loadIds()).thenReturn(setOf("m1", "m2", "m3"))
+
+        service.resendLatest()
+
+        // Verify saveIds was never called, so existing IDs remain untouched
+        verify(store, never()).saveIds(any())
+    }
+
+    @Test
+    fun `after resendLatest notifyLatest still skips already published match`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        whenever(store.loadIds()).thenReturn(setOf("m1"))
+
+        // Force resend first
+        val resendResult = service.resendLatest()
+        assertThat(resendResult).isInstanceOf(NotifyResult.ForceSent::class.java)
+
+        // Normal notify should still skip
+        val notifyResult = service.notifyLatest()
+        assertThat(notifyResult).isInstanceOf(NotifyResult.AlreadyPublished::class.java)
+    }
+
+    @Test
+    fun `resendLatest sends to history webhook`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        whenever(store.loadIds()).thenReturn(setOf("m1"))
+
+        service.resendLatest()
+
+        verify(webhookClient).sendHistory(any())
+    }
+
+    @Test
+    fun `resendLatest returns NoMatches when no matches available`() {
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.NoMatches)
+
+        val result = service.resendLatest()
+
+        assertThat(result).isEqualTo(NotifyResult.NoMatches)
+    }
+
+    @Test
+    fun `resendLatest returns EaUnavailable when EA API fails`() {
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Unavailable(500, "error"))
+
+        val result = service.resendLatest()
+
+        assertThat(result).isEqualTo(NotifyResult.EaUnavailable)
+    }
+
+    @Test
+    fun `resendLatest returns DiscordError when Discord fails`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        doThrow(DiscordDeliveryException("HTTP 500")).whenever(webhookClient).send(any())
+
+        val result = service.resendLatest()
+
+        assertThat(result).isEqualTo(NotifyResult.DiscordError)
+    }
+
+    @Test
+    fun `resendLatest can resend same match multiple times`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        whenever(store.loadIds()).thenReturn(setOf("m1"))
+
+        val result1 = service.resendLatest()
+        val result2 = service.resendLatest()
+        val result3 = service.resendLatest()
+
+        assertThat(result1).isInstanceOf(NotifyResult.ForceSent::class.java)
+        assertThat(result2).isInstanceOf(NotifyResult.ForceSent::class.java)
+        assertThat(result3).isInstanceOf(NotifyResult.ForceSent::class.java)
+        verify(webhookClient, org.mockito.kotlin.times(3)).send(any())
+    }
+
+    @Test
+    fun `resendLatest returns Busy when another operation is in progress`() {
+        val latch = CountDownLatch(1)
+        whenever(gateway.getLatestMatches(clubId)).thenAnswer {
+            latch.await(2, TimeUnit.SECONDS)
+            EaApiResult.Success(listOf(match("m1")))
+        }
+
+        val executor = Executors.newFixedThreadPool(2)
+        val firstFuture = executor.submit<NotifyResult> { service.resendLatest() }
+        Thread.sleep(100)
+        val secondResult = service.resendLatest()
+        latch.countDown()
+        val firstResult = firstFuture.get(3, TimeUnit.SECONDS)
+        executor.shutdown()
+
+        assertThat(secondResult).isEqualTo(NotifyResult.Busy)
+        assertThat(firstResult).isInstanceOf(NotifyResult.ForceSent::class.java)
+    }
+
+    @Test
+    fun `resendLatest uses current DiscordEmbedBuilder`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+
+        service.resendLatest()
+
+        // Verify send was called with any payload (proving DiscordEmbedBuilder.build was used)
+        verify(webhookClient).send(any())
+    }
+
+    @Test
+    fun `resendLatest sends new match even if not in published list`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        whenever(store.loadIds()).thenReturn(emptySet())
+
+        val result = service.resendLatest()
+
+        // For a new match, resendLatest still returns ForceSent (not Sent)
+        // because it does not persist the ID
+        assertThat(result).isInstanceOf(NotifyResult.ForceSent::class.java)
+        verify(webhookClient).send(any())
+        verify(store, never()).saveIds(any())
+    }
+
     // -- Helpers --
 
     private fun match(id: String, ts: Long = 5000L) = MatchResponse(
