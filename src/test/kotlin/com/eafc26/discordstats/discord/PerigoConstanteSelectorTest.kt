@@ -54,9 +54,9 @@ class PerigoConstanteSelectorTest {
     }
 
     @Test
-    fun `efficient when 2 or more goals`() {
+    fun `efficient when conversion rate is 75 percent or higher`() {
         val players = listOf(
-            player("Efficient", shots = "5", goals = "2"),
+            player("Efficient", shots = "4", goals = "3"), // 75%
         )
         val result = PerigoConstanteSelector.select(players)
         assertThat(result).isNotNull
@@ -64,13 +64,13 @@ class PerigoConstanteSelectorTest {
     }
 
     @Test
-    fun `efficient when conversion rate is 33 percent or higher`() {
+    fun `not efficient when conversion below 75 percent`() {
         val players = listOf(
-            player("Efficient", shots = "3", goals = "1"), // 33%
+            player("Inefficient", shots = "5", goals = "2"), // 40%
         )
         val result = PerigoConstanteSelector.select(players)
         assertThat(result).isNotNull
-        assertThat(result!!.efficient).isTrue()
+        assertThat(result!!.efficient).isFalse()
     }
 
     @Test

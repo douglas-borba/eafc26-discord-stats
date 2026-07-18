@@ -46,8 +46,8 @@ object PerigoConstanteSelector {
 
         val shots = best.second
         val goals = best.third
-        // Consider efficient if scored at least 1 goal per 3 shots, or at least 2 goals
-        val efficient = goals >= 2 || (shots > 0 && goals.toDouble() / shots >= 0.33)
+        // Consider efficient only if conversion rate is above 75%
+        val efficient = shots > 0 && goals.toDouble() / shots >= 0.75
 
         return PerigoConstanteSelection(
             player = best.first,
