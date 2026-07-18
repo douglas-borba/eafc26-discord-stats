@@ -126,44 +126,12 @@ class PlaywrightBrowserFetcher(
                 .setWaitUntil(com.microsoft.playwright.options.WaitUntilState.DOMCONTENTLOADED)
                 .setTimeout(pw.navTimeoutMs.toDouble())
         )
-        hideChromiumOnMac()
+        // Note: Chromium is already started with --start-minimized and --window-size=1,1
+        // so no additional window hiding is needed. Previously this called hideChromiumOnMac()
+        // which used System Events osascript, but that caused focus issues with other apps.
         log.info("Browser ready")
     }
 
-    /**
-     * On macOS, hides the Playwright Chromium window via osascript immediately after
-     * the initial page load. Chromium's process name is "Chromium" (distinct from the
-     * user's regular "Google Chrome"), so only the Playwright-managed instance is affected.
-     *
-     * Fails gracefully if osascript is unavailable or accessibility permissions are denied.
-     * No-op on Linux/Windows.
-     */
-    private fun hideChromiumOnMac() {
-        if (!System.getProperty("os.name", "").lowercase().contains("mac")) return
-        try {
-            // Brief pause so Chromium's window has time to appear before we hide it.
-            Thread.sleep(600)
-            val script = """
-                tell application "System Events"
-                  repeat with p in (every process whose name is "Chromium")
-                    set visible of p to false
-                  end repeat
-                end tell
-            """.trimIndent()
-            val proc = ProcessBuilder("osascript", "-e", script)
-                .redirectErrorStream(true)
-                .start()
-            val finished = proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
-            if (!finished || proc.exitValue() != 0) {
-                log.debug(
-                    "osascript hide Chromium returned non-zero or timed out: {}",
-                    proc.inputStream.bufferedReader().readText().trim(),
-                )
-            }
-        } catch (ex: Exception) {
-            log.debug("Could not hide Chromium window on macOS: {}", ex.message)
-        }
-    }
 
     private fun isHealthy(): Boolean {
         return try {
