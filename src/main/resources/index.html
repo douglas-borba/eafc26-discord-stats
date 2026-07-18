@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EA FC 26 — Associação BF</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -17,176 +18,1293 @@
       align-items: center;
       justify-content: center;
       padding: 1.5rem;
+      overflow-x: hidden;
     }
 
-    h1 {
-      font-size: clamp(1.2rem, 4vw, 1.8rem);
+    /* Master-Detail Layout Container */
+    .main-container {
+      width: 100%;
+      max-width: 900px;
+      display: flex;
+      justify-content: center;
+      transition: transform 0.28s ease, padding 0.28s ease;
+    }
+
+    .main-container.panel-open {
+      transform: translateX(-220px);
+    }
+
+    @media (max-width: 900px) {
+      .main-container.panel-open {
+        transform: translateX(-180px);
+      }
+    }
+
+    @media (max-width: 700px) {
+      .main-container.panel-open {
+        transform: translateX(0);
+      }
+    }
+
+    /* Dashboard Container */
+    .dashboard {
+      width: 100%;
+      max-width: 440px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    /* Panel Base */
+    .panel {
+      background: linear-gradient(160deg, #1a1f26 0%, #161b22 50%, #12161c 100%);
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    /* Header Panel */
+    .header-panel {
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header-title {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .app-title {
+      font-size: 1.1rem;
       font-weight: 700;
-      text-align: center;
-      margin-bottom: 2rem;
       color: #58a6ff;
     }
 
-    #btn {
-      background: #238636;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 1.1rem;
-      font-weight: 600;
-      padding: 0.9rem 2rem;
-      cursor: pointer;
-      transition: background 0.2s, opacity 0.2s;
-      min-width: 220px;
-    }
-
-    #btn:hover:not(:disabled) { background: #2ea043; }
-    #btn:disabled { opacity: 0.6; cursor: default; }
-
-    #resend-btn {
-      background: #1f6feb;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 0.95rem;
-      font-weight: 600;
-      padding: 0.7rem 1.5rem;
-      cursor: pointer;
-      transition: background 0.2s, opacity 0.2s;
-      min-width: 200px;
-      margin-top: 0.75rem;
-    }
-
-    #resend-btn:hover:not(:disabled) { background: #388bfd; }
-    #resend-btn:disabled { opacity: 0.6; cursor: default; }
-
-    #card-btn {
-      background: #8957e5;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 0.95rem;
-      font-weight: 600;
-      padding: 0.7rem 1.5rem;
-      cursor: pointer;
-      transition: background 0.2s, opacity 0.2s;
-      min-width: 200px;
-      margin-top: 0.5rem;
-    }
-
-    #card-btn:hover:not(:disabled) { background: #a371f7; }
-    #card-btn:disabled { opacity: 0.6; cursor: default; }
-
-    #result {
-      margin-top: 1.5rem;
-      max-width: 420px;
-      width: 100%;
-      text-align: center;
-      min-height: 3rem;
-    }
-
-    .msg {
-      padding: 0.8rem 1rem;
-      border-radius: 8px;
-      font-size: 0.95rem;
-      line-height: 1.5;
-    }
-
-    .msg.sent        { background: #0d4a1f; border: 1px solid #238636; }
-    .msg.force-sent  { background: #0d3a4f; border: 1px solid #1f6feb; }
-    .msg.already     { background: #1a2a3a; border: 1px solid #58a6ff; }
-    .msg.no-matches  { background: #1a1a2a; border: 1px solid #484f58; color: #8b949e; }
-    .msg.error       { background: #3a1010; border: 1px solid #f85149; color: #f85149; }
-    .msg.busy        { background: #2a2010; border: 1px solid #d29922; color: #d29922; }
-
-    .summary { font-weight: 700; margin-top: 0.4rem; font-size: 1rem; }
-
-    #settings-link {
-      margin-top: 2rem;
-      font-size: 0.85rem;
+    .club-name {
+      font-size: 0.75rem;
       color: #8b949e;
-      text-decoration: none;
+      font-weight: 500;
     }
-    #settings-link:hover { color: #58a6ff; }
 
-    #network-url {
-      margin-top: 0.75rem;
-      font-size: 0.8rem;
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.7rem;
+      color: #8b949e;
+      background: rgba(35, 134, 54, 0.15);
+      border: 1px solid rgba(35, 134, 54, 0.3);
+      border-radius: 20px;
+      padding: 0.25rem 0.6rem;
+    }
+
+    .status-badge.active {
+      color: #7ee787;
+    }
+
+    .status-badge.inactive {
+      background: rgba(110, 118, 129, 0.15);
+      border-color: rgba(110, 118, 129, 0.3);
       color: #8b949e;
     }
-    #network-url a { color: #58a6ff; }
 
-    #polling-status {
-      margin-top: 1.5rem;
-      max-width: 420px;
-      width: 100%;
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 0.85rem 1rem;
-      font-size: 0.82rem;
-      color: #8b949e;
-      line-height: 1.7;
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
     }
-    #polling-status strong { color: #e6edf3; }
-    .poll-title {
-      font-size: 0.78rem;
+
+    /* Panel Section Title */
+    .panel-title {
+      font-size: 0.65rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: #58a6ff;
+      padding: 0.75rem 1rem 0.5rem;
+      background: rgba(0, 0, 0, 0.2);
+      border-bottom: 1px solid #21262d;
+    }
+
+    /* Actions Panel */
+    .actions-panel .panel-body {
+      padding: 0.85rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.7rem 1rem;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s, transform 0.1s;
+      width: 100%;
+    }
+
+    .btn:focus {
+      outline: 2px solid #58a6ff;
+      outline-offset: 2px;
+    }
+
+    .btn:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    .btn-primary {
+      background: #238636;
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #2ea043;
+    }
+
+    .btn-secondary {
+      background: #21262d;
+      color: #e6edf3;
+      border: 1px solid #30363d;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #30363d;
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: #58a6ff;
+      border: 1px solid #30363d;
+    }
+
+    .btn-outline:hover:not(:disabled) {
+      background: rgba(88, 166, 255, 0.1);
+      border-color: #58a6ff;
+    }
+
+    .secondary-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+    }
+
+    .btn-icon {
+      font-size: 1rem;
+    }
+
+    /* Latest Match Panel */
+    .match-panel .panel-body {
+      padding: 0.85rem 1rem;
+    }
+
+    .match-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      margin-bottom: 0.6rem;
+    }
+
+    .match-team {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #c9d1d9;
+      max-width: 110px;
+      text-align: center;
+      line-height: 1.2;
+    }
+
+    .match-score {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .match-score-sep {
+      font-size: 1rem;
+      color: #6e7681;
+    }
+
+    .match-info {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      font-size: 0.72rem;
+      color: #8b949e;
+    }
+
+    .result-badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 10px;
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .result-badge.win { background: #238636; color: #fff; }
+    .result-badge.draw { background: #6e7681; color: #fff; }
+    .result-badge.loss { background: #da3633; color: #fff; }
+
+    .match-divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #30363d, transparent);
+      margin: 0.65rem 0;
+    }
+
+    .match-status {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.72rem;
+      color: #8b949e;
+    }
+
+    .match-status-icon {
+      font-size: 0.85rem;
+    }
+
+    .match-status.published { color: #7ee787; }
+    .match-status.pending { color: #d29922; }
+    .match-status.error { color: #f85149; }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 1rem 0;
+      color: #8b949e;
+      font-size: 0.82rem;
+    }
+
+    .empty-state-icon {
+      font-size: 1.5rem;
       margin-bottom: 0.4rem;
+      opacity: 0.6;
+    }
+
+    /* Monitoring Panel */
+    .monitoring-panel .panel-body {
+      padding: 0.75rem 1rem;
+    }
+
+    .monitoring-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.35rem 1rem;
+      font-size: 0.78rem;
+    }
+
+    .monitoring-label {
+      color: #8b949e;
+    }
+
+    .monitoring-value {
+      color: #e6edf3;
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .monitoring-value.active {
+      color: #7ee787;
+    }
+
+    .monitoring-value.inactive {
+      color: #6e7681;
+    }
+
+    /* Settings Button */
+    .settings-panel {
+      padding: 0.65rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .settings-link {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: #8b949e;
+      text-decoration: none;
+      font-size: 0.82rem;
+      transition: color 0.2s;
+    }
+
+    .settings-link:hover {
+      color: #58a6ff;
+    }
+
+    .settings-link:focus {
+      outline: 2px solid #58a6ff;
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+
+    .network-url {
+      font-size: 0.72rem;
+      color: #6e7681;
+    }
+
+    .network-url a {
+      color: #58a6ff;
+      text-decoration: none;
+    }
+
+    .network-url a:hover {
+      text-decoration: underline;
+    }
+
+    /* Result Feedback Messages */
+    .feedback-container {
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+
+    .feedback {
+      padding: 0.7rem 1rem;
+      font-size: 0.82rem;
+      line-height: 1.4;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .feedback-icon {
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+
+    .feedback-text {
+      flex: 1;
+    }
+
+    .feedback-summary {
+      font-weight: 600;
+      margin-top: 0.25rem;
+    }
+
+    .feedback.success {
+      background: rgba(35, 134, 54, 0.15);
+      border-top: 1px solid rgba(35, 134, 54, 0.3);
+      color: #7ee787;
+    }
+
+    .feedback.info {
+      background: rgba(88, 166, 255, 0.1);
+      border-top: 1px solid rgba(88, 166, 255, 0.2);
+      color: #79c0ff;
+    }
+
+    .feedback.warning {
+      background: rgba(210, 153, 34, 0.15);
+      border-top: 1px solid rgba(210, 153, 34, 0.3);
+      color: #d29922;
+    }
+
+    .feedback.error {
+      background: rgba(248, 81, 73, 0.15);
+      border-top: 1px solid rgba(248, 81, 73, 0.3);
+      color: #f85149;
+    }
+
+    /* Loading Spinner */
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 480px) {
+      .dashboard {
+        gap: 0.6rem;
+      }
+
+      .secondary-actions {
+        grid-template-columns: 1fr;
+      }
+
+      .match-team {
+        max-width: 90px;
+        font-size: 0.75rem;
+      }
+
+      .match-score {
+        font-size: 1.2rem;
+      }
+    }
+
+    /* ===== Match Card Side Panel ===== */
+    .card-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 420px;
+      max-width: 100vw;
+      height: 100vh;
+      background: linear-gradient(160deg, #1a1f26 0%, #161b22 50%, #12161c 100%);
+      border-left: 1px solid #30363d;
+      transform: translateX(100%);
+      transition: transform 0.28s ease;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .card-panel.open {
+      transform: translateX(0);
+    }
+
+    .card-panel-header {
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(0, 0, 0, 0.2);
+      border-bottom: 1px solid #21262d;
+      flex-shrink: 0;
+    }
+
+    .card-panel-title {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .card-panel-title-main {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #58a6ff;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .card-panel-title-sub {
+      font-size: 0.72rem;
+      color: #8b949e;
+    }
+
+    .card-panel-close {
+      background: transparent;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      transition: background 0.2s, color 0.2s, border-color 0.2s;
+    }
+
+    .card-panel-close:hover {
+      background: rgba(248, 81, 73, 0.15);
+      border-color: #f85149;
+      color: #f85149;
+    }
+
+    .card-panel-close:focus {
+      outline: 2px solid #58a6ff;
+      outline-offset: 2px;
+    }
+
+    .card-panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .card-panel-loading,
+    .card-panel-error {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 200px;
+      color: #8b949e;
+      text-align: center;
+    }
+
+    .card-panel-loading .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #30363d;
+      border-top-color: #58a6ff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1rem;
+    }
+
+    .card-panel-error {
+      color: #f85149;
+      padding: 2rem 1rem;
+    }
+
+    /* Compact Match Card in Panel */
+    .panel-match-card {
+      background: linear-gradient(160deg, #1a1f26 0%, #161b22 50%, #12161c 100%);
+      border: 1px solid #30363d;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      width: 100%;
+      max-width: 380px;
+    }
+
+    .panel-card-header {
+      padding: 0.9rem 1rem;
+      text-align: center;
+      background: rgba(0,0,0,0.2);
+    }
+
+    .panel-result-badge {
+      display: inline-block;
+      padding: 0.2rem 0.7rem;
+      border-radius: 12px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+    .panel-result-badge.win { background: #238636; }
+    .panel-result-badge.draw { background: #6e7681; }
+    .panel-result-badge.loss { background: #da3633; }
+
+    .panel-score-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.8rem;
+    }
+
+    .panel-team-name {
+      font-size: 0.8rem;
+      font-weight: 600;
+      max-width: 100px;
+      text-align: center;
+      line-height: 1.2;
+      color: #c9d1d9;
+    }
+
+    .panel-score {
+      font-size: 2rem;
+      font-weight: 800;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .panel-score-sep { font-size: 1.4rem; color: #6e7681; }
+
+    .panel-match-date {
+      font-size: 0.65rem;
+      color: #8b949e;
+      margin-top: 0.4rem;
+    }
+
+    .panel-card-body {
+      padding: 0.6rem 0.8rem;
+    }
+
+    .panel-divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #30363d, transparent);
+      margin: 0.6rem 0;
+    }
+
+    .panel-sec {
+      margin-bottom: 0.6rem;
+    }
+    .panel-sec:last-child { margin-bottom: 0; }
+
+    .panel-sec-title {
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #58a6ff;
+      margin-bottom: 0.25rem;
+    }
+
+    .panel-sec-body {
+      font-size: 0.75rem;
+      line-height: 1.4;
+      color: #e6edf3;
+    }
+
+    .panel-player-list {
+      font-size: 0.72rem;
+      line-height: 1.5;
+    }
+    .panel-player-list-item {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .panel-player-list-item::before {
+      content: '•';
+      color: #6e7681;
+    }
+    .panel-player-list-count {
+      color: #8b949e;
+      margin-left: auto;
+    }
+
+    .panel-top3 {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.2rem 0.8rem;
+    }
+    .panel-top3-item {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.72rem;
+    }
+    .panel-top3-medal { font-size: 0.9rem; }
+    .panel-top3-rating { color: #8b949e; font-size: 0.65rem; }
+
+    .panel-team-avg {
+      font-size: 0.68rem;
+      color: #8b949e;
+      margin-top: 0.2rem;
+    }
+
+    .panel-hl-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.3rem;
+    }
+    .panel-hl-name {
+      font-weight: 600;
+      font-size: 0.82rem;
+      color: #fff;
+    }
+    .panel-hl-stats {
+      color: #8b949e;
+      font-size: 0.68rem;
+    }
+    .panel-hl-phrase {
+      width: 100%;
+      font-style: italic;
+      font-size: 0.65rem;
+      color: #7ee787;
+      margin-top: 0.15rem;
+    }
+
+    .panel-bagre-lines {
+      font-size: 0.7rem;
+      line-height: 1.35;
+      color: #c9d1d9;
+    }
+
+    .panel-card-footer {
+      text-align: center;
+      padding: 0.5rem;
+      font-size: 0.6rem;
+      color: #484f58;
+      background: rgba(0,0,0,0.15);
+    }
+
+    /* Panel Actions */
+    .card-panel-actions {
+      padding: 1rem 1.25rem;
+      background: rgba(0, 0, 0, 0.2);
+      border-top: 1px solid #21262d;
+      flex-shrink: 0;
+    }
+
+    .card-panel-download {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      width: 100%;
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.75rem 1rem;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .card-panel-download:hover:not(:disabled) {
+      background: #2ea043;
+    }
+
+    .card-panel-download:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+
+    .card-panel-download:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    .card-panel-download:focus {
+      outline: 2px solid #58a6ff;
+      outline-offset: 2px;
+    }
+
+    /* Overlay for mobile */
+    .card-panel-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 999;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.28s ease, visibility 0.28s ease;
+    }
+
+    .card-panel-overlay.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    @media (max-width: 700px) {
+      .card-panel {
+        width: 100%;
+      }
+    }
+
+    @media (min-width: 701px) {
+      .card-panel-overlay {
+        display: none;
+      }
     }
   </style>
 </head>
 <body>
-  <h1>EA FC 26 — Associação BF</h1>
+  <!-- Overlay for mobile -->
+  <div class="card-panel-overlay" id="card-panel-overlay" onclick="closeCardPanel()"></div>
 
-  <button id="btn" onclick="notify()">Atualizar agora</button>
-  <button id="resend-btn" onclick="resend()">🔄 Reenviar última partida</button>
-  <button id="card-btn" onclick="openCard()">🎴 Gerar card</button>
+  <div class="main-container" id="main-container">
+    <div class="dashboard">
+    <!-- Header Panel -->
+    <div class="panel header-panel">
+      <div class="header-title">
+        <div class="app-title">EA FC 26</div>
+        <div class="club-name">Associação BF</div>
+      </div>
+      <div class="status-badge active" id="header-status">
+        <span class="status-dot"></span>
+        <span id="header-status-text">Monitorando</span>
+      </div>
+    </div>
 
-  <div id="result"></div>
+    <!-- Actions Panel -->
+    <div class="panel actions-panel">
+      <div class="panel-title">Ações</div>
+      <div class="panel-body">
+        <button class="btn btn-primary" id="btn-refresh" onclick="notify()">
+          <span class="btn-icon">🔄</span>
+          <span id="btn-refresh-text">Atualizar agora</span>
+        </button>
+        <div class="secondary-actions">
+          <button class="btn btn-secondary" id="btn-resend" onclick="resend()">
+            <span class="btn-icon">📤</span>
+            <span id="btn-resend-text">Reenviar</span>
+          </button>
+          <button class="btn btn-outline" id="btn-card" onclick="openCard()">
+            <span class="btn-icon">🎴</span>
+            <span>Gerar card</span>
+          </button>
+        </div>
+      </div>
+      <div class="feedback-container" id="feedback-container" style="display: none;"></div>
+    </div>
 
-  <div id="polling-status">
-    <div class="poll-title">Monitoramento automático</div>
-    <div>Estado: <strong id="ps-enabled">—</strong></div>
-    <div>Intervalo: <strong id="ps-interval">—</strong></div>
-    <div>Última verificação: <strong id="ps-last">Ainda não executada</strong></div>
-    <div>Próxima verificação: <strong id="ps-next">—</strong></div>
-    <div>Último resultado: <strong id="ps-result">—</strong></div>
+    <!-- Latest Match Panel -->
+    <div class="panel match-panel">
+      <div class="panel-title">Última Partida</div>
+      <div class="panel-body" id="match-body">
+        <div class="empty-state" id="match-empty">
+          <div class="empty-state-icon">⚽</div>
+          <div>Carregando...</div>
+        </div>
+        <div id="match-content" style="display: none;">
+          <div class="match-row">
+            <div class="match-team" id="match-our-name">—</div>
+            <div class="match-score">
+              <span id="match-our-score">0</span>
+              <span class="match-score-sep">×</span>
+              <span id="match-opp-score">0</span>
+            </div>
+            <div class="match-team" id="match-opp-name">—</div>
+          </div>
+          <div class="match-info">
+            <span class="result-badge" id="match-result-badge">—</span>
+            <span id="match-date">—</span>
+          </div>
+          <div class="match-divider"></div>
+          <div class="match-status" id="match-status">
+            <span class="match-status-icon">—</span>
+            <span id="match-status-text">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Monitoring Panel -->
+    <div class="panel monitoring-panel">
+      <div class="panel-title">Monitoramento Automático</div>
+      <div class="panel-body">
+        <div class="monitoring-grid">
+          <span class="monitoring-label">Status</span>
+          <span class="monitoring-value" id="ps-enabled">—</span>
+
+          <span class="monitoring-label">Intervalo</span>
+          <span class="monitoring-value" id="ps-interval">—</span>
+
+          <span class="monitoring-label">Última verificação</span>
+          <span class="monitoring-value" id="ps-last">—</span>
+
+          <span class="monitoring-label">Próxima verificação</span>
+          <span class="monitoring-value" id="ps-next">—</span>
+
+          <span class="monitoring-label">Resultado</span>
+          <span class="monitoring-value" id="ps-result">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div class="panel settings-panel">
+      <a href="/settings" class="settings-link">
+        <span>⚙️</span>
+        <span>Configurações</span>
+      </a>
+      <span class="network-url" id="network-url"></span>
+    </div>
+  </div>
   </div>
 
-  <div id="network-url"></div>
-
-  <a id="settings-link" href="/settings">⚙️ Configurações</a>
+  <!-- Match Card Side Panel -->
+  <div class="card-panel" id="card-panel">
+    <div class="card-panel-header">
+      <div class="card-panel-title">
+        <div class="card-panel-title-main">📋 Match Card</div>
+        <div class="card-panel-title-sub">Resumo visual da última partida</div>
+      </div>
+      <button class="card-panel-close" onclick="closeCardPanel()" aria-label="Fechar painel">✕</button>
+    </div>
+    <div class="card-panel-body" id="card-panel-body">
+      <div class="card-panel-loading" id="card-panel-loading">
+        <div class="spinner"></div>
+        <span>Carregando partida...</span>
+      </div>
+      <div class="card-panel-error" id="card-panel-error" style="display: none;"></div>
+      <div id="card-panel-content" style="display: none;">
+        <div class="panel-match-card" id="panel-match-card">
+          <div class="panel-card-header">
+            <div class="panel-result-badge" id="panel-result-badge"></div>
+            <div class="panel-score-row">
+              <div class="panel-team-name" id="panel-our-name"></div>
+              <div class="panel-score">
+                <span id="panel-our-score"></span>
+                <span class="panel-score-sep">×</span>
+                <span id="panel-opp-score"></span>
+              </div>
+              <div class="panel-team-name" id="panel-opp-name"></div>
+            </div>
+            <div class="panel-match-date" id="panel-match-date"></div>
+          </div>
+          <div class="panel-card-body" id="panel-card-body"></div>
+          <div class="panel-card-footer">EA FC 26 — Associação BF</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-panel-actions" id="card-panel-actions" style="display: none;">
+      <button class="card-panel-download" id="panel-download-btn" onclick="downloadPanelCard()">
+        <span>📥</span>
+        <span id="panel-download-text">Baixar Card</span>
+      </button>
+    </div>
+  </div>
 
   <script>
-    (function () {
+    // State
+    let isLoading = false;
+    let lastMatchData = null;
+
+    // Initialize
+    (function init() {
+      loadNetworkInfo();
+      loadLatestMatch();
+      refreshPollingStatus();
+      setInterval(refreshPollingStatus, 15000);
+      setInterval(loadLatestMatch, 30000);
+    })();
+
+    function loadNetworkInfo() {
       fetch('/api/settings/info')
         .then(r => r.json())
         .then(info => {
           if (info.networkUrl) {
             document.getElementById('network-url').innerHTML =
-              'Acesso local: <a href="' + esc(info.networkUrl) + '">' + esc(info.networkUrl) + '</a>';
+              '<a href="' + esc(info.networkUrl) + '">' + esc(info.networkUrl) + '</a>';
           }
         })
         .catch(() => {});
-    })();
-
-    function openCard() {
-      window.location.href = '/match-card';
     }
 
-    async function notify() {
-      const btn = document.getElementById('btn');
-      const resendBtn = document.getElementById('resend-btn');
-      const resultDiv = document.getElementById('result');
+    function loadLatestMatch() {
+      fetch('/api/match-card/latest')
+        .then(r => r.json())
+        .then(data => {
+          if (data.status === 'success' && data.presentation) {
+            lastMatchData = data.presentation;
+            renderLatestMatch(data.presentation);
+          } else {
+            renderNoMatch(data.message || 'Nenhuma partida encontrada');
+          }
+        })
+        .catch(() => {
+          renderNoMatch('Erro ao carregar partida');
+        });
+    }
+
+    function renderLatestMatch(p) {
+      document.getElementById('match-empty').style.display = 'none';
+      document.getElementById('match-content').style.display = 'block';
+
+      document.getElementById('match-our-name').textContent = p.ourName || '—';
+      document.getElementById('match-opp-name').textContent = p.oppName || '—';
+      document.getElementById('match-our-score').textContent = p.ourScore ?? '0';
+      document.getElementById('match-opp-score').textContent = p.oppScore ?? '0';
+
+      const badge = document.getElementById('match-result-badge');
+      if (p.outcome) {
+        badge.textContent = p.outcome.label || '—';
+        badge.className = 'result-badge ' + (p.outcome.type || '').toLowerCase();
+      }
+
+      document.getElementById('match-date').textContent = p.date || '—';
+
+      // Default to published since we're fetching existing match
+      updateMatchStatus('published');
+    }
+
+    function renderNoMatch(message) {
+      document.getElementById('match-empty').style.display = 'block';
+      document.getElementById('match-content').style.display = 'none';
+      document.getElementById('match-empty').innerHTML =
+        '<div class="empty-state-icon">⚽</div><div>' + esc(message) + '</div>';
+    }
+
+    function updateMatchStatus(status, customText) {
+      const statusEl = document.getElementById('match-status');
+      const iconEl = statusEl.querySelector('.match-status-icon');
+      const textEl = document.getElementById('match-status-text');
+
+      statusEl.className = 'match-status ' + status;
+
+      if (status === 'published') {
+        iconEl.textContent = '✅';
+        textEl.textContent = customText || 'Já publicada no Discord';
+      } else if (status === 'pending') {
+        iconEl.textContent = '⏳';
+        textEl.textContent = customText || 'Aguardando publicação';
+      } else if (status === 'error') {
+        iconEl.textContent = '❌';
+        textEl.textContent = customText || 'Erro na publicação';
+      } else {
+        iconEl.textContent = 'ℹ️';
+        textEl.textContent = customText || '—';
+      }
+    }
+
+    // ===== Match Card Side Panel =====
+    let panelMatchPresentation = null;
+
+    function openCard() {
+      const panel = document.getElementById('card-panel');
+      const overlay = document.getElementById('card-panel-overlay');
+      const mainContainer = document.getElementById('main-container');
+
+      panel.classList.add('open');
+      overlay.classList.add('visible');
+      mainContainer.classList.add('panel-open');
+
+      loadPanelCard();
+    }
+
+    function closeCardPanel() {
+      const panel = document.getElementById('card-panel');
+      const overlay = document.getElementById('card-panel-overlay');
+      const mainContainer = document.getElementById('main-container');
+
+      panel.classList.remove('open');
+      overlay.classList.remove('visible');
+      mainContainer.classList.remove('panel-open');
+    }
+
+    async function loadPanelCard() {
+      const loadingEl = document.getElementById('card-panel-loading');
+      const errorEl = document.getElementById('card-panel-error');
+      const contentEl = document.getElementById('card-panel-content');
+      const actionsEl = document.getElementById('card-panel-actions');
+
+      loadingEl.style.display = 'flex';
+      errorEl.style.display = 'none';
+      contentEl.style.display = 'none';
+      actionsEl.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/match-card/latest');
+        const data = await res.json();
+
+        loadingEl.style.display = 'none';
+
+        if (data.status !== 'success') {
+          errorEl.style.display = 'block';
+          errorEl.textContent = data.message || 'Erro ao carregar partida.';
+          return;
+        }
+
+        panelMatchPresentation = data.presentation;
+        renderPanelCard(panelMatchPresentation);
+        contentEl.style.display = 'block';
+        actionsEl.style.display = 'block';
+      } catch (e) {
+        loadingEl.style.display = 'none';
+        errorEl.style.display = 'block';
+        errorEl.textContent = 'Erro de rede. Verifique a conexão.';
+      }
+    }
+
+    function renderPanelCard(p) {
+      // Header
+      const badge = document.getElementById('panel-result-badge');
+      badge.textContent = p.outcome.label;
+      badge.className = 'panel-result-badge ' + p.outcome.type.toLowerCase();
+
+      document.getElementById('panel-our-name').textContent = p.ourName;
+      document.getElementById('panel-opp-name').textContent = p.oppName;
+      document.getElementById('panel-our-score').textContent = p.ourScore;
+      document.getElementById('panel-opp-score').textContent = p.oppScore;
+      document.getElementById('panel-match-date').textContent = '📅 ' + p.date;
+
+      const body = document.getElementById('panel-card-body');
+      let html = '';
+
+      // Goals & Assists
+      if (p.goals || p.assists) {
+        html += '<div class="panel-divider"></div>';
+        if (p.goals && p.assists) {
+          html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">';
+          html += renderPanelPlayerList('⚽ GOLS', p.goals.scorers, s => ({ name: s.name, stat: `×${s.count}` }));
+          html += renderPanelPlayerList('🎯 ASSIST', p.assists.assisters, a => ({ name: a.name, stat: `×${a.count}` }));
+          html += '</div>';
+        } else if (p.goals) {
+          html += renderPanelPlayerList('⚽ GOLS', p.goals.scorers, s => ({ name: s.name, stat: `×${s.count}` }));
+        } else {
+          html += renderPanelPlayerList('🎯 ASSISTÊNCIAS', p.assists.assisters, a => ({ name: a.name, stat: `×${a.count}` }));
+        }
+      }
+
+      // Top 3 highlights
+      if (p.highlights) {
+        html += '<div class="panel-divider"></div>';
+        html += '<div class="panel-sec"><div class="panel-sec-title">🥇 DESTAQUES</div>';
+        html += '<div class="panel-top3">';
+        p.highlights.top3.forEach(t => {
+          html += `<div class="panel-top3-item"><span class="panel-top3-medal">${t.medal}</span><span>${esc(t.name)}</span><span class="panel-top3-rating">${t.rating}</span></div>`;
+        });
+        html += '</div>';
+        if (p.highlights.teamAverage) {
+          html += `<div class="panel-team-avg">⭐ Média: ${p.highlights.teamAverage}</div>`;
+        }
+        html += '</div>';
+      }
+
+      // Craque
+      if (p.craque) {
+        html += '<div class="panel-divider"></div>';
+        html += renderPanelHighlight('⭐ CRAQUE', p.craque.name, p.craque.reason, p.craque.phrase);
+      }
+
+      // Perigo Constante
+      if (p.perigoConstante) {
+        html += '<div class="panel-divider"></div>';
+        const pc = p.perigoConstante;
+        const stats = `${pc.shots} chutes • ${pc.goals} ${pc.goals === 1 ? 'gol' : 'gols'}`;
+        html += renderPanelHighlight('🔥 PERIGO', pc.name, stats, pc.phrase);
+      }
+
+      // Bagre
+      if (p.bagre) {
+        html += '<div class="panel-divider"></div>';
+        html += '<div class="panel-sec"><div class="panel-sec-title">🍍 BAGRE</div>';
+        const lines = p.bagre.sections.slice(0, 4).map(s => esc(s)).join(' • ');
+        html += `<div class="panel-bagre-lines">${lines}</div>`;
+        html += '</div>';
+      }
+
+      // Xerife
+      if (p.xerife) {
+        html += '<div class="panel-divider"></div>';
+        const x = p.xerife;
+        html += renderPanelHighlight('🚧 XERIFE', x.name, `${x.tacklesMade}/${x.tackleAttempts} desarmes (${x.successRate}%)`, x.phrase);
+      }
+
+      // Passe de Precisão
+      if (p.passePrecisao) {
+        html += '<div class="panel-divider"></div>';
+        const pp = p.passePrecisao;
+        html += renderPanelHighlight('🎯 PRECISÃO', pp.name, `${pp.passesMade}/${pp.passAttempts} passes (${pp.accuracy}%)`, pp.phrase);
+      }
+
+      // Correio Extraviado
+      if (p.correioExtraviado) {
+        html += '<div class="panel-divider"></div>';
+        const ce = p.correioExtraviado;
+        html += `<div class="panel-sec">
+          <div class="panel-sec-title">📮 CORREIO</div>
+          <div class="panel-hl-row">
+            <span class="panel-hl-name">${esc(ce.name)}</span>
+            <span class="panel-hl-stats">❌ ${ce.missedPasses} passes errados</span>
+            <span class="panel-hl-phrase">💬 "${esc(ce.phrase)}"</span>
+          </div>
+        </div>`;
+      }
+
+      // Muralha
+      if (p.muralha) {
+        html += '<div class="panel-divider"></div>';
+        const m = p.muralha;
+        html += renderPanelHighlight('🧤 MURALHA', m.name, `${m.saves} defesas`, m.phrase);
+      }
+
+      body.innerHTML = html;
+    }
+
+    function renderPanelPlayerList(title, items, mapper) {
+      let html = `<div class="panel-sec"><div class="panel-sec-title">${title}</div><div class="panel-player-list">`;
+      items.forEach(item => {
+        const { name, stat } = mapper(item);
+        html += `<div class="panel-player-list-item"><span>${esc(name)}</span><span class="panel-player-list-count">${stat}</span></div>`;
+      });
+      html += '</div></div>';
+      return html;
+    }
+
+    function renderPanelHighlight(title, name, stats, phrase) {
+      return `<div class="panel-sec">
+        <div class="panel-sec-title">${title}</div>
+        <div class="panel-hl-row">
+          <span class="panel-hl-name">${esc(name)}</span>
+          <span class="panel-hl-stats">${esc(stats)}</span>
+          <span class="panel-hl-phrase">💬 "${esc(phrase)}"</span>
+        </div>
+      </div>`;
+    }
+
+    async function downloadPanelCard() {
+      const btn = document.getElementById('panel-download-btn');
+      const btnText = document.getElementById('panel-download-text');
+      const card = document.getElementById('panel-match-card');
+
+      if (!card || !panelMatchPresentation) {
+        return;
+      }
 
       btn.disabled = true;
+      btnText.textContent = 'Gerando...';
+
+      try {
+        const canvas = await html2canvas(card, {
+          backgroundColor: '#0d1117',
+          scale: 2,
+          useCORS: true,
+          logging: false,
+        });
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        const link = document.createElement('a');
+        link.download = generatePanelFilename();
+        link.href = dataUrl;
+        link.click();
+      } catch (e) {
+        console.error('Erro ao gerar imagem:', e);
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = 'Baixar Card';
+      }
+    }
+
+    function generatePanelFilename() {
+      if (!panelMatchPresentation) return 'match-card.jpg';
+      const p = panelMatchPresentation;
+      return `${sanitizeName(p.ourName)}-${p.ourScore}x${p.oppScore}-${sanitizeName(p.oppName)}.jpg`;
+    }
+
+    function sanitizeName(str) {
+      if (!str) return 'Time';
+      return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
+    }
+
+    // Close panel with Escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closeCardPanel();
+      }
+    });
+
+    async function notify() {
+      if (isLoading) return;
+
+      const btn = document.getElementById('btn-refresh');
+      const btnText = document.getElementById('btn-refresh-text');
+      const resendBtn = document.getElementById('btn-resend');
+
+      setLoading(true, btn, btnText, 'Verificando...');
       resendBtn.disabled = true;
-      btn.textContent = 'Verificando...';
-      resultDiv.innerHTML = '';
+      hideFeedback();
 
       try {
         const res = await fetch('/api/matches/notify-latest', {
@@ -194,25 +1312,26 @@
           headers: { 'Content-Type': 'application/json' }
         });
         const data = await res.json();
-        renderResult(data, res.status);
+        handleResult(data);
+        loadLatestMatch();
       } catch (e) {
-        resultDiv.innerHTML = '<div class="msg error">Erro de rede. Verifique a conexão.</div>';
+        showFeedback('error', '❌', 'Erro de rede. Verifique a conexão.');
       } finally {
-        btn.disabled = false;
+        setLoading(false, btn, btnText, 'Atualizar agora');
         resendBtn.disabled = false;
-        btn.textContent = 'Atualizar agora';
       }
     }
 
     async function resend() {
-      const btn = document.getElementById('btn');
-      const resendBtn = document.getElementById('resend-btn');
-      const resultDiv = document.getElementById('result');
+      if (isLoading) return;
 
-      btn.disabled = true;
-      resendBtn.disabled = true;
-      resendBtn.textContent = 'Reenviando...';
-      resultDiv.innerHTML = '';
+      const btn = document.getElementById('btn-resend');
+      const btnText = document.getElementById('btn-resend-text');
+      const refreshBtn = document.getElementById('btn-refresh');
+
+      setLoading(true, btn, btnText, '...');
+      refreshBtn.disabled = true;
+      hideFeedback();
 
       try {
         const res = await fetch('/api/matches/resend-latest', {
@@ -220,66 +1339,143 @@
           headers: { 'Content-Type': 'application/json' }
         });
         const data = await res.json();
-        renderResult(data, res.status);
+        handleResult(data);
+        loadLatestMatch();
       } catch (e) {
-        resultDiv.innerHTML = '<div class="msg error">Erro de rede. Verifique a conexão.</div>';
+        showFeedback('error', '❌', 'Erro de rede. Verifique a conexão.');
       } finally {
-        btn.disabled = false;
-        resendBtn.disabled = false;
-        resendBtn.textContent = '🔄 Reenviar última partida';
+        setLoading(false, btn, btnText, 'Reenviar');
+        refreshBtn.disabled = false;
       }
     }
 
-    function renderResult(data, status) {
-      const resultDiv = document.getElementById('result');
-      let cls, text;
-
-      if (data.status === 'sent') {
-        cls = 'sent'; text = '✅ Notificação enviada com sucesso!';
-      } else if (data.status === 'force_sent') {
-        cls = 'force-sent'; text = '🔄 Partida reenviada com sucesso!';
-      } else if (data.status === 'sent_persistence_error') {
-        cls = 'sent'; text = '⚠️ A partida foi enviada ao Discord, mas não foi possível salvar o histórico local.';
-      } else if (data.status === 'already_published') {
-        cls = 'already'; text = 'ℹ️ Partida já publicada anteriormente.';
-      } else if (data.status === 'no_matches') {
-        cls = 'no-matches'; text = '⚽ Nenhuma partida encontrada.';
-      } else if (data.status === 'busy') {
-        cls = 'busy'; text = '⏳ ' + data.message;
+    function setLoading(loading, btn, textEl, text) {
+      isLoading = loading;
+      btn.disabled = loading;
+      if (loading) {
+        textEl.innerHTML = '<span class="spinner"></span>';
       } else {
-        cls = 'error'; text = '❌ ' + (data.message || 'Erro desconhecido.');
+        textEl.textContent = text;
+      }
+    }
+
+    function handleResult(data) {
+      let type, icon, text;
+
+      switch (data.status) {
+        case 'sent':
+          type = 'success';
+          icon = '✅';
+          text = 'Notificação enviada com sucesso!';
+          break;
+        case 'force_sent':
+          type = 'success';
+          icon = '🔄';
+          text = 'Partida reenviada com sucesso!';
+          break;
+        case 'sent_persistence_error':
+          type = 'warning';
+          icon = '⚠️';
+          text = 'Enviada, mas não foi possível salvar o histórico.';
+          break;
+        case 'already_published':
+          type = 'info';
+          icon = 'ℹ️';
+          text = 'Partida já publicada anteriormente.';
+          break;
+        case 'no_matches':
+          type = 'info';
+          icon = '⚽';
+          text = 'Nenhuma partida encontrada.';
+          break;
+        case 'busy':
+          type = 'warning';
+          icon = '⏳';
+          text = data.message || 'Outra notificação em andamento.';
+          break;
+        default:
+          type = 'error';
+          icon = '❌';
+          text = data.message || 'Erro desconhecido.';
       }
 
-      const summary = data.summary ? `<div class="summary">${esc(data.summary)}</div>` : '';
-      resultDiv.innerHTML = `<div class="msg ${cls}">${text}${summary}</div>`;
+      showFeedback(type, icon, text, data.summary);
     }
 
-    function esc(s) {
-      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    function showFeedback(type, icon, text, summary) {
+      const container = document.getElementById('feedback-container');
+      let html = `<div class="feedback ${type}">
+        <span class="feedback-icon">${icon}</span>
+        <div class="feedback-text">
+          <div>${esc(text)}</div>
+          ${summary ? `<div class="feedback-summary">${esc(summary)}</div>` : ''}
+        </div>
+      </div>`;
+      container.innerHTML = html;
+      container.style.display = 'block';
     }
 
-    function fmtTime(iso) {
-      if (!iso) return '—';
-      try {
-        return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      } catch (_) { return iso; }
+    function hideFeedback() {
+      document.getElementById('feedback-container').style.display = 'none';
     }
 
     function refreshPollingStatus() {
       fetch('/api/polling/status')
         .then(r => r.json())
         .then(d => {
-          document.getElementById('ps-enabled').textContent = d.enabled ? 'Ativo' : 'Inativo';
-          document.getElementById('ps-interval').textContent = d.intervalSeconds ? (d.intervalSeconds / 60) + ' minutos' : '—';
-          document.getElementById('ps-last').textContent = fmtTime(d.lastCheck) || 'Ainda não executada';
-          document.getElementById('ps-next').textContent = fmtTime(d.nextCheck) || '—';
-          document.getElementById('ps-result').textContent = d.lastResult || '—';
+          const enabled = d.enabled;
+          const enabledEl = document.getElementById('ps-enabled');
+          enabledEl.textContent = enabled ? 'Ativo' : 'Inativo';
+          enabledEl.className = 'monitoring-value ' + (enabled ? 'active' : 'inactive');
+
+          document.getElementById('ps-interval').textContent =
+            d.intervalSeconds ? formatInterval(d.intervalSeconds) : '—';
+          document.getElementById('ps-last').textContent =
+            fmtTime(d.lastCheck) || 'Ainda não executada';
+          document.getElementById('ps-next').textContent =
+            fmtTime(d.nextCheck) || '—';
+          document.getElementById('ps-result').textContent =
+            d.lastResult || '—';
+
+          // Update header status badge
+          const headerStatus = document.getElementById('header-status');
+          const headerStatusText = document.getElementById('header-status-text');
+          if (enabled) {
+            headerStatus.className = 'status-badge active';
+            headerStatusText.textContent = 'Monitorando';
+          } else {
+            headerStatus.className = 'status-badge inactive';
+            headerStatusText.textContent = 'Inativo';
+          }
         })
         .catch(() => {});
     }
 
-    refreshPollingStatus();
-    setInterval(refreshPollingStatus, 15000);
+    function formatInterval(seconds) {
+      if (seconds >= 60) {
+        const mins = Math.floor(seconds / 60);
+        return mins + (mins === 1 ? ' minuto' : ' minutos');
+      }
+      return seconds + ' segundos';
+    }
+
+    function fmtTime(iso) {
+      if (!iso) return null;
+      try {
+        return new Date(iso).toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+      } catch (_) {
+        return iso;
+      }
+    }
+
+    function esc(s) {
+      if (s == null) return '';
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
   </script>
 </body>
 </html>

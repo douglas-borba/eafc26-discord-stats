@@ -6,26 +6,67 @@ set -euo pipefail
 BUNDLE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 JAR="$BUNDLE_DIR/Resources/eafc26-discord-stats.jar"
 APP_NAME="EA FC 26 Discord Stats"
-PID_FILE="$HOME/Library/Application Support/EAFC26DiscordStats/app.pid"
+SUPPORT_DIR="$HOME/Library/Application Support/EAFC26DiscordStats"
+PID_FILE="$SUPPORT_DIR/app.pid"
+LOCK_FILE="$SUPPORT_DIR/launcher.lock"
 LOG_DIR="$HOME/Library/Logs/EAFC26DiscordStats"
 LOG_FILE="$LOG_DIR/app.log"
 PORT=8080
 BASE_URL="http://localhost:$PORT"
+HEALTH_URL="$BASE_URL/api/health"
 
-# ── Duplicate-process guard ──────────────────────────────────────────────────
-mkdir -p "$(dirname "$PID_FILE")"
-if [ -f "$PID_FILE" ]; then
-    OLD_PID=$(cat "$PID_FILE")
-    if kill -0 "$OLD_PID" 2>/dev/null; then
-        # Already running — just open the browser
-        open "$BASE_URL"
-        exit 0
+# Create support directories
+mkdir -p "$SUPPORT_DIR"
+mkdir -p "$LOG_DIR"
+
+# ── Launcher lock to prevent multiple quick launches ────────────────────────
+# Use a lock directory as atomic operation (works on macOS without flock)
+acquire_lock() {
+    if mkdir "$LOCK_FILE" 2>/dev/null; then
+        # Acquired lock - set up cleanup trap
+        trap 'rm -rf "$LOCK_FILE"' EXIT
+        return 0
     fi
-    rm -f "$PID_FILE"
+    return 1
+}
+
+if ! acquire_lock; then
+    # Another launcher instance is running - just open the URL if server is up
+    sleep 0.5  # Brief delay to let the other instance start
+    if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+        open "$BASE_URL"
+    fi
+    exit 0
 fi
 
-# ── Logging ──────────────────────────────────────────────────────────────────
-mkdir -p "$LOG_DIR"
+# ── Check if backend is already running ──────────────────────────────────────
+backend_running() {
+    if [ -f "$PID_FILE" ]; then
+        local OLD_PID
+        OLD_PID=$(cat "$PID_FILE" 2>/dev/null || echo "")
+        if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+            # PID exists and process is running - verify it's our Java app
+            if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+                return 0
+            fi
+        fi
+        # Stale PID file - remove it
+        rm -f "$PID_FILE"
+    fi
+
+    # Also check if port is in use (another instance without PID file)
+    if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+        return 0
+    fi
+
+    return 1
+}
+
+# ── Already running - just open browser and exit ─────────────────────────────
+if backend_running; then
+    open "$BASE_URL"
+    exit 0
+fi
 
 # ── Find Java 21+ ────────────────────────────────────────────────────────────
 find_java() {
@@ -34,12 +75,14 @@ find_java() {
         "$BUNDLE_DIR/Resources/jre/bin/java"
         # JAVA_HOME if set
         "${JAVA_HOME:-}/bin/java"
-        # Homebrew
+        # Homebrew (Apple Silicon)
         /opt/homebrew/opt/openjdk@21/bin/java
         /opt/homebrew/opt/openjdk/bin/java
+        # Homebrew (Intel)
+        /usr/local/opt/openjdk@21/bin/java
+        /usr/local/opt/openjdk/bin/java
         # SDKMAN default
         "$HOME/.sdkman/candidates/java/current/bin/java"
-        # macOS system java_home
     )
     for j in "${candidates[@]}"; do
         if [ -x "$j" ]; then
@@ -63,25 +106,36 @@ JAVA_BIN=$(find_java) || {
 }
 
 # ── Launch the Spring Boot JAR ───────────────────────────────────────────────
+echo "$(date '+%Y-%m-%d %H:%M:%S') — Starting $APP_NAME..." >> "$LOG_FILE"
 "$JAVA_BIN" -jar "$JAR" >> "$LOG_FILE" 2>&1 &
 APP_PID=$!
 echo "$APP_PID" > "$PID_FILE"
 
 # ── Wait for the server to be ready (up to 60 s) ─────────────────────────────
 SECONDS_WAITED=0
-until curl -sf "$BASE_URL/api/health" > /dev/null 2>&1; do
-    sleep 1
+MAX_WAIT=60
+
+until curl -sf "$HEALTH_URL" > /dev/null 2>&1; do
+    sleep 0.5
     SECONDS_WAITED=$((SECONDS_WAITED + 1))
-    if [ $SECONDS_WAITED -ge 60 ]; then
+
+    if [ $SECONDS_WAITED -ge $MAX_WAIT ]; then
         osascript -e "display dialog \"$APP_NAME demorou muito para iniciar.\nVerifique o log em: $LOG_FILE\" with title \"$APP_NAME\" buttons {\"OK\"} default button \"OK\" with icon stop" 2>/dev/null || true
         exit 1
     fi
+
     # Check if process died
     if ! kill -0 "$APP_PID" 2>/dev/null; then
         osascript -e "display dialog \"$APP_NAME não pôde iniciar.\nVerifique o log em: $LOG_FILE\" with title \"$APP_NAME\" buttons {\"OK\"} default button \"OK\" with icon stop" 2>/dev/null || true
+        rm -f "$PID_FILE"
         exit 1
     fi
 done
 
-# ── Open the browser ─────────────────────────────────────────────────────────
+# ── Open the browser once ────────────────────────────────────────────────────
+# Use the system default browser via 'open' command.
+# This opens the URL in the default browser and brings it to the foreground.
 open "$BASE_URL"
+
+# Launcher exits - the Java backend continues running in background
+exit 0
