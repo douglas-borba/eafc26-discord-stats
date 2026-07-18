@@ -42,7 +42,7 @@ object HistoryEmbedBuilder {
         ).firstOrNull { it.manOfTheMatch == "1" }
 
         if (mvp != null) {
-            val name = mvp.playerName ?: "Desconhecido"
+            val name = mvp.displayName()
             val rating = mvp.rating?.toDoubleOrNull()?.let { "%.1f".format(it) } ?: "N/D"
             fields += EmbedField("⭐ MVP", "$name ($rating)", inline = true)
         }

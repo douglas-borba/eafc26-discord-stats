@@ -398,6 +398,39 @@ class NotifyLatestServiceTest {
         verify(store, never()).saveIds(any())
     }
 
+    // -- Fresh HTTP Requests --
+
+    @Test
+    fun `resendLatest always performs a fresh EA API request`() {
+        val match = match("m1")
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        whenever(store.loadIds()).thenReturn(setOf("m1"))
+
+        service.resendLatest()
+        service.resendLatest()
+        service.resendLatest()
+
+        // Each call must invoke gateway.getLatestMatches
+        verify(gateway, org.mockito.kotlin.times(3)).getLatestMatches(clubId)
+    }
+
+    @Test
+    fun `notifyLatest always performs a fresh EA API request`() {
+        // Verify that each call to notifyLatest triggers a new gateway call
+        val match = match("m1", ts = 1000)
+
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+        whenever(store.loadIds()).thenReturn(setOf("m1")) // Already published
+
+        // Call notifyLatest multiple times - each should query the gateway
+        service.notifyLatest()
+        service.notifyLatest()
+        service.notifyLatest()
+
+        // Each call must invoke gateway.getLatestMatches (fresh HTTP request)
+        verify(gateway, org.mockito.kotlin.times(3)).getLatestMatches(clubId)
+    }
+
     // -- Helpers --
 
     private fun match(id: String, ts: Long = 5000L) = MatchResponse(

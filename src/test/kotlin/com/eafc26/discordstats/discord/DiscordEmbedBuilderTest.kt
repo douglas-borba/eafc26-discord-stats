@@ -308,62 +308,64 @@ class DiscordEmbedBuilderTest {
         assertThat(embed.fields.field("🥇 DESTAQUES").value).contains("SemCampo")
     }
 
-    // -- Muralha da Partida --------------------------------------------------
+    // -- Goleiro --------------------------------------------------------------
 
     @Test
-    fun `secao MURALHA mostra defesas realizadas`() {
+    fun `secao GOLEIRO mostra defesas e gols sofridos`() {
         val embed = buildEmbedWithPlayers(
             goalkeeper("Guardião", saves = "7", rating = "8.5", goalsConceded = "2"),
             player("Linha", rating = "7.0"),
         ).embeds[0]
-        val text = embed.fields.field("🧤 MURALHA DA PARTIDA").value
-        assertThat(text).contains("Defesas realizadas: 7")
+        val text = embed.fields.field("🧤 GOLEIRO").value
+        assertThat(text).contains("7 defesas")
+        assertThat(text).contains("2 gols sofridos")
     }
 
     @Test
-    fun `secao MURALHA nao mostra nome nem nota do goleiro`() {
+    fun `secao GOLEIRO mostra nome do goleiro`() {
         val embed = buildEmbedWithPlayers(
             goalkeeper("Guardião", saves = "5", rating = "8.5"),
             player("Linha", rating = "7.0"),
         ).embeds[0]
-        val text = embed.fields.field("🧤 MURALHA DA PARTIDA").value
-        assertThat(text).doesNotContain("Guardião")
-        assertThat(text).doesNotContain("8,50")
+        val text = embed.fields.field("🧤 GOLEIRO").value
+        assertThat(text).contains("Guardião")
     }
 
     @Test
-    fun `secao MURALHA contem frase dinamica`() {
+    fun `secao GOLEIRO contem frase dinamica`() {
         val embed = buildEmbedWithPlayers(
             goalkeeper("GK", saves = "3"),
             player("Linha", rating = "7.0"),
         ).embeds[0]
-        val text = embed.fields.field("🧤 MURALHA DA PARTIDA").value
+        val text = embed.fields.field("🧤 GOLEIRO").value
         assertThat(text).contains("💬 \"")
     }
 
     @Test
-    fun `secao MURALHA omitida quando nenhum goleiro jogou`() {
+    fun `secao GOLEIRO omitida quando nenhum goleiro jogou`() {
         val embed = buildEmbedWithPlayers(player("Meia", rating = "7.0")).embeds[0]
-        assertThat(embed.fields.none { it.name == "🧤 MURALHA DA PARTIDA" }).isTrue()
+        assertThat(embed.fields.none { it.name == "🧤 GOLEIRO" }).isTrue()
     }
 
     @Test
-    fun `quando dois goleiros jogaram muralha usa o com mais minutos`() {
+    fun `quando dois goleiros jogaram usa o com mais minutos`() {
         val embed = buildEmbedWithPlayers(
             goalkeeper("GK_Curto", saves = "1", rating = "7.0", secondsPlayed = "600"),
             goalkeeper("GK_Longo", saves = "5", rating = "8.0", secondsPlayed = "1200"),
             player("Linha", rating = "6.5"),
         ).embeds[0]
-        assertThat(embed.fields.field("🧤 MURALHA DA PARTIDA").value).contains("Defesas realizadas: 5")
+        assertThat(embed.fields.field("🧤 GOLEIRO").value).contains("5 defesas")
     }
 
     @Test
-    fun `secao GOLEIRO nao existe mais`() {
+    fun `secao GOLEIRO usa singular para 1 defesa`() {
         val embed = buildEmbedWithPlayers(
-            goalkeeper("GK", saves = "3"),
+            goalkeeper("GK", saves = "1", goalsConceded = "1"),
             player("Linha", rating = "7.0"),
         ).embeds[0]
-        assertThat(embed.fields.none { it.name == "🧤 GOLEIRO" }).isTrue()
+        val text = embed.fields.field("🧤 GOLEIRO").value
+        assertThat(text).contains("1 defesa")
+        assertThat(text).contains("1 gol sofrido")
     }
 
     // -- Bagre da Partida -----------------------------------------------------
@@ -502,7 +504,7 @@ class DiscordEmbedBuilderTest {
     @Test
     fun `bagre cartao vermelho aparece quando presente`() {
         val embed = buildEmbedWithPlayers(
-            player("Expulso", rating = "4.0", redCards = "1"),
+            player("Expulso", rating = "5.5", redCards = "1"),
         ).embeds[0]
         assertThat(embed.fields.field("🍍 BAGRE DA PARTIDA").value).contains("🟥 Cartão vermelho: 1")
     }

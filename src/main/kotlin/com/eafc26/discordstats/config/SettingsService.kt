@@ -156,9 +156,9 @@ class SettingsService {
     // ------------------------------------------------------------------
 
     /**
-     * Returns the polling interval in milliseconds, or the default if not configured.
+     * Returns the polling interval in milliseconds, or the default (60 seconds) if not configured.
      */
-    fun getPollingIntervalMs(default: Long = 300_000L): Long =
+    fun getPollingIntervalMs(default: Long = 60_000L): Long =
         prefs.getLong(KEY_POLLING_INTERVAL_MS, default)
 
     /**

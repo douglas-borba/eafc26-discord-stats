@@ -77,4 +77,40 @@ data class PlayerEntry(
     @JsonProperty("goalsconceded") val goalsConceded: String? = null,
     @JsonProperty("secondsplayed") val secondsPlayed: String? = null,
     @JsonProperty("status") val status: String? = null,
-)
+) {
+    companion object {
+        /**
+         * EA FC position code for goalkeeper.
+         * The API returns position as a numeric string.
+         */
+        const val POSITION_GOALKEEPER = "0"
+    }
+
+    /**
+     * Returns true if this player is a goalkeeper.
+     * 
+     * Handles both:
+     * - EA API numeric position code "0"
+     * - Test helper string "goalkeeper" (for backwards compatibility)
+     */
+    fun isGoalkeeper(): Boolean =
+        position == POSITION_GOALKEEPER || position?.lowercase() == "goalkeeper"
+
+    /**
+     * Returns the display name for this player.
+     * 
+     * Uses the Pro player name (the in-game character name displayed on the player's
+     * shirt) with proper text normalization to fix EA's encoding issues.
+     * 
+     * Falls back to "Desconhecido" if the Pro player name is null or blank.
+     * For BOT goalkeepers, falls back to "Goleiro BOT".
+     */
+    fun displayName(): String {
+        val normalized = playerName
+            ?.let { normalizeEaText(it) }
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        
+        return normalized ?: if (isGoalkeeper()) "Goleiro BOT" else "Desconhecido"
+    }
+}

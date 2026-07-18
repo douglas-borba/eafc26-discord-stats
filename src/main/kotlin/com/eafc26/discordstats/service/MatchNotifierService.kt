@@ -38,12 +38,12 @@ class MatchNotifierService(
             }
             is EaApiResult.Unavailable -> {
                 log.warn("EA API unavailable (HTTP {}): {}", result.statusCode, result.message)
-                statusCallback("EA indisponível. Nova tentativa em 2 minutos.")
+                statusCallback("EA indisponível. Nova tentativa em 1 minuto.")
                 return
             }
             is EaApiResult.UnexpectedPayload -> {
                 log.error("EA API returned unexpected payload", result.cause)
-                statusCallback("EA indisponível. Nova tentativa em 2 minutos.")
+                statusCallback("EA indisponível. Nova tentativa em 1 minuto.")
                 return
             }
         }
@@ -85,14 +85,14 @@ class MatchNotifierService(
                 }
             } catch (ex: IllegalStateException) {
                 log.error("Discord webhook not configured — aborting cycle: {}", ex.message)
-                statusCallback("EA indisponível. Nova tentativa em 2 minutos.")
+                statusCallback("EA indisponível. Nova tentativa em 1 minuto.")
                 return
             } catch (ex: DiscordDeliveryException) {
                 log.warn("Discord delivery failed for match {} — will retry next cycle: {}", match.matchId, ex.message)
-                lastStatus = "EA indisponível. Nova tentativa em 2 minutos."
+                lastStatus = "EA indisponível. Nova tentativa em 1 minuto."
             } catch (ex: Exception) {
                 log.error("Unexpected error publishing match {}", match.matchId, ex)
-                lastStatus = "EA indisponível. Nova tentativa em 2 minutos."
+                lastStatus = "EA indisponível. Nova tentativa em 1 minuto."
             }
         }
         statusCallback(lastStatus)

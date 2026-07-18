@@ -227,6 +227,45 @@ class MatchNotifierServiceTest {
         verify(discord, times(2)).sendHistory(any())
     }
 
+    // -- Fresh HTTP Request Every Cycle --
+
+    @Test
+    fun `each process cycle performs a fresh EA API request`() {
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(emptyList()))
+        whenever(store.loadIds()).thenReturn(setOf("baseline"))
+
+        val service = makeService()
+
+        service.process()
+        service.process()
+        service.process()
+
+        verify(gateway, times(3)).getLatestMatches(clubId)
+    }
+
+    @Test
+    fun `new match from EA API is published on first poll cycle that returns it`() {
+        val match = match("new-match", ts = 9999)
+
+        // Simulate: first poll returns no new matches, second poll returns the new match
+        whenever(gateway.getLatestMatches(clubId))
+            .thenReturn(EaApiResult.Success(emptyList()))
+            .thenReturn(EaApiResult.Success(listOf(match)))
+
+        whenever(store.loadIds()).thenReturn(setOf("baseline"))
+
+        val service = makeService()
+
+        // First poll: no new matches
+        service.process()
+        verify(discord, never()).send(any())
+
+        // Second poll: new match appears in EA API response -> publish immediately
+        service.process()
+        verify(discord, times(1)).send(any())
+        verify(store).saveIds(setOf("baseline", "new-match"))
+    }
+
     // -- Helpers --
 
     private fun match(id: String, ts: Long = 1000L) = MatchResponse(

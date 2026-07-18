@@ -30,7 +30,6 @@ app:
 
   polling:
     enabled: true
-    interval-ms: 120000
     publish-existing-on-first-run: false
 
   discord:

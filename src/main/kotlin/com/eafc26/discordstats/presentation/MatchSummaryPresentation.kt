@@ -128,6 +128,7 @@ data class CorreioExtraviadoSection(
 data class MuralhaSection(
     val name: String,
     val saves: Int,
+    val goalsConceded: Int,
     val phrase: String,
 )
 
@@ -159,15 +160,19 @@ object MatchSummaryBuilder {
 
         val date = Instant.ofEpochSecond(match.timestamp).atZone(zoneId).format(DATE_FMT)
 
-        val allActive = PlayerStatisticsEligibility.eligiblePlayers(
-            (match.players[ourClubId] ?: emptyMap()).values
-        )
+        // Get all players from the match (including BOT goalkeeper)
+        val allPlayers = (match.players[ourClubId] ?: emptyMap()).values
 
-        val goalkeeper = allActive
-            .filter { it.position == "goalkeeper" }
+        // Eligible players for stats (excludes substitutes with low playtime)
+        val allActive = PlayerStatisticsEligibility.eligiblePlayers(allPlayers)
+
+        // Find goalkeeper from ALL players (not just eligible) since BOT GK may not pass eligibility
+        val goalkeeper = allPlayers
+            .filter { it.isGoalkeeper() }
             .maxByOrNull { it.secondsPlayed?.toIntOrNull() ?: 0 }
 
-        val outfield = allActive.filter { it.position != "goalkeeper" }
+        // Outfield players for awards (from eligible players, excluding goalkeeper)
+        val outfield = allActive.filter { !it.isGoalkeeper() }
         val matchId = match.matchId
 
         return MatchSummaryPresentation(
@@ -205,8 +210,8 @@ object MatchSummaryBuilder {
         val scorers = players
             .filter { (it.goals?.toIntOrNull() ?: 0) > 0 }
             .sortedByDescending { it.goals?.toIntOrNull() ?: 0 }
-            .map { PlayerGoal(it.playerName ?: "Desconhecido", it.goals?.toIntOrNull() ?: 0) }
-        
+            .map { PlayerGoal(it.displayName(), it.goals?.toIntOrNull() ?: 0) }
+
         return if (scorers.isEmpty()) null else GoalsSection(scorers)
     }
 
@@ -214,8 +219,8 @@ object MatchSummaryBuilder {
         val assisters = players
             .filter { (it.assists?.toIntOrNull() ?: 0) > 0 }
             .sortedByDescending { it.assists?.toIntOrNull() ?: 0 }
-            .map { PlayerAssist(it.playerName ?: "Desconhecido", it.assists?.toIntOrNull() ?: 0) }
-        
+            .map { PlayerAssist(it.displayName(), it.assists?.toIntOrNull() ?: 0) }
+
         return if (assisters.isEmpty()) null else AssistsSection(assisters)
     }
 
@@ -235,7 +240,7 @@ object MatchSummaryBuilder {
         val top3 = top.mapIndexed { i, p ->
             TopPlayer(
                 medal = medals[i],
-                name = p.playerName ?: "Desconhecido",
+                name = p.displayName(),
                 rating = fmtRating(p.rating),
             )
         }
@@ -249,7 +254,7 @@ object MatchSummaryBuilder {
 
     private fun buildCraqueSection(outfield: Collection<PlayerEntry>, matchId: String): CraqueSection? {
         val selection = CraqueSelector.select(outfield) ?: return null
-        val name = selection.player.playerName ?: "Desconhecido"
+        val name = selection.player.displayName()
         val phrase = pickFromCategory(PhraseCategory.MVP, matchId, name)
 
         return CraqueSection(
@@ -261,7 +266,7 @@ object MatchSummaryBuilder {
 
     private fun buildPerigoConstanteSection(outfield: Collection<PlayerEntry>, matchId: String): PerigoConstanteSection? {
         val selection = PerigoConstanteSelector.select(outfield) ?: return null
-        val name = selection.player.playerName ?: "Desconhecido"
+        val name = selection.player.displayName()
         val category = if (selection.efficient) PhraseCategory.PERIGO_EFICIENTE else PhraseCategory.PERIGO_VOLUME
         val phrase = pickFromCategory(category, matchId, name)
 
@@ -276,7 +281,7 @@ object MatchSummaryBuilder {
 
     private fun buildBagreSection(outfield: Collection<PlayerEntry>, matchId: String): BagreSection? {
         val evaluation = BagrePerformanceEvaluator.evaluate(outfield, matchId, phraseBank) ?: return null
-        val name = evaluation.player.playerName ?: "Desconhecido"
+        val name = evaluation.player.displayName()
 
         return BagreSection(
             name = name,
@@ -286,7 +291,7 @@ object MatchSummaryBuilder {
 
     private fun buildXerifeSection(outfield: Collection<PlayerEntry>, matchId: String): XerifeSection? {
         val selection = XerifeSelector.select(outfield) ?: return null
-        val name = selection.player.playerName ?: "Desconhecido"
+        val name = selection.player.displayName()
         val phrase = pickFromCategory(PhraseCategory.XERIFE, matchId, name)
 
         return XerifeSection(
@@ -300,7 +305,7 @@ object MatchSummaryBuilder {
 
     private fun buildPassePrecisaoSection(outfield: Collection<PlayerEntry>, matchId: String): PassePrecisaoSection? {
         val selection = PassePrecisaoSelector.select(outfield) ?: return null
-        val name = selection.player.playerName ?: "Desconhecido"
+        val name = selection.player.displayName()
         val phrase = pickFromCategory(PhraseCategory.PASSE_PRECISAO, matchId, name)
 
         return PassePrecisaoSection(
@@ -324,7 +329,7 @@ object MatchSummaryBuilder {
                 .thenByDescending { it.first.playerName ?: "" }
         ) ?: return null
 
-        val name = best.first.playerName ?: "Desconhecido"
+        val name = best.first.displayName()
         val phrase = pickFromCategory(PhraseCategory.CORREIO, matchId, name)
 
         return CorreioExtraviadoSection(
@@ -337,12 +342,14 @@ object MatchSummaryBuilder {
     private fun buildMuralhaSection(gk: PlayerEntry?, matchId: String): MuralhaSection? {
         gk ?: return null
         val saves = gk.saves?.toIntOrNull() ?: 0
-        val name = gk.playerName ?: "Goleiro"
+        val goalsConceded = gk.goalsConceded?.toIntOrNull() ?: 0
+        val name = gk.displayName()
         val phrase = pickFromCategory(PhraseCategory.GOALKEEPER, matchId, name)
 
         return MuralhaSection(
             name = name,
             saves = saves,
+            goalsConceded = goalsConceded,
             phrase = phrase,
         )
     }

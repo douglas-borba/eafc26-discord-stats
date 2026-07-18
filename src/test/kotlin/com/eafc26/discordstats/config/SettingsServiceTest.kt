@@ -167,12 +167,12 @@ class SettingsServiceTest {
 
     @Test
     fun `getPollingIntervalMs returns default when not configured`() {
-        assertThat(settingsService.getPollingIntervalMs()).isEqualTo(300_000L)
+        assertThat(settingsService.getPollingIntervalMs()).isEqualTo(60_000L)
     }
 
     @Test
     fun `getPollingIntervalMs returns custom default when specified`() {
-        assertThat(settingsService.getPollingIntervalMs(60_000L)).isEqualTo(60_000L)
+        assertThat(settingsService.getPollingIntervalMs(120_000L)).isEqualTo(120_000L)
     }
 
     @Test
@@ -200,7 +200,7 @@ class SettingsServiceTest {
         assertThat(settingsService.isNetworkEnabled()).isFalse()
         assertThat(settingsService.getClubId()).isEmpty()
         assertThat(settingsService.getPlatform()).isEmpty()
-        assertThat(settingsService.getPollingIntervalMs()).isEqualTo(300_000L)
+        assertThat(settingsService.getPollingIntervalMs()).isEqualTo(60_000L)
     }
 
     // -- Persistence across instances -----------------------------------------

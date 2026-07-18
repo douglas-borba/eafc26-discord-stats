@@ -22,6 +22,14 @@ object BagrePerformanceEvaluator {
     private const val TACKLE_POOR_THRESHOLD = 40
     private const val TACKLE_MODERATE_THRESHOLD = 60
     private const val RATING_MOCKING_THRESHOLD = 6.5
+    
+    /**
+     * Minimum rating for Bagre eligibility.
+     * Players with rating below this value are excluded from Bagre selection.
+     * Rationale: extremely low ratings indicate the player likely disconnected
+     * or had technical issues, not genuinely poor play.
+     */
+    const val MIN_BAGRE_RATING = 5.0
 
     data class BagreEvaluation(
         val player: PlayerEntry,
@@ -31,16 +39,22 @@ object BagrePerformanceEvaluator {
     /**
      * Selects the Bagre (lowest-rated eligible outfield player) and builds
      * coherent criticism sections based on their actual statistics.
+     * 
+     * Players with rating below [MIN_BAGRE_RATING] are excluded from selection.
      */
     fun evaluate(
         outfield: Collection<PlayerEntry>,
         matchId: String,
         phraseBank: PhraseBank?,
     ): BagreEvaluation? {
-        val rated = outfield.filter { it.rating != null }
-        if (rated.isEmpty()) return null
+        // Filter to players with valid rating >= MIN_BAGRE_RATING
+        val eligible = outfield.filter { p ->
+            val rating = p.rating?.toDoubleOrNull()
+            rating != null && rating >= MIN_BAGRE_RATING
+        }
+        if (eligible.isEmpty()) return null
 
-        val bagre = rated.minWithOrNull(
+        val bagre = eligible.minWithOrNull(
             compareBy<PlayerEntry> { it.rating?.toDoubleOrNull() ?: Double.MAX_VALUE }
                 .thenBy { passCompletionPct(it) ?: 100.0 }
                 .thenBy { tackleSuccessPct(it) ?: 100.0 }
@@ -48,7 +62,7 @@ object BagrePerformanceEvaluator {
                 .thenByDescending { missedPasses(it) }
         ) ?: return null
 
-        val name = bagre.playerName ?: "Desconhecido"
+        val name = bagre.displayName()
         val rating = bagre.rating?.toDoubleOrNull() ?: 0.0
         val sections = mutableListOf<String>()
 
@@ -97,7 +111,7 @@ object BagrePerformanceEvaluator {
         // Only show tackle section if performance is poor or moderate
         if (pct > TACKLE_MODERATE_THRESHOLD) return null
 
-        val name = player.playerName ?: "Desconhecido"
+        val name = player.displayName()
 
         val phrase = when {
             pct <= TACKLE_POOR_THRESHOLD -> pickFromCategory(PhraseCategory.TACKLE, matchId, "${name}desarmes", phraseBank)
@@ -126,7 +140,7 @@ object BagrePerformanceEvaluator {
         // >= 75%: omit entirely
         if (pct >= PASSING_GOOD_THRESHOLD) return null
 
-        val name = player.playerName ?: "Desconhecido"
+        val name = player.displayName()
         val missed = attempts - made
 
         val phrase = when {
@@ -155,7 +169,7 @@ object BagrePerformanceEvaluator {
         // No shots means nothing to criticize
         if (shots <= 0) return null
 
-        val name = player.playerName ?: "Desconhecido"
+        val name = player.displayName()
         val phrase = pickFromCategory(PhraseCategory.SHOOTING, matchId, "${name}chutes", phraseBank)
 
         return buildString {

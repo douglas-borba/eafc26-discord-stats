@@ -66,15 +66,19 @@ object DiscordEmbedBuilder {
 
         val date = Instant.ofEpochSecond(match.timestamp).atZone(zoneId).format(DATE_FMT)
 
-        val allActive = PlayerStatisticsEligibility.eligiblePlayers(
-            (match.players[ourClubId] ?: emptyMap()).values
-        )
+        // Get all players from the match (including BOT goalkeeper)
+        val allPlayers = (match.players[ourClubId] ?: emptyMap()).values
 
-        val goalkeeper = allActive
-            .filter { it.position == "goalkeeper" }
+        // Eligible players for stats (excludes substitutes with low playtime)
+        val allActive = PlayerStatisticsEligibility.eligiblePlayers(allPlayers)
+
+        // Find goalkeeper from ALL players (not just eligible) since BOT GK may not pass eligibility
+        val goalkeeper = allPlayers
+            .filter { it.isGoalkeeper() }
             .maxByOrNull { it.secondsPlayed?.toIntOrNull() ?: 0 }
 
-        val outfield = allActive.filter { it.position != "goalkeeper" }
+        // Outfield players for awards (from eligible players, excluding goalkeeper)
+        val outfield = allActive.filter { !it.isGoalkeeper() }
         val matchId = match.matchId
 
         val fields = mutableListOf<EmbedField>()
@@ -116,7 +120,7 @@ object DiscordEmbedBuilder {
         if (scorers.isEmpty()) return null
         // Goals: ONE blank line after title, then players
         val lines = scorers.joinToString("\n") {
-            "• ${it.playerName ?: "Desconhecido"} ×${it.goals?.toIntOrNull() ?: 0}"
+            "• ${it.displayName()} ×${it.goals?.toIntOrNull() ?: 0}"
         }
         return EmbedField("⚽ GOLS", "\n$lines")
     }
@@ -128,7 +132,7 @@ object DiscordEmbedBuilder {
         if (assisters.isEmpty()) return null
         // Assists: ONE blank line after title, then players
         val lines = assisters.joinToString("\n") {
-            "• ${it.playerName ?: "Desconhecido"} ×${it.assists?.toIntOrNull() ?: 0}"
+            "• ${it.displayName()} ×${it.assists?.toIntOrNull() ?: 0}"
         }
         return EmbedField("🎯 ASSISTÊNCIAS", "\n$lines")
     }
@@ -148,7 +152,7 @@ object DiscordEmbedBuilder {
         val parts = mutableListOf<String>()
 
         top.forEachIndexed { i, p ->
-            val name = p.playerName ?: "Desconhecido"
+            val name = p.displayName()
             parts += "${medals[i]} $name — Nota ${fmtRating(p.rating)}"
         }
 
@@ -161,7 +165,7 @@ object DiscordEmbedBuilder {
 
     private fun craqueField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
         val selection = CraqueSelector.select(outfield) ?: return null
-        val name = selection.player.playerName ?: "Desconhecido"
+        val name = selection.player.displayName()
         val phrase = pickFromCategory(PhraseCategory.MVP, matchId, name)
 
         // Format: blank line, name, blank line, stats, blank line, quote
@@ -184,7 +188,7 @@ object DiscordEmbedBuilder {
 
     private fun xerifeField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
         val selection = XerifeSelector.select(outfield) ?: return null
-        val name = selection.player.playerName ?: "Desconhecido"
+        val name = selection.player.displayName()
         val phrase = pickFromCategory(PhraseCategory.XERIFE, matchId, name)
 
         // Format: blank line, name, blank line, stats, blank line, quote
@@ -199,7 +203,7 @@ object DiscordEmbedBuilder {
 
     private fun passePrecisaoField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
         val selection = PassePrecisaoSelector.select(outfield) ?: return null
-        val name = selection.player.playerName ?: "Desconhecido"
+        val name = selection.player.displayName()
         val phrase = pickFromCategory(PhraseCategory.PASSE_PRECISAO, matchId, name)
 
         // Format: blank line, name, blank line, stats, blank line, quote
@@ -214,7 +218,7 @@ object DiscordEmbedBuilder {
 
     private fun perigoConstanteField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
         val selection = PerigoConstanteSelector.select(outfield) ?: return null
-        val name = selection.player.playerName ?: "Desconhecido"
+        val name = selection.player.displayName()
 
         // Choose phrase category based on efficiency
         val category = if (selection.efficient) PhraseCategory.PERIGO_EFICIENTE else PhraseCategory.PERIGO_VOLUME
@@ -241,21 +245,28 @@ object DiscordEmbedBuilder {
             compareBy<Pair<PlayerEntry, Int>> { it.second }
                 .thenByDescending { it.first.playerName ?: "" }
         ) ?: return null
-        val name = best.first.playerName ?: "Desconhecido"
+        val name = best.first.displayName()
         return EmbedField("📮 CORREIO EXTRAVIADO", "$BLANK\n$name — ${best.second} passes errados")
     }
 
     private fun muralhaField(gk: PlayerEntry?, matchId: String): EmbedField? {
         gk ?: return null
         val saves = gk.saves?.toIntOrNull() ?: 0
-        val phrase = pickFromCategory(PhraseCategory.GOALKEEPER, matchId, gk.playerName ?: "goleiro")
+        val goalsConceded = gk.goalsConceded?.toIntOrNull() ?: 0
+        val name = gk.displayName()
+        val phrase = pickFromCategory(PhraseCategory.GOALKEEPER, matchId, name)
         
-        // Format: blank line, stats, blank line, quote
+        // Format: name, stats (saves and goals conceded), quote
+        val savesText = if (saves == 1) "1 defesa" else "$saves defesas"
+        val goalsText = if (goalsConceded == 1) "1 gol sofrido" else "$goalsConceded gols sofridos"
+        
         val value = buildString {
-            append("$BLANK\n🧤 Defesas realizadas: $saves\n$BLANK\n")
+            append("$BLANK\n$name\n$BLANK\n")
+            append("🧤 $savesText\n")
+            append("⚽ $goalsText\n$BLANK\n")
             append("💬 \"$phrase\"")
         }
-        return EmbedField("🧤 MURALHA DA PARTIDA", value)
+        return EmbedField("🧤 GOLEIRO", value)
     }
 
     // -- Helpers -----------------------------------------------------------

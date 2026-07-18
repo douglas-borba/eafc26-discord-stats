@@ -434,11 +434,13 @@
         </div>`;
       }
 
-      // Muralha
+      // Goleiro
       if (p.muralha) {
         html += '<div class="divider"></div>';
         const m = p.muralha;
-        html += renderHighlight('🧤 MURALHA', m.name, `${m.saves} defesas`, m.phrase);
+        const savesText = m.saves === 1 ? '1 defesa' : `${m.saves} defesas`;
+        const goalsText = m.goalsConceded === 1 ? '1 gol sofrido' : `${m.goalsConceded} gols sofridos`;
+        html += renderHighlight('🧤 GOLEIRO', m.name, `${savesText} • ${goalsText}`, m.phrase);
       }
 
       body.innerHTML = html;

@@ -6,7 +6,7 @@ import java.time.Instant
 @Component
 class PollingStatusHolder {
     @Volatile var enabled: Boolean = false
-    @Volatile var intervalSeconds: Int = 120
+    @Volatile var intervalSeconds: Int = 60  // 1 minute default
     @Volatile var running: Boolean = false
     @Volatile var lastCheck: Instant? = null
     @Volatile var nextCheck: Instant? = null
