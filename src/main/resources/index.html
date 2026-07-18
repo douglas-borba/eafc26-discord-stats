@@ -60,6 +60,23 @@
     #resend-btn:hover:not(:disabled) { background: #388bfd; }
     #resend-btn:disabled { opacity: 0.6; cursor: default; }
 
+    #card-btn {
+      background: #8957e5;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 0.7rem 1.5rem;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+      min-width: 200px;
+      margin-top: 0.5rem;
+    }
+
+    #card-btn:hover:not(:disabled) { background: #a371f7; }
+    #card-btn:disabled { opacity: 0.6; cursor: default; }
+
     #result {
       margin-top: 1.5rem;
       max-width: 420px;
@@ -127,6 +144,7 @@
 
   <button id="btn" onclick="notify()">Atualizar agora</button>
   <button id="resend-btn" onclick="resend()">🔄 Reenviar última partida</button>
+  <button id="card-btn" onclick="openCard()">🎴 Gerar card</button>
 
   <div id="result"></div>
 
@@ -155,6 +173,10 @@
         })
         .catch(() => {});
     })();
+
+    function openCard() {
+      window.location.href = '/match-card';
+    }
 
     async function notify() {
       const btn = document.getElementById('btn');

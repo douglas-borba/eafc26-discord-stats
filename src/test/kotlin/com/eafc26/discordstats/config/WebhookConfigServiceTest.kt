@@ -2,18 +2,35 @@ package com.eafc26.discordstats.config
 
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
-import java.nio.file.Path
+import java.util.prefs.Preferences
 
 class WebhookConfigServiceTest {
 
-    @TempDir
-    lateinit var tempDir: Path
+    private lateinit var settingsService: SettingsService
+    private lateinit var prefs: Preferences
+
+    @BeforeEach
+    fun setup() {
+        prefs = Preferences.userNodeForPackage(SettingsService::class.java)
+        prefs.clear()
+        prefs.flush()
+        settingsService = SettingsService()
+    }
+
+    @AfterEach
+    fun cleanup() {
+        prefs.clear()
+        prefs.flush()
+    }
 
     private fun makeService(webhookUrl: String = ""): WebhookConfigService {
-        val props = AppProperties(discord = DiscordProperties(webhookUrl = webhookUrl))
-        return WebhookConfigService(props, configDirOverride = tempDir.resolve("Library/Application Support/EAFC26DiscordStats"))
+        if (webhookUrl.isNotBlank()) {
+            settingsService.setWebhookUrl(webhookUrl)
+        }
+        return WebhookConfigService(settingsService)
     }
 
     // -- isConfigured --
@@ -26,6 +43,21 @@ class WebhookConfigServiceTest {
     @Test
     fun `isConfigured returns true when webhook is set`() {
         assertThat(makeService("https://discord.com/api/webhooks/123/token").isConfigured()).isTrue()
+    }
+
+    // -- getMaskedWebhookUrl --
+
+    @Test
+    fun `getMaskedWebhookUrl returns empty string when not configured`() {
+        assertThat(makeService("").getMaskedWebhookUrl()).isEmpty()
+    }
+
+    @Test
+    fun `getMaskedWebhookUrl masks middle of URL`() {
+        val service = makeService("https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz1234567890")
+        val masked = service.getMaskedWebhookUrl()
+        assertThat(masked).contains("****")
+        assertThat(masked).startsWith("https://discord.com/api/webhooks/")
     }
 
     // -- validateUrl --
@@ -81,15 +113,12 @@ class WebhookConfigServiceTest {
     }
 
     @Test
-    fun `configure persists webhook to config file`() {
+    fun `configure persists webhook via SettingsService`() {
         val service = makeService()
         service.configure("https://discord.com/api/webhooks/222/persistedtoken")
 
-        // Verify that configure() wrote the file
-        val configPath = tempDir.resolve("Library/Application Support/EAFC26DiscordStats/config.properties")
-        val props = java.util.Properties()
-        configPath.toFile().inputStream().use { props.load(it) }
-        assertThat(props.getProperty("discord.webhook.url"))
+        // Verify that configure() persisted via SettingsService
+        assertThat(settingsService.getWebhookUrl())
             .isEqualTo("https://discord.com/api/webhooks/222/persistedtoken")
     }
 
@@ -112,5 +141,23 @@ class WebhookConfigServiceTest {
         service.setNetworkEnabled(true)
         service.setNetworkEnabled(false)
         assertThat(service.isNetworkEnabled()).isFalse()
+    }
+
+    // -- History webhook --
+
+    @Test
+    fun `configureHistory saves and retrieves history webhook`() {
+        val service = makeService()
+        service.configureHistory("https://discord.com/api/webhooks/333/historytoken")
+        assertThat(service.isHistoryConfigured()).isTrue()
+        assertThat(service.getHistoryWebhookUrl()).isEqualTo("https://discord.com/api/webhooks/333/historytoken")
+    }
+
+    @Test
+    fun `configureHistory with blank clears history webhook`() {
+        val service = makeService()
+        service.configureHistory("https://discord.com/api/webhooks/333/historytoken")
+        service.configureHistory("")
+        assertThat(service.isHistoryConfigured()).isFalse()
     }
 }

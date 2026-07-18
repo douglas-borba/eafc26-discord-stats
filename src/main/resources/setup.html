@@ -117,13 +117,34 @@
 
     <div id="feedback"></div>
 
-    <p class="hint">
+    <p class="hint" id="hint-new">
       O URL é salvo localmente no seu Mac e nunca é enviado para servidores externos.<br/>
       Ele não aparecerá nesta tela novamente após salvo.
+    </p>
+    <p class="hint" id="hint-edit" style="display:none">
+      O webhook atual está salvo. Você pode editar ou substituir o URL acima.
     </p>
   </div>
 
   <script>
+    // Load saved webhook URL on page load
+    (async function loadSavedWebhook() {
+      try {
+        const res = await fetch('/api/setup/webhook');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.configured && data.url) {
+            document.getElementById('webhook-input').value = data.url;
+            document.getElementById('hint-new').style.display = 'none';
+            document.getElementById('hint-edit').style.display = 'block';
+            document.getElementById('save-btn').textContent = 'Atualizar e continuar';
+          }
+        }
+      } catch (e) {
+        console.error('Erro ao carregar webhook salvo:', e);
+      }
+    })();
+
     async function save() {
       const input = document.getElementById('webhook-input');
       const btn = document.getElementById('save-btn');
@@ -163,7 +184,6 @@
       } finally {
         btn.disabled = false;
         btn.textContent = 'Salvar e continuar';
-        input.value = '';
       }
     }
 

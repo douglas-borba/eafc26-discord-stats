@@ -21,6 +21,19 @@ class SetupController(private val webhookConfigService: WebhookConfigService) {
             .contentType(MediaType.TEXT_HTML)
             .body(ClassPathResource("setup.html"))
 
+    /** Returns current webhook configuration status and masked URL for display. */
+    @GetMapping("/api/setup/webhook", produces = [MediaType.APPLICATION_JSON_VALUE])
+    fun getWebhookInfo(): Mono<ResponseEntity<Map<String, Any>>> =
+        Mono.fromCallable {
+            ResponseEntity.ok(
+                mapOf(
+                    "configured" to webhookConfigService.isConfigured(),
+                    "maskedUrl" to webhookConfigService.getMaskedWebhookUrl(),
+                    "url" to webhookConfigService.getWebhookUrl(),
+                )
+            )
+        }
+
     @PostMapping("/api/setup/webhook", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun saveWebhook(@RequestBody body: WebhookSetupRequest): Mono<ResponseEntity<Map<String, String>>> =
         Mono.fromCallable {

@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Match Card — EA FC 26</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem 1rem;
+    }
+
+    .back-link {
+      position: fixed;
+      top: 1rem;
+      left: 1rem;
+      color: #8b949e;
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    .back-link:hover { color: #58a6ff; }
+
+    #loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 50vh;
+      color: #8b949e;
+    }
+    #loading .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #30363d;
+      border-top-color: #58a6ff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #error {
+      display: none;
+      text-align: center;
+      padding: 2rem;
+      color: #f85149;
+    }
+
+    #card-container {
+      display: none;
+      width: 100%;
+      max-width: 400px;
+    }
+
+    /* Compact Match Card */
+    .match-card {
+      background: linear-gradient(160deg, #1a1f26 0%, #161b22 50%, #12161c 100%);
+      border: 1px solid #30363d;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Compact Header */
+    .card-header {
+      padding: 0.9rem 1rem;
+      text-align: center;
+      background: rgba(0,0,0,0.2);
+    }
+
+    .result-badge {
+      display: inline-block;
+      padding: 0.2rem 0.7rem;
+      border-radius: 12px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+    .result-badge.win { background: #238636; }
+    .result-badge.draw { background: #6e7681; }
+    .result-badge.loss { background: #da3633; }
+
+    .score-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.8rem;
+    }
+
+    .team-name {
+      font-size: 0.8rem;
+      font-weight: 600;
+      max-width: 100px;
+      text-align: center;
+      line-height: 1.2;
+      color: #c9d1d9;
+    }
+
+    .score {
+      font-size: 2rem;
+      font-weight: 800;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .score-sep { font-size: 1.4rem; color: #6e7681; }
+
+    .match-date {
+      font-size: 0.65rem;
+      color: #8b949e;
+      margin-top: 0.4rem;
+    }
+
+    /* Compact Body */
+    .card-body {
+      padding: 0.6rem 0.8rem;
+    }
+
+    /* Divider */
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #30363d, transparent);
+      margin: 0.6rem 0;
+    }
+
+    /* Section row - inline title + content */
+    .sec {
+      margin-bottom: 0.6rem;
+    }
+    .sec:last-child { margin-bottom: 0; }
+
+    .sec-title {
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #58a6ff;
+      margin-bottom: 0.25rem;
+    }
+
+    .sec-body {
+      font-size: 0.75rem;
+      line-height: 1.4;
+      color: #e6edf3;
+    }
+
+    /* Player list for goals/assists - one per line */
+    .player-list {
+      font-size: 0.72rem;
+      line-height: 1.5;
+    }
+    .player-list-item {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .player-list-item::before {
+      content: '•';
+      color: #6e7681;
+    }
+    .player-list-count {
+      color: #8b949e;
+      margin-left: auto;
+    }
+
+    /* Two-column grid for goals/assists */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.3rem 1rem;
+    }
+
+    .col-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .col-name { font-weight: 500; }
+    .col-stat { color: #8b949e; font-size: 0.7rem; }
+
+    /* Inline highlight - name + stats on one line */
+    .hl-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.3rem;
+    }
+    .hl-name {
+      font-weight: 600;
+      font-size: 0.82rem;
+      color: #fff;
+    }
+    .hl-stats {
+      color: #8b949e;
+      font-size: 0.68rem;
+    }
+    .hl-phrase {
+      width: 100%;
+      font-style: italic;
+      font-size: 0.65rem;
+      color: #7ee787;
+      margin-top: 0.15rem;
+    }
+
+    /* Top 3 compact */
+    .top3 {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.2rem 0.8rem;
+    }
+    .top3-item {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.72rem;
+    }
+    .top3-medal { font-size: 0.9rem; }
+    .top3-rating { color: #8b949e; font-size: 0.65rem; }
+
+    .team-avg {
+      font-size: 0.68rem;
+      color: #8b949e;
+      margin-top: 0.2rem;
+    }
+
+    /* Bagre compact */
+    .bagre-lines {
+      font-size: 0.7rem;
+      line-height: 1.35;
+      color: #c9d1d9;
+    }
+
+    /* Footer */
+    .card-footer {
+      text-align: center;
+      padding: 0.5rem;
+      font-size: 0.6rem;
+      color: #484f58;
+      background: rgba(0,0,0,0.15);
+    }
+
+    /* Actions */
+    .actions {
+      margin-top: 1rem;
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+    }
+    .action-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #e6edf3;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .action-btn:hover { background: #30363d; }
+    .action-btn.primary { background: #238636; border-color: #238636; }
+    .action-btn.primary:hover:not(:disabled) { background: #2ea043; }
+    .action-btn:disabled { opacity: 0.6; cursor: default; }
+  </style>
+</head>
+<body>
+  <a href="/" class="back-link">← Voltar</a>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <span>Carregando partida...</span>
+  </div>
+
+  <div id="error"></div>
+
+  <div id="card-container">
+    <div class="match-card" id="match-card">
+      <div class="card-header">
+        <div class="result-badge" id="result-badge"></div>
+        <div class="score-row">
+          <div class="team-name" id="our-name"></div>
+          <div class="score">
+            <span id="our-score"></span>
+            <span class="score-sep">×</span>
+            <span id="opp-score"></span>
+          </div>
+          <div class="team-name" id="opp-name"></div>
+        </div>
+        <div class="match-date" id="match-date"></div>
+      </div>
+
+      <div class="card-body" id="card-body"></div>
+
+      <div class="card-footer">EA FC 26 — Associação BF</div>
+    </div>
+
+    <div class="actions">
+      <button class="action-btn" onclick="location.reload()">🔄 Atualizar</button>
+      <button class="action-btn primary" id="download-btn" onclick="downloadCard()">📥 Baixar Card</button>
+    </div>
+  </div>
+
+  <script>
+    let matchPresentation = null;
+
+    (async function loadMatchCard() {
+      try {
+        const res = await fetch('/api/match-card/latest');
+        const data = await res.json();
+        document.getElementById('loading').style.display = 'none';
+
+        if (data.status !== 'success') {
+          document.getElementById('error').style.display = 'block';
+          document.getElementById('error').textContent = data.message || 'Erro ao carregar partida.';
+          return;
+        }
+
+        matchPresentation = data.presentation;
+        renderCard(matchPresentation);
+        document.getElementById('card-container').style.display = 'block';
+      } catch (e) {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('error').style.display = 'block';
+        document.getElementById('error').textContent = 'Erro de rede. Verifique a conexão.';
+      }
+    })();
+
+    function renderCard(p) {
+      // Header
+      const badge = document.getElementById('result-badge');
+      badge.textContent = p.outcome.label;
+      badge.className = 'result-badge ' + p.outcome.type.toLowerCase();
+
+      document.getElementById('our-name').textContent = p.ourName;
+      document.getElementById('opp-name').textContent = p.oppName;
+      document.getElementById('our-score').textContent = p.ourScore;
+      document.getElementById('opp-score').textContent = p.oppScore;
+      document.getElementById('match-date').textContent = '📅 ' + p.date;
+
+      const body = document.getElementById('card-body');
+      let html = '';
+
+      // Goals & Assists - one player per line for readability
+      if (p.goals || p.assists) {
+        html += '<div class="divider"></div>';
+        if (p.goals && p.assists) {
+          // Two columns side by side
+          html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">';
+          html += renderPlayerList('⚽ GOLS', p.goals.scorers, s => ({ name: s.name, stat: `×${s.count}` }));
+          html += renderPlayerList('🎯 ASSIST', p.assists.assisters, a => ({ name: a.name, stat: `×${a.count}` }));
+          html += '</div>';
+        } else if (p.goals) {
+          html += renderPlayerList('⚽ GOLS', p.goals.scorers, s => ({ name: s.name, stat: `×${s.count}` }));
+        } else {
+          html += renderPlayerList('🎯 ASSISTÊNCIAS', p.assists.assisters, a => ({ name: a.name, stat: `×${a.count}` }));
+        }
+      }
+
+      // Top 3 highlights
+      if (p.highlights) {
+        html += '<div class="divider"></div>';
+        html += '<div class="sec"><div class="sec-title">🥇 DESTAQUES</div>';
+        html += '<div class="top3">';
+        p.highlights.top3.forEach(t => {
+          html += `<div class="top3-item"><span class="top3-medal">${t.medal}</span><span>${esc(t.name)}</span><span class="top3-rating">${t.rating}</span></div>`;
+        });
+        html += '</div>';
+        if (p.highlights.teamAverage) {
+          html += `<div class="team-avg">⭐ Média: ${p.highlights.teamAverage}</div>`;
+        }
+        html += '</div>';
+      }
+
+      // Craque
+      if (p.craque) {
+        html += '<div class="divider"></div>';
+        html += renderHighlight('⭐ CRAQUE', p.craque.name, p.craque.reason, p.craque.phrase);
+      }
+
+      // Perigo Constante
+      if (p.perigoConstante) {
+        html += '<div class="divider"></div>';
+        const pc = p.perigoConstante;
+        const stats = `${pc.shots} chutes • ${pc.goals} ${pc.goals === 1 ? 'gol' : 'gols'}`;
+        html += renderHighlight('🔥 PERIGO', pc.name, stats, pc.phrase);
+      }
+
+      // Bagre - simplified
+      if (p.bagre) {
+        html += '<div class="divider"></div>';
+        html += '<div class="sec"><div class="sec-title">🍍 BAGRE</div>';
+        // Only show first 3 lines max, and trim long ones
+        const lines = p.bagre.sections.slice(0, 4).map(s => esc(s)).join(' • ');
+        html += `<div class="bagre-lines">${lines}</div>`;
+        html += '</div>';
+      }
+
+      // Xerife
+      if (p.xerife) {
+        html += '<div class="divider"></div>';
+        const x = p.xerife;
+        html += renderHighlight('🚧 XERIFE', x.name, `${x.tacklesMade}/${x.tackleAttempts} desarmes (${x.successRate}%)`, x.phrase);
+      }
+
+      // Passe de Precisão
+      if (p.passePrecisao) {
+        html += '<div class="divider"></div>';
+        const pp = p.passePrecisao;
+        html += renderHighlight('🎯 PRECISÃO', pp.name, `${pp.passesMade}/${pp.passAttempts} passes (${pp.accuracy}%)`, pp.phrase);
+      }
+
+      // Correio Extraviado - now with phrase like other highlights
+      if (p.correioExtraviado) {
+        html += '<div class="divider"></div>';
+        const ce = p.correioExtraviado;
+        html += `<div class="sec">
+          <div class="sec-title">📮 CORREIO</div>
+          <div class="hl-row">
+            <span class="hl-name">${esc(ce.name)}</span>
+            <span class="hl-stats">❌ ${ce.missedPasses} passes errados</span>
+            <span class="hl-phrase">💬 "${esc(ce.phrase)}"</span>
+          </div>
+        </div>`;
+      }
+
+      // Muralha
+      if (p.muralha) {
+        html += '<div class="divider"></div>';
+        const m = p.muralha;
+        html += renderHighlight('🧤 MURALHA', m.name, `${m.saves} defesas`, m.phrase);
+      }
+
+      body.innerHTML = html;
+    }
+
+    function renderPlayerList(title, items, mapper) {
+      let html = `<div class="sec"><div class="sec-title">${title}</div><div class="player-list">`;
+      items.forEach(item => {
+        const { name, stat } = mapper(item);
+        html += `<div class="player-list-item"><span>${esc(name)}</span><span class="player-list-count">${stat}</span></div>`;
+      });
+      html += '</div></div>';
+      return html;
+    }
+
+    function renderCompactList(title, items, format) {
+      let html = `<div class="sec"><div class="sec-title">${title}</div><div class="sec-body">`;
+      html += items.map(format).join(' • ');
+      html += '</div></div>';
+      return html;
+    }
+
+    function renderHighlight(title, name, stats, phrase) {
+      return `<div class="sec">
+        <div class="sec-title">${title}</div>
+        <div class="hl-row">
+          <span class="hl-name">${esc(name)}</span>
+          <span class="hl-stats">${esc(stats)}</span>
+          <span class="hl-phrase">💬 "${esc(phrase)}"</span>
+        </div>
+      </div>`;
+    }
+
+    function esc(s) {
+      if (!s) return '';
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    async function downloadCard() {
+      const btn = document.getElementById('download-btn');
+      const card = document.getElementById('match-card');
+
+      if (!card || !matchPresentation) {
+        alert('Card não disponível.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '⏳ Gerando...';
+
+      try {
+        const canvas = await html2canvas(card, {
+          backgroundColor: '#0d1117',
+          scale: 2,
+          useCORS: true,
+          logging: false,
+        });
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        const link = document.createElement('a');
+        link.download = generateFilename();
+        link.href = dataUrl;
+        link.click();
+      } catch (e) {
+        console.error('Erro ao gerar imagem:', e);
+        alert('Erro ao gerar imagem.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '📥 Baixar Card';
+      }
+    }
+
+    function generateFilename() {
+      if (!matchPresentation) return 'match-card.jpg';
+      const p = matchPresentation;
+      return `${sanitize(p.ourName)}-${p.ourScore}x${p.oppScore}-${sanitize(p.oppName)}.jpg`;
+    }
+
+    function sanitize(str) {
+      if (!str) return 'Time';
+      return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
+    }
+  </script>
+</body>
+</html>
+
