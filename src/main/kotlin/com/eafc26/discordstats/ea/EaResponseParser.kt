@@ -29,8 +29,22 @@ class EaResponseParser(private val objectMapper: ObjectMapper) {
         log.trace("EA matches raw body: {}", json)
         return try {
             val matches: List<MatchResponse> = objectMapper.readValue(json)
-            if (matches.isEmpty()) EaApiResult.NoMatches
-            else EaApiResult.Success(matches)
+            if (matches.isEmpty()) {
+                EaApiResult.NoMatches
+            } else {
+                // Log player details at DEBUG level to help diagnose goalkeeper data issues
+                matches.forEach { match ->
+                    val playersByClub = match.players
+                    playersByClub.forEach { (clubId, players) ->
+                        log.debug("Match {} Club {}: {} players", match.matchId, clubId, players.size)
+                        players.forEach { (playerId, player) ->
+                            log.debug("  Player {}: pos={} name={} saves={} goalsConceded={}",
+                                playerId, player.position, player.playerName, player.saves, player.goalsConceded)
+                        }
+                    }
+                }
+                EaApiResult.Success(matches)
+            }
         } catch (ex: JsonProcessingException) {
             log.warn("Failed to parse matches response", ex)
             EaApiResult.UnexpectedPayload(ex)

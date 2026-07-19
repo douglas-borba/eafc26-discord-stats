@@ -514,8 +514,8 @@ class DiscordEmbedBuilderTest {
     @Test
     fun `secao XERIFE mostra nome e numero de desarmes`() {
         val embed = buildEmbedWithPlayers(
-            player("Xerife", rating = "7.0", tackleAttempts = "10", tacklesMade = "8"),
-            player("Outro",  rating = "7.5", tackleAttempts = "5",  tacklesMade = "2"),
+            player("Xerife", rating = "7.5", tackleAttempts = "10", tacklesMade = "8"),
+            player("Bagre",  rating = "5.5", tackleAttempts = "5",  tacklesMade = "2"),
         ).embeds[0]
         val text = embed.fields.field("🚧 XERIFE DA PARTIDA").value
         assertThat(text).contains("Xerife")
@@ -525,7 +525,8 @@ class DiscordEmbedBuilderTest {
     @Test
     fun `secao XERIFE mostra aproveitamento percentual`() {
         val embed = buildEmbedWithPlayers(
-            player("Xerife", rating = "7.0", tackleAttempts = "10", tacklesMade = "8"),
+            player("Xerife", rating = "7.5", tackleAttempts = "10", tacklesMade = "8"),
+            player("Bagre",  rating = "5.5"),  // Bagre to allow Xerife to be selected
         ).embeds[0]
         val text = embed.fields.field("🚧 XERIFE DA PARTIDA").value
         assertThat(text).contains("Aproveitamento: 80%")
@@ -534,7 +535,8 @@ class DiscordEmbedBuilderTest {
     @Test
     fun `secao XERIFE contem frase dinamica`() {
         val embed = buildEmbedWithPlayers(
-            player("Xerife", rating = "7.0", tackleAttempts = "5", tacklesMade = "4"),
+            player("Xerife", rating = "7.5", tackleAttempts = "5", tacklesMade = "4"),
+            player("Bagre",  rating = "5.5"),  // Bagre to allow Xerife to be selected
         ).embeds[0]
         val text = embed.fields.field("🚧 XERIFE DA PARTIDA").value
         assertThat(text).contains("💬 \"")
@@ -544,7 +546,8 @@ class DiscordEmbedBuilderTest {
     fun `goleiro nunca e Xerife`() {
         val embed = buildEmbedWithPlayers(
             goalkeeper("GKXerife", rating = "8.0", saves = "5"),
-            player("Linha", rating = "7.0", tackleAttempts = "3", tacklesMade = "2"),
+            player("Linha", rating = "7.5", tackleAttempts = "3", tacklesMade = "2"),
+            player("Bagre", rating = "5.5"),  // Bagre to allow Linha to be selected
         ).embeds[0]
         val text = embed.fields.field("🚧 XERIFE DA PARTIDA").value
         assertThat(text).doesNotContain("GKXerife")
@@ -559,9 +562,11 @@ class DiscordEmbedBuilderTest {
 
     @Test
     fun `XERIFE selecionado por maior numero de desarmes`() {
+        // CampeaoDesarme has higher rating so won't be Bagre
         val embed = buildEmbedWithPlayers(
-            player("CampeaoDesarme", rating = "6.0", tackleAttempts = "12", tacklesMade = "10"),
+            player("CampeaoDesarme", rating = "7.5", tackleAttempts = "12", tacklesMade = "10"),
             player("PoucosDesarmes", rating = "9.0", tackleAttempts = "4",  tacklesMade = "3"),
+            player("Bagre",          rating = "5.5"),  // Bagre to allow CampeaoDesarme to be selected
         ).embeds[0]
         val text = embed.fields.field("🚧 XERIFE DA PARTIDA").value
         assertThat(text).contains("CampeaoDesarme")
@@ -580,6 +585,15 @@ class DiscordEmbedBuilderTest {
         val text = embed.fields.field("📮 CORREIO EXTRAVIADO").value
         assertThat(text).contains("Torto")
         assertThat(text).contains("12 passes errados")
+    }
+
+    @Test
+    fun `secao CORREIO sempre contem frase`() {
+        val embed = buildEmbedWithPlayers(
+            player("Torto", passAttempts = "20", passesMade = "8"),
+        ).embeds[0]
+        val text = embed.fields.field("📮 CORREIO EXTRAVIADO").value
+        assertThat(text).contains("💬 \"")
     }
 
     @Test
@@ -635,6 +649,84 @@ class DiscordEmbedBuilderTest {
         val text = embed.fields.field("📮 CORREIO EXTRAVIADO").value
         assertThat(text).contains("Abacaxi")
         assertThat(text).doesNotContain("Zebra")
+    }
+
+    // -- Bagre exclusion from positive awards ---------------------------------
+
+    @Test
+    fun `bagre nao recebe CRAQUE mesmo com mais gols`() {
+        val embed = buildEmbedWithPlayers(
+            player("Bagre",   rating = "5.5", goals = "3", assists = "2"),  // lowest rating = Bagre
+            player("Mediocre", rating = "7.0", goals = "1", assists = "0"),
+        ).embeds[0]
+        // Bagre should be in BAGRE section
+        assertThat(embed.fields.field("🍍 BAGRE DA PARTIDA").value).contains("Bagre")
+        // But not in CRAQUE section
+        val craque = embed.fields.firstOrNull { it.name == "⭐ CRAQUE DA PARTIDA" }
+        if (craque != null) {
+            assertThat(craque.value).doesNotContain("Bagre")
+        }
+    }
+
+    @Test
+    fun `bagre nao recebe XERIFE mesmo com mais desarmes`() {
+        val embed = buildEmbedWithPlayers(
+            player("Bagre",  rating = "5.5", tackleAttempts = "15", tacklesMade = "12"),
+            player("Outro",  rating = "7.0", tackleAttempts = "5",  tacklesMade = "3"),
+        ).embeds[0]
+        // Bagre should be in BAGRE section
+        assertThat(embed.fields.field("🍍 BAGRE DA PARTIDA").value).contains("Bagre")
+        // Xerife should go to Outro, not Bagre
+        val xerife = embed.fields.firstOrNull { it.name == "🚧 XERIFE DA PARTIDA" }
+        if (xerife != null) {
+            assertThat(xerife.value).doesNotContain("Bagre")
+            assertThat(xerife.value).contains("Outro")
+        }
+    }
+
+    @Test
+    fun `bagre nao recebe PASSE DE PRECISAO mesmo com melhor porcentagem`() {
+        val embed = buildEmbedWithPlayers(
+            player("Bagre",    rating = "5.5", passAttempts = "30", passesMade = "29"),  // 96%
+            player("Segundo",  rating = "7.0", passAttempts = "20", passesMade = "18"),  // 90%
+        ).embeds[0]
+        // Bagre should be in BAGRE section
+        assertThat(embed.fields.field("🍍 BAGRE DA PARTIDA").value).contains("Bagre")
+        // Passe de Precisão should go to Segundo, not Bagre
+        val passe = embed.fields.firstOrNull { it.name == "🎯 PASSE DE PRECISÃO" }
+        if (passe != null) {
+            assertThat(passe.value).doesNotContain("Bagre")
+            assertThat(passe.value).contains("Segundo")
+        }
+    }
+
+    @Test
+    fun `bagre nao recebe PERIGO CONSTANTE mesmo com mais chutes`() {
+        val embed = buildEmbedWithPlayers(
+            player("Bagre",  rating = "5.5", shots = "8", goals = "2"),
+            player("Outro",  rating = "7.0", shots = "4", goals = "1"),
+        ).embeds[0]
+        // Bagre should be in BAGRE section
+        assertThat(embed.fields.field("🍍 BAGRE DA PARTIDA").value).contains("Bagre")
+        // Perigo Constante should go to Outro, not Bagre
+        val perigo = embed.fields.firstOrNull { it.name == "🔥 PERIGO CONSTANTE" }
+        if (perigo != null) {
+            assertThat(perigo.value).doesNotContain("Bagre")
+            assertThat(perigo.value).contains("Outro")
+        }
+    }
+
+    @Test
+    fun `PASSE DE PRECISAO seleciona proximo elegivel quando bagre tem melhor porcentagem`() {
+        val embed = buildEmbedWithPlayers(
+            player("Bagre",    rating = "5.5", passAttempts = "30", passesMade = "29"),  // 96% but excluded
+            player("Segundo",  rating = "7.0", passAttempts = "20", passesMade = "18"),  // 90% - selected
+            player("Terceiro", rating = "8.0", passAttempts = "15", passesMade = "12"),  // 80%
+        ).embeds[0]
+        val passe = embed.fields.field("🎯 PASSE DE PRECISÃO")
+        assertThat(passe.value).contains("Segundo")
+        assertThat(passe.value).doesNotContain("Bagre")
+        assertThat(passe.value).doesNotContain("Terceiro")
     }
 
     // -- Sem rótulos em inglês ------------------------------------------------

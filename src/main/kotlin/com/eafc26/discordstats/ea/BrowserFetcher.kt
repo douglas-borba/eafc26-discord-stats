@@ -5,6 +5,12 @@ data class BrowserFetchResult(
     val contentType: String?,
     val body: String,
     val error: String?,
+    // Caching headers for diagnostics
+    val cacheControl: String? = null,
+    val etag: String? = null,
+    val expires: String? = null,
+    val age: String? = null,
+    val lastModified: String? = null,
 )
 
 interface BrowserFetcher {

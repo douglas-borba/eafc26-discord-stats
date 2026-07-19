@@ -51,11 +51,16 @@ class PlaywrightBrowserFetcher(
         // explicit UTF-8 decoding. r.text() honors the charset in Content-Type,
         // and if EA omits it or sends text/plain the browser defaults to
         // windows-1252, corrupting non-ASCII characters like ç and ã.
+        //
+        // cache: 'no-store' ensures every fetch bypasses browser cache and
+        // makes a fresh network request. Without this, the browser may serve
+        // stale responses if the EA API returns caching headers.
         private val FETCH_JS = """
             async (url) => {
                 try {
                     const r = await window.fetch(url, {
                         credentials: 'include',
+                        cache: 'no-store',
                         headers: { 'Accept': 'application/json' }
                     });
                     const buffer = await r.arrayBuffer();
@@ -63,6 +68,11 @@ class PlaywrightBrowserFetcher(
                     return {
                         status: r.status,
                         contentType: r.headers.get('content-type'),
+                        cacheControl: r.headers.get('cache-control'),
+                        etag: r.headers.get('etag'),
+                        expires: r.headers.get('expires'),
+                        age: r.headers.get('age'),
+                        lastModified: r.headers.get('last-modified'),
                         body: body,
                         error: null
                     };
@@ -148,12 +158,28 @@ class PlaywrightBrowserFetcher(
         // Playwright returns the JS object as a LinkedHashMap
         val map = raw as? Map<String, Any?> ?: error("Unexpected evaluate result type: ${raw?.javaClass}")
 
-        return BrowserFetchResult(
+        val result = BrowserFetchResult(
             status = (map["status"] as? Number)?.toInt() ?: 0,
             contentType = map["contentType"] as? String,
             body = map["body"] as? String ?: "",
             error = map["error"] as? String,
+            cacheControl = map["cacheControl"] as? String,
+            etag = map["etag"] as? String,
+            expires = map["expires"] as? String,
+            age = map["age"] as? String,
+            lastModified = map["lastModified"] as? String,
         )
+
+        // Log caching headers for diagnostics
+        log.info("EA API response: status={}, Cache-Control={}, ETag={}, Expires={}, Age={}, Last-Modified={}",
+            result.status,
+            result.cacheControl ?: "(none)",
+            result.etag ?: "(none)",
+            result.expires ?: "(none)",
+            result.age ?: "(none)",
+            result.lastModified ?: "(none)")
+
+        return result
     }
 
     private fun closeBrowser() {

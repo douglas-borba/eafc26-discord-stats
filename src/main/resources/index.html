@@ -207,6 +207,15 @@
       font-size: 1rem;
     }
 
+    /* Prevent layout shift when button text is replaced with spinner */
+    #btn-refresh-text,
+    #btn-resend-text {
+      min-width: 6em;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
     /* Latest Match Panel */
     .match-panel .panel-body {
       padding: 0.85rem 1rem;

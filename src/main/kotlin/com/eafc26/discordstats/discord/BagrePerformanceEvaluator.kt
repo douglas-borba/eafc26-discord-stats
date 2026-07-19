@@ -37,6 +37,28 @@ object BagrePerformanceEvaluator {
     )
 
     /**
+     * Selects the Bagre player (lowest-rated eligible outfield player) without building evaluation.
+     * Used to determine which player should be excluded from positive awards.
+     * 
+     * Players with rating below [MIN_BAGRE_RATING] are excluded from selection.
+     */
+    fun selectBagrePlayer(outfield: Collection<PlayerEntry>): PlayerEntry? {
+        val eligible = outfield.filter { p ->
+            val rating = p.rating?.toDoubleOrNull()
+            rating != null && rating >= MIN_BAGRE_RATING
+        }
+        if (eligible.isEmpty()) return null
+
+        return eligible.minWithOrNull(
+            compareBy<PlayerEntry> { it.rating?.toDoubleOrNull() ?: Double.MAX_VALUE }
+                .thenBy { passCompletionPct(it) ?: 100.0 }
+                .thenBy { tackleSuccessPct(it) ?: 100.0 }
+                .thenByDescending { shotsNoGoal(it) }
+                .thenByDescending { missedPasses(it) }
+        )
+    }
+
+    /**
      * Selects the Bagre (lowest-rated eligible outfield player) and builds
      * coherent criticism sections based on their actual statistics.
      * 

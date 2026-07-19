@@ -6,6 +6,7 @@ import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.ea.model.PlayerStatisticsEligibility
 import com.fasterxml.jackson.annotation.JsonInclude
+import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -50,6 +51,8 @@ private const val BLANK = "\u200B"
 
 object DiscordEmbedBuilder {
 
+    private val log = LoggerFactory.getLogger(DiscordEmbedBuilder::class.java)
+
     @Volatile
     var phraseBank: PhraseBank? = null
 
@@ -77,9 +80,23 @@ object DiscordEmbedBuilder {
             .filter { it.isGoalkeeper() }
             .maxByOrNull { it.secondsPlayed?.toIntOrNull() ?: 0 }
 
+        // Log goalkeeper status for debugging
+        if (goalkeeper == null) {
+            log.debug("No goalkeeper found in players list for match {}. Players: {}", 
+                match.matchId, 
+                allPlayers.map { "pos=${it.position}, name=${it.playerName}" })
+        } else {
+            log.debug("Goalkeeper found for match {}: pos={}, name={}, saves={}, goalsConceded={}",
+                match.matchId, goalkeeper.position, goalkeeper.playerName, goalkeeper.saves, goalkeeper.goalsConceded)
+        }
+
         // Outfield players for awards (from eligible players, excluding goalkeeper)
         val outfield = allActive.filter { !it.isGoalkeeper() }
         val matchId = match.matchId
+
+        // First, determine the Bagre (lowest-rated player) - this player cannot receive positive awards
+        val bagrePlayer = BagrePerformanceEvaluator.selectBagrePlayer(outfield)
+        val excludeFromPositive: Set<String> = bagrePlayer?.let { setOf(it.playerName ?: "") } ?: emptySet()
 
         val fields = mutableListOf<EmbedField>()
         // Always prepend a separator so there is a visual break after the header description
@@ -94,12 +111,12 @@ object DiscordEmbedBuilder {
         addSection(goalsField(allActive))
         addSection(assistsField(allActive))
         addSection(top3AndAvgField(outfield, allActive))
-        addSection(craqueField(outfield, matchId))
-        addSection(perigoConstanteField(outfield, matchId))
+        addSection(craqueField(outfield, matchId, excludeFromPositive))
+        addSection(perigoConstanteField(outfield, matchId, excludeFromPositive))
         addSection(bagreField(outfield, matchId))
-        addSection(xerifeField(outfield, matchId))
-        addSection(passePrecisaoField(outfield, matchId))
-        addSection(correioField(outfield))
+        addSection(xerifeField(outfield, matchId, excludeFromPositive))
+        addSection(passePrecisaoField(outfield, matchId, excludeFromPositive))
+        addSection(correioField(outfield, matchId))
         addSection(muralhaField(goalkeeper, matchId))
 
         return DiscordPayload(listOf(DiscordEmbed(
@@ -163,8 +180,9 @@ object DiscordEmbedBuilder {
         return EmbedField("🥇 DESTAQUES", "\n" + parts.joinToString("\n\n"))
     }
 
-    private fun craqueField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
-        val selection = CraqueSelector.select(outfield) ?: return null
+    private fun craqueField(outfield: Collection<PlayerEntry>, matchId: String, excludeFromPositive: Set<String>): EmbedField? {
+        val eligible = outfield.filter { it.playerName !in excludeFromPositive }
+        val selection = CraqueSelector.select(eligible) ?: return null
         val name = selection.player.displayName()
         val phrase = pickFromCategory(PhraseCategory.MVP, matchId, name)
 
@@ -186,8 +204,9 @@ object DiscordEmbedBuilder {
         return EmbedField("🍍 BAGRE DA PARTIDA", "$BLANK\n" + evaluation.sections.joinToString("\n$BLANK\n"))
     }
 
-    private fun xerifeField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
-        val selection = XerifeSelector.select(outfield) ?: return null
+    private fun xerifeField(outfield: Collection<PlayerEntry>, matchId: String, excludeFromPositive: Set<String>): EmbedField? {
+        val eligible = outfield.filter { it.playerName !in excludeFromPositive }
+        val selection = XerifeSelector.select(eligible) ?: return null
         val name = selection.player.displayName()
         val phrase = pickFromCategory(PhraseCategory.XERIFE, matchId, name)
 
@@ -201,8 +220,9 @@ object DiscordEmbedBuilder {
         return EmbedField("🚧 XERIFE DA PARTIDA", value)
     }
 
-    private fun passePrecisaoField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
-        val selection = PassePrecisaoSelector.select(outfield) ?: return null
+    private fun passePrecisaoField(outfield: Collection<PlayerEntry>, matchId: String, excludeFromPositive: Set<String>): EmbedField? {
+        val eligible = outfield.filter { it.playerName !in excludeFromPositive }
+        val selection = PassePrecisaoSelector.select(eligible) ?: return null
         val name = selection.player.displayName()
         val phrase = pickFromCategory(PhraseCategory.PASSE_PRECISAO, matchId, name)
 
@@ -216,8 +236,9 @@ object DiscordEmbedBuilder {
         return EmbedField("🎯 PASSE DE PRECISÃO", value)
     }
 
-    private fun perigoConstanteField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
-        val selection = PerigoConstanteSelector.select(outfield) ?: return null
+    private fun perigoConstanteField(outfield: Collection<PlayerEntry>, matchId: String, excludeFromPositive: Set<String>): EmbedField? {
+        val eligible = outfield.filter { it.playerName !in excludeFromPositive }
+        val selection = PerigoConstanteSelector.select(eligible) ?: return null
         val name = selection.player.displayName()
 
         // Choose phrase category based on efficiency
@@ -234,7 +255,7 @@ object DiscordEmbedBuilder {
         return EmbedField("🔥 PERIGO CONSTANTE", value)
     }
 
-    private fun correioField(outfield: Collection<PlayerEntry>): EmbedField? {
+    private fun correioField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
         val candidates = outfield.mapNotNull { p ->
             val attempted = p.passAttempts?.toIntOrNull() ?: return@mapNotNull null
             val made = p.passesMade?.toIntOrNull() ?: return@mapNotNull null
@@ -246,7 +267,14 @@ object DiscordEmbedBuilder {
                 .thenByDescending { it.first.playerName ?: "" }
         ) ?: return null
         val name = best.first.displayName()
-        return EmbedField("📮 CORREIO EXTRAVIADO", "$BLANK\n$name — ${best.second} passes errados")
+        val phrase = pickFromCategory(PhraseCategory.CORREIO, matchId, name)
+        
+        val value = buildString {
+            append("$BLANK\n$name\n$BLANK\n")
+            append("📬 ${best.second} passes errados\n$BLANK\n")
+            append("💬 \"$phrase\"")
+        }
+        return EmbedField("📮 CORREIO EXTRAVIADO", value)
     }
 
     private fun muralhaField(gk: PlayerEntry?, matchId: String): EmbedField? {
