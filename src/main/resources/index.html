@@ -995,7 +995,7 @@
       if (p.correioExtraviado) {
         html += '<div class="card-divider"></div>';
         const ce = p.correioExtraviado;
-        html += renderHighlight('📮 CORREIO EXTRAVIADO', ce.name, `❌ ${ce.missedPasses} passes errados`, ce.phrase, 'warning');
+        html += renderHighlight('📮 CORREIO EXTRAVIADO', ce.name, `📬 ${ce.playerAccuracyPct}% de acerto · Média do time: ${ce.teamAccuracyPct}% (-${ce.deltaPct}%)`, ce.phrase, 'warning');
       }
 
       // Goleiro - full width stacked

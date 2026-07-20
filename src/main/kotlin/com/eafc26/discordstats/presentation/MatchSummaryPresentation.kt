@@ -116,6 +116,9 @@ data class PassePrecisaoSection(
 data class CorreioExtraviadoSection(
     val name: String,
     val missedPasses: Int,
+    val playerAccuracyPct: Int,
+    val teamAccuracyPct: Int,
+    val deltaPct: Int,
     val phrase: String,
 )
 

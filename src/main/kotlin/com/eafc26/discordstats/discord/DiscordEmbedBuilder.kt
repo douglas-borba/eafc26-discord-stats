@@ -276,22 +276,14 @@ object DiscordEmbedBuilder {
     }
 
     private fun correioField(outfield: Collection<PlayerEntry>, matchId: String): EmbedField? {
-        val candidates = outfield.mapNotNull { p ->
-            val attempted = p.passAttempts?.toIntOrNull() ?: return@mapNotNull null
-            val made = p.passesMade?.toIntOrNull() ?: return@mapNotNull null
-            val failed = maxOf(attempted - made, 0)
-            if (failed == 0) null else Pair(p, failed)
-        }
-        val best = candidates.maxWithOrNull(
-            compareBy<Pair<PlayerEntry, Int>> { it.second }
-                .thenByDescending { it.first.playerName ?: "" }
-        ) ?: return null
-        val name = best.first.displayName()
+        val sel = CorreioExtraviadoSelector.select(outfield) ?: return null
+        val name = sel.player.displayName()
         val phrase = pickFromCategory(PhraseCategory.CORREIO, matchId, name)
-        
         val value = buildString {
             append("$BLANK\n$name\n$BLANK\n")
-            append("📬 ${best.second} passes errados\n$BLANK\n")
+            append("📬 ${sel.playerAccuracyPct}% de acerto\n")
+            append("📊 Média do time: ${sel.teamAccuracyPct}%\n")
+            append("📉 -${sel.deltaPct}% abaixo da média\n$BLANK\n")
             append("💬 \"$phrase\"")
         }
         return EmbedField("📮 CORREIO EXTRAVIADO", value)

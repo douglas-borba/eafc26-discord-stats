@@ -585,29 +585,57 @@ class DiscordEmbedBuilderTest {
     // -- Correio Extraviado ---------------------------------------------------
 
     @Test
-    fun `secao CORREIO mostra jogador com mais passes errados`() {
+    fun `secao CORREIO seleciona jogador abaixo da media do time`() {
+        // Torto: 8/20 = 40%; Certeiro: 18/20 = 90%; team = 26/40 = 65%
+        // Torto: 25pp below → eligible and selected
         val embed = buildEmbedWithPlayers(
-            player("Torto",   passAttempts = "20", passesMade = "8"),
+            player("Torto",    passAttempts = "20", passesMade = "8"),
             player("Certeiro", passAttempts = "20", passesMade = "18"),
         ).embeds[0]
         val text = embed.fields.field("📮 CORREIO EXTRAVIADO").value
         assertThat(text).contains("Torto")
-        assertThat(text).contains("12 passes errados")
+        assertThat(text).contains("% de acerto")
+        assertThat(text).contains("Média do time")
+    }
+
+    @Test
+    fun `secao CORREIO mostra acerto e media do time`() {
+        // Torto 40%, team 65%
+        val embed = buildEmbedWithPlayers(
+            player("Torto",    passAttempts = "20", passesMade = "8"),
+            player("Certeiro", passAttempts = "20", passesMade = "18"),
+        ).embeds[0]
+        val text = embed.fields.field("📮 CORREIO EXTRAVIADO").value
+        assertThat(text).contains("40% de acerto")
+        assertThat(text).contains("Média do time: 65%")
+        assertThat(text).contains("-25% abaixo da média")
     }
 
     @Test
     fun `secao CORREIO sempre contem frase`() {
         val embed = buildEmbedWithPlayers(
-            player("Torto", passAttempts = "20", passesMade = "8"),
+            player("Torto",    passAttempts = "20", passesMade = "8"),
+            player("Certeiro", passAttempts = "20", passesMade = "18"),
         ).embeds[0]
         val text = embed.fields.field("📮 CORREIO EXTRAVIADO").value
         assertThat(text).contains("💬 \"")
     }
 
     @Test
-    fun `secao CORREIO omitida quando ninguem errou passe`() {
+    fun `secao CORREIO omitida quando nenhum jogador elegivel`() {
+        // Both players at 90% — nobody below 75%
         val embed = buildEmbedWithPlayers(
-            player("Preciso", passAttempts = "10", passesMade = "10"),
+            player("BomA", passAttempts = "20", passesMade = "18"),
+            player("BomB", passAttempts = "20", passesMade = "18"),
+        ).embeds[0]
+        assertThat(embed.fields.none { it.name == "📮 CORREIO EXTRAVIADO" }).isTrue()
+    }
+
+    @Test
+    fun `secao CORREIO omitida quando abaixo de 75 mas dentro de 5pp da media`() {
+        // Only player: 14/20 = 70%; team = 70%; delta = 0pp → not eligible
+        val embed = buildEmbedWithPlayers(
+            player("SozinhoAbaixo", passAttempts = "20", passesMade = "14"),
         ).embeds[0]
         assertThat(embed.fields.none { it.name == "📮 CORREIO EXTRAVIADO" }).isTrue()
     }
@@ -629,8 +657,18 @@ class DiscordEmbedBuilderTest {
     }
 
     @Test
+    fun `secao CORREIO omitida quando menos de 3 tentativas`() {
+        // 2 attempts — below MIN_PASS_ATTEMPTS=3, always ignored
+        val embed = buildEmbedWithPlayers(
+            player("Poucos", passAttempts = "2", passesMade = "0"),
+            player("Bom",    passAttempts = "20", passesMade = "18"),
+        ).embeds[0]
+        assertThat(embed.fields.none { it.name == "📮 CORREIO EXTRAVIADO" }).isTrue()
+    }
+
+    @Test
     fun `secao CORREIO nunca produz valor negativo quando certos excedem tentativas`() {
-        // EA data anomaly: passesMade > passAttempts -> clamp to 0 -> excluded
+        // EA anomaly: passesMade > passAttempts — clamped, and 5 attempts < MIN_PASS_ATTEMPTS
         val embed = buildEmbedWithPlayers(
             player("Anomalo", passAttempts = "5", passesMade = "10"),
         ).embeds[0]
@@ -638,21 +676,37 @@ class DiscordEmbedBuilderTest {
     }
 
     @Test
-    fun `secao CORREIO excluir jogador desconectado`() {
+    fun `secao CORREIO nao penaliza meia criativo com muitos erros mas acerto proximo da media`() {
+        // Meia10: 28/40 = 70%; Def1: 14/20 = 70%; Def2: 15/20 = 75%
+        // team = 57/80 = 71%; Meia10 delta = 1pp < 5pp → not selected
         val embed = buildEmbedWithPlayers(
-            player("Ativo", passAttempts = "10", passesMade = "2", secondsPlayed = "900"),
-            player("Disco", passAttempts = "20", passesMade = "0", secondsPlayed = "100"),
+            player("Meia10",    passAttempts = "40", passesMade = "28"),
+            player("Defensor1", passAttempts = "20", passesMade = "14"),
+            player("Defensor2", passAttempts = "20", passesMade = "15"),
         ).embeds[0]
-        val text = embed.fields.field("📮 CORREIO EXTRAVIADO").value
-        assertThat(text).contains("Ativo")
-        assertThat(text).doesNotContain("Disco")
+        assertThat(embed.fields.none { it.name == "📮 CORREIO EXTRAVIADO" }).isTrue()
     }
 
     @Test
-    fun `secao CORREIO desempate deterministico por nome`() {
+    fun `secao CORREIO excluir jogador desconectado`() {
+        // Ativo 20%; Bom 90%; Disco excluded (disconnected)
         val embed = buildEmbedWithPlayers(
-            player("Zebra",  passAttempts = "20", passesMade = "10"),
+            player("Ativo", passAttempts = "10", passesMade = "2",  secondsPlayed = "900"),
+            player("Bom",   passAttempts = "20", passesMade = "18", secondsPlayed = "900"),
+            player("Disco", passAttempts = "20", passesMade = "0",  secondsPlayed = "100"),
+        ).embeds[0]
+        val correio = embed.fields.firstOrNull { it.name == "📮 CORREIO EXTRAVIADO" }
+        if (correio != null) assertThat(correio.value).doesNotContain("Disco")
+    }
+
+    @Test
+    fun `secao CORREIO desempate por passes errados depois por nome`() {
+        // Both at 50%; ZZZBom at 90% → team = 63%; both 13pp below → eligible
+        // Abacaxi and Zebra tied on accuracy; same missed passes; Abacaxi wins alphabetically
+        val embed = buildEmbedWithPlayers(
+            player("Zebra",   passAttempts = "20", passesMade = "10"),
             player("Abacaxi", passAttempts = "20", passesMade = "10"),
+            player("ZZZBom",  passAttempts = "20", passesMade = "18"),
         ).embeds[0]
         val text = embed.fields.field("📮 CORREIO EXTRAVIADO").value
         assertThat(text).contains("Abacaxi")

@@ -3,6 +3,7 @@ package com.eafc26.discordstats.presentation
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.PhraseCategory
 import com.eafc26.discordstats.discord.BagrePerformanceEvaluator
+import com.eafc26.discordstats.discord.CorreioExtraviadoSelector
 import com.eafc26.discordstats.discord.CraqueSelector
 import com.eafc26.discordstats.discord.MatchOutcomeResolver
 import com.eafc26.discordstats.discord.PassePrecisaoSelector
@@ -230,24 +231,16 @@ class MatchSummaryBuilder(
     }
 
     private fun buildCorreioSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?): CorreioExtraviadoSection? {
-        val candidates = outfield.mapNotNull { p ->
-            val attempted = p.passAttempts?.toIntOrNull() ?: return@mapNotNull null
-            val made = p.passesMade?.toIntOrNull() ?: return@mapNotNull null
-            val failed = maxOf(attempted - made, 0)
-            if (failed == 0) null else Pair(p, failed)
-        }
-        val best = candidates.maxWithOrNull(
-            compareBy<Pair<PlayerEntry, Int>> { it.second }
-                .thenByDescending { it.first.playerName ?: "" }
-        ) ?: return null
-
-        val name = best.first.displayName()
+        val sel = CorreioExtraviadoSelector.select(outfield) ?: return null
+        val name = sel.player.displayName()
         val phrase = pickFromCategory(PhraseCategory.CORREIO, matchId, name, random)
-
         return CorreioExtraviadoSection(
-            name = name,
-            missedPasses = best.second,
-            phrase = phrase,
+            name              = name,
+            missedPasses      = sel.passAttempts - sel.passesMade,
+            playerAccuracyPct = sel.playerAccuracyPct,
+            teamAccuracyPct   = sel.teamAccuracyPct,
+            deltaPct          = sel.deltaPct,
+            phrase            = phrase,
         )
     }
 
