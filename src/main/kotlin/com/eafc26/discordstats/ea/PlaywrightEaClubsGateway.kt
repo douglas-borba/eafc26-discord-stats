@@ -3,10 +3,12 @@ package com.eafc26.discordstats.ea
 import com.eafc26.discordstats.config.AppProperties
 import com.microsoft.playwright.PlaywrightException
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 
 @Component
+@Qualifier("production")
 @ConditionalOnProperty(name = ["app.ea.client"], havingValue = "playwright")
 class PlaywrightEaClubsGateway(
     private val browserFetcher: BrowserFetcher,

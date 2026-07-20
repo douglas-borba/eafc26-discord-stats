@@ -1,10 +1,12 @@
 package com.eafc26.discordstats.discord
 
+import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.ZoneId
@@ -22,6 +24,8 @@ class PlayerStatsAttributionTest {
     private val ourClubId = "1104972"
     private val oppClubId = "99999"
     private val zone = ZoneId.of("America/Sao_Paulo")
+    private val phraseBank = PhraseBank(jacksonObjectMapper())
+    private val matchSummaryBuilder = MatchSummaryBuilder(phraseBank)
 
     /**
      * Regression test for the dbeng_bass/Guilherme_cruzz scenario.
@@ -67,7 +71,7 @@ class PlayerStatsAttributionTest {
             "guilherme_cruzz_id" to player("Guilherme_cruzz", goals = "0", assists = "0", rating = "6.8"),
         )
 
-        val presentation = MatchSummaryBuilder.build(match, ourClubId, zone)
+        val presentation = matchSummaryBuilder.build(match, ourClubId, zone)
 
         // Goals section
         assertThat(presentation.goals).isNotNull

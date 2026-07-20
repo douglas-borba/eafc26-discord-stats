@@ -13,126 +13,73 @@
       background: #0d1117;
       color: #e6edf3;
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 1.5rem;
-      overflow-x: hidden;
+      padding: 1rem;
     }
 
-    /* Master-Detail Layout Container */
-    .main-container {
-      width: 100%;
-      max-width: 900px;
-      display: flex;
-      justify-content: center;
-      transition: transform 0.28s ease, padding 0.28s ease;
+    /* ===== Main Layout ===== */
+    .app-container {
+      max-width: 1100px;
+      margin: 0 auto;
     }
 
-    .main-container.panel-open {
-      transform: translateX(-220px);
+    /* ===== Main Content Grid ===== */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 1rem;
+      align-items: start;
     }
 
-    @media (max-width: 900px) {
-      .main-container.panel-open {
-        transform: translateX(-180px);
+    @media (max-width: 850px) {
+      .main-grid {
+        grid-template-columns: 1fr;
       }
     }
 
-    @media (max-width: 700px) {
-      .main-container.panel-open {
-        transform: translateX(0);
+    /* ===== Left Column ===== */
+    .left-column {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    /* ===== Right Column (Card) ===== */
+    .right-column {
+      position: sticky;
+      top: 1rem;
+    }
+
+    @media (max-width: 850px) {
+      .right-column {
+        position: static;
       }
     }
 
-    /* Dashboard Container */
-    .dashboard {
-      width: 100%;
-      max-width: 440px;
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-    }
-
-    /* Panel Base */
+    /* ===== Panel Base ===== */
     .panel {
       background: linear-gradient(160deg, #1a1f26 0%, #161b22 50%, #12161c 100%);
       border: 1px solid #30363d;
-      border-radius: 12px;
+      border-radius: 10px;
       overflow: hidden;
     }
 
-    /* Header Panel */
-    .header-panel {
-      padding: 1rem 1.25rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .header-title {
-      display: flex;
-      flex-direction: column;
-      gap: 0.15rem;
-    }
-
-    .app-title {
-      font-size: 1.1rem;
-      font-weight: 700;
-      color: #58a6ff;
-    }
-
-    .club-name {
-      font-size: 0.75rem;
-      color: #8b949e;
-      font-weight: 500;
-    }
-
-    .status-badge {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      font-size: 0.7rem;
-      color: #8b949e;
-      background: rgba(35, 134, 54, 0.15);
-      border: 1px solid rgba(35, 134, 54, 0.3);
-      border-radius: 20px;
-      padding: 0.25rem 0.6rem;
-    }
-
-    .status-badge.active {
-      color: #7ee787;
-    }
-
-    .status-badge.inactive {
-      background: rgba(110, 118, 129, 0.15);
-      border-color: rgba(110, 118, 129, 0.3);
-      color: #8b949e;
-    }
-
-    .status-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: currentColor;
-    }
-
-    /* Panel Section Title */
     .panel-title {
-      font-size: 0.65rem;
+      font-size: 0.62rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: #58a6ff;
-      padding: 0.75rem 1rem 0.5rem;
+      padding: 0.55rem 0.85rem 0.45rem;
       background: rgba(0, 0, 0, 0.2);
       border-bottom: 1px solid #21262d;
     }
 
-    /* Actions Panel */
+    .panel-body {
+      padding: 0.65rem 0.85rem;
+    }
+
+    /* ===== Actions Panel ===== */
     .actions-panel .panel-body {
-      padding: 0.85rem 1rem;
       display: flex;
       flex-direction: column;
       gap: 0.5rem;
@@ -142,134 +89,134 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.5rem;
+      gap: 0.4rem;
       border: none;
-      border-radius: 8px;
-      font-size: 0.9rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
       font-weight: 600;
-      padding: 0.7rem 1rem;
+      padding: 0.55rem 0.85rem;
       cursor: pointer;
       transition: background 0.2s, opacity 0.2s, transform 0.1s;
       width: 100%;
     }
 
-    .btn:focus {
-      outline: 2px solid #58a6ff;
-      outline-offset: 2px;
-    }
+    .btn:focus { outline: 2px solid #58a6ff; outline-offset: 2px; }
+    .btn:active:not(:disabled) { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.6; cursor: default; }
 
-    .btn:active:not(:disabled) {
-      transform: scale(0.98);
-    }
+    .btn-primary { background: #238636; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #2ea043; }
 
-    .btn:disabled {
-      opacity: 0.6;
-      cursor: default;
-    }
+    .btn-icon { font-size: 0.9rem; }
 
-    .btn-primary {
-      background: #238636;
-      color: #fff;
-    }
-
-    .btn-primary:hover:not(:disabled) {
-      background: #2ea043;
-    }
-
-    .btn-secondary {
-      background: #21262d;
-      color: #e6edf3;
-      border: 1px solid #30363d;
-    }
-
-    .btn-secondary:hover:not(:disabled) {
-      background: #30363d;
-    }
-
-    .btn-outline {
-      background: transparent;
-      color: #58a6ff;
-      border: 1px solid #30363d;
-    }
-
-    .btn-outline:hover:not(:disabled) {
-      background: rgba(88, 166, 255, 0.1);
-      border-color: #58a6ff;
-    }
-
-    .secondary-actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.5rem;
-    }
-
-    .btn-icon {
-      font-size: 1rem;
-    }
-
-    /* Prevent layout shift when button text is replaced with spinner */
-    #btn-refresh-text,
-    #btn-resend-text {
-      min-width: 6em;
-      display: inline-flex;
+    /* ===== Monitoring Status (inline in actions) ===== */
+    .monitoring-status {
+      display: flex;
       align-items: center;
-      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.65rem;
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 6px;
+      font-size: 0.75rem;
     }
 
-    /* Latest Match Panel */
-    .match-panel .panel-body {
-      padding: 0.85rem 1rem;
+    .monitoring-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
     }
 
+    .monitoring-status.active .monitoring-dot { background: #3fb950; }
+    .monitoring-status.inactive .monitoring-dot { background: #6e7681; }
+
+    .monitoring-info {
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+    }
+
+    .monitoring-state {
+      font-weight: 600;
+      color: #e6edf3;
+    }
+
+    .monitoring-status.active .monitoring-state { color: #7ee787; }
+    .monitoring-status.inactive .monitoring-state { color: #8b949e; }
+
+    .monitoring-detail {
+      font-size: 0.68rem;
+      color: #8b949e;
+    }
+
+    /* ===== Feedback ===== */
+    .feedback-container { overflow: hidden; }
+
+    .feedback {
+      padding: 0.5rem 0.85rem;
+      font-size: 0.75rem;
+      line-height: 1.35;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.4rem;
+    }
+
+    .feedback-icon { font-size: 0.9rem; flex-shrink: 0; }
+    .feedback-text { flex: 1; }
+    .feedback-summary { font-weight: 600; margin-top: 0.15rem; }
+
+    .feedback.success { background: rgba(35, 134, 54, 0.15); border-top: 1px solid rgba(35, 134, 54, 0.3); color: #7ee787; }
+    .feedback.info { background: rgba(88, 166, 255, 0.1); border-top: 1px solid rgba(88, 166, 255, 0.2); color: #79c0ff; }
+    .feedback.warning { background: rgba(210, 153, 34, 0.15); border-top: 1px solid rgba(210, 153, 34, 0.3); color: #d29922; }
+    .feedback.error { background: rgba(248, 81, 73, 0.15); border-top: 1px solid rgba(248, 81, 73, 0.3); color: #f85149; }
+
+    /* ===== Latest Match Panel ===== */
     .match-row {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.6rem;
-      margin-bottom: 0.6rem;
+      gap: 0.5rem;
+      margin-bottom: 0.4rem;
     }
 
     .match-team {
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       font-weight: 600;
       color: #c9d1d9;
-      max-width: 110px;
+      max-width: 95px;
       text-align: center;
-      line-height: 1.2;
+      line-height: 1.15;
     }
 
     .match-score {
-      font-size: 1.4rem;
+      font-size: 1.2rem;
       font-weight: 800;
       color: #fff;
       display: flex;
       align-items: center;
-      gap: 0.3rem;
+      gap: 0.2rem;
     }
 
-    .match-score-sep {
-      font-size: 1rem;
-      color: #6e7681;
-    }
+    .match-score-sep { font-size: 0.85rem; color: #6e7681; }
 
     .match-info {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.5rem;
+      gap: 0.4rem;
       flex-wrap: wrap;
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       color: #8b949e;
     }
 
     .result-badge {
       display: inline-block;
-      padding: 0.15rem 0.5rem;
-      border-radius: 10px;
-      font-size: 0.6rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 8px;
+      font-size: 0.55rem;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.03em;
     }
 
     .result-badge.win { background: #238636; color: #fff; }
@@ -279,72 +226,72 @@
     .match-divider {
       height: 1px;
       background: linear-gradient(90deg, transparent, #30363d, transparent);
-      margin: 0.65rem 0;
+      margin: 0.5rem 0;
     }
 
     .match-status {
       display: flex;
       align-items: center;
-      gap: 0.4rem;
-      font-size: 0.72rem;
+      gap: 0.35rem;
+      font-size: 0.68rem;
       color: #8b949e;
     }
 
-    .match-status-icon {
-      font-size: 0.85rem;
-    }
-
+    .match-status-icon { font-size: 0.78rem; }
     .match-status.published { color: #7ee787; }
-    .match-status.pending { color: #d29922; }
-    .match-status.error { color: #f85149; }
+    .match-status.simulated { color: #f0883e; }
 
-    /* Empty State */
     .empty-state {
       text-align: center;
-      padding: 1rem 0;
+      padding: 0.85rem 0;
       color: #8b949e;
-      font-size: 0.82rem;
-    }
-
-    .empty-state-icon {
-      font-size: 1.5rem;
-      margin-bottom: 0.4rem;
-      opacity: 0.6;
-    }
-
-    /* Monitoring Panel */
-    .monitoring-panel .panel-body {
-      padding: 0.75rem 1rem;
-    }
-
-    .monitoring-grid {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      gap: 0.35rem 1rem;
       font-size: 0.78rem;
     }
 
-    .monitoring-label {
+    .empty-state-icon { font-size: 1.3rem; margin-bottom: 0.25rem; opacity: 0.6; }
+
+    /* ===== Developer Panel ===== */
+    .dev-panel {
+      border: 1px dashed #f0883e;
+      background: linear-gradient(135deg, rgba(240, 136, 62, 0.05), transparent);
+    }
+
+    .dev-panel .panel-title { color: #f0883e; }
+
+    .dev-info {
+      margin-bottom: 0.5rem;
+      padding: 0.35rem 0.55rem;
+      background: rgba(240, 136, 62, 0.1);
+      border-radius: 5px;
+      font-size: 0.68rem;
+    }
+
+    .dev-info-text { color: #f0883e; }
+
+    .dev-actions {
+      display: flex;
+      gap: 0.4rem;
+    }
+
+    .dev-actions .btn { flex: 1; }
+
+    .btn-outline { background: transparent; color: #58a6ff; border: 1px solid #30363d; }
+    .btn-outline:hover:not(:disabled) { background: rgba(88, 166, 255, 0.1); border-color: #58a6ff; }
+
+    .dev-status {
+      margin-top: 0.5rem;
+      font-size: 0.72rem;
       color: #8b949e;
+      min-height: 1em;
     }
 
-    .monitoring-value {
-      color: #e6edf3;
-      font-weight: 500;
-      text-align: right;
-    }
+    .dev-status.success { color: #3fb950; }
+    .dev-status.error { color: #f85149; }
+    .dev-status.simulated { color: #f0883e; }
 
-    .monitoring-value.active {
-      color: #7ee787;
-    }
-
-    .monitoring-value.inactive {
-      color: #6e7681;
-    }
-
-    /* Settings Button */
+    /* ===== Settings Panel ===== */
     .settings-panel {
-      padding: 0.65rem 1rem;
+      padding: 0.5rem 0.85rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -353,639 +300,514 @@
     .settings-link {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.4rem;
       color: #8b949e;
       text-decoration: none;
-      font-size: 0.82rem;
+      font-size: 0.75rem;
       transition: color 0.2s;
     }
 
-    .settings-link:hover {
-      color: #58a6ff;
+    .settings-link:hover { color: #58a6ff; }
+
+    .network-url { font-size: 0.68rem; color: #6e7681; }
+    .network-url a { color: #58a6ff; text-decoration: none; }
+
+    /* ===== Right Column (Card Area) ===== */
+    .right-column.simulated .simulation-indicator {
+      display: flex;
     }
 
-    .settings-link:focus {
-      outline: 2px solid #58a6ff;
-      outline-offset: 2px;
-      border-radius: 4px;
+    .simulation-indicator {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 0.6rem 1rem;
+      margin-bottom: 0.5rem;
+      background: rgba(240, 136, 62, 0.12);
+      border: 1px dashed rgba(240, 136, 62, 0.4);
+      border-radius: 8px;
+      font-size: 0.78rem;
+      color: #f0883e;
     }
 
-    .network-url {
-      font-size: 0.72rem;
+    .card-empty {
+      text-align: center;
+      padding: 3rem 1.5rem;
       color: #6e7681;
     }
 
-    .network-url a {
-      color: #58a6ff;
-      text-decoration: none;
+    .card-empty-icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.6rem;
+      opacity: 0.5;
     }
 
-    .network-url a:hover {
-      text-decoration: underline;
+    .card-empty-text {
+      font-size: 0.85rem;
     }
 
-    /* Result Feedback Messages */
-    .feedback-container {
+    /* Inner card canvas - centered with max-width */
+    .card-canvas {
+      max-width: 420px;
+      margin: 0 auto;
+      padding: 0.75rem;
+    }
+
+    .match-card {
+      background: linear-gradient(160deg, #1a1f26 0%, #161b22 50%, #12161c 100%);
+      border-radius: 12px;
+      border: 1px solid #30363d;
       overflow: hidden;
-      transition: max-height 0.3s ease;
     }
 
-    .feedback {
-      padding: 0.7rem 1rem;
-      font-size: 0.82rem;
-      line-height: 1.4;
+    /* Strong header with dominant score */
+    .card-header {
+      padding: 1rem 1.25rem;
+      text-align: center;
+      background: linear-gradient(135deg, rgba(88, 166, 255, 0.08), transparent);
+    }
+
+    .card-result-badge {
+      display: inline-block;
+      padding: 0.2rem 0.7rem;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+
+    .card-result-badge.win { background: rgba(63, 185, 80, 0.25); color: #3fb950; }
+    .card-result-badge.loss { background: rgba(248, 81, 73, 0.25); color: #f85149; }
+    .card-result-badge.draw { background: rgba(139, 148, 158, 0.25); color: #8b949e; }
+
+    .card-score-row {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
+      justify-content: center;
+      gap: 0.8rem;
+      margin: 0.4rem 0;
+    }
+
+    .card-team-name {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #e6edf3;
+      max-width: 110px;
+      text-align: center;
+      line-height: 1.2;
+    }
+
+    .card-score {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: #ffffff;
+    }
+
+    .card-score-sep {
+      color: #6e7681;
+      font-size: 1.1rem;
+      font-weight: 400;
+    }
+
+    .card-date {
+      font-size: 0.7rem;
+      color: #8b949e;
+      margin-top: 0.4rem;
+    }
+
+    /* Card body with proper spacing */
+    .card-body {
+      padding: 0 1.25rem 1rem;
+    }
+
+    .card-divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #30363d 20%, #30363d 80%, transparent);
+      margin: 0.75rem 0;
+    }
+
+    /* Section blocks */
+    .card-section {
+      margin-bottom: 0.5rem;
+    }
+
+    .card-section-title {
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.4rem;
+    }
+
+    /* Goals/Assists - only section that uses two columns */
+    .card-goals-assists {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 0;
+    }
+
+    .card-goals-assists > .card-section:nth-child(1) {
+      padding-right: 0.75rem;
+    }
+
+    .card-goals-assists > .card-section:nth-child(3) {
+      padding-left: 0.75rem;
+    }
+
+    .card-goals-divider {
+      width: 1px;
+      background: linear-gradient(180deg, transparent 0%, #30363d 20%, #30363d 80%, transparent 100%);
+    }
+
+    @media (max-width: 400px) {
+      .card-goals-assists {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      .card-goals-assists > .card-section:nth-child(1),
+      .card-goals-assists > .card-section:nth-child(3) {
+        padding: 0;
+      }
+      .card-goals-divider {
+        display: none;
+      }
+    }
+
+    .card-player-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .card-player-item {
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      font-size: 0.82rem;
+    }
+
+    .card-player-name {
+      color: #e6edf3;
+      font-weight: 500;
+    }
+
+    .card-player-stat {
+      color: #8b949e;
+      font-size: 0.75rem;
+    }
+
+    /* Highlights - compact list */
+    .card-top3 {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .card-top3-item {
+      display: flex;
+      align-items: center;
       gap: 0.5rem;
+      font-size: 0.85rem;
     }
 
-    .feedback-icon {
-      font-size: 1rem;
+    .card-top3-medal {
+      font-size: 0.9rem;
       flex-shrink: 0;
+      width: 1.2rem;
+      text-align: center;
     }
 
-    .feedback-text {
-      flex: 1;
+    .card-top3-name {
+      color: #e6edf3;
+      font-weight: 500;
     }
 
-    .feedback-summary {
-      font-weight: 600;
-      margin-top: 0.25rem;
-    }
-
-    .feedback.success {
-      background: rgba(35, 134, 54, 0.15);
-      border-top: 1px solid rgba(35, 134, 54, 0.3);
+    .card-top3-rating {
       color: #7ee787;
+      font-weight: 600;
     }
 
-    .feedback.info {
-      background: rgba(88, 166, 255, 0.1);
-      border-top: 1px solid rgba(88, 166, 255, 0.2);
-      color: #79c0ff;
+    .card-team-avg {
+      font-size: 0.75rem;
+      color: #8b949e;
+      margin-top: 0.35rem;
     }
 
-    .feedback.warning {
-      background: rgba(210, 153, 34, 0.15);
-      border-top: 1px solid rgba(210, 153, 34, 0.3);
-      color: #d29922;
+    /* Category highlight blocks - full width stacked */
+    .card-highlight {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
     }
 
-    .feedback.error {
-      background: rgba(248, 81, 73, 0.15);
-      border-top: 1px solid rgba(248, 81, 73, 0.3);
-      color: #f85149;
+    .card-hl-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #e6edf3;
     }
 
-    /* Loading Spinner */
+    .card-hl-stats {
+      font-size: 0.78rem;
+      color: #8b949e;
+    }
+
+    .card-hl-phrase {
+      font-size: 0.82rem;
+      color: #7ee787;
+      font-style: italic;
+      line-height: 1.4;
+      margin-top: 0.3rem;
+    }
+
+    .card-hl-phrase.warning {
+      color: #f0883e;
+    }
+
+    /* Bagre section - structured layout */
+    .card-bagre {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .card-bagre-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #e6edf3;
+    }
+
+    .card-bagre-reason {
+      font-size: 0.78rem;
+      color: #8b949e;
+      line-height: 1.4;
+    }
+
+    .card-bagre-stats {
+      font-size: 0.75rem;
+      color: #8b949e;
+      line-height: 1.4;
+    }
+
+    .card-bagre-phrase {
+      font-size: 0.82rem;
+      color: #f0883e;
+      font-style: italic;
+      line-height: 1.4;
+      margin-top: 0.2rem;
+    }
+
+    .card-footer {
+      padding: 0.6rem;
+      text-align: center;
+      font-size: 0.7rem;
+      color: #6e7681;
+      background: rgba(0, 0, 0, 0.25);
+      border-top: 1px solid #30363d;
+    }
+
+    .card-actions {
+      padding: 0.75rem 1rem;
+      border-top: 1px solid #21262d;
+    }
+
+    /* Mobile: canvas uses full width */
+    @media (max-width: 500px) {
+      .card-canvas {
+        max-width: 100%;
+        padding: 0.5rem;
+      }
+
+      .card-header {
+        padding: 0.85rem 1rem;
+      }
+
+      .card-score {
+        font-size: 1.5rem;
+      }
+
+      .card-team-name {
+        font-size: 0.8rem;
+        max-width: 90px;
+      }
+
+      .card-body {
+        padding: 0 1rem 0.85rem;
+      }
+    }
+
+    /* ===== Spinner ===== */
     .spinner {
-      width: 14px;
-      height: 14px;
+      width: 12px;
+      height: 12px;
       border: 2px solid rgba(255,255,255,0.3);
       border-top-color: #fff;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
 
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* Responsive adjustments */
+    /* ===== Mobile adjustments ===== */
     @media (max-width: 480px) {
-      .dashboard {
-        gap: 0.6rem;
-      }
-
-      .secondary-actions {
-        grid-template-columns: 1fr;
-      }
-
-      .match-team {
-        max-width: 90px;
-        font-size: 0.75rem;
-      }
-
-      .match-score {
-        font-size: 1.2rem;
-      }
-    }
-
-    /* ===== Match Card Side Panel ===== */
-    .card-panel {
-      position: fixed;
-      top: 0;
-      right: 0;
-      width: 420px;
-      max-width: 100vw;
-      height: 100vh;
-      background: linear-gradient(160deg, #1a1f26 0%, #161b22 50%, #12161c 100%);
-      border-left: 1px solid #30363d;
-      transform: translateX(100%);
-      transition: transform 0.28s ease;
-      z-index: 1000;
-      display: flex;
-      flex-direction: column;
-      box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
-    }
-
-    .card-panel.open {
-      transform: translateX(0);
-    }
-
-    .card-panel-header {
-      padding: 1rem 1.25rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: rgba(0, 0, 0, 0.2);
-      border-bottom: 1px solid #21262d;
-      flex-shrink: 0;
-    }
-
-    .card-panel-title {
-      display: flex;
-      flex-direction: column;
-      gap: 0.15rem;
-    }
-
-    .card-panel-title-main {
-      font-size: 1rem;
-      font-weight: 700;
-      color: #58a6ff;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
-
-    .card-panel-title-sub {
-      font-size: 0.72rem;
-      color: #8b949e;
-    }
-
-    .card-panel-close {
-      background: transparent;
-      border: 1px solid #30363d;
-      color: #8b949e;
-      width: 32px;
-      height: 32px;
-      border-radius: 6px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
-      transition: background 0.2s, color 0.2s, border-color 0.2s;
-    }
-
-    .card-panel-close:hover {
-      background: rgba(248, 81, 73, 0.15);
-      border-color: #f85149;
-      color: #f85149;
-    }
-
-    .card-panel-close:focus {
-      outline: 2px solid #58a6ff;
-      outline-offset: 2px;
-    }
-
-    .card-panel-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 1rem;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .card-panel-loading,
-    .card-panel-error {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 200px;
-      color: #8b949e;
-      text-align: center;
-    }
-
-    .card-panel-loading .spinner {
-      width: 36px;
-      height: 36px;
-      border: 3px solid #30363d;
-      border-top-color: #58a6ff;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-bottom: 1rem;
-    }
-
-    .card-panel-error {
-      color: #f85149;
-      padding: 2rem 1rem;
-    }
-
-    /* Compact Match Card in Panel */
-    .panel-match-card {
-      background: linear-gradient(160deg, #1a1f26 0%, #161b22 50%, #12161c 100%);
-      border: 1px solid #30363d;
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-      width: 100%;
-      max-width: 380px;
-    }
-
-    .panel-card-header {
-      padding: 0.9rem 1rem;
-      text-align: center;
-      background: rgba(0,0,0,0.2);
-    }
-
-    .panel-result-badge {
-      display: inline-block;
-      padding: 0.2rem 0.7rem;
-      border-radius: 12px;
-      font-size: 0.65rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 0.5rem;
-    }
-    .panel-result-badge.win { background: #238636; }
-    .panel-result-badge.draw { background: #6e7681; }
-    .panel-result-badge.loss { background: #da3633; }
-
-    .panel-score-row {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.8rem;
-    }
-
-    .panel-team-name {
-      font-size: 0.8rem;
-      font-weight: 600;
-      max-width: 100px;
-      text-align: center;
-      line-height: 1.2;
-      color: #c9d1d9;
-    }
-
-    .panel-score {
-      font-size: 2rem;
-      font-weight: 800;
-      color: #fff;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
-    .panel-score-sep { font-size: 1.4rem; color: #6e7681; }
-
-    .panel-match-date {
-      font-size: 0.65rem;
-      color: #8b949e;
-      margin-top: 0.4rem;
-    }
-
-    .panel-card-body {
-      padding: 0.6rem 0.8rem;
-    }
-
-    .panel-divider {
-      height: 1px;
-      background: linear-gradient(90deg, transparent, #30363d, transparent);
-      margin: 0.6rem 0;
-    }
-
-    .panel-sec {
-      margin-bottom: 0.6rem;
-    }
-    .panel-sec:last-child { margin-bottom: 0; }
-
-    .panel-sec-title {
-      font-size: 0.6rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #58a6ff;
-      margin-bottom: 0.25rem;
-    }
-
-    .panel-sec-body {
-      font-size: 0.75rem;
-      line-height: 1.4;
-      color: #e6edf3;
-    }
-
-    .panel-player-list {
-      font-size: 0.72rem;
-      line-height: 1.5;
-    }
-    .panel-player-list-item {
-      display: flex;
-      align-items: center;
-      gap: 0.3rem;
-    }
-    .panel-player-list-item::before {
-      content: '•';
-      color: #6e7681;
-    }
-    .panel-player-list-count {
-      color: #8b949e;
-      margin-left: auto;
-    }
-
-    .panel-top3 {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.2rem 0.8rem;
-    }
-    .panel-top3-item {
-      display: flex;
-      align-items: center;
-      gap: 0.25rem;
-      font-size: 0.72rem;
-    }
-    .panel-top3-medal { font-size: 0.9rem; }
-    .panel-top3-rating { color: #8b949e; font-size: 0.65rem; }
-
-    .panel-team-avg {
-      font-size: 0.68rem;
-      color: #8b949e;
-      margin-top: 0.2rem;
-    }
-
-    .panel-hl-row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: baseline;
-      gap: 0.3rem;
-    }
-    .panel-hl-name {
-      font-weight: 600;
-      font-size: 0.82rem;
-      color: #fff;
-    }
-    .panel-hl-stats {
-      color: #8b949e;
-      font-size: 0.68rem;
-    }
-    .panel-hl-phrase {
-      width: 100%;
-      font-style: italic;
-      font-size: 0.65rem;
-      color: #7ee787;
-      margin-top: 0.15rem;
-    }
-
-    .panel-bagre-lines {
-      font-size: 0.7rem;
-      line-height: 1.35;
-      color: #c9d1d9;
-    }
-
-    .panel-card-footer {
-      text-align: center;
-      padding: 0.5rem;
-      font-size: 0.6rem;
-      color: #484f58;
-      background: rgba(0,0,0,0.15);
-    }
-
-    /* Panel Actions */
-    .card-panel-actions {
-      padding: 1rem 1.25rem;
-      background: rgba(0, 0, 0, 0.2);
-      border-top: 1px solid #21262d;
-      flex-shrink: 0;
-    }
-
-    .card-panel-download {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      width: 100%;
-      background: #238636;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      padding: 0.75rem 1rem;
-      cursor: pointer;
-      transition: background 0.2s, transform 0.1s;
-    }
-
-    .card-panel-download:hover:not(:disabled) {
-      background: #2ea043;
-    }
-
-    .card-panel-download:active:not(:disabled) {
-      transform: scale(0.98);
-    }
-
-    .card-panel-download:disabled {
-      opacity: 0.6;
-      cursor: default;
-    }
-
-    .card-panel-download:focus {
-      outline: 2px solid #58a6ff;
-      outline-offset: 2px;
-    }
-
-    /* Overlay for mobile */
-    .card-panel-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 999;
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.28s ease, visibility 0.28s ease;
-    }
-
-    .card-panel-overlay.visible {
-      opacity: 1;
-      visibility: visible;
-    }
-
-    @media (max-width: 700px) {
-      .card-panel {
-        width: 100%;
-      }
-    }
-
-    @media (min-width: 701px) {
-      .card-panel-overlay {
-        display: none;
-      }
+      body { padding: 0.65rem; }
+      .main-grid { gap: 0.6rem; }
+      .match-team { max-width: 75px; font-size: 0.7rem; }
+      .match-score { font-size: 1.05rem; }
     }
   </style>
 </head>
 <body>
-  <!-- Overlay for mobile -->
-  <div class="card-panel-overlay" id="card-panel-overlay" onclick="closeCardPanel()"></div>
-
-  <div class="main-container" id="main-container">
-    <div class="dashboard">
-    <!-- Header Panel -->
-    <div class="panel header-panel">
-      <div class="header-title">
-        <div class="app-title">EA FC 26</div>
-        <div class="club-name">Associação BF</div>
-      </div>
-      <div class="status-badge active" id="header-status">
-        <span class="status-dot"></span>
-        <span id="header-status-text">Monitorando</span>
-      </div>
-    </div>
-
-    <!-- Actions Panel -->
-    <div class="panel actions-panel">
-      <div class="panel-title">Ações</div>
-      <div class="panel-body">
-        <button class="btn btn-primary" id="btn-refresh" onclick="notify()">
-          <span class="btn-icon">🔄</span>
-          <span id="btn-refresh-text">Atualizar agora</span>
-        </button>
-        <div class="secondary-actions">
-          <button class="btn btn-secondary" id="btn-resend" onclick="resend()">
-            <span class="btn-icon">📤</span>
-            <span id="btn-resend-text">Reenviar</span>
-          </button>
-          <button class="btn btn-outline" id="btn-card" onclick="openCard()">
-            <span class="btn-icon">🎴</span>
-            <span>Gerar card</span>
-          </button>
-        </div>
-      </div>
-      <div class="feedback-container" id="feedback-container" style="display: none;"></div>
-    </div>
-
-    <!-- Latest Match Panel -->
-    <div class="panel match-panel">
-      <div class="panel-title">Última Partida</div>
-      <div class="panel-body" id="match-body">
-        <div class="empty-state" id="match-empty">
-          <div class="empty-state-icon">⚽</div>
-          <div>Carregando...</div>
-        </div>
-        <div id="match-content" style="display: none;">
-          <div class="match-row">
-            <div class="match-team" id="match-our-name">—</div>
-            <div class="match-score">
-              <span id="match-our-score">0</span>
-              <span class="match-score-sep">×</span>
-              <span id="match-opp-score">0</span>
-            </div>
-            <div class="match-team" id="match-opp-name">—</div>
-          </div>
-          <div class="match-info">
-            <span class="result-badge" id="match-result-badge">—</span>
-            <span id="match-date">—</span>
-          </div>
-          <div class="match-divider"></div>
-          <div class="match-status" id="match-status">
-            <span class="match-status-icon">—</span>
-            <span id="match-status-text">—</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Monitoring Panel -->
-    <div class="panel monitoring-panel">
-      <div class="panel-title">Monitoramento Automático</div>
-      <div class="panel-body">
-        <div class="monitoring-grid">
-          <span class="monitoring-label">Status</span>
-          <span class="monitoring-value" id="ps-enabled">—</span>
-
-          <span class="monitoring-label">Intervalo</span>
-          <span class="monitoring-value" id="ps-interval">—</span>
-
-          <span class="monitoring-label">Última verificação</span>
-          <span class="monitoring-value" id="ps-last">—</span>
-
-          <span class="monitoring-label">Próxima verificação</span>
-          <span class="monitoring-value" id="ps-next">—</span>
-
-          <span class="monitoring-label">Resultado</span>
-          <span class="monitoring-value" id="ps-result">—</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Settings Panel -->
-    <div class="panel settings-panel">
-      <a href="/settings" class="settings-link">
-        <span>⚙️</span>
-        <span>Configurações</span>
-      </a>
-      <span class="network-url" id="network-url"></span>
-    </div>
-  </div>
-  </div>
-
-  <!-- Match Card Side Panel -->
-  <div class="card-panel" id="card-panel">
-    <div class="card-panel-header">
-      <div class="card-panel-title">
-        <div class="card-panel-title-main">📋 Match Card</div>
-        <div class="card-panel-title-sub">Resumo visual da última partida</div>
-      </div>
-      <button class="card-panel-close" onclick="closeCardPanel()" aria-label="Fechar painel">✕</button>
-    </div>
-    <div class="card-panel-body" id="card-panel-body">
-      <div class="card-panel-loading" id="card-panel-loading">
-        <div class="spinner"></div>
-        <span>Carregando partida...</span>
-      </div>
-      <div class="card-panel-error" id="card-panel-error" style="display: none;"></div>
-      <div id="card-panel-content" style="display: none;">
-        <div class="panel-match-card" id="panel-match-card">
-          <div class="panel-card-header">
-            <div class="panel-result-badge" id="panel-result-badge"></div>
-            <div class="panel-score-row">
-              <div class="panel-team-name" id="panel-our-name"></div>
-              <div class="panel-score">
-                <span id="panel-our-score"></span>
-                <span class="panel-score-sep">×</span>
-                <span id="panel-opp-score"></span>
+  <div class="app-container">
+    <!-- Main Grid: Left Column + Right Column (Card) -->
+    <div class="main-grid">
+      <!-- Left Column -->
+      <div class="left-column">
+        <!-- Actions Panel -->
+        <div class="panel actions-panel">
+          <div class="panel-title">Ações</div>
+          <div class="panel-body">
+            <button class="btn btn-primary" id="btn-refresh" onclick="notify()">
+              <span class="btn-icon">🔄</span>
+              <span id="btn-refresh-text">Atualizar agora</span>
+            </button>
+            <!-- Monitoring Status -->
+            <div class="monitoring-status" id="monitoring-status">
+              <span class="monitoring-dot"></span>
+              <div class="monitoring-info">
+                <span class="monitoring-state" id="monitoring-state">—</span>
+                <span class="monitoring-detail" id="monitoring-detail">—</span>
               </div>
-              <div class="panel-team-name" id="panel-opp-name"></div>
             </div>
-            <div class="panel-match-date" id="panel-match-date"></div>
           </div>
-          <div class="panel-card-body" id="panel-card-body"></div>
-          <div class="panel-card-footer">EA FC 26 — Associação BF</div>
+          <div class="feedback-container" id="feedback-container" style="display: none;"></div>
+        </div>
+
+        <!-- Latest Match Panel -->
+        <div class="panel match-panel">
+          <div class="panel-title">Última Partida</div>
+          <div class="panel-body" id="match-body">
+            <div class="empty-state" id="match-empty">
+              <div class="empty-state-icon">⚽</div>
+              <div>Carregando...</div>
+            </div>
+            <div id="match-content" style="display: none;">
+              <div class="match-row">
+                <div class="match-team" id="match-our-name">—</div>
+                <div class="match-score">
+                  <span id="match-our-score">0</span>
+                  <span class="match-score-sep">×</span>
+                  <span id="match-opp-score">0</span>
+                </div>
+                <div class="match-team" id="match-opp-name">—</div>
+              </div>
+              <div class="match-info">
+                <span class="result-badge" id="match-result-badge">—</span>
+                <span id="match-date">—</span>
+              </div>
+              <div class="match-divider"></div>
+              <div class="match-status" id="match-status">
+                <span class="match-status-icon">—</span>
+                <span id="match-status-text">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Developer Panel -->
+        <div class="panel dev-panel" id="dev-panel" style="display: none;">
+          <div class="panel-title">🧪 Simulador</div>
+          <div class="panel-body">
+            <div class="dev-info">
+              <span class="dev-info-text">⚠️ Nenhuma notificação enviada ao Discord</span>
+            </div>
+            <div class="dev-actions">
+              <button class="btn btn-primary" id="btn-simulate" onclick="devSimulate()">
+                <span class="btn-icon">▶️</span>
+                <span id="btn-simulate-text">Simular</span>
+              </button>
+              <button class="btn btn-outline" id="btn-dev-reset" onclick="devReset()">
+                <span class="btn-icon">🗑️</span>
+                <span>Reset</span>
+              </button>
+            </div>
+            <div class="dev-status" id="dev-status"></div>
+          </div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div class="panel settings-panel">
+          <a href="/settings" class="settings-link">
+            <span>⚙️</span>
+            <span>Configurações</span>
+          </a>
+          <span class="network-url" id="network-url"></span>
         </div>
       </div>
-    </div>
-    <div class="card-panel-actions" id="card-panel-actions" style="display: none;">
-      <button class="card-panel-download" id="panel-download-btn" onclick="downloadPanelCard()">
-        <span>📥</span>
-        <span id="panel-download-text">Baixar Card</span>
-      </button>
+
+      <!-- Right Column: Match Card (rendered directly, no outer panel) -->
+      <div class="right-column" id="card-panel">
+        <!-- Simulation Indicator -->
+        <div class="simulation-indicator" id="simulation-indicator">
+          <span>🧪</span>
+          <span>Simulação — Não publicado no Discord</span>
+        </div>
+        <!-- Empty State -->
+        <div class="card-empty" id="card-empty">
+          <div class="card-empty-icon">🎴</div>
+          <div class="card-empty-text">Nenhuma partida processada ainda</div>
+        </div>
+        <!-- Card Content - Centered Canvas -->
+        <div id="card-content" style="display: none;">
+          <div class="card-canvas">
+            <div class="match-card" id="match-card">
+              <div class="card-header">
+                <div class="card-result-badge" id="card-result-badge"></div>
+                <div class="card-score-row">
+                  <div class="card-team-name" id="card-our-name"></div>
+                  <div class="card-score">
+                    <span id="card-our-score"></span>
+                    <span class="card-score-sep">×</span>
+                    <span id="card-opp-score"></span>
+                  </div>
+                  <div class="card-team-name" id="card-opp-name"></div>
+                </div>
+                <div class="card-date" id="card-date"></div>
+              </div>
+              <div class="card-body" id="card-body"></div>
+              <div class="card-footer">EA FC 26 — Associação BF</div>
+            </div>
+          </div>
+        </div>
+        <!-- Save Image Button -->
+        <div class="card-actions" id="card-actions" style="display: none;">
+          <button class="btn btn-primary" id="btn-save-card" onclick="saveCard()">
+            <span class="btn-icon">📥</span>
+            <span id="btn-save-card-text">Salvar Imagem</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 
   <script>
-    // State
-    let isLoading = false;
+    // ===== State =====
     let lastMatchData = null;
+    let isMatchSimulated = false;
 
-    // Initialize
+    // ===== Initialize =====
     (function init() {
       loadNetworkInfo();
       loadLatestMatch();
       refreshPollingStatus();
-      setInterval(refreshPollingStatus, 15000);
+      setInterval(refreshPollingStatus, 10000);
       setInterval(loadLatestMatch, 30000);
     })();
 
@@ -997,27 +819,40 @@
             document.getElementById('network-url').innerHTML =
               '<a href="' + esc(info.networkUrl) + '">' + esc(info.networkUrl) + '</a>';
           }
+          if (info.devMode) {
+            document.getElementById('dev-panel').style.display = 'block';
+          }
         })
         .catch(() => {});
     }
 
+    // ===== Load Latest Match =====
     function loadLatestMatch() {
       fetch('/api/match-card/latest')
         .then(r => r.json())
         .then(data => {
           if (data.status === 'success' && data.presentation) {
             lastMatchData = data.presentation;
-            renderLatestMatch(data.presentation);
+            isMatchSimulated = data.simulated || false;
+            renderDashboard(data.presentation, isMatchSimulated);
           } else {
-            renderNoMatch(data.message || 'Nenhuma partida encontrada');
+            lastMatchData = null;
+            isMatchSimulated = false;
+            renderEmptyState(data.message || 'Nenhuma partida encontrada');
           }
         })
         .catch(() => {
-          renderNoMatch('Erro ao carregar partida');
+          renderEmptyState('Erro ao carregar partida');
         });
     }
 
-    function renderLatestMatch(p) {
+    // ===== Render Dashboard =====
+    function renderDashboard(p, simulated) {
+      renderLatestMatchPanel(p, simulated);
+      renderCardPanel(p, simulated);
+    }
+
+    function renderLatestMatchPanel(p, simulated) {
       document.getElementById('match-empty').style.display = 'none';
       document.getElementById('match-content').style.display = 'block';
 
@@ -1034,15 +869,179 @@
 
       document.getElementById('match-date').textContent = p.date || '—';
 
-      // Default to published since we're fetching existing match
-      updateMatchStatus('published');
+      if (simulated) {
+        updateMatchStatus('simulated');
+      } else {
+        updateMatchStatus('published');
+      }
     }
 
-    function renderNoMatch(message) {
+    function renderCardPanel(p, simulated) {
+      const panel = document.getElementById('card-panel');
+      const empty = document.getElementById('card-empty');
+      const content = document.getElementById('card-content');
+      const actions = document.getElementById('card-actions');
+
+      if (simulated) {
+        panel.classList.add('simulated');
+      } else {
+        panel.classList.remove('simulated');
+      }
+
+      empty.style.display = 'none';
+      content.style.display = 'block';
+      actions.style.display = 'block';
+
+      const badge = document.getElementById('card-result-badge');
+      badge.textContent = p.outcome.label;
+      badge.className = 'card-result-badge ' + p.outcome.type.toLowerCase();
+
+      document.getElementById('card-our-name').textContent = p.ourName;
+      document.getElementById('card-opp-name').textContent = p.oppName;
+      document.getElementById('card-our-score').textContent = p.ourScore;
+      document.getElementById('card-opp-score').textContent = p.oppScore;
+      document.getElementById('card-date').textContent = '📅 ' + p.date;
+
+      const body = document.getElementById('card-body');
+      let html = '';
+
+      // Goals & Assists - ONLY section with two columns
+      if (p.goals || p.assists) {
+        html += '<div class="card-divider"></div>';
+        if (p.goals && p.assists) {
+          html += '<div class="card-goals-assists">';
+          html += renderPlayerList('⚽ GOLS', p.goals.scorers, s => ({ name: s.name, stat: `×${s.count}` }));
+          html += '<div class="card-goals-divider"></div>';
+          html += renderPlayerList('🎯 ASSISTÊNCIAS', p.assists.assisters, a => ({ name: a.name, stat: `×${a.count}` }));
+          html += '</div>';
+        } else if (p.goals) {
+          html += renderPlayerList('⚽ GOLS', p.goals.scorers, s => ({ name: s.name, stat: `×${s.count}` }));
+        } else {
+          html += renderPlayerList('🎯 ASSISTÊNCIAS', p.assists.assisters, a => ({ name: a.name, stat: `×${a.count}` }));
+        }
+      }
+
+      // Highlights - compact stacked
+      if (p.highlights) {
+        html += '<div class="card-divider"></div>';
+        html += '<div class="card-section"><div class="card-section-title">🥇 DESTAQUES</div>';
+        html += '<div class="card-top3">';
+        p.highlights.top3.forEach(t => {
+          html += `<div class="card-top3-item"><span class="card-top3-medal">${t.medal}</span><span class="card-top3-name">${esc(t.name)}</span><span class="card-top3-rating">${t.rating}</span></div>`;
+        });
+        html += '</div>';
+        if (p.highlights.teamAverage) {
+          html += `<div class="card-team-avg">⭐ Média: ${p.highlights.teamAverage}</div>`;
+        }
+        html += '</div>';
+      }
+
+      // Craque - full width stacked
+      if (p.craque) {
+        html += '<div class="card-divider"></div>';
+        html += renderHighlight('⭐ CRAQUE DA PARTIDA', p.craque.name, p.craque.reason, p.craque.phrase);
+      }
+
+      // Perigo - full width stacked
+      if (p.perigoConstante) {
+        html += '<div class="card-divider"></div>';
+        const pc = p.perigoConstante;
+        html += renderHighlight('🔥 PERIGO CONSTANTE', pc.name, `${pc.shots} chutes • ${pc.goals} gols`, pc.phrase);
+      }
+
+      // Bagre - full width with clear structure
+      if (p.bagre) {
+        html += '<div class="card-divider"></div>';
+        html += '<div class="card-section"><div class="card-section-title">🍍 BAGRE DA PARTIDA</div>';
+        html += '<div class="card-bagre">';
+        html += `<span class="card-bagre-name">${esc(p.bagre.name)}</span>`;
+
+        // Rating and reason
+        html += `<span class="card-bagre-reason">Nota ${esc(p.bagre.rating)} · ${esc(p.bagre.reason)}</span>`;
+
+        // Statistics (if present)
+        const stats = [];
+        if (p.bagre.tackleStats) {
+          stats.push(`🛡️ Desarmes: ${esc(p.bagre.tackleStats)}`);
+        }
+        if (p.bagre.passStats) {
+          stats.push(`📉 Passes: ${esc(p.bagre.passStats)}`);
+        }
+        if (stats.length > 0) {
+          html += `<span class="card-bagre-stats">${stats.join(' · ')}</span>`;
+        }
+
+        // Single phrase (always present)
+        html += `<span class="card-bagre-phrase">"${esc(p.bagre.phrase)}"</span>`;
+
+        html += '</div></div>';
+      }
+
+      // Xerife - full width stacked
+      if (p.xerife) {
+        html += '<div class="card-divider"></div>';
+        const x = p.xerife;
+        html += renderHighlight('🚧 XERIFE', x.name, `${x.tacklesMade}/${x.tackleAttempts} desarmes (${x.successRate}%)`, x.phrase);
+      }
+
+      // Precisão - full width stacked
+      if (p.passePrecisao) {
+        html += '<div class="card-divider"></div>';
+        const pp = p.passePrecisao;
+        html += renderHighlight('🎯 PASSE PRECISÃO', pp.name, `${pp.passesMade}/${pp.passAttempts} passes (${pp.accuracy}%)`, pp.phrase);
+      }
+
+      // Correio - full width stacked
+      if (p.correioExtraviado) {
+        html += '<div class="card-divider"></div>';
+        const ce = p.correioExtraviado;
+        html += renderHighlight('📮 CORREIO EXTRAVIADO', ce.name, `❌ ${ce.missedPasses} passes errados`, ce.phrase, 'warning');
+      }
+
+      // Goleiro - full width stacked
+      if (p.muralha) {
+        html += '<div class="card-divider"></div>';
+        const m = p.muralha;
+        const savesText = m.saves === 1 ? '1 defesa' : `${m.saves} defesas`;
+        const goalsText = m.goalsConceded === 1 ? '1 gol sofrido' : `${m.goalsConceded} gols sofridos`;
+        html += renderHighlight('🧤 MURALHA', m.name, `${savesText} • ${goalsText}`, m.phrase);
+      }
+
+      body.innerHTML = html;
+    }
+
+    function renderPlayerList(title, items, mapper) {
+      let html = `<div class="card-section"><div class="card-section-title">${title}</div><div class="card-player-list">`;
+      items.forEach(item => {
+        const { name, stat } = mapper(item);
+        html += `<div class="card-player-item"><span class="card-player-name">${esc(name)}</span><span class="card-player-stat">${stat}</span></div>`;
+      });
+      html += '</div></div>';
+      return html;
+    }
+
+    function renderHighlight(title, name, stats, phrase, variant) {
+      const phraseClass = variant === 'warning' ? 'card-hl-phrase warning' : 'card-hl-phrase';
+      return `<div class="card-section">
+        <div class="card-section-title">${title}</div>
+        <div class="card-highlight">
+          <span class="card-hl-name">${esc(name)}</span>
+          <span class="card-hl-stats">${esc(stats)}</span>
+          <span class="${phraseClass}">"${esc(phrase)}"</span>
+        </div>
+      </div>`;
+    }
+
+    function renderEmptyState(message) {
       document.getElementById('match-empty').style.display = 'block';
       document.getElementById('match-content').style.display = 'none';
       document.getElementById('match-empty').innerHTML =
         '<div class="empty-state-icon">⚽</div><div>' + esc(message) + '</div>';
+
+      document.getElementById('card-panel').classList.remove('simulated');
+      document.getElementById('card-empty').style.display = 'block';
+      document.getElementById('card-content').style.display = 'none';
+      document.getElementById('card-actions').style.display = 'none';
     }
 
     function updateMatchStatus(status, customText) {
@@ -1054,218 +1053,26 @@
 
       if (status === 'published') {
         iconEl.textContent = '✅';
-        textEl.textContent = customText || 'Já publicada no Discord';
-      } else if (status === 'pending') {
-        iconEl.textContent = '⏳';
-        textEl.textContent = customText || 'Aguardando publicação';
-      } else if (status === 'error') {
-        iconEl.textContent = '❌';
-        textEl.textContent = customText || 'Erro na publicação';
+        textEl.textContent = customText || 'Publicada no Discord';
+      } else if (status === 'simulated') {
+        iconEl.textContent = '🧪';
+        textEl.textContent = customText || 'Simulação';
       } else {
         iconEl.textContent = 'ℹ️';
         textEl.textContent = customText || '—';
       }
     }
 
-    // ===== Match Card Side Panel =====
-    let panelMatchPresentation = null;
+    // ===== Save Card Image =====
+    async function saveCard() {
+      const btn = document.getElementById('btn-save-card');
+      const btnText = document.getElementById('btn-save-card-text');
+      const card = document.getElementById('match-card');
 
-    function openCard() {
-      const panel = document.getElementById('card-panel');
-      const overlay = document.getElementById('card-panel-overlay');
-      const mainContainer = document.getElementById('main-container');
-
-      panel.classList.add('open');
-      overlay.classList.add('visible');
-      mainContainer.classList.add('panel-open');
-
-      loadPanelCard();
-    }
-
-    function closeCardPanel() {
-      const panel = document.getElementById('card-panel');
-      const overlay = document.getElementById('card-panel-overlay');
-      const mainContainer = document.getElementById('main-container');
-
-      panel.classList.remove('open');
-      overlay.classList.remove('visible');
-      mainContainer.classList.remove('panel-open');
-    }
-
-    async function loadPanelCard() {
-      const loadingEl = document.getElementById('card-panel-loading');
-      const errorEl = document.getElementById('card-panel-error');
-      const contentEl = document.getElementById('card-panel-content');
-      const actionsEl = document.getElementById('card-panel-actions');
-
-      loadingEl.style.display = 'flex';
-      errorEl.style.display = 'none';
-      contentEl.style.display = 'none';
-      actionsEl.style.display = 'none';
-
-      try {
-        const res = await fetch('/api/match-card/latest');
-        const data = await res.json();
-
-        loadingEl.style.display = 'none';
-
-        if (data.status !== 'success') {
-          errorEl.style.display = 'block';
-          errorEl.textContent = data.message || 'Erro ao carregar partida.';
-          return;
-        }
-
-        panelMatchPresentation = data.presentation;
-        renderPanelCard(panelMatchPresentation);
-        contentEl.style.display = 'block';
-        actionsEl.style.display = 'block';
-      } catch (e) {
-        loadingEl.style.display = 'none';
-        errorEl.style.display = 'block';
-        errorEl.textContent = 'Erro de rede. Verifique a conexão.';
-      }
-    }
-
-    function renderPanelCard(p) {
-      // Header
-      const badge = document.getElementById('panel-result-badge');
-      badge.textContent = p.outcome.label;
-      badge.className = 'panel-result-badge ' + p.outcome.type.toLowerCase();
-
-      document.getElementById('panel-our-name').textContent = p.ourName;
-      document.getElementById('panel-opp-name').textContent = p.oppName;
-      document.getElementById('panel-our-score').textContent = p.ourScore;
-      document.getElementById('panel-opp-score').textContent = p.oppScore;
-      document.getElementById('panel-match-date').textContent = '📅 ' + p.date;
-
-      const body = document.getElementById('panel-card-body');
-      let html = '';
-
-      // Goals & Assists
-      if (p.goals || p.assists) {
-        html += '<div class="panel-divider"></div>';
-        if (p.goals && p.assists) {
-          html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">';
-          html += renderPanelPlayerList('⚽ GOLS', p.goals.scorers, s => ({ name: s.name, stat: `×${s.count}` }));
-          html += renderPanelPlayerList('🎯 ASSIST', p.assists.assisters, a => ({ name: a.name, stat: `×${a.count}` }));
-          html += '</div>';
-        } else if (p.goals) {
-          html += renderPanelPlayerList('⚽ GOLS', p.goals.scorers, s => ({ name: s.name, stat: `×${s.count}` }));
-        } else {
-          html += renderPanelPlayerList('🎯 ASSISTÊNCIAS', p.assists.assisters, a => ({ name: a.name, stat: `×${a.count}` }));
-        }
-      }
-
-      // Top 3 highlights
-      if (p.highlights) {
-        html += '<div class="panel-divider"></div>';
-        html += '<div class="panel-sec"><div class="panel-sec-title">🥇 DESTAQUES</div>';
-        html += '<div class="panel-top3">';
-        p.highlights.top3.forEach(t => {
-          html += `<div class="panel-top3-item"><span class="panel-top3-medal">${t.medal}</span><span>${esc(t.name)}</span><span class="panel-top3-rating">${t.rating}</span></div>`;
-        });
-        html += '</div>';
-        if (p.highlights.teamAverage) {
-          html += `<div class="panel-team-avg">⭐ Média: ${p.highlights.teamAverage}</div>`;
-        }
-        html += '</div>';
-      }
-
-      // Craque
-      if (p.craque) {
-        html += '<div class="panel-divider"></div>';
-        html += renderPanelHighlight('⭐ CRAQUE', p.craque.name, p.craque.reason, p.craque.phrase);
-      }
-
-      // Perigo Constante
-      if (p.perigoConstante) {
-        html += '<div class="panel-divider"></div>';
-        const pc = p.perigoConstante;
-        const stats = `${pc.shots} chutes • ${pc.goals} ${pc.goals === 1 ? 'gol' : 'gols'}`;
-        html += renderPanelHighlight('🔥 PERIGO', pc.name, stats, pc.phrase);
-      }
-
-      // Bagre
-      if (p.bagre) {
-        html += '<div class="panel-divider"></div>';
-        html += '<div class="panel-sec"><div class="panel-sec-title">🍍 BAGRE</div>';
-        const lines = p.bagre.sections.slice(0, 4).map(s => esc(s)).join(' • ');
-        html += `<div class="panel-bagre-lines">${lines}</div>`;
-        html += '</div>';
-      }
-
-      // Xerife
-      if (p.xerife) {
-        html += '<div class="panel-divider"></div>';
-        const x = p.xerife;
-        html += renderPanelHighlight('🚧 XERIFE', x.name, `${x.tacklesMade}/${x.tackleAttempts} desarmes (${x.successRate}%)`, x.phrase);
-      }
-
-      // Passe de Precisão
-      if (p.passePrecisao) {
-        html += '<div class="panel-divider"></div>';
-        const pp = p.passePrecisao;
-        html += renderPanelHighlight('🎯 PRECISÃO', pp.name, `${pp.passesMade}/${pp.passAttempts} passes (${pp.accuracy}%)`, pp.phrase);
-      }
-
-      // Correio Extraviado
-      if (p.correioExtraviado) {
-        html += '<div class="panel-divider"></div>';
-        const ce = p.correioExtraviado;
-        html += `<div class="panel-sec">
-          <div class="panel-sec-title">📮 CORREIO</div>
-          <div class="panel-hl-row">
-            <span class="panel-hl-name">${esc(ce.name)}</span>
-            <span class="panel-hl-stats">❌ ${ce.missedPasses} passes errados</span>
-            <span class="panel-hl-phrase">💬 "${esc(ce.phrase)}"</span>
-          </div>
-        </div>`;
-      }
-
-      // Goleiro
-      if (p.muralha) {
-        html += '<div class="panel-divider"></div>';
-        const m = p.muralha;
-        const savesText = m.saves === 1 ? '1 defesa' : `${m.saves} defesas`;
-        const goalsText = m.goalsConceded === 1 ? '1 gol sofrido' : `${m.goalsConceded} gols sofridos`;
-        html += renderPanelHighlight('🧤 GOLEIRO', m.name, `${savesText} • ${goalsText}`, m.phrase);
-      }
-
-      body.innerHTML = html;
-    }
-
-    function renderPanelPlayerList(title, items, mapper) {
-      let html = `<div class="panel-sec"><div class="panel-sec-title">${title}</div><div class="panel-player-list">`;
-      items.forEach(item => {
-        const { name, stat } = mapper(item);
-        html += `<div class="panel-player-list-item"><span>${esc(name)}</span><span class="panel-player-list-count">${stat}</span></div>`;
-      });
-      html += '</div></div>';
-      return html;
-    }
-
-    function renderPanelHighlight(title, name, stats, phrase) {
-      return `<div class="panel-sec">
-        <div class="panel-sec-title">${title}</div>
-        <div class="panel-hl-row">
-          <span class="panel-hl-name">${esc(name)}</span>
-          <span class="panel-hl-stats">${esc(stats)}</span>
-          <span class="panel-hl-phrase">💬 "${esc(phrase)}"</span>
-        </div>
-      </div>`;
-    }
-
-    async function downloadPanelCard() {
-      const btn = document.getElementById('panel-download-btn');
-      const btnText = document.getElementById('panel-download-text');
-      const card = document.getElementById('panel-match-card');
-
-      if (!card || !panelMatchPresentation) {
-        return;
-      }
+      if (!card || !lastMatchData) return;
 
       btn.disabled = true;
-      btnText.textContent = 'Gerando...';
+      btnText.textContent = 'Salvando...';
 
       try {
         const canvas = await html2canvas(card, {
@@ -1277,21 +1084,22 @@
 
         const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
         const link = document.createElement('a');
-        link.download = generatePanelFilename();
+        link.download = generateFilename();
         link.href = dataUrl;
         link.click();
       } catch (e) {
         console.error('Erro ao gerar imagem:', e);
       } finally {
         btn.disabled = false;
-        btnText.textContent = 'Baixar Card';
+        btnText.textContent = 'Salvar Imagem';
       }
     }
 
-    function generatePanelFilename() {
-      if (!panelMatchPresentation) return 'match-card.jpg';
-      const p = panelMatchPresentation;
-      return `${sanitizeName(p.ourName)}-${p.ourScore}x${p.oppScore}-${sanitizeName(p.oppName)}.jpg`;
+    function generateFilename() {
+      if (!lastMatchData) return 'match-card.jpg';
+      const p = lastMatchData;
+      const prefix = isMatchSimulated ? 'sim-' : '';
+      return `${prefix}${sanitizeName(p.ourName)}-${p.ourScore}x${p.oppScore}-${sanitizeName(p.oppName)}.jpg`;
     }
 
     function sanitizeName(str) {
@@ -1299,189 +1107,150 @@
       return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
     }
 
-    // Close panel with Escape key
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') {
-        closeCardPanel();
-      }
-    });
-
-    async function notify() {
-      if (isLoading) return;
-
-      const btn = document.getElementById('btn-refresh');
-      const btnText = document.getElementById('btn-refresh-text');
-      const resendBtn = document.getElementById('btn-resend');
-
-      setLoading(true, btn, btnText, 'Verificando...');
-      resendBtn.disabled = true;
-      hideFeedback();
-
-      try {
-        const res = await fetch('/api/matches/notify-latest', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
-        const data = await res.json();
-        handleResult(data);
-        loadLatestMatch();
-      } catch (e) {
-        showFeedback('error', '❌', 'Erro de rede. Verifique a conexão.');
-      } finally {
-        setLoading(false, btn, btnText, 'Atualizar agora');
-        resendBtn.disabled = false;
-      }
-    }
-
-    async function resend() {
-      if (isLoading) return;
-
-      const btn = document.getElementById('btn-resend');
-      const btnText = document.getElementById('btn-resend-text');
-      const refreshBtn = document.getElementById('btn-refresh');
-
-      setLoading(true, btn, btnText, '...');
-      refreshBtn.disabled = true;
-      hideFeedback();
-
-      try {
-        const res = await fetch('/api/matches/resend-latest', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
-        const data = await res.json();
-        handleResult(data);
-        loadLatestMatch();
-      } catch (e) {
-        showFeedback('error', '❌', 'Erro de rede. Verifique a conexão.');
-      } finally {
-        setLoading(false, btn, btnText, 'Reenviar');
-        refreshBtn.disabled = false;
-      }
-    }
-
-    function setLoading(loading, btn, textEl, text) {
-      isLoading = loading;
-      btn.disabled = loading;
-      if (loading) {
-        textEl.innerHTML = '<span class="spinner"></span>';
-      } else {
-        textEl.textContent = text;
-      }
-    }
-
-    function handleResult(data) {
-      let type, icon, text;
-
-      switch (data.status) {
-        case 'sent':
-          type = 'success';
-          icon = '✅';
-          text = 'Notificação enviada com sucesso!';
-          break;
-        case 'force_sent':
-          type = 'success';
-          icon = '🔄';
-          text = 'Partida reenviada com sucesso!';
-          break;
-        case 'sent_persistence_error':
-          type = 'warning';
-          icon = '⚠️';
-          text = 'Enviada, mas não foi possível salvar o histórico.';
-          break;
-        case 'already_published':
-          type = 'info';
-          icon = 'ℹ️';
-          text = 'Partida já publicada anteriormente.';
-          break;
-        case 'no_matches':
-          type = 'info';
-          icon = '⚽';
-          text = 'Nenhuma partida encontrada.';
-          break;
-        case 'busy':
-          type = 'warning';
-          icon = '⏳';
-          text = data.message || 'Outra notificação em andamento.';
-          break;
-        default:
-          type = 'error';
-          icon = '❌';
-          text = data.message || 'Erro desconhecido.';
-      }
-
-      showFeedback(type, icon, text, data.summary);
-    }
-
-    function showFeedback(type, icon, text, summary) {
-      const container = document.getElementById('feedback-container');
-      let html = `<div class="feedback ${type}">
-        <span class="feedback-icon">${icon}</span>
-        <div class="feedback-text">
-          <div>${esc(text)}</div>
-          ${summary ? `<div class="feedback-summary">${esc(summary)}</div>` : ''}
-        </div>
-      </div>`;
-      container.innerHTML = html;
-      container.style.display = 'block';
-    }
-
-    function hideFeedback() {
-      document.getElementById('feedback-container').style.display = 'none';
-    }
-
+    // ===== Polling Status =====
     function refreshPollingStatus() {
       fetch('/api/polling/status')
         .then(r => r.json())
-        .then(d => {
-          const enabled = d.enabled;
-          const enabledEl = document.getElementById('ps-enabled');
-          enabledEl.textContent = enabled ? 'Ativo' : 'Inativo';
-          enabledEl.className = 'monitoring-value ' + (enabled ? 'active' : 'inactive');
+        .then(ps => {
+          const container = document.getElementById('monitoring-status');
+          const state = document.getElementById('monitoring-state');
+          const detail = document.getElementById('monitoring-detail');
 
-          document.getElementById('ps-interval').textContent =
-            d.intervalSeconds ? formatInterval(d.intervalSeconds) : '—';
-          document.getElementById('ps-last').textContent =
-            fmtTime(d.lastCheck) || 'Ainda não executada';
-          document.getElementById('ps-next').textContent =
-            fmtTime(d.nextCheck) || '—';
-          document.getElementById('ps-result').textContent =
-            d.lastResult || '—';
-
-          // Update header status badge
-          const headerStatus = document.getElementById('header-status');
-          const headerStatusText = document.getElementById('header-status-text');
-          if (enabled) {
-            headerStatus.className = 'status-badge active';
-            headerStatusText.textContent = 'Monitorando';
+          if (ps.enabled) {
+            container.className = 'monitoring-status active';
+            state.textContent = 'Monitorando';
+            // Calculate seconds until next check
+            if (ps.nextCheck) {
+              const next = new Date(ps.nextCheck);
+              const now = new Date();
+              const diffSec = Math.max(0, Math.round((next - now) / 1000));
+              detail.textContent = `Próxima verificação em ${diffSec}s`;
+            } else {
+              detail.textContent = `Intervalo: ${ps.intervalSeconds || 60}s`;
+            }
           } else {
-            headerStatus.className = 'status-badge inactive';
-            headerStatusText.textContent = 'Inativo';
+            container.className = 'monitoring-status inactive';
+            state.textContent = 'Pausado';
+            detail.textContent = 'Monitoramento automático inativo';
           }
         })
-        .catch(() => {});
-    }
-
-    function formatInterval(seconds) {
-      if (seconds >= 60) {
-        const mins = Math.floor(seconds / 60);
-        return mins + (mins === 1 ? ' minuto' : ' minutos');
-      }
-      return seconds + ' segundos';
-    }
-
-    function fmtTime(iso) {
-      if (!iso) return null;
-      try {
-        return new Date(iso).toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
+        .catch(() => {
+          const container = document.getElementById('monitoring-status');
+          container.className = 'monitoring-status inactive';
+          document.getElementById('monitoring-state').textContent = '—';
+          document.getElementById('monitoring-detail').textContent = 'Erro ao obter status';
         });
-      } catch (_) {
-        return iso;
+    }
+
+    // ===== Actions =====
+    async function notify() {
+      const btn = document.getElementById('btn-refresh');
+      const btnText = document.getElementById('btn-refresh-text');
+      const feedback = document.getElementById('feedback-container');
+
+      btn.disabled = true;
+      btnText.innerHTML = '<span class="spinner"></span>';
+      feedback.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/matches/notify-latest', { method: 'POST' });
+        const data = await res.json();
+        showFeedback(data);
+        loadLatestMatch();
+        refreshPollingStatus();
+      } catch (e) {
+        showFeedback({ status: 'error', message: 'Erro de rede' });
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = 'Atualizar agora';
       }
     }
+
+    function showFeedback(data) {
+      const container = document.getElementById('feedback-container');
+      let icon = 'ℹ️';
+      let cssClass = 'info';
+      let message = data.message || '';
+
+      switch (data.status) {
+        case 'success':
+        case 'force_sent':
+          icon = '✅'; cssClass = 'success'; break;
+        case 'skipped':
+        case 'no_matches':
+          icon = 'ℹ️'; cssClass = 'info'; break;
+        case 'busy':
+        case 'webhook_not_configured':
+          icon = '⚠️'; cssClass = 'warning'; break;
+        case 'error':
+        case 'discord_error':
+        case 'ea_unavailable':
+          icon = '❌'; cssClass = 'error'; break;
+      }
+
+      let html = `<div class="feedback ${cssClass}"><span class="feedback-icon">${icon}</span><div class="feedback-text">${esc(message)}`;
+      if (data.summary) {
+        html += `<div class="feedback-summary">${esc(data.summary)}</div>`;
+      }
+      html += '</div></div>';
+
+      container.innerHTML = html;
+      container.style.display = 'block';
+
+      setTimeout(() => { container.style.display = 'none'; }, 4000);
+    }
+
+    // ===== Developer Functions =====
+    async function devSimulate() {
+      const btn = document.getElementById('btn-simulate');
+      const btnText = document.getElementById('btn-simulate-text');
+      const status = document.getElementById('dev-status');
+
+      btn.disabled = true;
+      btnText.innerHTML = '<span class="spinner"></span>';
+      status.textContent = '';
+
+      try {
+        const res = await fetch('/api/dev/simulate/latest', { method: 'POST' });
+        const data = await res.json();
+
+        if (data.status === 'simulated') {
+          status.className = 'dev-status simulated';
+        } else if (data.status === 'success') {
+          status.className = 'dev-status success';
+        } else {
+          status.className = 'dev-status error';
+        }
+        status.textContent = data.message;
+
+        loadLatestMatch();
+      } catch (e) {
+        status.className = 'dev-status error';
+        status.textContent = 'Erro de rede';
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = 'Simular';
+      }
+    }
+
+    async function devReset() {
+      const status = document.getElementById('dev-status');
+
+      try {
+        const res = await fetch('/api/dev/reset', { method: 'POST' });
+        const data = await res.json();
+
+        status.className = 'dev-status';
+        status.textContent = data.message;
+
+        loadLatestMatch();
+      } catch (e) {
+        status.className = 'dev-status error';
+        status.textContent = 'Erro ao resetar';
+      }
+    }
+
+    // ===== Utility Functions =====
 
     function esc(s) {
       if (s == null) return '';

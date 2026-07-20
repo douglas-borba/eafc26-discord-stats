@@ -11,6 +11,7 @@ import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.store.PublishedMatchStore
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 
 /**
@@ -42,12 +43,13 @@ import org.springframework.stereotype.Service
  */
 @Service
 class MatchAcquisitionService(
-    private val defaultGateway: EaClubsGateway,
+    @Qualifier("production") private val defaultGateway: EaClubsGateway,
     private val store: PublishedMatchStore,
     private val webhookClient: DiscordWebhookClient,
     private val props: AppProperties,
     private val stateHolder: AcquisitionStateHolder,
     private val latestMatchHolder: LatestMatchHolder,
+    private val matchSummaryBuilder: MatchSummaryBuilder,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
@@ -131,7 +133,8 @@ class MatchAcquisitionService(
         val result = when (trigger) {
             AcquisitionTrigger.FORCE_RESEND -> processForceResend(matches, clubId)
             AcquisitionTrigger.MANUAL, AcquisitionTrigger.CLI -> processLatestOnly(matches, clubId)
-            AcquisitionTrigger.SCHEDULER, AcquisitionTrigger.DEV_SIMULATOR -> processAllNew(matches, clubId)
+            AcquisitionTrigger.SCHEDULER -> processAllNew(matches, clubId, trigger)
+            AcquisitionTrigger.DEV_SIMULATOR -> processSimulation(matches, clubId)
         }
 
         // Update final state based on result
@@ -139,6 +142,7 @@ class MatchAcquisitionService(
             is AcquisitionResult.Processed -> {
                 val status = when {
                     result.baselineEstablished -> "Histórico inicial configurado."
+                    result.simulated -> "Simulação concluída. Card disponível na interface."
                     result.published.isNotEmpty() -> "Partida enviada com sucesso."
                     result.allSkipped() -> "Nenhuma partida nova."
                     result.failed.isNotEmpty() -> "Algumas partidas falharam."
@@ -179,7 +183,7 @@ class MatchAcquisitionService(
 
         // Phase: CACHING - Generate and cache presentation BEFORE deduplication check
         stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-        val presentation = MatchSummaryBuilder.build(latest, clubId)
+        val presentation = matchSummaryBuilder.build(latest, clubId)
         val newVersion = latestMatchHolder.update(presentation)
         log.debug("Cached presentation for match {} (version={})", latest.matchId, newVersion)
 
@@ -218,12 +222,56 @@ class MatchAcquisitionService(
     }
 
     /**
-     * Process all new matches (for scheduler/simulator triggers).
+     * Process matches for development simulation (web-only).
+     *
+     * This method:
+     * - Generates and caches the presentation with random phrase selection
+     * - Marks the match as simulated
+     * - Does NOT deliver to Discord
+     * - Does NOT persist to the published match store
+     *
+     * The simulation exercises the real fetch, processing, and caching flow
+     * but stops before external delivery and production persistence.
+     *
+     * Each simulation regenerates the presentation with new random phrases,
+     * even if the fixture match data is the same.
+     */
+    private fun processSimulation(
+        matches: List<MatchResponse>,
+        clubId: String,
+    ): AcquisitionResult {
+        val latestMatch = matches.maxByOrNull { it.timestamp }
+            ?: return AcquisitionResult.NoMatches
+
+        val summary = buildSummary(latestMatch, clubId)
+
+        // Phase: CACHING - Generate and cache presentation (marked as simulated)
+        // Use forceRandomPhrases=true so each simulation gets new random phrases
+        stateHolder.enterPhase(AcquisitionPhase.CACHING, "Gerando card simulado...")
+        val presentation = matchSummaryBuilder.build(latestMatch, clubId, forceRandomPhrases = true)
+        val newVersion = latestMatchHolder.update(presentation, simulated = true)
+        log.debug("Cached simulated presentation for match {} (version={})", latestMatch.matchId, newVersion)
+
+        log.info("DevSimulator: Simulation complete for match {} (no Discord delivery)", latestMatch.matchId)
+
+        // Return as simulated - no Discord delivery, no persistence
+        return AcquisitionResult.Processed(
+            published = emptyList(),
+            alreadyPublished = emptyList(),
+            failed = emptyList(),
+            simulated = true,
+            simulatedMatch = AcquisitionResult.MatchSummary(latestMatch.matchId, summary),
+        )
+    }
+
+    /**
+     * Process all new matches (for scheduler triggers).
      * Handles first-run logic with [publishExistingOnFirstRun].
      */
     private fun processAllNew(
         matches: List<MatchResponse>,
         clubId: String,
+        trigger: AcquisitionTrigger,
     ): AcquisitionResult {
         val publishedIds = store.loadIds()
 
@@ -238,7 +286,7 @@ class MatchAcquisitionService(
         // Phase: CACHING - Cache the latest presentation BEFORE checking deduplication
         if (latestMatch != null) {
             stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-            val presentation = MatchSummaryBuilder.build(latestMatch, clubId)
+            val presentation = matchSummaryBuilder.build(latestMatch, clubId)
             val newVersion = latestMatchHolder.update(presentation)
             log.debug("Cached presentation for match {} (version={})", latestMatch.matchId, newVersion)
         }
@@ -327,7 +375,7 @@ class MatchAcquisitionService(
         val latestMatch = matches.maxByOrNull { it.timestamp }
         if (latestMatch != null) {
             stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-            val presentation = MatchSummaryBuilder.build(latestMatch, clubId)
+            val presentation = matchSummaryBuilder.build(latestMatch, clubId)
             val newVersion = latestMatchHolder.update(presentation)
             log.debug("Cached presentation for match {} (version={})", latestMatch.matchId, newVersion)
         }
@@ -418,7 +466,7 @@ class MatchAcquisitionService(
 
         // Phase: CACHING - Generate and cache presentation
         stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-        val presentation = MatchSummaryBuilder.build(latest, clubId)
+        val presentation = matchSummaryBuilder.build(latest, clubId)
         val newVersion = latestMatchHolder.update(presentation)
         log.debug("Cached presentation for match {} (version={})", latest.matchId, newVersion)
 

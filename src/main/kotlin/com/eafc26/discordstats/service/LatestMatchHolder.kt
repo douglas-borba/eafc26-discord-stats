@@ -27,6 +27,7 @@ class LatestMatchHolder {
 
     private val presentationRef = AtomicReference<MatchSummaryPresentation?>(null)
     private val versionRef = AtomicLong(0)
+    private val simulatedRef = AtomicReference<Boolean>(false)
 
     /**
      * Returns the cached presentation, or null if no acquisition has succeeded yet.
@@ -42,13 +43,20 @@ class LatestMatchHolder {
     fun version(): Long = versionRef.get()
 
     /**
+     * Returns true if the current cached presentation is from a simulated match.
+     */
+    fun isSimulated(): Boolean = simulatedRef.get()
+
+    /**
      * Updates the cached presentation and increments the version.
      *
      * @param presentation The new presentation to cache.
+     * @param simulated Whether this presentation is from a simulated match.
      * @return The new version number.
      */
-    fun update(presentation: MatchSummaryPresentation): Long {
+    fun update(presentation: MatchSummaryPresentation, simulated: Boolean = false): Long {
         presentationRef.set(presentation)
+        simulatedRef.set(simulated)
         return versionRef.incrementAndGet()
     }
 
@@ -58,11 +66,24 @@ class LatestMatchHolder {
     fun hasPresentation(): Boolean = presentationRef.get() != null
 
     /**
+     * Clears the cached presentation.
+     *
+     * This is primarily used by the development simulator to reset state
+     * between test runs. It should not be called in production.
+     */
+    fun clear() {
+        presentationRef.set(null)
+        simulatedRef.set(false)
+        versionRef.incrementAndGet()
+    }
+
+    /**
      * Returns a snapshot of the current state.
      */
     fun snapshot(): LatestMatchSnapshot = LatestMatchSnapshot(
         presentation = presentationRef.get(),
         version = versionRef.get(),
+        simulated = simulatedRef.get(),
     )
 }
 
@@ -72,5 +93,5 @@ class LatestMatchHolder {
 data class LatestMatchSnapshot(
     val presentation: MatchSummaryPresentation?,
     val version: Long,
+    val simulated: Boolean = false,
 )
-

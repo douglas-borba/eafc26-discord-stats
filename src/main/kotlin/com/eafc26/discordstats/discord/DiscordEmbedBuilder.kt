@@ -200,8 +200,28 @@ object DiscordEmbedBuilder {
         val evaluation = BagrePerformanceEvaluator.evaluate(outfield, matchId, phraseBank)
             ?: return null
 
-        // Format: blank line prefix and BLANK for separating sections
-        return EmbedField("🍍 BAGRE DA PARTIDA", "$BLANK\n" + evaluation.sections.joinToString("\n$BLANK\n"))
+        val name = evaluation.player.displayName()
+        
+        // Build the field value with structured content
+        val value = buildString {
+            append("$BLANK\n$name\n$BLANK\n")
+            append("📊 Nota ${evaluation.rating}\n")
+            append("📝 ${evaluation.reason}\n$BLANK\n")
+            
+            // Add tackle stats if present
+            evaluation.tackleStats?.let {
+                append("🛡️ Desarmes: $it\n")
+            }
+            
+            // Add pass stats if present
+            evaluation.passStats?.let {
+                append("📉 Passes: $it\n")
+            }
+            
+            append("$BLANK\n💬 \"${evaluation.phrase}\"")
+        }
+
+        return EmbedField("🍍 BAGRE DA PARTIDA", value)
     }
 
     private fun xerifeField(outfield: Collection<PlayerEntry>, matchId: String, excludeFromPositive: Set<String>): EmbedField? {

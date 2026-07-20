@@ -235,11 +235,30 @@
       margin-top: 0.2rem;
     }
 
-    /* Bagre compact */
-    .bagre-lines {
-      font-size: 0.7rem;
-      line-height: 1.35;
+    /* Bagre structured */
+    .bagre-content {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .bagre-name {
+      font-weight: 600;
+      font-size: 0.82rem;
+      color: #fff;
+    }
+    .bagre-info {
+      font-size: 0.68rem;
+      color: #8b949e;
+    }
+    .bagre-stats {
+      font-size: 0.65rem;
       color: #c9d1d9;
+    }
+    .bagre-phrase {
+      font-style: italic;
+      font-size: 0.65rem;
+      color: #f0883e;
+      margin-top: 0.1rem;
     }
 
     /* Footer */
@@ -307,7 +326,7 @@
 
     <div class="actions">
       <button class="action-btn" onclick="location.reload()">🔄 Atualizar</button>
-      <button class="action-btn primary" id="download-btn" onclick="downloadCard()">📥 Baixar Card</button>
+      <button class="action-btn primary" id="download-btn" onclick="downloadCard()">📥 Salvar Imagem</button>
     </div>
   </div>
 
@@ -396,14 +415,23 @@
         html += renderHighlight('🔥 PERIGO', pc.name, stats, pc.phrase);
       }
 
-      // Bagre - simplified
+      // Bagre - structured display
       if (p.bagre) {
         html += '<div class="divider"></div>';
         html += '<div class="sec"><div class="sec-title">🍍 BAGRE</div>';
-        // Only show first 3 lines max, and trim long ones
-        const lines = p.bagre.sections.slice(0, 4).map(s => esc(s)).join(' • ');
-        html += `<div class="bagre-lines">${lines}</div>`;
-        html += '</div>';
+        html += '<div class="bagre-content">';
+        html += `<div class="bagre-name">${esc(p.bagre.name)}</div>`;
+        html += `<div class="bagre-info">Nota ${esc(p.bagre.rating)} · ${esc(p.bagre.reason)}</div>`;
+        // Statistics if present
+        const stats = [];
+        if (p.bagre.tackleStats) stats.push(`🛡️ ${esc(p.bagre.tackleStats)}`);
+        if (p.bagre.passStats) stats.push(`📉 ${esc(p.bagre.passStats)}`);
+        if (stats.length > 0) {
+          html += `<div class="bagre-stats">${stats.join(' · ')}</div>`;
+        }
+        // Single phrase
+        html += `<div class="bagre-phrase">💬 "${esc(p.bagre.phrase)}"</div>`;
+        html += '</div></div>';
       }
 
       // Xerife
@@ -489,7 +517,7 @@
       }
 
       btn.disabled = true;
-      btn.textContent = '⏳ Gerando...';
+      btn.textContent = '⏳ Salvando...';
 
       try {
         const canvas = await html2canvas(card, {
@@ -509,7 +537,7 @@
         alert('Erro ao gerar imagem.');
       } finally {
         btn.disabled = false;
-        btn.textContent = '📥 Baixar Card';
+        btn.textContent = '📥 Salvar Imagem';
       }
     }
 

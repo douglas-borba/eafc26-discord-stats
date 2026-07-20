@@ -76,6 +76,13 @@ class WebhookConfigService(
         log.info("Network mode set to: {}", enabled)
     }
 
+    fun isDevelopmentModeEnabled(): Boolean = settingsService.isDevelopmentModeEnabled()
+
+    fun setDevelopmentModeEnabled(enabled: Boolean) {
+        settingsService.setDevelopmentModeEnabled(enabled)
+        log.info("Development mode set to: {}", enabled)
+    }
+
     fun logFilePath(): String =
         Path.of(
             System.getProperty("user.home"),

@@ -31,10 +31,12 @@ class SettingsController(
         Mono.fromCallable {
             val networkEnabled = webhookConfigService.isNetworkEnabled()
             val networkUrl: String? = if (networkEnabled) localNetworkUrl() else null
+            val devMode = webhookConfigService.isDevelopmentModeEnabled()
             ResponseEntity.ok(
                 buildMap {
                     put("webhookConfigured", webhookConfigService.isConfigured())
                     put("networkEnabled", networkEnabled)
+                    put("devMode", devMode)
                     if (networkUrl != null) put("networkUrl", networkUrl)
                     put("logFile", webhookConfigService.logFilePath())
                 }
@@ -59,6 +61,20 @@ class SettingsController(
                 mapOf<String, Any>(
                     "status" to "saved",
                     "message" to "Configuração salva. Reinicie o aplicativo para aplicar.",
+                )
+            )
+        }
+
+    /** Sets development mode on or off. Takes effect immediately without restart. */
+    @PostMapping("/api/settings/development-mode", produces = [MediaType.APPLICATION_JSON_VALUE])
+    fun setDevelopmentMode(@RequestBody body: DevelopmentModeRequest): Mono<ResponseEntity<Map<String, Any>>> =
+        Mono.fromCallable {
+            webhookConfigService.setDevelopmentModeEnabled(body.enabled)
+            ResponseEntity.ok(
+                mapOf<String, Any>(
+                    "status" to "saved",
+                    "enabled" to body.enabled,
+                    "message" to if (body.enabled) "Modo de desenvolvimento ativado." else "Modo de desenvolvimento desativado.",
                 )
             )
         }
@@ -110,3 +126,4 @@ class SettingsController(
 
 data class NetworkSettingRequest(val enabled: Boolean = false)
 data class HistoryWebhookRequest(val url: String = "")
+data class DevelopmentModeRequest(val enabled: Boolean = false)

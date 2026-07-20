@@ -20,15 +20,17 @@ class MatchCardService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     sealed class MatchCardResult {
-        data class Success(val presentation: MatchSummaryPresentation) : MatchCardResult()
+        data class Success(
+            val presentation: MatchSummaryPresentation,
+            val simulated: Boolean = false,
+        ) : MatchCardResult()
         object NoMatches : MatchCardResult()
-        // EaUnavailable is no longer needed since we read from cache
     }
 
     /**
      * Returns the latest match card from the cache.
      *
-     * @return [MatchCardResult.Success] with the cached presentation, or
+     * @return [MatchCardResult.Success] with the cached presentation and simulation status, or
      *         [MatchCardResult.NoMatches] if no acquisition has succeeded yet.
      */
     fun getLatestMatchCard(): MatchCardResult {
@@ -39,10 +41,13 @@ class MatchCardService(
             return MatchCardResult.NoMatches
         }
 
-        log.debug("Returning cached presentation for match {} (version={})",
-            snapshot.presentation.matchId, snapshot.version)
+        log.debug("Returning cached presentation for match {} (version={}, simulated={})",
+            snapshot.presentation.matchId, snapshot.version, snapshot.simulated)
 
-        return MatchCardResult.Success(snapshot.presentation)
+        return MatchCardResult.Success(
+            presentation = snapshot.presentation,
+            simulated = snapshot.simulated,
+        )
     }
 
     /**
@@ -50,5 +55,10 @@ class MatchCardService(
      * Useful for clients to detect changes without fetching the full presentation.
      */
     fun version(): Long = latestMatchHolder.version()
+
+    /**
+     * Returns whether the current cached presentation is from a simulated match.
+     */
+    fun isSimulated(): Boolean = latestMatchHolder.isSimulated()
 }
 

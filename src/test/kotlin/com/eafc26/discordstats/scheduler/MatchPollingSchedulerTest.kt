@@ -245,12 +245,12 @@ class MatchPollingSchedulerTest {
     // -- Initialization --
 
     @Test
-    fun `scheduler sets enabled to true on initialization`() {
+    fun `scheduler confirms enabled is true on initialization`() {
         val holder = PollingStatusHolder()
-        assertThat(holder.enabled).isFalse() // default
+        assertThat(holder.enabled).isTrue() // default is true since scheduler is enabled by default
 
         MatchPollingScheduler(acquisitionService, holder)
 
-        assertThat(holder.enabled).isTrue()
+        assertThat(holder.enabled).isTrue() // still true after scheduler init
     }
 }

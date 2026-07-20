@@ -28,6 +28,7 @@ class SettingsService {
         private const val KEY_WEBHOOK_URL = "discord.webhook.url"
         private const val KEY_HISTORY_WEBHOOK_URL = "discord.history-webhook.url"
         private const val KEY_NETWORK_ENABLED = "web.network-enabled"
+        private const val KEY_DEVELOPMENT_MODE = "app.development-mode"
         private const val KEY_CLUB_ID = "ea.club.id"
         private const val KEY_PLATFORM = "ea.platform"
         private const val KEY_POLLING_INTERVAL_MS = "polling.interval-ms"
@@ -109,6 +110,25 @@ class SettingsService {
         prefs.putBoolean(KEY_NETWORK_ENABLED, enabled)
         flushPrefs()
         log.info("Network mode set to: {}", enabled)
+    }
+
+    // ------------------------------------------------------------------
+    // Development Mode
+    // ------------------------------------------------------------------
+
+    /**
+     * Returns whether development mode is enabled.
+     * When enabled, the development simulator panel and endpoints are available.
+     */
+    fun isDevelopmentModeEnabled(): Boolean = prefs.getBoolean(KEY_DEVELOPMENT_MODE, false)
+
+    /**
+     * Sets whether development mode is enabled.
+     */
+    fun setDevelopmentModeEnabled(enabled: Boolean) {
+        prefs.putBoolean(KEY_DEVELOPMENT_MODE, enabled)
+        flushPrefs()
+        log.info("Development mode set to: {}", enabled)
     }
 
     // ------------------------------------------------------------------

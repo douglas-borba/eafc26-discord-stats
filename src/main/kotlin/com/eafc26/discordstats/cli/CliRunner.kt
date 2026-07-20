@@ -6,6 +6,7 @@ import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.service.AcquisitionResult
 import com.eafc26.discordstats.service.AcquisitionTrigger
 import com.eafc26.discordstats.service.MatchAcquisitionService
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.stereotype.Component
@@ -24,7 +25,7 @@ import kotlin.system.exitProcess
  */
 @Component
 class CliRunner(
-    private val client: EaClubsGateway,
+    @Qualifier("production") private val client: EaClubsGateway,
     private val props: AppProperties,
     private val acquisitionService: MatchAcquisitionService,
     private val out: PrintStream = PrintStream(System.out, true, StandardCharsets.UTF_8),

@@ -3,6 +3,7 @@ package com.eafc26.discordstats.discord
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.PhraseCategory
 import com.eafc26.discordstats.ea.model.PlayerEntry
+import java.util.Random
 import kotlin.math.abs
 
 /**
@@ -33,7 +34,11 @@ object BagrePerformanceEvaluator {
 
     data class BagreEvaluation(
         val player: PlayerEntry,
-        val sections: List<String>,
+        val rating: String,
+        val reason: String,
+        val tackleStats: String?,
+        val passStats: String?,
+        val phrase: String,
     )
 
     /**
@@ -60,14 +65,22 @@ object BagrePerformanceEvaluator {
 
     /**
      * Selects the Bagre (lowest-rated eligible outfield player) and builds
-     * coherent criticism sections based on their actual statistics.
+     * a structured evaluation with typed fields.
      * 
      * Players with rating below [MIN_BAGRE_RATING] are excluded from selection.
+     * 
+     * Returns exactly ONE phrase - picked based on the most relevant criticism:
+     * 1. If tackles are poor (<=40%), use tackle phrase
+     * 2. Else if passes are poor (<60%), use pass phrase
+     * 3. Otherwise use generic rating phrase
+     *
+     * @param random If provided, uses random phrase selection instead of deterministic hash
      */
     fun evaluate(
         outfield: Collection<PlayerEntry>,
         matchId: String,
         phraseBank: PhraseBank?,
+        random: Random? = null,
     ): BagreEvaluation? {
         // Filter to players with valid rating >= MIN_BAGRE_RATING
         val eligible = outfield.filter { p ->
@@ -85,44 +98,104 @@ object BagrePerformanceEvaluator {
         ) ?: return null
 
         val name = bagre.displayName()
-        val rating = bagre.rating?.toDoubleOrNull() ?: 0.0
-        val sections = mutableListOf<String>()
+        val ratingValue = bagre.rating?.toDoubleOrNull() ?: 0.0
+        
+        // Build tackle stats if applicable
+        val tackleStats = buildTackleStats(bagre)
+        
+        // Build pass stats if applicable
+        val passStats = buildPassStats(bagre)
+        
+        // Pick exactly ONE phrase based on most relevant criticism
+        val phrase = pickBagrePhrase(bagre, matchId, phraseBank, random)
 
-        // Header with name and rating
-        sections += "$name — Nota ${fmtRating(bagre.rating)}"
-
-        // Reason line - always show this
-        sections += "Motivo: menor nota entre os jogadores elegíveis."
-
-        // Tackle section - only if poor performance
-        buildTackleSection(bagre, matchId, phraseBank)?.let { sections += it }
-
-        // Pass section - only if warranted by thresholds
-        buildPassSection(bagre, matchId, phraseBank)?.let { sections += it }
-
-        // Finishing section - only if poor and no goals
-        buildFinishingSection(bagre, matchId, phraseBank)?.let { sections += it }
-
-        // Positive counterpoints (goals/assists)
-        buildCounterpoints(bagre)?.let { sections += it }
-
-        // Generic phrase only for genuinely poor ratings
-        if (rating < RATING_MOCKING_THRESHOLD) {
-            val phrase = pickFromCategory(PhraseCategory.RATING, matchId, name, phraseBank)
-            sections += "💬 \"$phrase\""
+        return BagreEvaluation(
+            player = bagre,
+            rating = fmtRating(bagre.rating),
+            reason = "Menor nota entre os jogadores elegíveis.",
+            tackleStats = tackleStats,
+            passStats = passStats,
+            phrase = phrase,
+        )
+    }
+    
+    /**
+     * Builds tackle statistics string if tackles are poor or moderate.
+     */
+    private fun buildTackleStats(player: PlayerEntry): String? {
+        val attempts = player.tackleAttempts?.toIntOrNull() ?: return null
+        if (attempts <= 0) return null
+        
+        val made = player.tacklesMade?.toIntOrNull() ?: 0
+        val pct = made * 100 / attempts
+        
+        // Only show if performance is poor or moderate
+        if (pct > TACKLE_MODERATE_THRESHOLD) return null
+        
+        return "$made/$attempts certos ($pct%)"
+    }
+    
+    /**
+     * Builds pass statistics string if passes are below good threshold.
+     */
+    private fun buildPassStats(player: PlayerEntry): String? {
+        val attempts = player.passAttempts?.toIntOrNull() ?: return null
+        if (attempts <= 0) return null
+        
+        val made = player.passesMade?.toIntOrNull() ?: 0
+        val pct = made * 100 / attempts
+        
+        // >= 75%: omit entirely
+        if (pct >= PASSING_GOOD_THRESHOLD) return null
+        
+        val missed = attempts - made
+        return "$made/$attempts certos ($pct%) · $missed errados"
+    }
+    
+    /**
+     * Picks exactly ONE phrase based on the most relevant criticism:
+     * 1. Poor tackles (<=40%) -> tackle phrase
+     * 2. Poor passes (<60%) -> pass phrase
+     * 3. Otherwise -> generic rating phrase
+     */
+    private fun pickBagrePhrase(
+        player: PlayerEntry,
+        matchId: String,
+        phraseBank: PhraseBank?,
+        random: Random?,
+    ): String {
+        val name = player.displayName()
+        
+        // Check tackles first (most defensive-critical)
+        val tackleAttempts = player.tackleAttempts?.toIntOrNull() ?: 0
+        if (tackleAttempts > 0) {
+            val tackleMade = player.tacklesMade?.toIntOrNull() ?: 0
+            val tacklePct = tackleMade * 100 / tackleAttempts
+            if (tacklePct <= TACKLE_POOR_THRESHOLD) {
+                return pickFromCategory(PhraseCategory.TACKLE, matchId, "${name}desarmes", phraseBank, random)
+            }
         }
-
-        // Red card mention
-        val redCards = bagre.redCards?.toIntOrNull() ?: 0
-        if (redCards > 0) sections += "🟥 Cartão vermelho: $redCards"
-
-        return BagreEvaluation(bagre, sections)
+        
+        // Check passes second
+        val passAttempts = player.passAttempts?.toIntOrNull() ?: 0
+        if (passAttempts > 0) {
+            val passMade = player.passesMade?.toIntOrNull() ?: 0
+            val passPct = passMade * 100 / passAttempts
+            if (passPct < PASSING_MODERATE_THRESHOLD) {
+                return pickFromCategory(PhraseCategory.PASS, matchId, "${name}passes", phraseBank, random)
+            }
+        }
+        
+        // Default to generic rating phrase
+        return pickFromCategory(PhraseCategory.RATING, matchId, name, phraseBank, random)
     }
 
+    // Legacy methods kept for backwards compatibility but no longer used by evaluate()
     private fun buildTackleSection(
         player: PlayerEntry,
         matchId: String,
         phraseBank: PhraseBank?,
+        random: Random?,
     ): String? {
         val attempts = player.tackleAttempts?.toIntOrNull() ?: return null
         if (attempts <= 0) return null
@@ -136,7 +209,7 @@ object BagrePerformanceEvaluator {
         val name = player.displayName()
 
         val phrase = when {
-            pct <= TACKLE_POOR_THRESHOLD -> pickFromCategory(PhraseCategory.TACKLE, matchId, "${name}desarmes", phraseBank)
+            pct <= TACKLE_POOR_THRESHOLD -> pickFromCategory(PhraseCategory.TACKLE, matchId, "${name}desarmes", phraseBank, random)
             else -> "Marcação com espaço para melhorar."
         }
 
@@ -152,6 +225,7 @@ object BagrePerformanceEvaluator {
         player: PlayerEntry,
         matchId: String,
         phraseBank: PhraseBank?,
+        random: Random?,
     ): String? {
         val attempts = player.passAttempts?.toIntOrNull() ?: return null
         if (attempts <= 0) return null
@@ -166,7 +240,7 @@ object BagrePerformanceEvaluator {
         val missed = attempts - made
 
         val phrase = when {
-            pct < PASSING_MODERATE_THRESHOLD -> pickFromCategory(PhraseCategory.PASS, matchId, "${name}passes", phraseBank)
+            pct < PASSING_MODERATE_THRESHOLD -> pickFromCategory(PhraseCategory.PASS, matchId, "${name}passes", phraseBank, random)
             else -> "Distribuição de bola com margem para evolução."
         }
 
@@ -182,6 +256,7 @@ object BagrePerformanceEvaluator {
         player: PlayerEntry,
         matchId: String,
         phraseBank: PhraseBank?,
+        random: Random?,
     ): String? {
         val goals = player.goals?.toIntOrNull() ?: 0
         val shots = player.shots?.toIntOrNull() ?: 0
@@ -192,7 +267,7 @@ object BagrePerformanceEvaluator {
         if (shots <= 0) return null
 
         val name = player.displayName()
-        val phrase = pickFromCategory(PhraseCategory.SHOOTING, matchId, "${name}chutes", phraseBank)
+        val phrase = pickFromCategory(PhraseCategory.SHOOTING, matchId, "${name}chutes", phraseBank, random)
 
         return buildString {
             append("🎯 Finalizações\n")
@@ -228,10 +303,17 @@ object BagrePerformanceEvaluator {
         matchId: String,
         seed: String,
         phraseBank: PhraseBank?,
+        random: Random?,
     ): String {
         val list = phraseBank?.get(cat) ?: cat.defaults
-        val hash = matchId.hashCode().toLong() + seed.hashCode().toLong()
-        return list[(abs(hash) % list.size).toInt()]
+        return if (random != null) {
+            // Random selection for simulations
+            list[random.nextInt(list.size)]
+        } else {
+            // Deterministic selection for production
+            val hash = matchId.hashCode().toLong() + seed.hashCode().toLong()
+            list[(abs(hash) % list.size).toInt()]
+        }
     }
 
     private fun fmtRating(raw: String?): String {

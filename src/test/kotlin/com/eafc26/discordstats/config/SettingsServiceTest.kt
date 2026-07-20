@@ -119,6 +119,28 @@ class SettingsServiceTest {
         assertThat(settingsService.isNetworkEnabled()).isFalse()
     }
 
+    // -- Development Mode -----------------------------------------------------
+
+    @Test
+    fun `isDevelopmentModeEnabled returns false by default`() {
+        assertThat(settingsService.isDevelopmentModeEnabled()).isFalse()
+    }
+
+    @Test
+    fun `setDevelopmentModeEnabled persists the value`() {
+        settingsService.setDevelopmentModeEnabled(true)
+        
+        assertThat(settingsService.isDevelopmentModeEnabled()).isTrue()
+    }
+
+    @Test
+    fun `setDevelopmentModeEnabled can toggle back to false`() {
+        settingsService.setDevelopmentModeEnabled(true)
+        settingsService.setDevelopmentModeEnabled(false)
+        
+        assertThat(settingsService.isDevelopmentModeEnabled()).isFalse()
+    }
+
     // -- Club ID --------------------------------------------------------------
 
     @Test

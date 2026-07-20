@@ -1,0 +1,119 @@
+[
+  {
+    "matchId": "dev-match-001",
+    "timestamp": 1753027200,
+    "matchType": "leagueMatch",
+    "clubs": {
+      "1104972": {
+        "details": {
+          "name": "Associação BF",
+          "clubId": "1104972"
+        },
+        "score": "3",
+        "goalsAgainst": "1",
+        "result": "1"
+      },
+      "99999": {
+        "details": {
+          "name": "Adversário FC",
+          "clubId": "99999"
+        },
+        "score": "1",
+        "goalsAgainst": "3",
+        "result": "0"
+      }
+    },
+    "players": {
+      "1104972": {
+        "player_striker": {
+          "playername": "Striker99",
+          "pos": "25",
+          "goals": "2",
+          "assists": "1",
+          "rating": "8.5",
+          "mom": "1",
+          "shots": "5",
+          "passattempts": "25",
+          "passesmade": "22",
+          "tackleattempts": "3",
+          "tacklesmade": "2",
+          "redcards": "0",
+          "saves": "0",
+          "goalsconceded": "0",
+          "secondsplayed": "5400"
+        },
+        "player_midfielder": {
+          "playername": "Midfielder7",
+          "pos": "14",
+          "goals": "1",
+          "assists": "2",
+          "rating": "7.8",
+          "mom": "0",
+          "shots": "3",
+          "passattempts": "45",
+          "passesmade": "40",
+          "tackleattempts": "6",
+          "tacklesmade": "5",
+          "redcards": "0",
+          "saves": "0",
+          "goalsconceded": "0",
+          "secondsplayed": "5400"
+        },
+        "player_defender": {
+          "playername": "Defender4",
+          "pos": "5",
+          "goals": "0",
+          "assists": "0",
+          "rating": "7.2",
+          "mom": "0",
+          "shots": "0",
+          "passattempts": "35",
+          "passesmade": "30",
+          "tackleattempts": "10",
+          "tacklesmade": "8",
+          "redcards": "0",
+          "saves": "0",
+          "goalsconceded": "0",
+          "secondsplayed": "5400"
+        },
+        "player_goalkeeper": {
+          "playername": "GK Bot",
+          "pos": "0",
+          "goals": "0",
+          "assists": "0",
+          "rating": "7.0",
+          "mom": "0",
+          "shots": "0",
+          "passattempts": "15",
+          "passesmade": "12",
+          "tackleattempts": "0",
+          "tacklesmade": "0",
+          "redcards": "0",
+          "saves": "3",
+          "goalsconceded": "1",
+          "secondsplayed": "5400"
+        }
+      },
+      "99999": {
+        "opponent_player": {
+          "playername": "OpponentPlayer",
+          "pos": "25",
+          "goals": "1",
+          "assists": "0",
+          "rating": "6.5",
+          "mom": "0",
+          "shots": "4",
+          "passattempts": "20",
+          "passesmade": "14",
+          "tackleattempts": "2",
+          "tacklesmade": "1",
+          "redcards": "0",
+          "saves": "0",
+          "goalsconceded": "3",
+          "secondsplayed": "5400"
+        }
+      }
+    }
+  }
+]
+

@@ -2,6 +2,7 @@ package com.eafc26.discordstats.service
 
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.config.EaProperties
+import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.PollingProperties
 import com.eafc26.discordstats.discord.DiscordDeliveryException
 import com.eafc26.discordstats.discord.DiscordWebhookClient
@@ -10,7 +11,9 @@ import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
+import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.store.PublishedMatchStore
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
@@ -34,6 +37,7 @@ class MatchAcquisitionServiceTest {
     private lateinit var webhookClient: DiscordWebhookClient
     private lateinit var stateHolder: AcquisitionStateHolder
     private lateinit var latestMatchHolder: LatestMatchHolder
+    private lateinit var matchSummaryBuilder: MatchSummaryBuilder
     private lateinit var service: MatchAcquisitionService
 
     private val clubId = "12345"
@@ -43,7 +47,7 @@ class MatchAcquisitionServiceTest {
             ea = EaProperties(clubId = clubId, clubName = "Test FC"),
             polling = PollingProperties(publishExistingOnFirstRun = publishExistingOnFirstRun),
         )
-        return MatchAcquisitionService(gateway, store, webhookClient, props, stateHolder, latestMatchHolder)
+        return MatchAcquisitionService(gateway, store, webhookClient, props, stateHolder, latestMatchHolder, matchSummaryBuilder)
     }
 
     @BeforeEach
@@ -53,6 +57,7 @@ class MatchAcquisitionServiceTest {
         webhookClient = mock()
         stateHolder = AcquisitionStateHolder()  // Use real instance for integration-style tests
         latestMatchHolder = LatestMatchHolder()  // Use real instance
+        matchSummaryBuilder = MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))  // Use real instance
         service = makeService()
         whenever(store.loadIds()).thenReturn(emptySet())
     }
@@ -243,7 +248,7 @@ class MatchAcquisitionServiceTest {
         }
 
         @Test
-        fun `DEV_SIMULATOR trigger behaves same as SCHEDULER`() {
+        fun `DEV_SIMULATOR is web-only and never delivers to Discord`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
             whenever(store.loadIds()).thenReturn(setOf("existing"))
@@ -251,7 +256,16 @@ class MatchAcquisitionServiceTest {
             val result = service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
 
             val processed = result as AcquisitionResult.Processed
-            assertThat(processed.published).hasSize(1)
+            // Simulations never "publish" - they just cache
+            assertThat(processed.simulated).isTrue()
+            assertThat(processed.published).isEmpty()
+            assertThat(processed.simulatedMatch).isNotNull
+            assertThat(processed.simulatedMatch?.matchId).isEqualTo("m1")
+            // Discord should NEVER be called
+            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).sendHistory(any())
+            // Persistence should NEVER happen
+            verify(store, never()).saveIds(any())
         }
     }
 
@@ -577,9 +591,118 @@ class MatchAcquisitionServiceTest {
             val result = service.acquire(AcquisitionTrigger.DEV_SIMULATOR, customGateway)
 
             val processed = result as AcquisitionResult.Processed
-            assertThat(processed.published[0].matchId).isEqualTo("custom-m1")
+            // DEV_SIMULATOR returns simulated match, not published
+            assertThat(processed.simulated).isTrue()
+            assertThat(processed.simulatedMatch?.matchId).isEqualTo("custom-m1")
             verify(gateway, never()).getLatestMatches(any())
             verify(customGateway).getLatestMatches(clubId)
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // DEV_SIMULATOR Trigger (Web-Only Simulation)
+    // -------------------------------------------------------------------------
+
+    @Nested
+    inner class DevSimulatorTrigger {
+
+        @Test
+        fun `returns simulated result with match summary`() {
+            val match = match("sim-1")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+
+            val result = service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
+
+            val processed = result as AcquisitionResult.Processed
+            assertThat(processed.simulated).isTrue()
+            assertThat(processed.simulatedMatch).isNotNull
+            assertThat(processed.simulatedMatch?.matchId).isEqualTo("sim-1")
+            assertThat(processed.simulatedMatch?.summary).contains("Test FC")
+        }
+
+        @Test
+        fun `never calls Discord webhook for simulation`() {
+            val match = match("sim-2")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+
+            service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
+
+            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).sendHistory(any())
+        }
+
+        @Test
+        fun `never persists simulated matches`() {
+            val match = match("sim-3")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+
+            service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
+
+            verify(store, never()).saveIds(any())
+        }
+
+        @Test
+        fun `caches presentation and marks as simulated`() {
+            val match = match("sim-4")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+
+            service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
+
+            assertThat(latestMatchHolder.hasPresentation()).isTrue()
+            assertThat(latestMatchHolder.isSimulated()).isTrue()
+            assertThat(latestMatchHolder.presentation()?.matchId).isEqualTo("sim-4")
+        }
+
+        @Test
+        fun `returns empty published and alreadyPublished lists`() {
+            val match = match("sim-5")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+
+            val result = service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
+
+            val processed = result as AcquisitionResult.Processed
+            assertThat(processed.published).isEmpty()
+            assertThat(processed.alreadyPublished).isEmpty()
+            assertThat(processed.failed).isEmpty()
+        }
+
+        @Test
+        fun `does not check deduplication state for simulations`() {
+            val match = match("sim-6")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+            // Even if match was already published in production, simulation still runs
+            whenever(store.loadIds()).thenReturn(setOf("sim-6"))
+
+            val result = service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
+
+            val processed = result as AcquisitionResult.Processed
+            assertThat(processed.simulated).isTrue()
+            assertThat(processed.simulatedMatch?.matchId).isEqualTo("sim-6")
+        }
+
+        @Test
+        fun `picks latest match by timestamp for simulation`() {
+            val older = match("sim-older", ts = 1000)
+            val newer = match("sim-newer", ts = 2000)
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(older, newer)))
+
+            val result = service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
+
+            val processed = result as AcquisitionResult.Processed
+            assertThat(processed.simulatedMatch?.matchId).isEqualTo("sim-newer")
+        }
+
+        @Test
+        fun `does not affect baselineEstablished flag`() {
+            val match = match("sim-7")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+            whenever(store.loadIds()).thenReturn(emptySet())
+
+            val result = service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
+
+            val processed = result as AcquisitionResult.Processed
+            assertThat(processed.baselineEstablished).isFalse()
+            assertThat(processed.simulated).isTrue()
         }
     }
 

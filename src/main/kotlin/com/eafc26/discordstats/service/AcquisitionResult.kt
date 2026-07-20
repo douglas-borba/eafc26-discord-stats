@@ -17,17 +17,22 @@ sealed class AcquisitionResult {
      * - All matches already published (nothing new)
      * - Partial success (some published, some failed)
      * - First-run baseline establishment
+     * - Simulated match (web-only, no Discord delivery)
      *
      * @property published Matches successfully sent to Discord
      * @property alreadyPublished Matches skipped because they were already sent
      * @property failed Matches that could not be delivered to Discord
      * @property baselineEstablished True if this was a first-run that established the baseline
+     * @property simulated True if this was a development simulation (no Discord delivery)
+     * @property simulatedMatch The simulated match summary (only set when simulated is true)
      */
     data class Processed(
         val published: List<MatchSummary>,
         val alreadyPublished: List<MatchSummary>,
         val failed: List<MatchFailure>,
         val baselineEstablished: Boolean = false,
+        val simulated: Boolean = false,
+        val simulatedMatch: MatchSummary? = null,
     ) : AcquisitionResult() {
 
         /** True if at least one match was published. */
@@ -35,11 +40,13 @@ sealed class AcquisitionResult {
 
         /** True if all matches were skipped (already published). */
         fun allSkipped(): Boolean =
-            published.isEmpty() && failed.isEmpty() && alreadyPublished.isNotEmpty()
+            published.isEmpty() && failed.isEmpty() && alreadyPublished.isNotEmpty() && !simulated
 
-        /** Returns the latest match summary, preferring published over skipped. */
+        /** Returns the latest match summary, preferring published over skipped over simulated. */
         fun latestSummary(): String? =
-            published.lastOrNull()?.summary ?: alreadyPublished.lastOrNull()?.summary
+            published.lastOrNull()?.summary 
+                ?: alreadyPublished.lastOrNull()?.summary 
+                ?: simulatedMatch?.summary
     }
 
     /**

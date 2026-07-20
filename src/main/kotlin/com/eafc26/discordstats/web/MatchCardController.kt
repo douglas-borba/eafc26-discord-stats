@@ -32,6 +32,7 @@ class MatchCardController(
                             status = "success",
                             presentation = result.presentation,
                             version = matchCardService.version(),
+                            simulated = result.simulated,
                         ))
                     MatchCardService.MatchCardResult.NoMatches ->
                         ResponseEntity.ok(MatchCardResponse(
@@ -48,5 +49,6 @@ data class MatchCardResponse(
     val message: String? = null,
     val presentation: MatchSummaryPresentation? = null,
     val version: Long? = null,
+    val simulated: Boolean = false,
 )
 
