@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
+import java.nio.file.Files
+import java.nio.file.Paths
 
 @Component
 @Qualifier("production")
@@ -34,8 +36,38 @@ class PlaywrightEaClubsGateway(
                 "&matchType=${props.ea.matchType}" +
                 "&maxResultCount=${props.ea.maxResultCount}"
 
+        log.info(">>> Entered PlaywrightEaClubsGateway.getLatestMatches({})", clubId)
         log.debug("Playwright matches: {}", url)
-        return callEa(url) { parser.parseMatches(it) }
+        return callEa(url) { body ->
+            // TEMP: log raw EA response before deserialization. Remove when done.
+            log.info("===== RAW EA MATCH PAYLOAD START =====")
+            val chunkSize = 4000
+            body.chunked(chunkSize).forEachIndexed { index, chunk ->
+                log.info("RAW PAYLOAD [{}]: {}", index, chunk)
+            }
+            log.info("===== RAW EA MATCH PAYLOAD END =====")
+
+            parser.parseMatches(body)
+        }
+    }
+
+    /**
+     * Writes the raw EA matches response body to $TMPDIR/ea-fc-stats/latest-match-response.json.
+     * Temporary — safe to delete once investigation is complete.
+     */
+    private fun dumpRawMatchResponse(body: String) {
+        try {
+            val dir = Paths.get(System.getProperty("java.io.tmpdir"), "ea-fc-stats")
+            Files.createDirectories(dir)
+
+            val file = dir.resolve("latest-match-response.json")
+
+            log.info("About to dump raw match payload... (body.length={})", body.length)
+            Files.writeString(file, body)
+            log.info("Raw match payload written to: {}", file.toAbsolutePath())
+        } catch (ex: Exception) {
+            log.error("Failed to dump raw EA match response", ex)
+        }
     }
 
     private fun <T> callEa(url: String, parse: (String) -> EaApiResult<T>): EaApiResult<T> {
@@ -48,6 +80,8 @@ class PlaywrightEaClubsGateway(
             log.warn("Unexpected error fetching {}", url, ex)
             return EaApiResult.Unavailable(0, ex.message ?: "unknown error")
         }
+
+        log.info(">>> browserFetcher.fetch returned: status={} body.length={}", result.status, result.body.length)
 
         if (result.error != null) {
             log.warn("Browser-side fetch error for {}: {}", url, result.error)

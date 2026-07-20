@@ -22,8 +22,9 @@ class SetupRedirectFilterTest {
     private lateinit var webhookConfigService: WebhookConfigService
 
     @Test
-    fun `unconfigured webhook redirects to setup`() {
+    fun `neither webhook configured redirects to setup`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
 
         webClient.get().uri("/")
             .exchange()
@@ -32,8 +33,31 @@ class SetupRedirectFilterTest {
     }
 
     @Test
-    fun `configured webhook allows through to home`() {
+    fun `only stats webhook configured redirects to setup`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
+
+        webClient.get().uri("/")
+            .exchange()
+            .expectStatus().is3xxRedirection
+            .expectHeader().location("/setup")
+    }
+
+    @Test
+    fun `only history webhook configured redirects to setup`() {
+        whenever(webhookConfigService.isConfigured()).thenReturn(false)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
+
+        webClient.get().uri("/")
+            .exchange()
+            .expectStatus().is3xxRedirection
+            .expectHeader().location("/setup")
+    }
+
+    @Test
+    fun `both webhooks configured allows through to home`() {
+        whenever(webhookConfigService.isConfigured()).thenReturn(true)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
 
         webClient.get().uri("/")
             .exchange()
@@ -43,6 +67,7 @@ class SetupRedirectFilterTest {
     @Test
     fun `setup path is always allowed regardless of config state`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
 
         // SetupController is not in this @WebFluxTest context so we get 404 rather than redirect
         webClient.get().uri("/setup")
@@ -53,6 +78,7 @@ class SetupRedirectFilterTest {
     @Test
     fun `api setup path is always allowed regardless of config state`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
 
         webClient.post().uri("/api/setup/webhook")
             .exchange()
@@ -62,6 +88,7 @@ class SetupRedirectFilterTest {
     @Test
     fun `api health path is always allowed regardless of config state`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
 
         // /api/health is handled by MatchController (loaded in this context) — returns 200, not redirected
         webClient.get().uri("/api/health")

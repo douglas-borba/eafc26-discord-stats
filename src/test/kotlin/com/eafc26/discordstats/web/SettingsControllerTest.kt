@@ -27,6 +27,7 @@ class SettingsControllerTest {
     @BeforeEach
     fun setUp() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
         whenever(webhookConfigService.isNetworkEnabled()).thenReturn(false)
         whenever(webhookConfigService.logFilePath()).thenReturn("/Users/user/Library/Logs/EAFC26DiscordStats/app.log")
     }
@@ -50,6 +51,7 @@ class SettingsControllerTest {
     @Test
     fun `GET api settings info returns configured status without webhook URL`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
 
         webClient.get().uri("/api/settings/info")
             .exchange()

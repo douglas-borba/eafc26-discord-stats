@@ -25,7 +25,7 @@
       border-radius: 12px;
       padding: 2rem;
       width: 100%;
-      max-width: 480px;
+      max-width: 520px;
     }
 
     h1 {
@@ -38,15 +38,25 @@
     p.subtitle {
       font-size: 0.9rem;
       color: #8b949e;
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.75rem;
       line-height: 1.5;
     }
 
-    label {
+    .field-group { margin-bottom: 1.25rem; }
+
+    .field-label {
       display: block;
-      font-size: 0.85rem;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #c9d1d9;
+      margin-bottom: 0.35rem;
+    }
+
+    .field-desc {
+      font-size: 0.8rem;
       color: #8b949e;
-      margin-bottom: 0.4rem;
+      margin-bottom: 0.5rem;
+      line-height: 1.5;
     }
 
     input[type="password"] {
@@ -57,11 +67,25 @@
       color: #e6edf3;
       font-size: 0.95rem;
       padding: 0.65rem 0.85rem;
-      margin-bottom: 1rem;
       outline: none;
+      transition: border-color 0.15s;
     }
 
     input[type="password"]:focus { border-color: #58a6ff; }
+    input[type="password"].field-error { border-color: #f85149; }
+
+    .error-msg {
+      font-size: 0.8rem;
+      color: #f85149;
+      margin-top: 0.3rem;
+      display: none;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #21262d;
+      margin: 1.5rem 0;
+    }
 
     button {
       width: 100%;
@@ -101,62 +125,102 @@
 <body>
   <div class="card">
     <h1>Configuração inicial</h1>
-    <p class="subtitle">Cole abaixo o URL do webhook do Discord para o canal onde as partidas serão publicadas.</p>
+    <p class="subtitle">Configure os dois canais do Discord para que a aplicação possa publicar as partidas.</p>
 
-    <label for="webhook-input">URL do Webhook do Discord</label>
-    <input
-      id="webhook-input"
-      type="password"
-      placeholder="https://discord.com/api/webhooks/..."
-      autocomplete="off"
-      autocorrect="off"
-      spellcheck="false"
-    />
+    <!-- Campo 1: estatísticas -->
+    <div class="field-group">
+      <label class="field-label" for="stats-input">Webhook do canal de estatísticas do clube</label>
+      <p class="field-desc">Recebe os resumos, destaques e análises de cada partida do time.</p>
+      <input
+        id="stats-input"
+        type="password"
+        placeholder="https://discord.com/api/webhooks/..."
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
+      />
+      <div class="error-msg" id="stats-error"></div>
+    </div>
+
+    <!-- Campo 2: histórico -->
+    <div class="field-group">
+      <label class="field-label" for="history-input">Webhook do canal de histórico de partidas</label>
+      <p class="field-desc">Recebe o registro de todas as partidas realizadas, funcionando como um histórico consolidado dos jogos.</p>
+      <input
+        id="history-input"
+        type="password"
+        placeholder="https://discord.com/api/webhooks/..."
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
+      />
+      <div class="error-msg" id="history-error"></div>
+    </div>
 
     <button id="save-btn" onclick="save()">Salvar e continuar</button>
 
     <div id="feedback"></div>
 
-    <p class="hint" id="hint-new">
-      O URL é salvo localmente no seu Mac e nunca é enviado para servidores externos.<br/>
-      Ele não aparecerá nesta tela novamente após salvo.
-    </p>
-    <p class="hint" id="hint-edit" style="display:none">
-      O webhook atual está salvo. Você pode editar ou substituir o URL acima.
+    <p class="hint">
+      Os URLs são salvos localmente no seu Mac e nunca são enviados para servidores externos.
     </p>
   </div>
 
   <script>
-    // Load saved webhook URL on page load
-    (async function loadSavedWebhook() {
+    // Pre-fill any already-saved values (migration: user may have stats but not history)
+    (async function loadSaved() {
       try {
         const res = await fetch('/api/setup/webhook');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.configured && data.url) {
-            document.getElementById('webhook-input').value = data.url;
-            document.getElementById('hint-new').style.display = 'none';
-            document.getElementById('hint-edit').style.display = 'block';
-            document.getElementById('save-btn').textContent = 'Atualizar e continuar';
-          }
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.url)        document.getElementById('stats-input').value   = data.url;
+        if (data.historyUrl) document.getElementById('history-input').value = data.historyUrl;
+        if (data.configured || data.historyConfigured) {
+          document.getElementById('save-btn').textContent = 'Atualizar e continuar';
         }
       } catch (e) {
-        console.error('Erro ao carregar webhook salvo:', e);
+        console.error('Erro ao carregar webhooks salvos:', e);
       }
     })();
 
+    function clearErrors() {
+      ['stats-input', 'history-input'].forEach(id => {
+        document.getElementById(id).classList.remove('field-error');
+      });
+      ['stats-error', 'history-error'].forEach(id => {
+        const el = document.getElementById(id);
+        el.style.display = 'none';
+        el.textContent = '';
+      });
+      const f = document.getElementById('feedback');
+      f.style.display = 'none';
+    }
+
+    function fieldError(inputId, errorId, msg) {
+      document.getElementById(inputId).classList.add('field-error');
+      const el = document.getElementById(errorId);
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+
     async function save() {
-      const input = document.getElementById('webhook-input');
+      clearErrors();
+
+      const statsUrl   = document.getElementById('stats-input').value.trim();
+      const historyUrl = document.getElementById('history-input').value.trim();
       const btn = document.getElementById('save-btn');
-      const feedback = document.getElementById('feedback');
-      const url = input.value.trim();
 
-      feedback.style.display = 'none';
-
-      if (!url) {
-        showError('Por favor, cole o URL do webhook.');
-        return;
+      // Client-side presence check before sending to server
+      let hasError = false;
+      if (!statsUrl) {
+        fieldError('stats-input', 'stats-error', 'Informe a URL do webhook do canal de estatísticas.');
+        hasError = true;
       }
+      if (!historyUrl) {
+        fieldError('history-input', 'history-error', 'Informe a URL do webhook do canal de histórico.');
+        hasError = true;
+      }
+      if (hasError) return;
 
       btn.disabled = true;
       btn.textContent = 'Salvando...';
@@ -165,19 +229,28 @@
         const res = await fetch('/api/setup/webhook', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ webhookUrl: url }),
+          body: JSON.stringify({ webhookUrl: statsUrl, historyWebhookUrl: historyUrl }),
           redirect: 'manual'
         });
 
         if (res.status === 0 || res.type === 'opaqueredirect' || res.redirected || res.status === 302) {
-          showInfo('Webhook salvo. Redirecionando...');
+          showInfo('Configuração salva. Redirecionando...');
           window.location.href = '/';
-        } else if (res.ok) {
-          showInfo('Webhook salvo. Redirecionando...');
+          return;
+        }
+
+        if (res.ok) {
+          showInfo('Configuração salva. Redirecionando...');
           window.location.href = '/';
-        } else {
-          const data = await res.json().catch(() => ({}));
-          showError(data.error || 'Erro ao salvar. Verifique o URL e tente novamente.');
+          return;
+        }
+
+        // Server-side validation errors (invalid URL format)
+        const data = await res.json().catch(() => ({}));
+        if (data.statsError)   fieldError('stats-input',   'stats-error',   data.statsError);
+        if (data.historyError) fieldError('history-input', 'history-error', data.historyError);
+        if (!data.statsError && !data.historyError) {
+          showError(data.error || 'Erro ao salvar. Verifique os URLs e tente novamente.');
         }
       } catch (e) {
         showError('Erro de rede. Verifique a conexão.');
@@ -201,7 +274,11 @@
       f.style.display = 'block';
     }
 
-    document.getElementById('webhook-input').addEventListener('keydown', function(e) {
+    // Enter on first field moves focus to second; Enter on second submits
+    document.getElementById('stats-input').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') document.getElementById('history-input').focus();
+    });
+    document.getElementById('history-input').addEventListener('keydown', function(e) {
       if (e.key === 'Enter') save();
     });
   </script>

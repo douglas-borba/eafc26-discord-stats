@@ -27,10 +27,16 @@ class SetupControllerTest {
         // SetupRedirectFilter is a @Component loaded by @WebFluxTest
         // We allow access to /setup unconditionally via isPassThrough path
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
+        whenever(webhookConfigService.getWebhookUrl()).thenReturn("")
+        whenever(webhookConfigService.getHistoryWebhookUrl()).thenReturn("")
+        whenever(webhookConfigService.getMaskedWebhookUrl()).thenReturn("")
     }
 
+    // ── GET /setup ──────────────────────────────────────────────────────────
+
     @Test
-    fun `GET setup returns HTML`() {
+    fun `GET setup returns HTML with both webhook fields`() {
         webClient.get().uri("/setup")
             .exchange()
             .expectStatus().isOk
@@ -38,66 +44,103 @@ class SetupControllerTest {
             .expectBody(String::class.java)
             .value { body ->
                 assert(body.contains("Configuração inicial")) { "Expected setup title" }
-                assert(body.contains("webhook")) { "Expected webhook mention" }
+                assert(body.contains("estatísticas do clube"))  { "Expected stats field label" }
+                assert(body.contains("histórico de partidas"))  { "Expected history field label" }
             }
     }
 
     @Test
-    fun `POST setup with valid webhook URL redirects to home`() {
-        val url = "https://discord.com/api/webhooks/123456/abctoken"
+    fun `GET setup HTML never contains a configured webhook token value`() {
+        val body = webClient.get().uri("/setup")
+            .exchange()
+            .expectBody(String::class.java).returnResult().responseBody ?: ""
+        assert(!body.contains("abctoken")) { "Must not contain any saved token value" }
+    }
+
+    // ── GET /api/setup/webhook ───────────────────────────────────────────────
+
+    @Test
+    fun `GET api setup webhook returns both configured flags`() {
+        whenever(webhookConfigService.isConfigured()).thenReturn(true)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
+        whenever(webhookConfigService.getWebhookUrl()).thenReturn("https://discord.com/api/webhooks/1/tok")
+        whenever(webhookConfigService.getHistoryWebhookUrl()).thenReturn("")
+
+        webClient.get().uri("/api/setup/webhook")
+            .exchange()
+            .expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.configured").isEqualTo(true)
+            .jsonPath("$.historyConfigured").isEqualTo(false)
+            .jsonPath("$.url").isEqualTo("https://discord.com/api/webhooks/1/tok")
+            .jsonPath("$.historyUrl").isEqualTo("")
+    }
+
+    // ── POST /api/setup/webhook ──────────────────────────────────────────────
+
+    @Test
+    fun `POST setup with both valid URLs redirects to home and saves both`() {
+        val stats   = "https://discord.com/api/webhooks/111/statstoken"
+        val history = "https://discord.com/api/webhooks/222/historytoken"
 
         webClient.post().uri("/api/setup/webhook")
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(mapOf("webhookUrl" to url))
+            .bodyValue(mapOf("webhookUrl" to stats, "historyWebhookUrl" to history))
             .exchange()
             .expectStatus().is3xxRedirection
             .expectHeader().location("/")
 
-        verify(webhookConfigService).configure(url)
+        verify(webhookConfigService).configure(stats)
+        verify(webhookConfigService).configureHistory(history)
     }
 
     @Test
-    fun `POST setup with invalid URL returns 400`() {
-        doThrow(IllegalArgumentException("URL inválida")).whenever(webhookConfigService).configure(any())
-
+    fun `POST setup without stats URL returns 400 with statsError`() {
         webClient.post().uri("/api/setup/webhook")
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(mapOf("webhookUrl" to "not-a-discord-url"))
+            .bodyValue(mapOf("webhookUrl" to "", "historyWebhookUrl" to "https://discord.com/api/webhooks/2/tok"))
             .exchange()
             .expectStatus().isBadRequest
             .expectBody()
-            .jsonPath("$.error").isEqualTo("URL inválida")
+            .jsonPath("$.statsError").isNotEmpty
     }
 
     @Test
-    fun `POST setup response never contains discord webhook URL`() {
-        val url = "https://discord.com/api/webhooks/123456/abctoken"
+    fun `POST setup without history URL returns 400 with historyError`() {
+        webClient.post().uri("/api/setup/webhook")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(mapOf("webhookUrl" to "https://discord.com/api/webhooks/1/tok", "historyWebhookUrl" to ""))
+            .exchange()
+            .expectStatus().isBadRequest
+            .expectBody()
+            .jsonPath("$.historyError").isNotEmpty
+    }
+
+    @Test
+    fun `POST setup with both URLs missing returns 400 with both field errors`() {
+        webClient.post().uri("/api/setup/webhook")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(mapOf("webhookUrl" to "", "historyWebhookUrl" to ""))
+            .exchange()
+            .expectStatus().isBadRequest
+            .expectBody()
+            .jsonPath("$.statsError").isNotEmpty
+            .jsonPath("$.historyError").isNotEmpty
+    }
+
+    @Test
+    fun `POST setup response never echoes back the webhook URL`() {
+        val stats   = "https://discord.com/api/webhooks/111/statstoken"
+        val history = "https://discord.com/api/webhooks/222/historytoken"
 
         val body = webClient.post().uri("/api/setup/webhook")
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(mapOf("webhookUrl" to url))
+            .bodyValue(mapOf("webhookUrl" to stats, "historyWebhookUrl" to history))
             .exchange()
-            .expectBody(String::class.java)
-            .returnResult()
-            .responseBody ?: ""
+            .expectBody(String::class.java).returnResult().responseBody ?: ""
 
         assert(!body.contains("discord.com/api/webhooks")) {
             "Response must not echo back the webhook URL"
         }
-    }
-
-    @Test
-    fun `GET setup HTML never contains a configured webhook token value`() {
-        // The page may show the discord.com/api/webhooks domain as placeholder text (that's fine),
-        // but it must never reveal an actual stored token/URL value from the service.
-        // Since webhookConfigService is mocked and not configured, nothing to leak.
-        val body = webClient.get().uri("/setup")
-            .exchange()
-            .expectBody(String::class.java)
-            .returnResult()
-            .responseBody ?: ""
-
-        // The page should not try to pre-fill or echo back any webhook URL value
-        assert(!body.contains("abctoken")) { "Must not contain any saved token value" }
     }
 }
