@@ -9,8 +9,9 @@ import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.ClubSearchResult
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
-import com.eafc26.discordstats.service.NotifyLatestService
-import com.eafc26.discordstats.service.NotifyResult
+import com.eafc26.discordstats.service.AcquisitionResult
+import com.eafc26.discordstats.service.AcquisitionTrigger
+import com.eafc26.discordstats.service.MatchAcquisitionService
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -25,7 +26,7 @@ import java.io.PrintStream
 class CliRunnerTest {
 
     private lateinit var client: EaClubsGateway
-    private lateinit var notifyLatestService: NotifyLatestService
+    private lateinit var acquisitionService: MatchAcquisitionService
     private lateinit var output: ByteArrayOutputStream
     private lateinit var out: PrintStream
     private val exitCodes = mutableListOf<Int>()
@@ -33,7 +34,7 @@ class CliRunnerTest {
     @BeforeEach
     fun setUp() {
         client = mock()
-        notifyLatestService = mock()
+        acquisitionService = mock()
         output = ByteArrayOutputStream()
         out = PrintStream(output)
         exitCodes.clear()
@@ -41,7 +42,7 @@ class CliRunnerTest {
 
     private fun runner(clubName: String = "Test FC", clubId: String = "12345"): CliRunner {
         val props = AppProperties(ea = EaProperties(clubName = clubName, clubId = clubId))
-        return CliRunner(client, props, notifyLatestService, out, exit = { exitCodes.add(it) })
+        return CliRunner(client, props, acquisitionService, out, exit = { exitCodes.add(it) })
     }
 
     private fun printed(): String = output.toString(Charsets.UTF_8)
@@ -231,8 +232,12 @@ class CliRunnerTest {
 
     @Test
     fun `notify-latest Sent - prints success and exits 0`() {
-        whenever(notifyLatestService.notifyLatest())
-            .thenReturn(NotifyResult.Sent("Test FC 2 × 0 Opponent"))
+        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+            .thenReturn(AcquisitionResult.Processed(
+                published = listOf(AcquisitionResult.MatchSummary("m1", "Test FC 2 × 0 Opponent")),
+                alreadyPublished = emptyList(),
+                failed = emptyList(),
+            ))
 
         runner().run(args("notify-latest"))
 
@@ -244,8 +249,12 @@ class CliRunnerTest {
 
     @Test
     fun `notify-latest AlreadyPublished - prints info and exits 0`() {
-        whenever(notifyLatestService.notifyLatest())
-            .thenReturn(NotifyResult.AlreadyPublished("Test FC 2 × 0 Opponent"))
+        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+            .thenReturn(AcquisitionResult.Processed(
+                published = emptyList(),
+                alreadyPublished = listOf(AcquisitionResult.MatchSummary("m1", "Test FC 2 × 0 Opponent")),
+                failed = emptyList(),
+            ))
 
         runner().run(args("notify-latest"))
 
@@ -257,7 +266,8 @@ class CliRunnerTest {
 
     @Test
     fun `notify-latest NoMatches - prints message and exits 0`() {
-        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.NoMatches)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+            .thenReturn(AcquisitionResult.NoMatches)
 
         runner().run(args("notify-latest"))
 
@@ -267,7 +277,8 @@ class CliRunnerTest {
 
     @Test
     fun `notify-latest EaUnavailable - prints error and exits 1`() {
-        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.EaUnavailable)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+            .thenReturn(AcquisitionResult.EaUnavailable(503, "Service unavailable"))
 
         runner().run(args("notify-latest"))
 
@@ -279,7 +290,12 @@ class CliRunnerTest {
 
     @Test
     fun `notify-latest DiscordError - prints error and exits 1`() {
-        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.DiscordError)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+            .thenReturn(AcquisitionResult.Processed(
+                published = emptyList(),
+                alreadyPublished = emptyList(),
+                failed = listOf(AcquisitionResult.MatchFailure("m1", "Test FC 2 × 0 Opp", "Rate limited")),
+            ))
 
         runner().run(args("notify-latest"))
 
@@ -291,7 +307,8 @@ class CliRunnerTest {
 
     @Test
     fun `notify-latest Busy - prints error and exits 1`() {
-        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.Busy)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+            .thenReturn(AcquisitionResult.Busy)
 
         runner().run(args("notify-latest"))
 
@@ -305,8 +322,39 @@ class CliRunnerTest {
     fun `notify-latest blank club-id - does not call service and exits 1`() {
         runner(clubId = "").run(args("notify-latest"))
 
-        verify(notifyLatestService, never()).notifyLatest()
+        verify(acquisitionService, never()).acquire(AcquisitionTrigger.CLI)
         assertThat(printed()).contains("app.ea.club-id is not set")
+        assertThat(exitCodes).containsExactly(1)
+    }
+
+    @Test
+    fun `notify-latest SentPersistenceError - prints success with warning and exits 0`() {
+        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+            .thenReturn(AcquisitionResult.Processed(
+                published = listOf(AcquisitionResult.MatchSummary("m1", "Test FC 2 × 0 Opponent", persistedSuccessfully = false)),
+                alreadyPublished = emptyList(),
+                failed = emptyList(),
+            ))
+
+        runner().run(args("notify-latest"))
+
+        val text = printed()
+        assertThat(text).contains("SUCCESS")
+        assertThat(text).contains("local history could not be saved")
+        assertThat(text).contains("Test FC 2 × 0 Opponent")
+        assertThat(exitCodes).containsExactly(0)
+    }
+
+    @Test
+    fun `notify-latest WebhookNotConfigured - prints error and exits 1`() {
+        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+            .thenReturn(AcquisitionResult.WebhookNotConfigured)
+
+        runner().run(args("notify-latest"))
+
+        val text = printed()
+        assertThat(text).contains("ERROR")
+        assertThat(text).contains("webhook not configured")
         assertThat(exitCodes).containsExactly(1)
     }
 

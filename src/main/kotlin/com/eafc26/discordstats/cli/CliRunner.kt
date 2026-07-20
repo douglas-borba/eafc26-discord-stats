@@ -3,8 +3,9 @@ package com.eafc26.discordstats.cli
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
-import com.eafc26.discordstats.service.NotifyLatestService
-import com.eafc26.discordstats.service.NotifyResult
+import com.eafc26.discordstats.service.AcquisitionResult
+import com.eafc26.discordstats.service.AcquisitionTrigger
+import com.eafc26.discordstats.service.MatchAcquisitionService
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.stereotype.Component
@@ -15,11 +16,17 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.system.exitProcess
 
+/**
+ * CLI commands for EA FC Stats.
+ *
+ * The notify-latest command uses [MatchAcquisitionService] with
+ * [AcquisitionTrigger.CLI] to participate in the unified acquisition pipeline.
+ */
 @Component
 class CliRunner(
     private val client: EaClubsGateway,
     private val props: AppProperties,
-    private val notifyLatestService: NotifyLatestService,
+    private val acquisitionService: MatchAcquisitionService,
     private val out: PrintStream = PrintStream(System.out, true, StandardCharsets.UTF_8),
     private val exit: (Int) -> Unit = { code -> exitProcess(code) },
 ) : ApplicationRunner {
@@ -116,6 +123,12 @@ class CliRunner(
         }
     }
 
+    /**
+     * Notify-latest command: checks for and publishes the latest match.
+     *
+     * Uses [MatchAcquisitionService.acquire] with [AcquisitionTrigger.CLI].
+     * Maps [AcquisitionResult] to CLI-friendly output messages.
+     */
     private fun runNotifyLatest() {
         val clubId = props.ea.clubId
         if (clubId.isBlank()) {
@@ -126,38 +139,71 @@ class CliRunner(
 
         out.println("Fetching latest match for club-id=$clubId ...")
 
-        when (val result = notifyLatestService.notifyLatest()) {
-            is NotifyResult.Sent -> {
-                out.println("SUCCESS: Match notification sent to Discord. (${result.summary})")
+        when (val result = acquisitionService.acquire(AcquisitionTrigger.CLI)) {
+            is AcquisitionResult.Processed -> handleProcessedResult(result, clubId)
+            is AcquisitionResult.ForceResent -> {
+                // CLI doesn't use force-resend, but handle gracefully
+                out.println("SUCCESS: Match force-resent to Discord. (${result.match.summary})")
                 exit(0)
             }
-            is NotifyResult.SentPersistenceError -> {
-                out.println("SUCCESS: Match notification sent to Discord, but local history could not be saved. (${result.summary})")
-                exit(0)
-            }
-            is NotifyResult.AlreadyPublished -> {
-                out.println("INFO: Match already published, skipped. (${result.summary})")
-                exit(0)
-            }
-            is NotifyResult.ForceSent -> {
-                out.println("SUCCESS: Match force-resent to Discord. (${result.summary})")
-                exit(0)
-            }
-            NotifyResult.NoMatches -> {
+            AcquisitionResult.NoMatches -> {
                 out.println("No matches found for club-id=$clubId.")
                 exit(0)
             }
-            NotifyResult.EaUnavailable -> {
+            is AcquisitionResult.EaUnavailable -> {
                 out.println("ERROR: EA API unavailable. The endpoint may be down. Try again later.")
                 exit(1)
             }
-            NotifyResult.DiscordError -> {
+            AcquisitionResult.WebhookNotConfigured -> {
+                out.println("ERROR: Discord webhook not configured.")
+                exit(1)
+            }
+            AcquisitionResult.Busy -> {
+                out.println("ERROR: Another notification is already in progress.")
+                exit(1)
+            }
+        }
+    }
+
+    /**
+     * Maps [AcquisitionResult.Processed] to CLI output.
+     *
+     * Output format:
+     * - Published → SUCCESS
+     * - Published with persistence error → SUCCESS with warning
+     * - Already published → INFO
+     * - Failed → ERROR
+     */
+    private fun handleProcessedResult(result: AcquisitionResult.Processed, clubId: String) {
+        when {
+            result.hasPublished() -> {
+                val summary = result.latestSummary()
+                val lastPublished = result.published.lastOrNull()
+                if (lastPublished?.persistedSuccessfully == false) {
+                    out.println("SUCCESS: Match notification sent to Discord, but local history could not be saved. ($summary)")
+                } else {
+                    out.println("SUCCESS: Match notification sent to Discord. ($summary)")
+                }
+                exit(0)
+            }
+            result.allSkipped() -> {
+                val summary = result.latestSummary()
+                out.println("INFO: Match already published, skipped. ($summary)")
+                exit(0)
+            }
+            result.failed.isNotEmpty() -> {
                 out.println("ERROR: Discord delivery failed.")
                 exit(1)
             }
-            NotifyResult.Busy -> {
-                out.println("ERROR: Another notification is already in progress.")
-                exit(1)
+            result.baselineEstablished -> {
+                // Baseline established is not typical for CLI, but handle it
+                out.println("INFO: Baseline established. No new matches to publish.")
+                exit(0)
+            }
+            else -> {
+                // Empty processed result (no matches to publish after filtering)
+                out.println("No matches found for club-id=$clubId.")
+                exit(0)
             }
         }
     }

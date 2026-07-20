@@ -1,52 +1,54 @@
 package com.eafc26.discordstats.service
 
-import com.eafc26.discordstats.config.AppProperties
-import com.eafc26.discordstats.ea.EaApiResult
-import com.eafc26.discordstats.ea.EaClubsGateway
-import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.presentation.MatchSummaryPresentation
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
+/**
+ * Provides match card data from the cached presentation.
+ *
+ * This service reads from [LatestMatchHolder], which is populated by
+ * [MatchAcquisitionService] during acquisition. It no longer queries
+ * the EA API directly.
+ *
+ * If no acquisition has occurred yet, returns [MatchCardResult.NoMatches].
+ */
 @Service
 class MatchCardService(
-    private val gateway: EaClubsGateway,
-    private val props: AppProperties,
+    private val latestMatchHolder: LatestMatchHolder,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
     sealed class MatchCardResult {
         data class Success(val presentation: MatchSummaryPresentation) : MatchCardResult()
         object NoMatches : MatchCardResult()
-        object EaUnavailable : MatchCardResult()
+        // EaUnavailable is no longer needed since we read from cache
     }
 
+    /**
+     * Returns the latest match card from the cache.
+     *
+     * @return [MatchCardResult.Success] with the cached presentation, or
+     *         [MatchCardResult.NoMatches] if no acquisition has succeeded yet.
+     */
     fun getLatestMatchCard(): MatchCardResult {
-        val clubId = props.ea.clubId
+        val snapshot = latestMatchHolder.snapshot()
 
-        val matches = when (val result = gateway.getLatestMatches(clubId)) {
-            is EaApiResult.Success -> result.data
-            EaApiResult.NoMatches -> {
-                log.info("No matches found for club-id={}", clubId)
-                return MatchCardResult.NoMatches
-            }
-            is EaApiResult.Unavailable -> {
-                log.warn("EA API unavailable (HTTP {}): {}", result.statusCode, result.message)
-                return MatchCardResult.EaUnavailable
-            }
-            is EaApiResult.UnexpectedPayload -> {
-                log.error("EA API returned unexpected payload", result.cause)
-                return MatchCardResult.EaUnavailable
-            }
+        if (snapshot.presentation == null) {
+            log.debug("No cached presentation available (version={})", snapshot.version)
+            return MatchCardResult.NoMatches
         }
 
-        val latest = matches.maxByOrNull { it.timestamp }
-            ?: return MatchCardResult.NoMatches
+        log.debug("Returning cached presentation for match {} (version={})",
+            snapshot.presentation.matchId, snapshot.version)
 
-        log.info("Building match card for match {}", latest.matchId)
-        val presentation = MatchSummaryBuilder.build(latest, clubId)
-        
-        return MatchCardResult.Success(presentation)
+        return MatchCardResult.Success(snapshot.presentation)
     }
+
+    /**
+     * Returns the current cache version.
+     * Useful for clients to detect changes without fetching the full presentation.
+     */
+    fun version(): Long = latestMatchHolder.version()
 }
 

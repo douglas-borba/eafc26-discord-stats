@@ -1,8 +1,9 @@
 package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.config.WebhookConfigService
-import com.eafc26.discordstats.service.NotifyLatestService
-import com.eafc26.discordstats.service.NotifyResult
+import com.eafc26.discordstats.service.AcquisitionResult
+import com.eafc26.discordstats.service.AcquisitionTrigger
+import com.eafc26.discordstats.service.MatchAcquisitionService
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.whenever
@@ -19,7 +20,7 @@ class MatchControllerTest {
     private lateinit var webClient: WebTestClient
 
     @MockBean
-    private lateinit var notifyLatestService: NotifyLatestService
+    private lateinit var acquisitionService: MatchAcquisitionService
 
     @MockBean
     private lateinit var webhookConfigService: WebhookConfigService
@@ -48,8 +49,12 @@ class MatchControllerTest {
 
     @Test
     fun `notify-latest returns sent with summary`() {
-        whenever(notifyLatestService.notifyLatest())
-            .thenReturn(NotifyResult.Sent("Test FC 2 × 0 Opp"))
+        whenever(acquisitionService.acquire(AcquisitionTrigger.MANUAL))
+            .thenReturn(AcquisitionResult.Processed(
+                published = listOf(AcquisitionResult.MatchSummary("m1", "Test FC 2 × 0 Opp")),
+                alreadyPublished = emptyList(),
+                failed = emptyList(),
+            ))
 
         webClient.post().uri("/api/matches/notify-latest")
             .exchange()
@@ -61,8 +66,12 @@ class MatchControllerTest {
 
     @Test
     fun `notify-latest returns already_published with summary`() {
-        whenever(notifyLatestService.notifyLatest())
-            .thenReturn(NotifyResult.AlreadyPublished("Test FC 2 × 0 Opp"))
+        whenever(acquisitionService.acquire(AcquisitionTrigger.MANUAL))
+            .thenReturn(AcquisitionResult.Processed(
+                published = emptyList(),
+                alreadyPublished = listOf(AcquisitionResult.MatchSummary("m1", "Test FC 2 × 0 Opp")),
+                failed = emptyList(),
+            ))
 
         webClient.post().uri("/api/matches/notify-latest")
             .exchange()
@@ -74,7 +83,8 @@ class MatchControllerTest {
 
     @Test
     fun `notify-latest returns no_matches`() {
-        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.NoMatches)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.MANUAL))
+            .thenReturn(AcquisitionResult.NoMatches)
 
         webClient.post().uri("/api/matches/notify-latest")
             .exchange()
@@ -86,7 +96,8 @@ class MatchControllerTest {
 
     @Test
     fun `notify-latest returns ea_unavailable as 502`() {
-        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.EaUnavailable)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.MANUAL))
+            .thenReturn(AcquisitionResult.EaUnavailable(503, "Service unavailable"))
 
         webClient.post().uri("/api/matches/notify-latest")
             .exchange()
@@ -97,7 +108,12 @@ class MatchControllerTest {
 
     @Test
     fun `notify-latest returns discord_error as 502`() {
-        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.DiscordError)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.MANUAL))
+            .thenReturn(AcquisitionResult.Processed(
+                published = emptyList(),
+                alreadyPublished = emptyList(),
+                failed = listOf(AcquisitionResult.MatchFailure("m1", "Test FC 2 × 0 Opp", "Rate limited")),
+            ))
 
         webClient.post().uri("/api/matches/notify-latest")
             .exchange()
@@ -108,7 +124,8 @@ class MatchControllerTest {
 
     @Test
     fun `notify-latest returns busy as 409`() {
-        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.Busy)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.MANUAL))
+            .thenReturn(AcquisitionResult.Busy)
 
         webClient.post().uri("/api/matches/notify-latest")
             .exchange()
@@ -119,7 +136,8 @@ class MatchControllerTest {
 
     @Test
     fun `response has no summary field for no_matches`() {
-        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.NoMatches)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.MANUAL))
+            .thenReturn(AcquisitionResult.NoMatches)
 
         webClient.post().uri("/api/matches/notify-latest")
             .exchange()
@@ -130,7 +148,8 @@ class MatchControllerTest {
 
     @Test
     fun `response has no summary field for ea_unavailable`() {
-        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.EaUnavailable)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.MANUAL))
+            .thenReturn(AcquisitionResult.EaUnavailable(503, "Service unavailable"))
 
         webClient.post().uri("/api/matches/notify-latest")
             .exchange()
@@ -141,7 +160,12 @@ class MatchControllerTest {
 
     @Test
     fun `response has no summary field for discord_error`() {
-        whenever(notifyLatestService.notifyLatest()).thenReturn(NotifyResult.DiscordError)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.MANUAL))
+            .thenReturn(AcquisitionResult.Processed(
+                published = emptyList(),
+                alreadyPublished = emptyList(),
+                failed = listOf(AcquisitionResult.MatchFailure("m1", "Summary", "Error")),
+            ))
 
         webClient.post().uri("/api/matches/notify-latest")
             .exchange()
@@ -154,8 +178,10 @@ class MatchControllerTest {
 
     @Test
     fun `resend-latest returns force_sent with summary`() {
-        whenever(notifyLatestService.resendLatest())
-            .thenReturn(NotifyResult.ForceSent("Test FC 2 × 0 Opp"))
+        whenever(acquisitionService.acquire(AcquisitionTrigger.FORCE_RESEND))
+            .thenReturn(AcquisitionResult.ForceResent(
+                AcquisitionResult.MatchSummary("m1", "Test FC 2 × 0 Opp")
+            ))
 
         webClient.post().uri("/api/matches/resend-latest")
             .exchange()
@@ -168,7 +194,8 @@ class MatchControllerTest {
 
     @Test
     fun `resend-latest returns no_matches`() {
-        whenever(notifyLatestService.resendLatest()).thenReturn(NotifyResult.NoMatches)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.FORCE_RESEND))
+            .thenReturn(AcquisitionResult.NoMatches)
 
         webClient.post().uri("/api/matches/resend-latest")
             .exchange()
@@ -179,7 +206,8 @@ class MatchControllerTest {
 
     @Test
     fun `resend-latest returns ea_unavailable as 502`() {
-        whenever(notifyLatestService.resendLatest()).thenReturn(NotifyResult.EaUnavailable)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.FORCE_RESEND))
+            .thenReturn(AcquisitionResult.EaUnavailable(503, "Service unavailable"))
 
         webClient.post().uri("/api/matches/resend-latest")
             .exchange()
@@ -190,7 +218,12 @@ class MatchControllerTest {
 
     @Test
     fun `resend-latest returns discord_error as 502`() {
-        whenever(notifyLatestService.resendLatest()).thenReturn(NotifyResult.DiscordError)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.FORCE_RESEND))
+            .thenReturn(AcquisitionResult.Processed(
+                published = emptyList(),
+                alreadyPublished = emptyList(),
+                failed = listOf(AcquisitionResult.MatchFailure("m1", "Summary", "Discord error")),
+            ))
 
         webClient.post().uri("/api/matches/resend-latest")
             .exchange()
@@ -201,7 +234,8 @@ class MatchControllerTest {
 
     @Test
     fun `resend-latest returns busy as 409`() {
-        whenever(notifyLatestService.resendLatest()).thenReturn(NotifyResult.Busy)
+        whenever(acquisitionService.acquire(AcquisitionTrigger.FORCE_RESEND))
+            .thenReturn(AcquisitionResult.Busy)
 
         webClient.post().uri("/api/matches/resend-latest")
             .exchange()
@@ -210,17 +244,55 @@ class MatchControllerTest {
             .jsonPath("$.status").isEqualTo("busy")
     }
 
-    // -- notify-latest with ForceSent (should not happen but handle gracefully) --
+    // -- Webhook not configured --
 
     @Test
-    fun `notify-latest handles ForceSent result gracefully`() {
-        whenever(notifyLatestService.notifyLatest())
-            .thenReturn(NotifyResult.ForceSent("Test FC 2 × 0 Opp"))
+    fun `notify-latest returns webhook_not_configured as 502`() {
+        whenever(acquisitionService.acquire(AcquisitionTrigger.MANUAL))
+            .thenReturn(AcquisitionResult.WebhookNotConfigured)
+
+        webClient.post().uri("/api/matches/notify-latest")
+            .exchange()
+            .expectStatus().isEqualTo(502)
+            .expectBody()
+            .jsonPath("$.status").isEqualTo("webhook_not_configured")
+    }
+
+    // -- Persistence error --
+
+    @Test
+    fun `notify-latest returns sent_persistence_error when persistence fails`() {
+        whenever(acquisitionService.acquire(AcquisitionTrigger.MANUAL))
+            .thenReturn(AcquisitionResult.Processed(
+                published = listOf(AcquisitionResult.MatchSummary("m1", "Test FC 2 × 0 Opp", persistedSuccessfully = false)),
+                alreadyPublished = emptyList(),
+                failed = emptyList(),
+            ))
 
         webClient.post().uri("/api/matches/notify-latest")
             .exchange()
             .expectStatus().isOk
             .expectBody()
-            .jsonPath("$.status").isEqualTo("force_sent")
+            .jsonPath("$.status").isEqualTo("sent_persistence_error")
+            .jsonPath("$.summary").isEqualTo("Test FC 2 × 0 Opp")
+    }
+
+    // -- Baseline established --
+
+    @Test
+    fun `notify-latest returns baseline_established when first run`() {
+        whenever(acquisitionService.acquire(AcquisitionTrigger.MANUAL))
+            .thenReturn(AcquisitionResult.Processed(
+                published = emptyList(),
+                alreadyPublished = emptyList(),
+                failed = emptyList(),
+                baselineEstablished = true,
+            ))
+
+        webClient.post().uri("/api/matches/notify-latest")
+            .exchange()
+            .expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.status").isEqualTo("baseline_established")
     }
 }

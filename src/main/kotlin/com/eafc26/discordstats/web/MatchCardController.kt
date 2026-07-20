@@ -3,7 +3,6 @@ package com.eafc26.discordstats.web
 import com.eafc26.discordstats.presentation.MatchSummaryPresentation
 import com.eafc26.discordstats.service.MatchCardService
 import org.springframework.core.io.ClassPathResource
-import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -32,18 +31,14 @@ class MatchCardController(
                         ResponseEntity.ok(MatchCardResponse(
                             status = "success",
                             presentation = result.presentation,
+                            version = matchCardService.version(),
                         ))
                     MatchCardService.MatchCardResult.NoMatches ->
                         ResponseEntity.ok(MatchCardResponse(
                             status = "no_matches",
-                            message = "Nenhuma partida encontrada.",
+                            message = "Nenhuma partida encontrada. Aguarde a primeira aquisição.",
+                            version = matchCardService.version(),
                         ))
-                    MatchCardService.MatchCardResult.EaUnavailable ->
-                        ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                            .body(MatchCardResponse(
-                                status = "ea_unavailable",
-                                message = "API da EA indisponível. Tente novamente mais tarde.",
-                            ))
                 }
             }
 }
@@ -52,5 +47,6 @@ data class MatchCardResponse(
     val status: String,
     val message: String? = null,
     val presentation: MatchSummaryPresentation? = null,
+    val version: Long? = null,
 )
 

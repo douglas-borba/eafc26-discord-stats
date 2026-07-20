@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.config.WebhookConfigService
+import com.eafc26.discordstats.service.MatchAcquisitionService
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
@@ -15,7 +16,7 @@ class SetupRedirectFilterTest {
     private lateinit var webClient: WebTestClient
 
     @MockBean
-    private lateinit var notifyLatestService: com.eafc26.discordstats.service.NotifyLatestService
+    private lateinit var acquisitionService: MatchAcquisitionService
 
     @MockBean
     private lateinit var webhookConfigService: WebhookConfigService
