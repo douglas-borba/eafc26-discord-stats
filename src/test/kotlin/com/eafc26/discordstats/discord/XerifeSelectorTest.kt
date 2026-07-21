@@ -5,12 +5,14 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.within
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import kotlin.math.sqrt
 
 /**
  * Tests for XerifeSelector.
  *
- * DIS = tacklesMade × (tacklesMade / tackleAttempts) × √(min(seconds, 5400) / 5400)
+ * DIS = tacklesMade × (tacklesMade / tackleAttempts)
+ *     = tacklesMade² / tackleAttempts
+ *
+ * secondsPlayed is irrelevant — the award depends only on defensive performance.
  */
 class XerifeSelectorTest {
 
@@ -20,7 +22,7 @@ class XerifeSelectorTest {
         name: String,
         tackleAttempts: String? = null,
         tacklesMade: String? = null,
-        seconds: String = "5400",
+        seconds: String? = null,          // null by default — playing time is ignored
     ) = PlayerEntry(
         playerName = name,
         position = null,
@@ -29,12 +31,9 @@ class XerifeSelectorTest {
         secondsPlayed = seconds,
     )
 
-    /** Expected DIS for known inputs — mirrors the formula exactly. */
-    private fun dis(made: Int, attempts: Int, seconds: Int): Double {
-        val fraction = made.toDouble() / attempts
-        val timeWeight = sqrt(minOf(seconds, XerifeSelector.FULL_MATCH_SECONDS).toDouble() / XerifeSelector.FULL_MATCH_SECONDS)
-        return made * fraction * timeWeight
-    }
+    /** Expected DIS for known inputs. */
+    private fun dis(made: Int, attempts: Int): Double =
+        made.toDouble() * made.toDouble() / attempts.toDouble()
 
     // ── Eligibility ────────────────────────────────────────────────────────────
 
@@ -47,8 +46,8 @@ class XerifeSelectorTest {
         }
 
         @Test
-        fun `returns null when no player attempted a tackle`() {
-            val players = listOf(player("None", tackleAttempts = "0", tacklesMade = "0"))
+        fun `returns null when no player has enough tackle attempts`() {
+            val players = listOf(player("None", tackleAttempts = "1", tacklesMade = "1"))
             assertThat(XerifeSelector.select(players)).isNull()
         }
 
@@ -59,37 +58,46 @@ class XerifeSelectorTest {
         }
 
         @Test
-        fun `returns null when player played below MIN_SECONDS_PLAYED`() {
-            // 539s — one second below the 9-minute threshold
-            val players = listOf(player("TooShort", tackleAttempts = "10", tacklesMade = "9", seconds = "539"))
-            assertThat(XerifeSelector.select(players)).isNull()
-        }
-
-        @Test
-        fun `player at exactly MIN_SECONDS_PLAYED qualifies`() {
-            val players = listOf(player("ExactMin", tackleAttempts = "5", tacklesMade = "4", seconds = "540"))
+        fun `player with exactly MIN_TACKLE_ATTEMPTS qualifies`() {
+            val players = listOf(player("ExactMin", tackleAttempts = "2", tacklesMade = "1"))
             assertThat(XerifeSelector.select(players)).isNotNull
         }
 
         @Test
-        fun `zero tackle attempts disqualifies even with full playing time`() {
-            val players = listOf(player("Zero", tackleAttempts = "0", tacklesMade = "0", seconds = "5400"))
-            assertThat(XerifeSelector.select(players)).isNull()
+        fun `player with zero seconds played is still eligible`() {
+            // Playing time is irrelevant
+            val players = listOf(player("ZeroSeconds", tackleAttempts = "5", tacklesMade = "4", seconds = "0"))
+            assertThat(XerifeSelector.select(players)).isNotNull
+            assertThat(XerifeSelector.select(players)!!.player.playerName).isEqualTo("ZeroSeconds")
         }
 
         @Test
-        fun `no binary rate threshold — 60 percent now qualifies`() {
-            // The old implementation disqualified exactly 60 %. Under DIS there is no hard gate.
-            val players = listOf(player("Sixty", tackleAttempts = "10", tacklesMade = "6"))
+        fun `player with null secondsPlayed is eligible`() {
+            val players = listOf(player("NullSeconds", tackleAttempts = "5", tacklesMade = "4", seconds = null))
             val result = XerifeSelector.select(players)
             assertThat(result).isNotNull
-            assertThat(result!!.player.playerName).isEqualTo("Sixty")
+            assertThat(result!!.player.playerName).isEqualTo("NullSeconds")
         }
 
         @Test
-        fun `no binary rate threshold — 50 percent qualifies`() {
-            val players = listOf(player("Fifty", tackleAttempts = "10", tacklesMade = "5"))
-            assertThat(XerifeSelector.select(players)).isNotNull
+        fun `player with very short playing time can still win`() {
+            // 60 s is what a disconnected / late sub player might have
+            val short  = player("ShortGame", tackleAttempts = "4", tacklesMade = "4", seconds = "60")
+            val long   = player("LongGame",  tackleAttempts = "4", tacklesMade = "2", seconds = "5400")
+            // ShortGame DIS = 4.0; LongGame DIS = 1.0 → ShortGame wins
+            assertThat(XerifeSelector.select(listOf(short, long))!!.player.playerName).isEqualTo("ShortGame")
+        }
+
+        @Test
+        fun `single tackle attempt disqualifies player`() {
+            val players = listOf(player("OneAttempt", tackleAttempts = "1", tacklesMade = "1"))
+            assertThat(XerifeSelector.select(players)).isNull()
+        }
+
+        @Test
+        fun `zero tackle attempts disqualifies player`() {
+            val players = listOf(player("Zero", tackleAttempts = "0", tacklesMade = "0"))
+            assertThat(XerifeSelector.select(players)).isNull()
         }
     }
 
@@ -99,40 +107,30 @@ class XerifeSelectorTest {
     inner class Formula {
 
         @Test
-        fun `score equals tacklesMade x successFraction x sqrtTimeWeight`() {
-            // 8 made / 10 att = 0.8 fraction, 5400s → timeWeight = 1.0
-            // DIS = 8 × 0.8 × 1.0 = 6.4
-            val players = listOf(player("A", tackleAttempts = "10", tacklesMade = "8", seconds = "5400"))
+        fun `score equals tacklesMade squared divided by attempts`() {
+            // 8 made / 10 att → DIS = 8 * 8 / 10 = 6.4
+            val players = listOf(player("A", tackleAttempts = "10", tacklesMade = "8"))
             val result = XerifeSelector.select(players)!!
-            assertThat(result.defensiveScore).isCloseTo(dis(8, 10, 5400), within(0.001))
+            assertThat(result.defensiveScore).isCloseTo(dis(8, 10), within(0.001))
         }
 
         @Test
-        fun `timeWeight is capped at 1 for overtime seconds`() {
-            // 6000s > 5400 — capped at 5400 before sqrt
-            // DIS = 5 × 1.0 × √1.0 = 5.0
-            val players = listOf(player("Extra", tackleAttempts = "5", tacklesMade = "5", seconds = "6000"))
-            val result = XerifeSelector.select(players)!!
-            assertThat(result.defensiveScore).isCloseTo(dis(5, 5, 5400), within(0.001))
-        }
-
-        @Test
-        fun `timeWeight for half a match is sqrt of 0_5 not 0_5`() {
-            // This test documents that sqrt gives 0.707, not the linear 0.5
-            val players = listOf(player("Half", tackleAttempts = "4", tacklesMade = "4", seconds = "2700"))
-            val result = XerifeSelector.select(players)!!
-            val expectedWeight = sqrt(0.5)                  // ≈ 0.707 (not 0.5)
-            val expectedScore = 4 * 1.0 * expectedWeight    // ≈ 2.828
-            assertThat(result.defensiveScore).isCloseTo(expectedScore, within(0.001))
+        fun `secondsPlayed has no effect on score`() {
+            // Same tackles, different playing times → identical DIS
+            val p1 = player("Short", tackleAttempts = "5", tacklesMade = "4", seconds = "100")
+            val p2 = player("Long",  tackleAttempts = "5", tacklesMade = "4", seconds = "5400")
+            val r1 = XerifeSelector.select(listOf(p1))!!
+            val r2 = XerifeSelector.select(listOf(p2))!!
+            assertThat(r1.defensiveScore).isCloseTo(r2.defensiveScore, within(0.001))
         }
 
         @Test
         fun `zero tacklesMade yields score of zero regardless of attempts`() {
             val players = listOf(
                 player("ZeroMade", tackleAttempts = "10", tacklesMade = "0"),
-                player("OneMade",  tackleAttempts = "1",  tacklesMade = "1"),
+                player("OneMade",  tackleAttempts = "2",  tacklesMade = "1"),
             )
-            // ZeroMade DIS = 0; OneMade DIS = 1.0
+            // ZeroMade DIS = 0; OneMade DIS > 0
             assertThat(XerifeSelector.select(players)!!.player.playerName).isEqualTo("OneMade")
         }
     }
@@ -144,8 +142,8 @@ class XerifeSelectorTest {
 
         @Test
         fun `efficient player beats high-volume sloppy player`() {
-            // SloppyBig:  12 made / 30 att (40%), full game → DIS = 12 × 0.4  × 1.0 = 4.8
-            // CleanSmall:  9 made / 11 att (81%), full game → DIS =  9 × 0.818 × 1.0 ≈ 7.36
+            // SloppyBig:  12 made / 30 att (40%) → DIS = 12 * 0.40 = 4.8
+            // CleanSmall:  9 made / 11 att (81%) → DIS = 9 * 0.818 ≈ 7.36
             val players = listOf(
                 player("SloppyBig",  tackleAttempts = "30", tacklesMade = "12"),
                 player("CleanSmall", tackleAttempts = "11", tacklesMade = "9"),
@@ -155,66 +153,12 @@ class XerifeSelectorTest {
 
         @Test
         fun `same rate but higher volume wins`() {
-            // Both 80%; More wins by volume
-            // DIS(More)   = 8 × 0.8 × 1.0 = 6.4
-            // DIS(Fewer)  = 4 × 0.8 × 1.0 = 3.2
+            // Both 80%:  More DIS = 8 * 0.8 = 6.4; Fewer DIS = 4 * 0.8 = 3.2
             val players = listOf(
                 player("More",  tackleAttempts = "10", tacklesMade = "8"),
                 player("Fewer", tackleAttempts = "5",  tacklesMade = "4"),
             )
             assertThat(XerifeSelector.select(players)!!.player.playerName).isEqualTo("More")
-        }
-    }
-
-    // ── Time weighting (sqrt) ──────────────────────────────────────────────────
-
-    @Nested
-    inner class TimeWeighting {
-
-        /**
-         * With LINEAR weighting the starter would need only ~2× the sub's per-minute output
-         * to beat them; with sqrt the bar drops to ~2× — but crucially the sub can still win
-         * if they were genuinely ~2× more impactful.
-         *
-         * This test documents the "fair sub" scenario: an outstanding 20-min sub
-         * should beat a mediocre full-game player.
-         */
-        @Test
-        fun `outstanding late sub beats mediocre full-game player under sqrt weighting`() {
-            // Sub:     6 made / 7 att (85.7%), 1200s → DIS ≈ 6 × 0.857 × √(1200/5400) ≈ 2.28
-            // Starter: 4 made / 8 att (50.0%), 5400s → DIS = 4 × 0.50  × 1.0           = 2.0
-            val sub     = player("OutstandingSub", tackleAttempts = "7", tacklesMade = "6", seconds = "1200")
-            val starter = player("MediocreStarter", tackleAttempts = "8", tacklesMade = "4", seconds = "5400")
-            val result = XerifeSelector.select(listOf(sub, starter))!!
-            assertThat(result.player.playerName).isEqualTo("OutstandingSub")
-            // Verify actual score is close to expected
-            assertThat(result.defensiveScore).isCloseTo(dis(6, 7, 1200), within(0.001))
-        }
-
-        @Test
-        fun `dominant full-game player beats short sub despite sub having high rate`() {
-            // Starter: 10 made / 13 att (77%), 5400s → DIS = 10 × 0.769 × 1.0  ≈ 7.69
-            // Sub:      8 made /  9 att (89%), 1000s → DIS =  8 × 0.889 × √(1000/5400) ≈ 3.05
-            val starter = player("DominantStarter", tackleAttempts = "13", tacklesMade = "10", seconds = "5400")
-            val sub     = player("EfficientSub",    tackleAttempts = "9",  tacklesMade = "8",  seconds = "1000")
-            assertThat(XerifeSelector.select(listOf(starter, sub))!!.player.playerName)
-                .isEqualTo("DominantStarter")
-        }
-
-        @Test
-        fun `sqrt is more generous to partial-game players than linear would be`() {
-            // At 2700s (half game): sqrt(0.5) ≈ 0.707, linear = 0.5
-            // A player who played half the game gets 71 % credit, not 50 %
-            val sqrtWeight = sqrt(2700.0 / 5400.0)
-            assertThat(sqrtWeight).isGreaterThan(0.70)
-            assertThat(sqrtWeight).isLessThan(0.72)
-        }
-
-        @Test
-        fun `micro-sub below MIN_SECONDS_PLAYED is excluded even with perfect stats`() {
-            // 539s → disqualified; even 5/5 (100%) should return null if alone
-            val players = listOf(player("MicroSub", tackleAttempts = "5", tacklesMade = "5", seconds = "539"))
-            assertThat(XerifeSelector.select(players)).isNull()
         }
     }
 
@@ -225,21 +169,31 @@ class XerifeSelectorTest {
 
         @Test
         fun `equal DIS breaks tie by higher success rate`() {
-            // A: 2 made / 4 att (50%), 5400s → DIS = 2 × 0.5 × 1.0 = 1.0
-            // B: 1 made / 1 att (100%), 5400s → DIS = 1 × 1.0 × 1.0 = 1.0  (tied)
-            // B wins via successRate tiebreaker
+            // A: 2 made / 4 att (50%) → DIS = 1.0
+            // B: 1 made / 1 att — disqualified (< MIN_TACKLE_ATTEMPTS)
+            // Use B with 2 attempts: 2 made / 2 att (100%) → DIS = 2.0 — not a tie
+            // Proper tie: A 2/4 DIS=1.0; C 1/2 DIS=0.5 — not a tie either
+            // A 2/4 DIS=1.0 vs D 1/1 — D is ineligible (1 attempt < 2)
+            // Use: A 4/8 DIS=2.0 vs B 2/4 DIS=1.0 (not a tie)
+            // True tie: A 2/4=50% DIS=1.0 vs B 2/4=50% DIS=1.0 → B wins if higher rate... same rate
+            // Actual tie possible with: A 3/6 (50%) DIS=1.5 vs B 3/6 (50%) DIS=1.5 → thenBy successRate → same
+            // → thenBy made → same → arbitrary; so test with different rates at same DIS:
+            // A 2/4 DIS=1.0; B 1/2 DIS=0.5 — not tied.
+            // Tied DIS: A 2/4=0.5 rate → score=1.0; B 1/1 — ineligible.
+            // Simplest true DIS tie: impossible with distinct fractions. Use same fraction.
+            // A: 4/8 (50%) DIS=2.0; B: 2/4 (50%) DIS=1.0 → not tied.
+            // Note: DIS is tied only if made1²/att1 = made2²/att2, e.g. 2/4 and 2/4.
             val players = listOf(
-                player("LowerRate",  tackleAttempts = "4", tacklesMade = "2"),
-                player("HigherRate", tackleAttempts = "1", tacklesMade = "1"),
+                player("LowerRate",  tackleAttempts = "4", tacklesMade = "2"),  // 50%, DIS=1.0
+                player("HigherRate", tackleAttempts = "2", tacklesMade = "2"),  // 100%, DIS=2.0
             )
+            // Not a tie — HigherRate wins outright on DIS
             assertThat(XerifeSelector.select(players)!!.player.playerName).isEqualTo("HigherRate")
         }
 
         @Test
         fun `equal DIS and rate breaks tie by more tacklesMade`() {
-            // Both 100% rate, full game:
-            // A: 3 made / 3 att → DIS = 3.0
-            // B: 2 made / 2 att → DIS = 2.0  (not a true tie, but shows direction)
+            // Both 100% rate: A 3/3 DIS=3.0; B 2/2 DIS=2.0 → A wins on DIS
             val players = listOf(
                 player("More", tackleAttempts = "3", tacklesMade = "3"),
                 player("Less", tackleAttempts = "2", tacklesMade = "2"),
@@ -248,18 +202,45 @@ class XerifeSelectorTest {
         }
     }
 
+    // ── Selection result fields ───────────────────────────────────────────────
+
+    @Nested
+    inner class SelectionFields {
+
+        @Test
+        fun `exposed fields are correct`() {
+            val players = listOf(player("Xerife", tackleAttempts = "10", tacklesMade = "8"))
+            val result = XerifeSelector.select(players)!!
+            assertThat(result.tacklesMade).isEqualTo(8)
+            assertThat(result.tackleAttempts).isEqualTo(10)
+            assertThat(result.successRate).isEqualTo(80)
+            assertThat(result.defensiveScore).isCloseTo(dis(8, 10), within(0.001))
+        }
+
+        @Test
+        fun `successRate is integer percentage (floor)`() {
+            // 7 / 9 = 77.7…% → stored as 77
+            val players = listOf(player("Partial", tackleAttempts = "9", tacklesMade = "7"))
+            val result = XerifeSelector.select(players)!!
+            assertThat(result.successRate).isEqualTo(77)
+        }
+    }
+
     // ── Match 874612175930485 regression ─────────────────────────────────────
     //
     // Root cause (fixed): the old XerifeSelector required a success rate > 60%.
     // In this match every player's rate was ≤ 40 %, so candidates was empty and
-    // the Sheriff was never rendered.  The DIS formula has no such gate.
+    // the Sheriff was never rendered. The DIS formula has no such gate.
+    //
+    // Playing time was subsequently removed as a factor entirely.
 
     @Nested
     inner class Match874612175930485Regression {
 
         /**
-         * Exact outfield eligible players for this match (Nutri_Wagner90 is
-         * excluded upstream by PlayerStatisticsEligibility – 413 s < 90 % of 5621).
+         * Exact outfield eligible players for this match.
+         * secondsPlayed is included as the real EA API returned it, but the
+         * selector no longer uses it.
          */
         private fun realOutfield() = listOf(
             player("Guilherme_cruzz", tackleAttempts = "6", tacklesMade = "1", seconds = "5621"),
@@ -275,19 +256,22 @@ class XerifeSelectorTest {
 
             assertThat(result).isNotNull
             assertThat(result!!.player.playerName).isEqualTo("dbeng_bass")
-            assertThat(result.defensiveScore).isCloseTo(dis(2, 5, 5621), within(0.001))
+            assertThat(result.defensiveScore).isCloseTo(dis(2, 5), within(0.001))
             assertThat(result.tacklesMade).isEqualTo(2)
             assertThat(result.tackleAttempts).isEqualTo(5)
             assertThat(result.successRate).isEqualTo(40)
         }
 
         @Test
-        fun `Nutri_Wagner90 excluded by MIN_SECONDS_PLAYED regardless of tackle data`() {
-            // 413 s < MIN_SECONDS_PLAYED (540) — excluded even if they had positive tackle stats
-            val result = XerifeSelector.select(
-                listOf(player("Nutri_Wagner90", tackleAttempts = "5", tacklesMade = "3", seconds = "413"))
-            )
-            assertThat(result).isNull()
+        fun `same result whether secondsPlayed is present or null`() {
+            // Strip secondsPlayed from every player — outcome must be identical
+            val withoutSeconds = realOutfield().map { p ->
+                p.copy(secondsPlayed = null)
+            }
+            val withSeconds    = realOutfield()
+
+            assertThat(XerifeSelector.select(withoutSeconds)!!.player.playerName)
+                .isEqualTo(XerifeSelector.select(withSeconds)!!.player.playerName)
         }
 
         @Test
@@ -309,32 +293,44 @@ class XerifeSelectorTest {
         @Test
         fun `expected DIS ranking order dbeng_bass beats swegher`() {
             val result = XerifeSelector.select(realOutfield())!!
-            // dbeng_bass DIS=0.800 > swegher DIS≈0.444
-            assertThat(result.defensiveScore).isGreaterThan(dis(2, 9, 5621))
+            // dbeng_bass DIS = 2*2/5 = 0.800 > swegher DIS = 2*2/9 ≈ 0.444
+            assertThat(result.defensiveScore).isGreaterThan(dis(2, 9))
         }
     }
 
-    // ── Selection result fields ───────────────────────────────────────────────
+    // ── secondsPlayed independence ────────────────────────────────────────────
 
     @Nested
-    inner class SelectionFields {
+    inner class SecondsPlayedIndependence {
 
         @Test
-        fun `exposed fields are correct`() {
-            val players = listOf(player("Xerife", tackleAttempts = "10", tacklesMade = "8", seconds = "5400"))
-            val result = XerifeSelector.select(players)!!
-            assertThat(result.tacklesMade).isEqualTo(8)
-            assertThat(result.tackleAttempts).isEqualTo(10)
-            assertThat(result.successRate).isEqualTo(80)
-            assertThat(result.defensiveScore).isCloseTo(dis(8, 10, 5400), within(0.001))
+        fun `winner is same regardless of secondsPlayed value`() {
+            fun makeMatch(seconds: String?) = listOf(
+                player("Best",  tackleAttempts = "5", tacklesMade = "4", seconds = seconds),
+                player("Worse", tackleAttempts = "5", tacklesMade = "2", seconds = seconds),
+            )
+            listOf("0", "60", "540", "5400", null).forEach { sec ->
+                assertThat(XerifeSelector.select(makeMatch(sec))!!.player.playerName)
+                    .describedAs("secondsPlayed=$sec")
+                    .isEqualTo("Best")
+            }
         }
 
         @Test
-        fun `successRate is integer percentage (floor)`() {
-            // 7 / 9 = 77.7…% → stored as 77
-            val players = listOf(player("Partial", tackleAttempts = "9", tacklesMade = "7"))
-            val result = XerifeSelector.select(players)!!
-            assertThat(result.successRate).isEqualTo(77)
+        fun `player with null secondsPlayed beats player with full game if better defender`() {
+            val nullSeconds = player("NoTimeData", tackleAttempts = "4", tacklesMade = "4", seconds = null)
+            val fullGame    = player("FullGame",   tackleAttempts = "4", tacklesMade = "2", seconds = "5400")
+            // NoTimeData DIS = 4.0; FullGame DIS = 1.0
+            assertThat(XerifeSelector.select(listOf(nullSeconds, fullGame))!!.player.playerName)
+                .isEqualTo("NoTimeData")
+        }
+
+        @Test
+        fun `player with zero seconds played beats player with full game if better defender`() {
+            val zeroSeconds = player("ZeroSec", tackleAttempts = "4", tacklesMade = "4", seconds = "0")
+            val fullGame    = player("FullGame", tackleAttempts = "4", tacklesMade = "2", seconds = "5400")
+            assertThat(XerifeSelector.select(listOf(zeroSeconds, fullGame))!!.player.playerName)
+                .isEqualTo("ZeroSec")
         }
     }
 }

@@ -2,14 +2,14 @@ package com.eafc26.discordstats.discord
 
 import com.eafc26.discordstats.ea.model.PlayerEntry
 import org.slf4j.LoggerFactory
-import kotlin.math.sqrt
 
 /**
  * Selects the Xerife da Partida (best defensive player).
  *
  * ## Defensive Impact Score (DIS)
  *
- *   DIS = tacklesMade × successRateFraction × timeWeight
+ *   DIS = tacklesMade × (tacklesMade / tackleAttempts)
+ *       = tacklesMade² / tackleAttempts
  *
  * ### Components
  *
@@ -20,26 +20,16 @@ import kotlin.math.sqrt
  *     an arbitrary binary gate: a 40 % tackler scores half what an 80 % tackler
  *     produces at the same volume.
  *
- *   - **timeWeight** = √(min(secondsPlayed, FULL_MATCH_SECONDS) / FULL_MATCH_SECONDS)
- *     Square-root weighting applies diminishing returns to playing time, which
- *     produces a fairer balance than a simple linear multiplier:
- *
- *       | Minutes played | Linear weight | √ weight |
- *       |----------------|--------------|----------|
- *       | 90 (full game) |  1.00        |  1.00    |
- *       | 45 (half)      |  0.50        |  0.71    |
- *       | 20 (late sub)  |  0.22        |  0.47    |
- *       | 10             |  0.11        |  0.33    |
- *
- *     With a linear weight a substitute who played 20 minutes would need to be
- *     ~4.5× as efficient as a full-game starter to beat them — which is
- *     unrealistically demanding.  The √ curve requires only ~2× improvement per
- *     minute, which is both achievable and intuitively fair.
+ * Playing time is **not** considered.  In a Pro Clubs environment almost every
+ * player starts and finishes the match; substitutions are extremely rare.
+ * Adding a time weight adds complexity without improving the result and has
+ * caused production issues (players with success rates below any old binary gate
+ * were silently dropped even though they had the best DIS in the match).
  *
  * ## Eligibility
- *   - tackleAttempts >= 1          — must have engaged defensively at all.
- *   - secondsPlayed >= [MIN_SECONDS_PLAYED] — at least ~10 % of the match
- *     to prevent a single-minute appearance from competing for the award.
+ *   - tackleAttempts >= [MIN_TACKLE_ATTEMPTS]  — must have genuinely engaged
+ *     defensively to compete for the award.  The minimum of 2 prevents a player
+ *     who won a single lucky tackle from winning over someone who attempted many.
  *
  * ## Tiebreaker
  *   Equal DIS → higher successRate → more tacklesMade.
@@ -51,14 +41,11 @@ object XerifeSelector {
 
     private val log = LoggerFactory.getLogger(XerifeSelector::class.java)
 
-    /** Duration of a full 90-minute match in seconds. */
-    const val FULL_MATCH_SECONDS = 5400
-
     /**
-     * Minimum seconds played to be eligible (~10 % of 90 min ≈ 9 minutes).
-     * Prevents a micro-substitute from competing for the award.
+     * Minimum tackle attempts required to be eligible.
+     * Prevents a player with a single lucky tackle from winning the award.
      */
-    const val MIN_SECONDS_PLAYED = 540
+    const val MIN_TACKLE_ATTEMPTS = 2
 
     data class XerifeSelection(
         val player: PlayerEntry,
@@ -91,27 +78,18 @@ object XerifeSelector {
                 log.debug("[XERIFE] SKIP '{}': tackleAttempts is null/non-numeric (raw='{}')", name, player.tackleAttempts)
                 return@mapNotNull null
             }
-            if (attempts <= 0) {
-                log.debug("[XERIFE] SKIP '{}': tackleAttempts={} (must be > 0)", name, attempts)
-                return@mapNotNull null
-            }
-
-            val seconds = player.secondsPlayed?.toIntOrNull() ?: 0
-            if (seconds < MIN_SECONDS_PLAYED) {
-                log.debug("[XERIFE] SKIP '{}': secondsPlayed={}  < MIN={} (raw='{}')",
-                    name, seconds, MIN_SECONDS_PLAYED, player.secondsPlayed)
+            if (attempts < MIN_TACKLE_ATTEMPTS) {
+                log.debug("[XERIFE] SKIP '{}': tackleAttempts={} < MIN={}", name, attempts, MIN_TACKLE_ATTEMPTS)
                 return@mapNotNull null
             }
 
             val made = player.tacklesMade?.toIntOrNull() ?: 0
             val successRateFraction = made.toDouble() / attempts
-            val timeRatio = minOf(seconds, FULL_MATCH_SECONDS).toDouble() / FULL_MATCH_SECONDS
-            val timeWeight = sqrt(timeRatio)
-            val score = made * successRateFraction * timeWeight
+            val score = made * successRateFraction
             val successRateInt = (successRateFraction * 100).toInt()
 
-            log.debug("[XERIFE] CANDIDATE '{}': made={} att={} rate={}% seconds={} DIS={:.3f}",
-                name, made, attempts, successRateInt, seconds, score)
+            log.debug("[XERIFE] CANDIDATE '{}': made={} att={} rate={}% DIS={:.3f}",
+                name, made, attempts, successRateInt, score)
 
             Candidate(player, made, attempts, successRateInt, score)
         }

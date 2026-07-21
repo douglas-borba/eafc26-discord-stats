@@ -909,10 +909,12 @@ class DiscordEmbedBuilderTest {
     // Root cause (fixed): the old XerifeSelector required success rate > 60%.
     // Every player in this match had a rate ≤ 40 %, so no Sheriff was ever rendered.
     // The DIS formula replaced the binary gate; dbeng_bass (DIS=0.800) now wins.
+    //
+    // Playing time is no longer part of Sheriff eligibility.
 
     @Test
     fun `match 874612175930485 - Sheriff is dbeng_bass`() {
-        val embed = buildMatch874612175930485().embeds[0]
+        val embed = buildMatch874612175930485(withSeconds = true).embeds[0]
         val xerifeField = embed.fields.firstOrNull { it.name == "🚧 XERIFE DA PARTIDA" }
         assertThat(xerifeField).describedAs("Xerife field must be present").isNotNull
         assertThat(xerifeField!!.value).contains("dbeng_bass")
@@ -921,19 +923,28 @@ class DiscordEmbedBuilderTest {
     }
 
     @Test
+    fun `match 874612175930485 - Sheriff is dbeng_bass even when secondsPlayed is null`() {
+        // secondsPlayed is no longer part of Sheriff eligibility
+        val embed = buildMatch874612175930485(withSeconds = false).embeds[0]
+        val xerifeField = embed.fields.firstOrNull { it.name == "🚧 XERIFE DA PARTIDA" }
+        assertThat(xerifeField).describedAs("Xerife field must be present with null secondsPlayed").isNotNull
+        assertThat(xerifeField!!.value).contains("dbeng_bass")
+    }
+
+    @Test
     fun `match 874612175930485 - Constant Danger is absent - max shots is 2`() {
-        val embed = buildMatch874612175930485().embeds[0]
+        val embed = buildMatch874612175930485(withSeconds = true).embeds[0]
         assertThat(embed.fields.none { it.name == "🔥 PERIGO CONSTANTE" }).isTrue()
     }
 
-    private fun buildMatch874612175930485(): DiscordPayload {
+    private fun buildMatch874612175930485(withSeconds: Boolean = true): DiscordPayload {
         fun p(
             name: String,
             rating: String,
             shots: String,
             tackleAttempts: String,
             tacklesMade: String,
-            secondsPlayed: String,
+            secondsPlayed: String?,
         ) = PlayerEntry(
             playerName = name,
             position = "14",
@@ -947,6 +958,8 @@ class DiscordEmbedBuilderTest {
             passesMade = "15",
             passAttempts = "20",
         )
+
+        val sec: (String) -> String? = { s -> if (withSeconds) s else null }
 
         val match = MatchResponse(
             matchId = "874612175930485",
@@ -965,12 +978,12 @@ class DiscordEmbedBuilderTest {
             ),
             players = mapOf(
                 ourClubId to mapOf(
-                    "p1" to p("Guilherme_cruzz", "7.80", "2", "6", "1", "5621"),
-                    "p2" to p("dbeng_bass",      "8.30", "2", "5", "2", "5621"),
-                    "p3" to p("swegher",         "7.00", "0", "9", "2", "5621"),
-                    "p4" to p("joaoborba07",     "6.90", "2", "5", "0", "5621"),
-                    "p5" to p("Nutri_Wagner90",  "6.00", "0", "0", "0", "413"),
-                    "p6" to p("paulorodrigues0", "7.00", "0", "7", "1", "5621"),
+                    "p1" to p("Guilherme_cruzz", "7.80", "2", "6", "1", sec("5621")),
+                    "p2" to p("dbeng_bass",      "8.30", "2", "5", "2", sec("5621")),
+                    "p3" to p("swegher",         "7.00", "0", "9", "2", sec("5621")),
+                    "p4" to p("joaoborba07",     "6.90", "2", "5", "0", sec("5621")),
+                    "p5" to p("Nutri_Wagner90",  "6.00", "0", "0", "0", sec("413")),
+                    "p6" to p("paulorodrigues0", "7.00", "0", "7", "1", sec("5621")),
                 ),
             ),
         )

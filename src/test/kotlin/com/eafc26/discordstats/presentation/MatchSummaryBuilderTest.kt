@@ -261,6 +261,8 @@ class MatchSummaryBuilderTest {
     //
     // Before the DIS refactor, XerifeSelector required success rate > 60%.
     // All players in this match had rates ≤ 40 %, so the Sheriff was never rendered.
+    //
+    // Playing time is no longer part of Sheriff eligibility.
 
     @Nested
     inner class Match874612175930485Pipeline {
@@ -274,7 +276,7 @@ class MatchSummaryBuilderTest {
             shots: String,
             tackleAttempts: String,
             tacklesMade: String,
-            secondsPlayed: String,
+            secondsPlayed: String?,
         ) = PlayerEntry(
             playerName = name,
             position = "14",
@@ -289,42 +291,54 @@ class MatchSummaryBuilderTest {
             passAttempts = "20",
         )
 
-        private fun buildRealMatch(): MatchResponse = MatchResponse(
-            matchId = matchId,
-            timestamp = 1753027200L,
-            clubs = mapOf(
-                ourClubId to ClubMatchEntry(
-                    details = ClubDetails(name = "Associação BF"),
-                    score = "3",
-                    result = "1",
+        private fun buildRealMatch(withSeconds: Boolean = true): MatchResponse {
+            val sec: (String) -> String? = { s -> if (withSeconds) s else null }
+            return MatchResponse(
+                matchId = matchId,
+                timestamp = 1753027200L,
+                clubs = mapOf(
+                    ourClubId to ClubMatchEntry(
+                        details = ClubDetails(name = "Associação BF"),
+                        score = "3",
+                        result = "1",
+                    ),
+                    "opponent" to ClubMatchEntry(
+                        details = ClubDetails(name = "Bola Bate FC"),
+                        score = "0",
+                        result = "0",
+                    ),
                 ),
-                "opponent" to ClubMatchEntry(
-                    details = ClubDetails(name = "Bola Bate FC"),
-                    score = "0",
-                    result = "0",
+                players = mapOf(
+                    ourClubId to mapOf(
+                        "p1" to realPlayer("Guilherme_cruzz", "7.80", "2", "6", "1", sec("5621")),
+                        "p2" to realPlayer("dbeng_bass",      "8.30", "2", "5", "2", sec("5621")),
+                        "p3" to realPlayer("swegher",         "7.00", "0", "9", "2", sec("5621")),
+                        "p4" to realPlayer("joaoborba07",     "6.90", "2", "5", "0", sec("5621")),
+                        "p5" to realPlayer("Nutri_Wagner90",  "6.00", "0", "0", "0", sec("413")),
+                        "p6" to realPlayer("paulorodrigues0", "7.00", "0", "7", "1", sec("5621")),
+                    ),
                 ),
-            ),
-            players = mapOf(
-                ourClubId to mapOf(
-                    "p1" to realPlayer("Guilherme_cruzz", "7.80", "2", "6", "1", "5621"),
-                    "p2" to realPlayer("dbeng_bass",      "8.30", "2", "5", "2", "5621"),
-                    "p3" to realPlayer("swegher",         "7.00", "0", "9", "2", "5621"),
-                    "p4" to realPlayer("joaoborba07",     "6.90", "2", "5", "0", "5621"),
-                    "p5" to realPlayer("Nutri_Wagner90",  "6.00", "0", "0", "0", "413"),
-                    "p6" to realPlayer("paulorodrigues0", "7.00", "0", "7", "1", "5621"),
-                ),
-            ),
-        )
+            )
+        }
 
         @Test
         fun `Sheriff is dbeng_bass`() {
-            val presentation = builder.build(buildRealMatch(), ourClubId)
+            val presentation = builder.build(buildRealMatch(withSeconds = true), ourClubId)
 
             assertThat(presentation.xerife).isNotNull
             assertThat(presentation.xerife!!.name).isEqualTo("dbeng_bass")
             assertThat(presentation.xerife!!.tacklesMade).isEqualTo(2)
             assertThat(presentation.xerife!!.tackleAttempts).isEqualTo(5)
             assertThat(presentation.xerife!!.successRate).isEqualTo(40)
+        }
+
+        @Test
+        fun `Sheriff is dbeng_bass even when secondsPlayed is null`() {
+            // Playing time is no longer part of Sheriff eligibility
+            val presentation = builder.build(buildRealMatch(withSeconds = false), ourClubId)
+
+            assertThat(presentation.xerife).isNotNull
+            assertThat(presentation.xerife!!.name).isEqualTo("dbeng_bass")
         }
 
         @Test
