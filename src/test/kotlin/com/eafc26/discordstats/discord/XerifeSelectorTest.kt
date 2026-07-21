@@ -248,6 +248,72 @@ class XerifeSelectorTest {
         }
     }
 
+    // ── Match 874612175930485 regression ─────────────────────────────────────
+    //
+    // Root cause (fixed): the old XerifeSelector required a success rate > 60%.
+    // In this match every player's rate was ≤ 40 %, so candidates was empty and
+    // the Sheriff was never rendered.  The DIS formula has no such gate.
+
+    @Nested
+    inner class Match874612175930485Regression {
+
+        /**
+         * Exact outfield eligible players for this match (Nutri_Wagner90 is
+         * excluded upstream by PlayerStatisticsEligibility – 413 s < 90 % of 5621).
+         */
+        private fun realOutfield() = listOf(
+            player("Guilherme_cruzz", tackleAttempts = "6", tacklesMade = "1", seconds = "5621"),
+            player("dbeng_bass",      tackleAttempts = "5", tacklesMade = "2", seconds = "5621"),
+            player("swegher",         tackleAttempts = "9", tacklesMade = "2", seconds = "5621"),
+            player("joaoborba07",     tackleAttempts = "5", tacklesMade = "0", seconds = "5621"),
+            player("paulorodrigues0", tackleAttempts = "7", tacklesMade = "1", seconds = "5621"),
+        )
+
+        @Test
+        fun `dbeng_bass wins with highest DIS 0_800`() {
+            val result = XerifeSelector.select(realOutfield())
+
+            assertThat(result).isNotNull
+            assertThat(result!!.player.playerName).isEqualTo("dbeng_bass")
+            assertThat(result.defensiveScore).isCloseTo(dis(2, 5, 5621), within(0.001))
+            assertThat(result.tacklesMade).isEqualTo(2)
+            assertThat(result.tackleAttempts).isEqualTo(5)
+            assertThat(result.successRate).isEqualTo(40)
+        }
+
+        @Test
+        fun `Nutri_Wagner90 excluded by MIN_SECONDS_PLAYED regardless of tackle data`() {
+            // 413 s < MIN_SECONDS_PLAYED (540) — excluded even if they had positive tackle stats
+            val result = XerifeSelector.select(
+                listOf(player("Nutri_Wagner90", tackleAttempts = "5", tacklesMade = "3", seconds = "413"))
+            )
+            assertThat(result).isNull()
+        }
+
+        @Test
+        fun `old 60pct success-rate gate would have produced null for this match`() {
+            // All outfield players had rates <= 40 pct; the old rule required rate > 60 pct.
+            // This test documents why the award was absent before the DIS refactor.
+            val maxRate = realOutfield()
+                .mapNotNull { p ->
+                    val att = p.tackleAttempts?.toIntOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
+                    val made = p.tacklesMade?.toIntOrNull() ?: 0
+                    made * 100 / att
+                }
+                .maxOrNull() ?: 0
+            assertThat(maxRate)
+                .describedAs("max success rate in the match (all <= 40 pct)")
+                .isLessThanOrEqualTo(40)
+        }
+
+        @Test
+        fun `expected DIS ranking order dbeng_bass beats swegher`() {
+            val result = XerifeSelector.select(realOutfield())!!
+            // dbeng_bass DIS=0.800 > swegher DIS≈0.444
+            assertThat(result.defensiveScore).isGreaterThan(dis(2, 9, 5621))
+        }
+    }
+
     // ── Selection result fields ───────────────────────────────────────────────
 
     @Nested

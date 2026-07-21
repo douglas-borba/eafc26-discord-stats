@@ -12,6 +12,7 @@ import com.eafc26.discordstats.discord.XerifeSelector
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.ea.model.PlayerStatisticsEligibility
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.time.Instant
 import java.time.ZoneId
@@ -39,6 +40,7 @@ import kotlin.math.abs
 class MatchSummaryBuilder(
     private val phraseBank: PhraseBank,
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
     private val dateFmt = DateTimeFormatter.ofPattern("dd MMM yyyy '•' HH:mm", PT_BR)
 
     /**
@@ -84,6 +86,29 @@ class MatchSummaryBuilder(
         // Outfield players for awards (from eligible players, excluding goalkeeper)
         val outfield = allActive.filter { !it.isGoalkeeper() }
         val matchId = match.matchId
+
+        // ── Diagnostic trace for award pipeline ──────────────────────────────
+        // Log at INFO so this is always visible in production logs.
+        // Remove once the root cause of missing awards is confirmed.
+        log.info("[AWARDS-DIAG] match={} allPlayers={} allActive={} outfield={}",
+            matchId, allPlayers.size, allActive.size, outfield.size)
+        outfield.forEach { p ->
+            log.info("[AWARDS-DIAG]   player='{}' pos={} rating={} shots={} " +
+                "tackleAtt={} tackleMade={} secondsPlayed={}",
+                p.playerName, p.position, p.rating,
+                p.shots, p.tackleAttempts, p.tacklesMade, p.secondsPlayed)
+        }
+        // Log players excluded by PlayerStatisticsEligibility so we know if the filter is culprit
+        val excluded = allPlayers.filter { !it.isGoalkeeper() && it !in allActive }
+        if (excluded.isNotEmpty()) {
+            log.info("[AWARDS-DIAG] Excluded by eligibility filter ({} player(s)):", excluded.size)
+            val maxSec = allPlayers.mapNotNull { it.secondsPlayed?.toIntOrNull()?.takeIf { s -> s > 0 } }.maxOrNull() ?: 0
+            excluded.forEach { p ->
+                log.info("[AWARDS-DIAG]   EXCLUDED '{}': secondsPlayed={} (max={}, threshold={})",
+                    p.playerName, p.secondsPlayed, maxSec, maxSec * 90 / 100)
+            }
+        }
+        // ─────────────────────────────────────────────────────────────────────
 
         return MatchSummaryPresentation(
             ourName = ourName,

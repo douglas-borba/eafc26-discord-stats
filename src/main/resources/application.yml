@@ -42,3 +42,7 @@ logging:
   level:
     com.eafc26: INFO
     com.eafc26.discordstats.ea.EaResponseParser: DEBUG
+    # TEMPORARY: debug award pipeline — remove once root cause is confirmed
+    com.eafc26.discordstats.discord.XerifeSelector: DEBUG
+    com.eafc26.discordstats.discord.PerigoConstanteSelector: DEBUG
+    com.eafc26.discordstats.discord.DiscordEmbedBuilder: DEBUG

@@ -903,4 +903,77 @@ class DiscordEmbedBuilderTest {
 
     private fun List<EmbedField>.field(name: String) =
         firstOrNull { it.name == name } ?: error("Field '$name' not found in ${map { it.name }}")
+
+    // ── Match 874612175930485 pipeline regression ────────────────────────────
+    //
+    // Root cause (fixed): the old XerifeSelector required success rate > 60%.
+    // Every player in this match had a rate ≤ 40 %, so no Sheriff was ever rendered.
+    // The DIS formula replaced the binary gate; dbeng_bass (DIS=0.800) now wins.
+
+    @Test
+    fun `match 874612175930485 - Sheriff is dbeng_bass`() {
+        val embed = buildMatch874612175930485().embeds[0]
+        val xerifeField = embed.fields.firstOrNull { it.name == "🚧 XERIFE DA PARTIDA" }
+        assertThat(xerifeField).describedAs("Xerife field must be present").isNotNull
+        assertThat(xerifeField!!.value).contains("dbeng_bass")
+        assertThat(xerifeField.value).contains("2/5 desarmes")
+        assertThat(xerifeField.value).contains("Aproveitamento: 40%")
+    }
+
+    @Test
+    fun `match 874612175930485 - Constant Danger is absent - max shots is 2`() {
+        val embed = buildMatch874612175930485().embeds[0]
+        assertThat(embed.fields.none { it.name == "🔥 PERIGO CONSTANTE" }).isTrue()
+    }
+
+    private fun buildMatch874612175930485(): DiscordPayload {
+        fun p(
+            name: String,
+            rating: String,
+            shots: String,
+            tackleAttempts: String,
+            tacklesMade: String,
+            secondsPlayed: String,
+        ) = PlayerEntry(
+            playerName = name,
+            position = "14",
+            rating = rating,
+            shots = shots,
+            tackleAttempts = tackleAttempts,
+            tacklesMade = tacklesMade,
+            secondsPlayed = secondsPlayed,
+            goals = "0",
+            assists = "0",
+            passesMade = "15",
+            passAttempts = "20",
+        )
+
+        val match = MatchResponse(
+            matchId = "874612175930485",
+            timestamp = 1753027200L,
+            clubs = mapOf(
+                ourClubId to ClubMatchEntry(
+                    details = ClubDetails(name = "Associação BF"),
+                    score = "3",
+                    result = "1",
+                ),
+                "opponent" to ClubMatchEntry(
+                    details = ClubDetails(name = "Bola Bate FC"),
+                    score = "0",
+                    result = "0",
+                ),
+            ),
+            players = mapOf(
+                ourClubId to mapOf(
+                    "p1" to p("Guilherme_cruzz", "7.80", "2", "6", "1", "5621"),
+                    "p2" to p("dbeng_bass",      "8.30", "2", "5", "2", "5621"),
+                    "p3" to p("swegher",         "7.00", "0", "9", "2", "5621"),
+                    "p4" to p("joaoborba07",     "6.90", "2", "5", "0", "5621"),
+                    "p5" to p("Nutri_Wagner90",  "6.00", "0", "0", "0", "413"),
+                    "p6" to p("paulorodrigues0", "7.00", "0", "7", "1", "5621"),
+                ),
+            ),
+        )
+        return DiscordEmbedBuilder.build(match, ourClubId, zone)
+    }
 }

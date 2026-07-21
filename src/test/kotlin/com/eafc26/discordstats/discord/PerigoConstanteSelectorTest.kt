@@ -115,6 +115,19 @@ class PerigoConstanteSelectorTest {
         assertThat(result!!.player.playerName).isEqualTo("HasData")
     }
 
+    @Test
+    fun `match 874612175930485 produces no Constant Danger winner - max shots is 2`() {
+        // No player reached the 3-shot threshold; highest was 2 (Guilherme_cruzz, dbeng_bass, joaoborba07)
+        val players = listOf(
+            player("Guilherme_cruzz", shots = "2"),
+            player("dbeng_bass",      shots = "2"),
+            player("swegher",         shots = "0"),
+            player("joaoborba07",     shots = "2"),
+            player("paulorodrigues0", shots = "0"),
+        )
+        assertThat(PerigoConstanteSelector.select(players)).isNull()
+    }
+
     private fun player(
         name: String,
         shots: String? = null,

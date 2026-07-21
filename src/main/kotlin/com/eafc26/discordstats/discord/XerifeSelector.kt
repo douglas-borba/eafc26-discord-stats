@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.discord
 
 import com.eafc26.discordstats.ea.model.PlayerEntry
+import org.slf4j.LoggerFactory
 import kotlin.math.sqrt
 
 /**
@@ -48,6 +49,8 @@ import kotlin.math.sqrt
  */
 object XerifeSelector {
 
+    private val log = LoggerFactory.getLogger(XerifeSelector::class.java)
+
     /** Duration of a full 90-minute match in seconds. */
     const val FULL_MATCH_SECONDS = 5400
 
@@ -79,23 +82,43 @@ object XerifeSelector {
             val score: Double,
         )
 
+        log.debug("[XERIFE] Evaluating {} outfield player(s)", outfield.size)
+
         val candidates = outfield.mapNotNull { player ->
-            val attempts = player.tackleAttempts?.toIntOrNull() ?: return@mapNotNull null
-            if (attempts <= 0) return@mapNotNull null
+            val name = player.playerName ?: "(unknown)"
+            val attempts = player.tackleAttempts?.toIntOrNull()
+            if (attempts == null) {
+                log.debug("[XERIFE] SKIP '{}': tackleAttempts is null/non-numeric (raw='{}')", name, player.tackleAttempts)
+                return@mapNotNull null
+            }
+            if (attempts <= 0) {
+                log.debug("[XERIFE] SKIP '{}': tackleAttempts={} (must be > 0)", name, attempts)
+                return@mapNotNull null
+            }
 
             val seconds = player.secondsPlayed?.toIntOrNull() ?: 0
-            if (seconds < MIN_SECONDS_PLAYED) return@mapNotNull null
+            if (seconds < MIN_SECONDS_PLAYED) {
+                log.debug("[XERIFE] SKIP '{}': secondsPlayed={}  < MIN={} (raw='{}')",
+                    name, seconds, MIN_SECONDS_PLAYED, player.secondsPlayed)
+                return@mapNotNull null
+            }
 
             val made = player.tacklesMade?.toIntOrNull() ?: 0
             val successRateFraction = made.toDouble() / attempts
             val timeRatio = minOf(seconds, FULL_MATCH_SECONDS).toDouble() / FULL_MATCH_SECONDS
-            // √ weighting — diminishing returns on playing time (see KDoc for rationale)
             val timeWeight = sqrt(timeRatio)
             val score = made * successRateFraction * timeWeight
-
             val successRateInt = (successRateFraction * 100).toInt()
 
+            log.debug("[XERIFE] CANDIDATE '{}': made={} att={} rate={}% seconds={} DIS={:.3f}",
+                name, made, attempts, successRateInt, seconds, score)
+
             Candidate(player, made, attempts, successRateInt, score)
+        }
+
+        if (candidates.isEmpty()) {
+            log.debug("[XERIFE] No candidates passed eligibility — returning null")
+            return null
         }
 
         val best = candidates.maxWithOrNull(
@@ -103,6 +126,9 @@ object XerifeSelector {
                 .thenBy { it.successRate }
                 .thenBy { it.made }
         ) ?: return null
+
+        log.debug("[XERIFE] WINNER '{}': DIS={:.3f} rate={}% made={}/{}",
+            best.player.playerName, best.score, best.successRate, best.made, best.attempts)
 
         return XerifeSelection(
             player = best.player,

@@ -98,6 +98,18 @@ object DiscordEmbedBuilder {
         val bagrePlayer = BagrePerformanceEvaluator.selectBagrePlayer(outfield)
         val excludeFromPositive: Set<String> = bagrePlayer?.let { setOf(it.playerName ?: "") } ?: emptySet()
 
+        // ── Diagnostic trace for award pipeline (DiscordEmbedBuilder path) ──
+        log.debug("[EMBED-DIAG] match={} outfield={} bagre='{}' excludeFromPositive={}",
+            matchId, outfield.size, bagrePlayer?.playerName, excludeFromPositive)
+        val eligibleForPositive = outfield.filter { it.playerName !in excludeFromPositive }
+        log.debug("[EMBED-DIAG] eligibleForPositive={} player(s): {}",
+            eligibleForPositive.size, eligibleForPositive.map { it.playerName })
+        eligibleForPositive.forEach { p ->
+            log.debug("[EMBED-DIAG]   '{}': shots={} tackleAtt={} tackleMade={} secondsPlayed={}",
+                p.playerName, p.shots, p.tackleAttempts, p.tacklesMade, p.secondsPlayed)
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         val fields = mutableListOf<EmbedField>()
         // Always prepend a separator so there is a visual break after the header description
         fun addSection(field: EmbedField?) {

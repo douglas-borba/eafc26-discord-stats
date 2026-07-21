@@ -256,4 +256,82 @@ class MatchSummaryBuilderTest {
             assertThat(presentation.bagre!!.tackleStats).isNotNull
         }
     }
+
+    // ── Match 874612175930485 pipeline regression ────────────────────────────
+    //
+    // Before the DIS refactor, XerifeSelector required success rate > 60%.
+    // All players in this match had rates ≤ 40 %, so the Sheriff was never rendered.
+
+    @Nested
+    inner class Match874612175930485Pipeline {
+
+        private val matchId = "874612175930485"
+        private val ourClubId = "1104972"
+
+        private fun realPlayer(
+            name: String,
+            rating: String,
+            shots: String,
+            tackleAttempts: String,
+            tacklesMade: String,
+            secondsPlayed: String,
+        ) = PlayerEntry(
+            playerName = name,
+            position = "14",
+            rating = rating,
+            shots = shots,
+            tackleAttempts = tackleAttempts,
+            tacklesMade = tacklesMade,
+            secondsPlayed = secondsPlayed,
+            goals = "0",
+            assists = "0",
+            passesMade = "15",
+            passAttempts = "20",
+        )
+
+        private fun buildRealMatch(): MatchResponse = MatchResponse(
+            matchId = matchId,
+            timestamp = 1753027200L,
+            clubs = mapOf(
+                ourClubId to ClubMatchEntry(
+                    details = ClubDetails(name = "Associação BF"),
+                    score = "3",
+                    result = "1",
+                ),
+                "opponent" to ClubMatchEntry(
+                    details = ClubDetails(name = "Bola Bate FC"),
+                    score = "0",
+                    result = "0",
+                ),
+            ),
+            players = mapOf(
+                ourClubId to mapOf(
+                    "p1" to realPlayer("Guilherme_cruzz", "7.80", "2", "6", "1", "5621"),
+                    "p2" to realPlayer("dbeng_bass",      "8.30", "2", "5", "2", "5621"),
+                    "p3" to realPlayer("swegher",         "7.00", "0", "9", "2", "5621"),
+                    "p4" to realPlayer("joaoborba07",     "6.90", "2", "5", "0", "5621"),
+                    "p5" to realPlayer("Nutri_Wagner90",  "6.00", "0", "0", "0", "413"),
+                    "p6" to realPlayer("paulorodrigues0", "7.00", "0", "7", "1", "5621"),
+                ),
+            ),
+        )
+
+        @Test
+        fun `Sheriff is dbeng_bass`() {
+            val presentation = builder.build(buildRealMatch(), ourClubId)
+
+            assertThat(presentation.xerife).isNotNull
+            assertThat(presentation.xerife!!.name).isEqualTo("dbeng_bass")
+            assertThat(presentation.xerife!!.tacklesMade).isEqualTo(2)
+            assertThat(presentation.xerife!!.tackleAttempts).isEqualTo(5)
+            assertThat(presentation.xerife!!.successRate).isEqualTo(40)
+        }
+
+        @Test
+        fun `Constant Danger is absent - no player reached 3 shots`() {
+            val presentation = builder.build(buildRealMatch(), ourClubId)
+
+            assertThat(presentation.perigoConstante).isNull()
+        }
+    }
 }
