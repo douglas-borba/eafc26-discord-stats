@@ -127,21 +127,44 @@ class EaResponseParserTest {
     // -- parseMembersStats --
 
     @Test
-    fun `parseMembersStats returns Success with entries from fixture`() {
+    fun `parseMembersStats returns Success with entries from fixture (root object with object-of-objects)`() {
         val result = parser.parseMembersStats(fixture("members-stats.json"))
 
         assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
         val members = (result as EaApiResult.Success).data
         assertThat(members).hasSize(3)
-        assertThat(members[0].playerName).isEqualTo("dbeng_bass")
-        assertThat(members[0].proName).isEqualTo("R. Nazário")
-        assertThat(members[1].playerName).isEqualTo("Striker99")
-        assertThat(members[1].proName).isEqualTo("Ronaldinho")
+        assertThat(members.map { it.playerName }).containsExactlyInAnyOrder("dbeng_bass", "Striker99", "GoalieKing")
+        assertThat(members.first { it.playerName == "dbeng_bass" }.proName).isEqualTo("R. Nazário")
+        assertThat(members.first { it.playerName == "Striker99" }.proName).isEqualTo("Ronaldinho")
     }
 
     @Test
-    fun `parseMembersStats returns Success with empty list for empty array`() {
-        val result = parser.parseMembersStats("[]")
+    fun `parseMembersStats handles root object with array field`() {
+        val json = """{"members":[{"playername":"user1","proName":"Pro One"},{"playername":"user2","proName":"Pro Two"}]}"""
+        val members = (parser.parseMembersStats(json) as EaApiResult.Success).data
+        assertThat(members).hasSize(2)
+        assertThat(members[0].playerName).isEqualTo("user1")
+        assertThat(members[0].proName).isEqualTo("Pro One")
+    }
+
+    @Test
+    fun `parseMembersStats handles root object with object-of-objects field`() {
+        val json = """{"members":{"id1":{"playername":"user1","proName":"Pro One"},"id2":{"playername":"user2","proName":"Pro Two"}}}"""
+        val members = (parser.parseMembersStats(json) as EaApiResult.Success).data
+        assertThat(members).hasSize(2)
+        assertThat(members.map { it.playerName }).containsExactlyInAnyOrder("user1", "user2")
+    }
+
+    @Test
+    fun `parseMembersStats returns empty list for root object with empty members object`() {
+        val result = parser.parseMembersStats("""{"members":{}}""")
+        assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
+        assertThat((result as EaApiResult.Success).data).isEmpty()
+    }
+
+    @Test
+    fun `parseMembersStats returns empty list for root object with empty members array`() {
+        val result = parser.parseMembersStats("""{"members":[]}""")
         assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
         assertThat((result as EaApiResult.Success).data).isEmpty()
     }
@@ -153,11 +176,18 @@ class EaResponseParserTest {
     }
 
     @Test
-    fun `parseMembersStats ignores unknown fields`() {
-        val json = """[{"playername":"user1","proName":"Pro One","unknownField":"ignored"}]"""
-        val result = parser.parseMembersStats(json)
-        val members = (result as EaApiResult.Success).data
+    fun `parseMembersStats ignores unknown fields in member entries`() {
+        val json = """{"members":{"1":{"playername":"user1","proName":"Pro One","unknownField":"ignored","proPos":"14"}}}"""
+        val members = (parser.parseMembersStats(json) as EaApiResult.Success).data
         assertThat(members[0].playerName).isEqualTo("user1")
         assertThat(members[0].proName).isEqualTo("Pro One")
+    }
+
+    @Test
+    fun `parseMembersStats skips member entries without a playername`() {
+        val json = """{"members":{"1":{"proName":"No Name Here"},"2":{"playername":"user2","proName":"Has Name"}}}"""
+        val members = (parser.parseMembersStats(json) as EaApiResult.Success).data
+        assertThat(members).hasSize(1)
+        assertThat(members[0].playerName).isEqualTo("user2")
     }
 }

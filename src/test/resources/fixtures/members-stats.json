@@ -1,15 +1,20 @@
-[
-  {
-    "playername": "dbeng_bass",
-    "proName": "R. Nazário"
-  },
-  {
-    "playername": "Striker99",
-    "proName": "Ronaldinho"
-  },
-  {
-    "playername": "GoalieKing",
-    "proName": "G. Buffon"
+{
+  "members": {
+    "1001": {
+      "playername": "dbeng_bass",
+      "proName": "R. Nazário",
+      "proPos": "14"
+    },
+    "1002": {
+      "playername": "Striker99",
+      "proName": "Ronaldinho",
+      "proPos": "25"
+    },
+    "1003": {
+      "playername": "GoalieKing",
+      "proName": "G. Buffon",
+      "proPos": "0"
+    }
   }
-]
+}
 

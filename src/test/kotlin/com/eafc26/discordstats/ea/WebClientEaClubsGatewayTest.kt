@@ -293,8 +293,8 @@ class WebClientEaClubsGatewayTest {
         assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
         val members = (result as EaApiResult.Success).data
         assertThat(members).hasSize(3)
-        assertThat(members[0].playerName).isEqualTo("dbeng_bass")
-        assertThat(members[0].proName).isEqualTo("R. Nazário")
+        assertThat(members.map { it.playerName }).containsExactlyInAnyOrder("dbeng_bass", "Striker99", "GoalieKing")
+        assertThat(members.first { it.playerName == "dbeng_bass" }.proName).isEqualTo("R. Nazário")
     }
 
     @Test

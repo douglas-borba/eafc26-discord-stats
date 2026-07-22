@@ -132,13 +132,16 @@ class MatchAcquisitionService(
                 result.data
                     .filter { !it.playerName.isNullOrBlank() && !it.proName.isNullOrBlank() }
                     .associate { it.playerName!! to it.proName!! }
-                    .also { log.debug("Loaded {} Virtual Pro name(s) for club-id={}", it.size, clubId) }
+                    .also { map ->
+                        log.info("Loaded {} Virtual Pro name(s) for club-id={}", map.size, clubId)
+                    }
             }
             else -> {
                 log.warn("Could not fetch members/stats for club-id={} — falling back to gamertags", clubId)
                 emptyMap()
             }
         }
+
 
         // Phase: PROCESSING
         stateHolder.enterPhase(AcquisitionPhase.PROCESSING, "Processando partidas...")

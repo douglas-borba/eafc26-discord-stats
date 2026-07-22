@@ -55,7 +55,7 @@ class PlaywrightEaClubsGateway(
         val url = "${props.ea.baseUrl}/members/stats" +
                 "?platform=${props.ea.platform}" +
                 "&clubId=${encode(clubId)}"
-        log.debug("Playwright members/stats: {}", url)
+        log.info("Fetching members/stats for clubId={}", clubId)
         return callEa(url) { parser.parseMembersStats(it) }
     }
 
