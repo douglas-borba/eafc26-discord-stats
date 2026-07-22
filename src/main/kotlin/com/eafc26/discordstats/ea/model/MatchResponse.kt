@@ -75,6 +75,16 @@ data class PlayerEntry(
     @JsonProperty("redcards") val redCards: String? = null,
     @JsonProperty("saves") val saves: String? = null,
     @JsonProperty("goalsconceded") val goalsConceded: String? = null,
+    // Extended goalkeeper save types (EA API returns camelCase for these)
+    @JsonProperty("goodDirectionSaves") val goodDirectionSaves: String? = null,
+    @JsonProperty("reflexSaves") val reflexSaves: String? = null,
+    @JsonProperty("parrySaves") val parrySaves: String? = null,
+    @JsonProperty("punchSaves") val punchSaves: String? = null,
+    @JsonProperty("ballDiveSaves") val ballDiveSaves: String? = null,
+    @JsonProperty("crossSaves") val crossSaves: String? = null,
+    // Cleansheet indicators
+    @JsonProperty("cleansheetsgk") val cleanSheetsGk: String? = null,
+    @JsonProperty("cleansheetsany") val cleanSheetsAny: String? = null,
     @JsonProperty("secondsplayed") val secondsPlayed: String? = null,
     @JsonProperty("status") val status: String? = null,
 ) {

@@ -303,20 +303,21 @@ object DiscordEmbedBuilder {
 
     private fun muralhaField(gk: PlayerEntry?, matchId: String): EmbedField? {
         gk ?: return null
-        val saves = gk.saves?.toIntOrNull() ?: 0
+        val saves         = gk.saves?.toIntOrNull() ?: 0
         val goalsConceded = gk.goalsConceded?.toIntOrNull() ?: 0
-        val name = gk.displayName()
-        val phrase = pickFromCategory(PhraseCategory.GOALKEEPER, matchId, name)
-        
-        // Format: name, stats (saves and goals conceded), quote
+        val name          = gk.displayName()
+
+        val performance   = GoalkeeperEvaluator.evaluate(gk, matchId, phraseBank)
+
         val savesText = if (saves == 1) "1 defesa" else "$saves defesas"
         val goalsText = if (goalsConceded == 1) "1 gol sofrido" else "$goalsConceded gols sofridos"
-        
+
         val value = buildString {
             append("$BLANK\n$name\n$BLANK\n")
+            append("${performance.title}\n$BLANK\n")
             append("🧤 $savesText\n")
             append("⚽ $goalsText\n$BLANK\n")
-            append("💬 \"$phrase\"")
+            append("💬 \"${performance.message}\"")
         }
         return EmbedField("🧤 GOLEIRO", value)
     }

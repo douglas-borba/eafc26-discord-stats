@@ -5,6 +5,7 @@ import com.eafc26.discordstats.config.PhraseCategory
 import com.eafc26.discordstats.discord.BagrePerformanceEvaluator
 import com.eafc26.discordstats.discord.CorreioExtraviadoSelector
 import com.eafc26.discordstats.discord.CraqueSelector
+import com.eafc26.discordstats.discord.GoalkeeperEvaluator
 import com.eafc26.discordstats.discord.MatchOutcomeResolver
 import com.eafc26.discordstats.discord.PassePrecisaoSelector
 import com.eafc26.discordstats.discord.PerigoConstanteSelector
@@ -271,16 +272,15 @@ class MatchSummaryBuilder(
 
     private fun buildMuralhaSection(gk: PlayerEntry?, matchId: String, random: Random?): MuralhaSection? {
         gk ?: return null
-        val saves = gk.saves?.toIntOrNull() ?: 0
-        val goalsConceded = gk.goalsConceded?.toIntOrNull() ?: 0
-        val name = gk.displayName()
-        val phrase = pickFromCategory(PhraseCategory.GOALKEEPER, matchId, name, random)
+        val performance = GoalkeeperEvaluator.evaluate(gk, matchId, phraseBank, random)
 
         return MuralhaSection(
-            name = name,
-            saves = saves,
-            goalsConceded = goalsConceded,
-            phrase = phrase,
+            name          = gk.displayName(),
+            saves         = gk.saves?.toIntOrNull() ?: 0,
+            goalsConceded = gk.goalsConceded?.toIntOrNull() ?: 0,
+            archetype     = performance.archetype,
+            archetypeTitle = performance.title,
+            phrase        = performance.message,
         )
     }
 

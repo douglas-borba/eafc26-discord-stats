@@ -221,7 +221,7 @@ enum class PhraseCategory(val key: String, val displayName: String, val defaults
 
     GOALKEEPER(
         key = "goalkeeper",
-        displayName = "Muralha (goleiro)",
+        displayName = "Muralha (goleiro) — legado",
         defaults = listOf(
             "Hoje fechou o gol.",
             "Quando precisou aparecer, apareceu.",
@@ -245,6 +245,104 @@ enum class PhraseCategory(val key: String, val displayName: String, val defaults
             "Partida difícil. Saída fácil: defensiva e segura.",
             "Mãos de aço. Reflexo de gato.",
             "A bola que entrava... não entrou.",
+        ),
+    ),
+
+    // ── Goalkeeper archetype phrases ──────────────────────────────────────────
+
+    GOALKEEPER_WALL(
+        key = "goalkeeper_wall",
+        displayName = "Goleiro — Paredão",
+        defaults = listOf(
+            "Fechou o gol.",
+            "Decisivo para o resultado.",
+            "Quando precisou, apareceu.",
+            "Hoje o gol teve dono.",
+            "Cada investida, uma resposta.",
+            "A bola que entrava... não entrou.",
+            "O adversário chutou. Ele devolveu tudo.",
+            "Foi o seguro do time. Sem franquia.",
+            "Impenetrável quando o jogo exigiu.",
+            "Mãos de aço, reflexo de gato.",
+            "Transformou pressão em frustração adversária.",
+            "Cada defesa foi uma declaração.",
+            "O gol ficou em boas mãos. Literalmente.",
+            "A trave e ele foram parceiros hoje.",
+            "Jogou como se o resultado dependesse apenas dele. Dependia.",
+        ),
+    ),
+
+    GOALKEEPER_SOLID(
+        key = "goalkeeper_solid",
+        displayName = "Goleiro — Seguro",
+        defaults = listOf(
+            "Transmitiu segurança durante toda a partida.",
+            "Fez o trabalho sem sustos.",
+            "Presente quando chamado.",
+            "Desempenho sem risco e sem erro.",
+            "Equilibrado e confiável.",
+            "Cada intervenção foi certeira.",
+            "Deu estabilidade ao setor defensivo.",
+            "Sem grandes sustos. Sem grandes falhas.",
+            "Realizou o básico bem feito.",
+            "Partida tranquila e eficiente.",
+            "Administrou bem as situações de perigo.",
+            "Deu confiança aos defensores.",
+        ),
+    ),
+
+    GOALKEEPER_UNDER_SIEGE(
+        key = "goalkeeper_under_siege",
+        displayName = "Goleiro — Bombardeado",
+        defaults = listOf(
+            "Foi muito exigido durante toda a partida.",
+            "Evitou um placar ainda pior.",
+            "A defesa expôs o goleiro. Ele resistiu.",
+            "Trabalhou sem parar. O time deveu ao goleiro.",
+            "Cada chute era um teste. Passou na maioria.",
+            "Recebeu o que a defesa deixou passar.",
+            "O time sofreu. Ele salvou o que pôde.",
+            "Ficou sob pressão constante. Não desmoronou.",
+            "O adversário exigiu muito. Ele respondeu.",
+            "Segurou a onda quando o setor não conseguiu.",
+            "A defesa errou. O goleiro compensou onde deu.",
+            "A cada chute, uma resposta. Mais ou menos.",
+        ),
+    ),
+
+    GOALKEEPER_POOR(
+        key = "goalkeeper_poor",
+        displayName = "Goleiro — Mão de Alface",
+        defaults = listOf(
+            "As intervenções não evitaram os gols sofridos.",
+            "Não conseguiu passar segurança.",
+            "Quando o time precisou, não apareceu.",
+            "Os gols sofridos disseram mais que as defesas.",
+            "A luva não ajudou hoje.",
+            "Hoje o gol foi mais fácil de fazer.",
+            "A defesa errou e o goleiro não compensou.",
+            "O adversário encontrou espaços. E gols.",
+            "Cada gol sofrido foi uma sentença.",
+            "A confiança no setor ficou abalada.",
+            "Hoje o gol não teve quem protegesse.",
+            "Infelizmente, não foi o dia dele.",
+        ),
+    ),
+
+    GOALKEEPER_QUIET(
+        key = "goalkeeper_quiet",
+        displayName = "Goleiro — Discreto",
+        defaults = listOf(
+            "Teve pouco trabalho durante a partida.",
+            "O adversário não incomodou muito.",
+            "Ficou praticamente como espectador.",
+            "A defesa resolveu antes de chegar nele.",
+            "Partida tranquila. Quase sem intervenções.",
+            "O gol ficou bem guardado. Por falta de visitas.",
+            "Hoje o ataque adversário foi mais decorativo.",
+            "Pouco chamado, mas estava lá.",
+            "A presença foi suficiente.",
+            "O time defendeu bem antes de precisar dele.",
         ),
     ),
 

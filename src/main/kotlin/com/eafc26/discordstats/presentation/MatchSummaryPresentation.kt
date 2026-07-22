@@ -126,6 +126,9 @@ data class MuralhaSection(
     val name: String,
     val saves: Int,
     val goalsConceded: Int,
+    val archetype: com.eafc26.discordstats.discord.GoalkeeperArchetype,
+    /** Localised title, e.g. "🧱 Paredão". */
+    val archetypeTitle: String,
     val phrase: String,
 )
 
