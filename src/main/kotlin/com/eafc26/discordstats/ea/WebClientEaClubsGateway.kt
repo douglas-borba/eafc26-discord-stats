@@ -3,6 +3,7 @@ package com.eafc26.discordstats.ea
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.ea.model.ClubSearchResult
 import com.eafc26.discordstats.ea.model.MatchResponse
+import com.eafc26.discordstats.ea.model.MemberStats
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -58,6 +59,24 @@ class WebClientEaClubsGateway(
             EaApiResult.Unavailable(ex.statusCode.value(), ex.message ?: ex.statusCode.toString())
         } catch (ex: Exception) {
             log.warn("EA matches failed with unexpected error", ex)
+            EaApiResult.Unavailable(0, ex.message ?: "unknown error")
+        }
+    }
+
+    override fun getMembersStats(clubId: String): EaApiResult<List<MemberStats>> {
+        val uri = "/members/stats?platform=${props.ea.platform}&clubId=${encode(clubId)}"
+        log.debug("EA members/stats request: {}{}", props.ea.baseUrl, uri)
+
+        return try {
+            val body = webClient.get().uri(uri).retrieve()
+                .bodyToMono(String::class.java)
+                .block() ?: "[]"
+            parser.parseMembersStats(body)
+        } catch (ex: WebClientResponseException) {
+            log.warn("EA members/stats returned HTTP {}: {}", ex.statusCode.value(), ex.message)
+            EaApiResult.Unavailable(ex.statusCode.value(), ex.message ?: ex.statusCode.toString())
+        } catch (ex: Exception) {
+            log.warn("EA members/stats failed with unexpected error", ex)
             EaApiResult.Unavailable(0, ex.message ?: "unknown error")
         }
     }

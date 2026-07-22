@@ -123,4 +123,41 @@ class EaResponseParserTest {
             ?.bufferedReader()
             ?.readText()
             ?: error("fixture not found: $name")
+
+    // -- parseMembersStats --
+
+    @Test
+    fun `parseMembersStats returns Success with entries from fixture`() {
+        val result = parser.parseMembersStats(fixture("members-stats.json"))
+
+        assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
+        val members = (result as EaApiResult.Success).data
+        assertThat(members).hasSize(3)
+        assertThat(members[0].playerName).isEqualTo("dbeng_bass")
+        assertThat(members[0].proName).isEqualTo("R. Nazário")
+        assertThat(members[1].playerName).isEqualTo("Striker99")
+        assertThat(members[1].proName).isEqualTo("Ronaldinho")
+    }
+
+    @Test
+    fun `parseMembersStats returns Success with empty list for empty array`() {
+        val result = parser.parseMembersStats("[]")
+        assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
+        assertThat((result as EaApiResult.Success).data).isEmpty()
+    }
+
+    @Test
+    fun `parseMembersStats returns UnexpectedPayload for invalid JSON`() {
+        val result = parser.parseMembersStats("{broken")
+        assertThat(result).isInstanceOf(EaApiResult.UnexpectedPayload::class.java)
+    }
+
+    @Test
+    fun `parseMembersStats ignores unknown fields`() {
+        val json = """[{"playername":"user1","proName":"Pro One","unknownField":"ignored"}]"""
+        val result = parser.parseMembersStats(json)
+        val members = (result as EaApiResult.Success).data
+        assertThat(members[0].playerName).isEqualTo("user1")
+        assertThat(members[0].proName).isEqualTo("Pro One")
+    }
 }

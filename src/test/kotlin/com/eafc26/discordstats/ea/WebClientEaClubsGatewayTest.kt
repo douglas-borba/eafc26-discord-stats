@@ -277,6 +277,69 @@ class WebClientEaClubsGatewayTest {
         assertThat(path).contains("clubName=")
     }
 
+    // -- Members stats --
+
+    @Test
+    fun `getMembersStats returns Success with parsed entries`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody(fixture("members-stats.json"))
+        )
+
+        val result = gateway.getMembersStats("12345")
+
+        assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
+        val members = (result as EaApiResult.Success).data
+        assertThat(members).hasSize(3)
+        assertThat(members[0].playerName).isEqualTo("dbeng_bass")
+        assertThat(members[0].proName).isEqualTo("R. Nazário")
+    }
+
+    @Test
+    fun `getMembersStats returns Success with empty list for empty array`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody("[]")
+        )
+
+        val result = gateway.getMembersStats("12345")
+
+        assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
+        assertThat((result as EaApiResult.Success).data).isEmpty()
+    }
+
+    @Test
+    fun `getMembersStats returns Unavailable on HTTP 503`() {
+        server.enqueue(MockResponse().setResponseCode(503))
+
+        val result = gateway.getMembersStats("12345")
+
+        assertThat(result).isInstanceOf(EaApiResult.Unavailable::class.java)
+        assertThat((result as EaApiResult.Unavailable).statusCode).isEqualTo(503)
+    }
+
+    @Test
+    fun `getMembersStats request includes platform and clubId query parameters`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody("[]")
+        )
+
+        gateway.getMembersStats("12345")
+
+        val recorded = server.takeRequest()
+        val path = recorded.path ?: ""
+        assertThat(path).contains("/members/stats")
+        assertThat(path).contains("platform=common-gen5")
+        assertThat(path).contains("clubId=12345")
+    }
+
     // -- Helpers --
 
     private fun fixture(name: String): String =

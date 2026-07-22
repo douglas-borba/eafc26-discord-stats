@@ -126,15 +126,29 @@ class MatchAcquisitionService(
             return AcquisitionResult.NoMatches
         }
 
+        // Step 2: Fetch Virtual Pro names (best-effort; fall back to empty map on any failure)
+        val proNames: Map<String, String> = when (val result = gateway.getMembersStats(clubId)) {
+            is EaApiResult.Success -> {
+                result.data
+                    .filter { !it.playerName.isNullOrBlank() && !it.proName.isNullOrBlank() }
+                    .associate { it.playerName!! to it.proName!! }
+                    .also { log.debug("Loaded {} Virtual Pro name(s) for club-id={}", it.size, clubId) }
+            }
+            else -> {
+                log.warn("Could not fetch members/stats for club-id={} — falling back to gamertags", clubId)
+                emptyMap()
+            }
+        }
+
         // Phase: PROCESSING
         stateHolder.enterPhase(AcquisitionPhase.PROCESSING, "Processando partidas...")
 
-        // Step 2: Route to appropriate processing mode
+        // Step 3: Route to appropriate processing mode
         val result = when (trigger) {
-            AcquisitionTrigger.FORCE_RESEND -> processForceResend(matches, clubId)
-            AcquisitionTrigger.MANUAL, AcquisitionTrigger.CLI -> processLatestOnly(matches, clubId)
-            AcquisitionTrigger.SCHEDULER -> processAllNew(matches, clubId, trigger)
-            AcquisitionTrigger.DEV_SIMULATOR -> processSimulation(matches, clubId)
+            AcquisitionTrigger.FORCE_RESEND -> processForceResend(matches, clubId, proNames)
+            AcquisitionTrigger.MANUAL, AcquisitionTrigger.CLI -> processLatestOnly(matches, clubId, proNames)
+            AcquisitionTrigger.SCHEDULER -> processAllNew(matches, clubId, trigger, proNames)
+            AcquisitionTrigger.DEV_SIMULATOR -> processSimulation(matches, clubId, proNames)
         }
 
         // Update final state based on result
@@ -174,6 +188,7 @@ class MatchAcquisitionService(
     private fun processLatestOnly(
         matches: List<MatchResponse>,
         clubId: String,
+        proNames: Map<String, String>,
     ): AcquisitionResult {
         val latest = matches.maxByOrNull { it.timestamp }
             ?: return AcquisitionResult.NoMatches
@@ -183,7 +198,7 @@ class MatchAcquisitionService(
 
         // Phase: CACHING - Generate and cache presentation BEFORE deduplication check
         stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-        val presentation = matchSummaryBuilder.build(latest, clubId)
+        val presentation = matchSummaryBuilder.build(latest, clubId, proNames = proNames)
         val newVersion = latestMatchHolder.update(presentation)
         log.debug("Cached presentation for match {} (version={})", latest.matchId, newVersion)
 
@@ -201,16 +216,14 @@ class MatchAcquisitionService(
         stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Enviando para Discord...")
 
         // Deliver to Discord
-        val deliveryResult = deliverToDiscord(latest, clubId)
+        val deliveryResult = deliverToDiscord(latest, clubId, proNames)
         if (deliveryResult != null) {
-            // Discord failed, but presentation was already cached - return the failure
             return deliveryResult
         }
 
         // Phase: PERSISTING
         stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando histórico...")
 
-        // Persist
         val persisted = persistMatch(latest.matchId, publishedIds)
 
         log.info("Published match {}", latest.matchId)
@@ -239,6 +252,7 @@ class MatchAcquisitionService(
     private fun processSimulation(
         matches: List<MatchResponse>,
         clubId: String,
+        proNames: Map<String, String> = emptyMap(),
     ): AcquisitionResult {
         val latestMatch = matches.maxByOrNull { it.timestamp }
             ?: return AcquisitionResult.NoMatches
@@ -248,7 +262,7 @@ class MatchAcquisitionService(
         // Phase: CACHING - Generate and cache presentation (marked as simulated)
         // Use forceRandomPhrases=true so each simulation gets new random phrases
         stateHolder.enterPhase(AcquisitionPhase.CACHING, "Gerando card simulado...")
-        val presentation = matchSummaryBuilder.build(latestMatch, clubId, forceRandomPhrases = true)
+        val presentation = matchSummaryBuilder.build(latestMatch, clubId, forceRandomPhrases = true, proNames = proNames)
         val newVersion = latestMatchHolder.update(presentation, simulated = true)
         log.debug("Cached simulated presentation for match {} (version={})", latestMatch.matchId, newVersion)
 
@@ -272,12 +286,13 @@ class MatchAcquisitionService(
         matches: List<MatchResponse>,
         clubId: String,
         trigger: AcquisitionTrigger,
+        proNames: Map<String, String> = emptyMap(),
     ): AcquisitionResult {
         val publishedIds = store.loadIds()
 
         // First-run detection
         if (publishedIds.isEmpty()) {
-            return handleFirstRun(matches, clubId)
+            return handleFirstRun(matches, clubId, proNames)
         }
 
         // Find the latest match for caching (regardless of publication status)
@@ -286,7 +301,7 @@ class MatchAcquisitionService(
         // Phase: CACHING - Cache the latest presentation BEFORE checking deduplication
         if (latestMatch != null) {
             stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-            val presentation = matchSummaryBuilder.build(latestMatch, clubId)
+            val presentation = matchSummaryBuilder.build(latestMatch, clubId, proNames = proNames)
             val newVersion = latestMatchHolder.update(presentation)
             log.debug("Cached presentation for match {} (version={})", latestMatch.matchId, newVersion)
         }
@@ -323,15 +338,12 @@ class MatchAcquisitionService(
             stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Enviando partida ${index + 1}/${newMatches.size}...")
 
             try {
-                // Deliver to Discord
-                val payload = DiscordEmbedBuilder.build(match, clubId)
+                val payload = DiscordEmbedBuilder.build(match, clubId, proNames = proNames)
                 webhookClient.send(payload)
-                webhookClient.sendHistory(HistoryEmbedBuilder.build(match, clubId))
+                webhookClient.sendHistory(HistoryEmbedBuilder.build(match, clubId, proNames = proNames))
 
-                // Phase: PERSISTING (per match)
                 stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando partida ${index + 1}/${newMatches.size}...")
 
-                // Persist incrementally
                 currentIds += match.matchId
                 val persisted = try {
                     store.saveIds(currentIds)
@@ -345,7 +357,6 @@ class MatchAcquisitionService(
                 published += AcquisitionResult.MatchSummary(match.matchId, summary, persisted)
 
             } catch (ex: IllegalStateException) {
-                // Webhook not configured — abort entire cycle
                 log.error("Discord webhook not configured — aborting cycle: {}", ex.message)
                 return AcquisitionResult.WebhookNotConfigured
             } catch (ex: DiscordDeliveryException) {
@@ -370,19 +381,20 @@ class MatchAcquisitionService(
     private fun handleFirstRun(
         matches: List<MatchResponse>,
         clubId: String,
+        proNames: Map<String, String> = emptyMap(),
     ): AcquisitionResult {
         // Cache the latest presentation regardless of publish mode
         val latestMatch = matches.maxByOrNull { it.timestamp }
         if (latestMatch != null) {
             stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-            val presentation = matchSummaryBuilder.build(latestMatch, clubId)
+            val presentation = matchSummaryBuilder.build(latestMatch, clubId, proNames = proNames)
             val newVersion = latestMatchHolder.update(presentation)
             log.debug("Cached presentation for match {} (version={})", latestMatch.matchId, newVersion)
         }
 
         if (props.polling.publishExistingOnFirstRun) {
             log.info("First run with publish-existing-on-first-run=true: will publish {} match(es)", matches.size)
-            return publishExistingMatches(matches, clubId)
+            return publishExistingMatches(matches, clubId, proNames)
         } else {
             log.info("Automatic polling baseline established with {} matches.", matches.size)
             store.saveIds(matches.map { it.matchId }.toSet())
@@ -401,6 +413,7 @@ class MatchAcquisitionService(
     private fun publishExistingMatches(
         matches: List<MatchResponse>,
         clubId: String,
+        proNames: Map<String, String> = emptyMap(),
     ): AcquisitionResult {
         val sortedMatches = matches.sortedBy { it.timestamp }
         val published = mutableListOf<AcquisitionResult.MatchSummary>()
@@ -414,9 +427,9 @@ class MatchAcquisitionService(
             val summary = buildSummary(match, clubId)
 
             try {
-                val payload = DiscordEmbedBuilder.build(match, clubId)
+                val payload = DiscordEmbedBuilder.build(match, clubId, proNames = proNames)
                 webhookClient.send(payload)
-                webhookClient.sendHistory(HistoryEmbedBuilder.build(match, clubId))
+                webhookClient.sendHistory(HistoryEmbedBuilder.build(match, clubId, proNames = proNames))
 
                 currentIds += match.matchId
                 val persisted = try {
@@ -457,6 +470,7 @@ class MatchAcquisitionService(
     private fun processForceResend(
         matches: List<MatchResponse>,
         clubId: String,
+        proNames: Map<String, String> = emptyMap(),
     ): AcquisitionResult {
         val latest = matches.maxByOrNull { it.timestamp }
             ?: return AcquisitionResult.NoMatches
@@ -466,7 +480,7 @@ class MatchAcquisitionService(
 
         // Phase: CACHING - Generate and cache presentation
         stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-        val presentation = matchSummaryBuilder.build(latest, clubId)
+        val presentation = matchSummaryBuilder.build(latest, clubId, proNames = proNames)
         val newVersion = latestMatchHolder.update(presentation)
         log.debug("Cached presentation for match {} (version={})", latest.matchId, newVersion)
 
@@ -474,7 +488,7 @@ class MatchAcquisitionService(
         stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Reenviando para Discord...")
 
         // Deliver to Discord (no dedup check)
-        val deliveryResult = deliverToDiscord(latest, clubId)
+        val deliveryResult = deliverToDiscord(latest, clubId, proNames)
         if (deliveryResult != null) {
             return deliveryResult
         }
@@ -498,8 +512,9 @@ class MatchAcquisitionService(
     private fun deliverToDiscord(
         match: MatchResponse,
         clubId: String,
+        proNames: Map<String, String> = emptyMap(),
     ): AcquisitionResult? {
-        val payload = DiscordEmbedBuilder.build(match, clubId)
+        val payload = DiscordEmbedBuilder.build(match, clubId, proNames = proNames)
 
         try {
             webhookClient.send(payload)
@@ -522,7 +537,7 @@ class MatchAcquisitionService(
         }
 
         // History webhook — optional, fire-and-forget
-        webhookClient.sendHistory(HistoryEmbedBuilder.build(match, clubId))
+        webhookClient.sendHistory(HistoryEmbedBuilder.build(match, clubId, proNames = proNames))
 
         return null // Success
     }

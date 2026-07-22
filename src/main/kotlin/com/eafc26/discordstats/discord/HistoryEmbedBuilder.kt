@@ -16,7 +16,7 @@ private val HIST_DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", PT_B
  */
 object HistoryEmbedBuilder {
 
-    fun build(match: MatchResponse, ourClubId: String, zoneId: ZoneId = ZoneId.systemDefault()): DiscordPayload {
+    fun build(match: MatchResponse, ourClubId: String, zoneId: ZoneId = ZoneId.systemDefault(), proNames: Map<String, String> = emptyMap()): DiscordPayload {
         val ourEntry = match.clubs[ourClubId]
         val oppEntry = match.clubs.entries.firstOrNull { it.key != ourClubId }
 
@@ -42,7 +42,7 @@ object HistoryEmbedBuilder {
         ).firstOrNull { it.manOfTheMatch == "1" }
 
         if (mvp != null) {
-            val name = mvp.displayName()
+            val name = mvp.displayName(proNames)
             val rating = mvp.rating?.toDoubleOrNull()?.let { "%.1f".format(it) } ?: "N/D"
             fields += EmbedField("⭐ MVP", "$name ($rating)", inline = true)
         }

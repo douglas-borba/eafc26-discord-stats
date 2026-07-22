@@ -58,6 +58,7 @@ class MatchSummaryBuilder(
         ourClubId: String,
         zoneId: ZoneId = ZoneId.systemDefault(),
         forceRandomPhrases: Boolean = false,
+        proNames: Map<String, String> = emptyMap(),
     ): MatchSummaryPresentation {
         // Create a Random instance for this build if random phrases are requested
         val random: Random? = if (forceRandomPhrases) Random() else null
@@ -129,33 +130,33 @@ class MatchSummaryBuilder(
             date = date,
             timestamp = Instant.ofEpochSecond(match.timestamp).toString(),
             matchId = matchId,
-            goals = buildGoalsSection(allActive),
-            assists = buildAssistsSection(allActive),
-            highlights = buildHighlightsSection(outfield, allActive),
-            craque = buildCraqueSection(outfield, matchId, random),
-            perigoConstante = buildPerigoConstanteSection(outfield, matchId, random),
-            bagre = buildBagreSection(outfield, matchId, random),
-            xerife = buildXerifeSection(outfield, matchId, random),
-            passePrecisao = buildPassePrecisaoSection(outfield, matchId, random),
-            correioExtraviado = buildCorreioSection(outfield, matchId, random),
-            muralha = buildMuralhaSection(goalkeeper, matchId, random),
+            goals = buildGoalsSection(allActive, proNames),
+            assists = buildAssistsSection(allActive, proNames),
+            highlights = buildHighlightsSection(outfield, allActive, proNames),
+            craque = buildCraqueSection(outfield, matchId, random, proNames),
+            perigoConstante = buildPerigoConstanteSection(outfield, matchId, random, proNames),
+            bagre = buildBagreSection(outfield, matchId, random, proNames),
+            xerife = buildXerifeSection(outfield, matchId, random, proNames),
+            passePrecisao = buildPassePrecisaoSection(outfield, matchId, random, proNames),
+            correioExtraviado = buildCorreioSection(outfield, matchId, random, proNames),
+            muralha = buildMuralhaSection(goalkeeper, matchId, random, proNames),
         )
     }
 
-    private fun buildGoalsSection(players: Collection<PlayerEntry>): GoalsSection? {
+    private fun buildGoalsSection(players: Collection<PlayerEntry>, proNames: Map<String, String>): GoalsSection? {
         val scorers = players
             .filter { (it.goals?.toIntOrNull() ?: 0) > 0 }
             .sortedByDescending { it.goals?.toIntOrNull() ?: 0 }
-            .map { PlayerGoal(it.displayName(), it.goals?.toIntOrNull() ?: 0) }
+            .map { PlayerGoal(it.displayName(proNames), it.goals?.toIntOrNull() ?: 0) }
 
         return if (scorers.isEmpty()) null else GoalsSection(scorers)
     }
 
-    private fun buildAssistsSection(players: Collection<PlayerEntry>): AssistsSection? {
+    private fun buildAssistsSection(players: Collection<PlayerEntry>, proNames: Map<String, String>): AssistsSection? {
         val assisters = players
             .filter { (it.assists?.toIntOrNull() ?: 0) > 0 }
             .sortedByDescending { it.assists?.toIntOrNull() ?: 0 }
-            .map { PlayerAssist(it.displayName(), it.assists?.toIntOrNull() ?: 0) }
+            .map { PlayerAssist(it.displayName(proNames), it.assists?.toIntOrNull() ?: 0) }
 
         return if (assisters.isEmpty()) null else AssistsSection(assisters)
     }
@@ -163,6 +164,7 @@ class MatchSummaryBuilder(
     private fun buildHighlightsSection(
         outfield: Collection<PlayerEntry>,
         allActive: Collection<PlayerEntry>,
+        proNames: Map<String, String>,
     ): HighlightsSection? {
         val top = outfield
             .filter { it.rating != null }
@@ -176,7 +178,7 @@ class MatchSummaryBuilder(
         val top3 = top.mapIndexed { i, p ->
             TopPlayer(
                 medal = medals[i],
-                name = p.displayName(),
+                name = p.displayName(proNames),
                 rating = fmtRating(p.rating),
             )
         }
@@ -188,9 +190,9 @@ class MatchSummaryBuilder(
         return HighlightsSection(top3, teamAverage)
     }
 
-    private fun buildCraqueSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?): CraqueSection? {
+    private fun buildCraqueSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): CraqueSection? {
         val selection = CraqueSelector.select(outfield) ?: return null
-        val name = selection.player.displayName()
+        val name = selection.player.displayName(proNames)
         val phrase = pickFromCategory(PhraseCategory.MVP, matchId, name, random)
 
         return CraqueSection(
@@ -200,9 +202,9 @@ class MatchSummaryBuilder(
         )
     }
 
-    private fun buildPerigoConstanteSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?): PerigoConstanteSection? {
+    private fun buildPerigoConstanteSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): PerigoConstanteSection? {
         val selection = PerigoConstanteSelector.select(outfield) ?: return null
-        val name = selection.player.displayName()
+        val name = selection.player.displayName(proNames)
         val category = if (selection.efficient) PhraseCategory.PERIGO_EFICIENTE else PhraseCategory.PERIGO_VOLUME
         val phrase = pickFromCategory(category, matchId, name, random)
 
@@ -215,11 +217,11 @@ class MatchSummaryBuilder(
         )
     }
 
-    private fun buildBagreSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?): BagreSection? {
+    private fun buildBagreSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): BagreSection? {
         val evaluation = BagrePerformanceEvaluator.evaluate(outfield, matchId, phraseBank, random) ?: return null
 
         return BagreSection(
-            name = evaluation.player.displayName(),
+            name = evaluation.player.displayName(proNames),
             rating = evaluation.rating,
             reason = evaluation.reason,
             tackleStats = evaluation.tackleStats,
@@ -228,9 +230,9 @@ class MatchSummaryBuilder(
         )
     }
 
-    private fun buildXerifeSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?): XerifeSection? {
+    private fun buildXerifeSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): XerifeSection? {
         val selection = XerifeSelector.select(outfield) ?: return null
-        val name = selection.player.displayName()
+        val name = selection.player.displayName(proNames)
         val phrase = pickFromCategory(PhraseCategory.XERIFE, matchId, name, random)
 
         return XerifeSection(
@@ -242,9 +244,9 @@ class MatchSummaryBuilder(
         )
     }
 
-    private fun buildPassePrecisaoSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?): PassePrecisaoSection? {
+    private fun buildPassePrecisaoSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): PassePrecisaoSection? {
         val selection = PassePrecisaoSelector.select(outfield) ?: return null
-        val name = selection.player.displayName()
+        val name = selection.player.displayName(proNames)
         val phrase = pickFromCategory(PhraseCategory.PASSE_PRECISAO, matchId, name, random)
 
         return PassePrecisaoSection(
@@ -256,9 +258,9 @@ class MatchSummaryBuilder(
         )
     }
 
-    private fun buildCorreioSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?): CorreioExtraviadoSection? {
+    private fun buildCorreioSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): CorreioExtraviadoSection? {
         val sel = CorreioExtraviadoSelector.select(outfield) ?: return null
-        val name = sel.player.displayName()
+        val name = sel.player.displayName(proNames)
         val phrase = pickFromCategory(PhraseCategory.CORREIO, matchId, name, random)
         return CorreioExtraviadoSection(
             name              = name,
@@ -270,12 +272,12 @@ class MatchSummaryBuilder(
         )
     }
 
-    private fun buildMuralhaSection(gk: PlayerEntry?, matchId: String, random: Random?): MuralhaSection? {
+    private fun buildMuralhaSection(gk: PlayerEntry?, matchId: String, random: Random?, proNames: Map<String, String>): MuralhaSection? {
         gk ?: return null
         val performance = GoalkeeperEvaluator.evaluate(gk, matchId, phraseBank, random)
 
         return MuralhaSection(
-            name          = gk.displayName(),
+            name          = gk.displayName(proNames),
             saves         = gk.saves?.toIntOrNull() ?: 0,
             goalsConceded = gk.goalsConceded?.toIntOrNull() ?: 0,
             archetype     = performance.archetype,

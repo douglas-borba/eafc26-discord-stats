@@ -51,10 +51,14 @@ class PlaywrightEaClubsGateway(
         }
     }
 
-    /**
-     * Writes the raw EA matches response body to $TMPDIR/ea-fc-stats/latest-match-response.json.
-     * Temporary — safe to delete once investigation is complete.
-     */
+    override fun getMembersStats(clubId: String): EaApiResult<List<com.eafc26.discordstats.ea.model.MemberStats>> {
+        val url = "${props.ea.baseUrl}/members/stats" +
+                "?platform=${props.ea.platform}" +
+                "&clubId=${encode(clubId)}"
+        log.debug("Playwright members/stats: {}", url)
+        return callEa(url) { parser.parseMembersStats(it) }
+    }
+
     private fun dumpRawMatchResponse(body: String) {
         try {
             val dir = Paths.get(System.getProperty("java.io.tmpdir"), "ea-fc-stats")

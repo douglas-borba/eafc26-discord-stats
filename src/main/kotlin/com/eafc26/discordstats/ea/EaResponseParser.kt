@@ -2,6 +2,7 @@ package com.eafc26.discordstats.ea
 
 import com.eafc26.discordstats.ea.model.ClubSearchResult
 import com.eafc26.discordstats.ea.model.MatchResponse
+import com.eafc26.discordstats.ea.model.MemberStats
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
@@ -47,6 +48,17 @@ class EaResponseParser(private val objectMapper: ObjectMapper) {
             }
         } catch (ex: JsonProcessingException) {
             log.warn("Failed to parse matches response", ex)
+            EaApiResult.UnexpectedPayload(ex)
+        }
+    }
+
+    fun parseMembersStats(json: String): EaApiResult<List<MemberStats>> {
+        log.trace("EA members/stats raw body: {}", json)
+        return try {
+            val members: List<MemberStats> = objectMapper.readValue(json)
+            EaApiResult.Success(members)
+        } catch (ex: JsonProcessingException) {
+            log.warn("Failed to parse members/stats response", ex)
             EaApiResult.UnexpectedPayload(ex)
         }
     }

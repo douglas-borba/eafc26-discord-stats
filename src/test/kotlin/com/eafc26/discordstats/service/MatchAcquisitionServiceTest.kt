@@ -11,6 +11,8 @@ import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
+import com.eafc26.discordstats.ea.model.MemberStats
+import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.store.PublishedMatchStore
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -930,6 +932,108 @@ class MatchAcquisitionServiceTest {
             assertThat(pres.oppName).isEqualTo("Opponent FC")
             assertThat(pres.ourScore).isEqualTo(3)
             assertThat(pres.oppScore).isEqualTo(2)
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Virtual Pro names (getMembersStats)
+    // -------------------------------------------------------------------------
+
+    @Nested
+    inner class ProNamesIntegration {
+
+        /** Build a match with one scorer so goals section is populated. */
+        private fun matchWithScorer(id: String, playerName: String): MatchResponse = MatchResponse(
+            matchId = id,
+            timestamp = System.currentTimeMillis() / 1000,
+            clubs = mapOf(
+                clubId to ClubMatchEntry(
+                    details = ClubDetails(name = "Test FC"),
+                    score = "1",
+                    result = "1",
+                ),
+                "opponent" to ClubMatchEntry(
+                    details = ClubDetails(name = "Opponent FC"),
+                    score = "0",
+                    result = "0",
+                ),
+            ),
+            players = mapOf(
+                clubId to mapOf(
+                    "p1" to PlayerEntry(
+                        playerName = playerName,
+                        position = "9",
+                        goals = "1",
+                        assists = "0",
+                        rating = "8.0",
+                        secondsPlayed = "5400",
+                    )
+                )
+            ),
+        )
+
+        @Test
+        fun `proName is used as display name in goals section when members stats succeed`() {
+            val theMatch = matchWithScorer("m1", "dbeng_bass")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(theMatch)))
+            whenever(gateway.getMembersStats(clubId)).thenReturn(
+                EaApiResult.Success(listOf(MemberStats(playerName = "dbeng_bass", proName = "R. Nazário")))
+            )
+
+            service.acquire(AcquisitionTrigger.CLI)
+
+            val pres = latestMatchHolder.presentation()!!
+            val scorerNames = pres.goals?.scorers?.map { it.name } ?: emptyList()
+            assertThat(scorerNames).containsExactly("R. Nazário")
+        }
+
+        @Test
+        fun `falls back to playerName when getMembersStats returns empty list`() {
+            val theMatch = matchWithScorer("m2", "dbeng_bass")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(theMatch)))
+            whenever(gateway.getMembersStats(clubId)).thenReturn(EaApiResult.Success(emptyList()))
+
+            service.acquire(AcquisitionTrigger.CLI)
+
+            val pres = latestMatchHolder.presentation()!!
+            val scorerNames = pres.goals?.scorers?.map { it.name } ?: emptyList()
+            assertThat(scorerNames).containsExactly("dbeng_bass")
+        }
+
+        @Test
+        fun `falls back to playerName when getMembersStats returns Unavailable`() {
+            val theMatch = matchWithScorer("m3", "dbeng_bass")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(theMatch)))
+            whenever(gateway.getMembersStats(clubId)).thenReturn(EaApiResult.Unavailable(503, "Service unavailable"))
+
+            service.acquire(AcquisitionTrigger.CLI)
+
+            val pres = latestMatchHolder.presentation()!!
+            val scorerNames = pres.goals?.scorers?.map { it.name } ?: emptyList()
+            assertThat(scorerNames).containsExactly("dbeng_bass")
+        }
+
+        @Test
+        fun `acquisition succeeds even when getMembersStats fails completely`() {
+            val theMatch = matchWithScorer("m4", "dbeng_bass")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(theMatch)))
+            whenever(gateway.getMembersStats(clubId)).thenReturn(EaApiResult.Unavailable(0, "timeout"))
+
+            val result = service.acquire(AcquisitionTrigger.MANUAL)
+
+            assertThat(result).isInstanceOf(AcquisitionResult.Processed::class.java)
+        }
+
+        @Test
+        fun `default gateway implementation returns empty list (no override required)`() {
+            val gateway: EaClubsGateway = object : EaClubsGateway {
+                override fun searchClubs(clubName: String) = EaApiResult.Success(emptyList<com.eafc26.discordstats.ea.model.ClubSearchResult>())
+                override fun getLatestMatches(clubId: String) = EaApiResult.NoMatches
+                // getMembersStats intentionally NOT overridden
+            }
+            val result = gateway.getMembersStats("any")
+            assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
+            assertThat((result as EaApiResult.Success).data).isEmpty()
         }
     }
 }

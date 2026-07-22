@@ -123,4 +123,22 @@ data class PlayerEntry(
         
         return normalized ?: if (isGoalkeeper()) "Goleiro BOT" else "Desconhecido"
     }
+
+    /**
+     * Returns the display name for this player, preferring the Virtual Pro name
+     * ([proNames] lookup) over the platform gamertag.
+     *
+     * Falls back to [displayName] when no entry is found in the map or the map
+     * is empty (e.g. when the /members/stats endpoint was unavailable).
+     */
+    fun displayName(proNames: Map<String, String>): String {
+        val key = playerName?.trim()?.lowercase()
+        if (key != null) {
+            // Try exact match first, then case-insensitive lookup
+            val proName = proNames[playerName]
+                ?: proNames.entries.firstOrNull { it.key.trim().lowercase() == key }?.value
+            if (!proName.isNullOrBlank()) return proName
+        }
+        return displayName()
+    }
 }
