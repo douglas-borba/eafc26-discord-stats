@@ -4,7 +4,6 @@ import com.eafc26.discordstats.ea.model.ClubSearchResult
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.MemberStats
 import com.fasterxml.jackson.core.JsonProcessingException
-import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
@@ -57,14 +56,19 @@ class EaResponseParser(private val objectMapper: ObjectMapper) {
         return try {
             val root = objectMapper.readTree(json)
             val members: List<MemberStats> = when {
-                // Root is already an array (unit-test fixture / future API change)
+                // Direct array — kept for unit tests and resilience
                 root.isArray -> objectMapper.readValue(json)
 
-                // Root is an object — the real EA response.
-                // EA wraps member entries in a single top-level field whose value is
-                // either an array of member objects or an object keyed by playerId /
-                // playername (same pattern as the "players" field in match payloads).
-                root.isObject -> extractMembersFromRootObject(root)
+                // Real EA response shape (confirmed 2026-07-22):
+                // {"members": [{…}, …]} — "name" is the gamertag, "proName" is the Virtual Pro name
+                root.isObject -> {
+                    val membersNode = root.get("members")
+                    when {
+                        membersNode == null -> emptyList()
+                        membersNode.isArray -> objectMapper.readValue(membersNode.toString())
+                        else -> emptyList()
+                    }
+                }
 
                 else -> emptyList()
             }
@@ -74,42 +78,5 @@ class EaResponseParser(private val objectMapper: ObjectMapper) {
             log.warn("Failed to parse members/stats response", ex)
             EaApiResult.UnexpectedPayload(ex)
         }
-    }
-
-    /**
-     * Inspects every top-level field of [root] and returns the first collection
-     * of [MemberStats] found, supporting two EA response shapes:
-     *
-     * - `{"someField": [ {member}, … ]}` — array of member objects
-     * - `{"someField": { "id1": {member}, "id2": {member}, … }}` — map of member objects
-     */
-    private fun extractMembersFromRootObject(root: JsonNode): List<MemberStats> {
-        root.fields().forEach { (fieldName, fieldValue) ->
-            when {
-                fieldValue.isArray -> {
-                    val list: List<MemberStats> = objectMapper.readValue(fieldValue.toString())
-                    if (list.isNotEmpty()) {
-                        log.debug("EA members/stats: found member array in field '{}'", fieldName)
-                        return list
-                    }
-                }
-                fieldValue.isObject && fieldValue.size() > 0 -> {
-                    val entries = fieldValue.fields().asSequence()
-                        .map { (_, node) ->
-                            if (node.isObject) objectMapper.treeToValue(node, MemberStats::class.java)
-                            else null
-                        }
-                        .filterNotNull()
-                        .filter { !it.playerName.isNullOrBlank() }
-                        .toList()
-                    if (entries.isNotEmpty()) {
-                        log.debug("EA members/stats: found {} member entries in object field '{}'", entries.size, fieldName)
-                        return entries
-                    }
-                }
-                else -> {}
-            }
-        }
-        return emptyList()
     }
 }

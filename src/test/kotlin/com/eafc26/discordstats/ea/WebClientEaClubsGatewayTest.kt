@@ -298,12 +298,12 @@ class WebClientEaClubsGatewayTest {
     }
 
     @Test
-    fun `getMembersStats returns Success with empty list for empty array`() {
+    fun `getMembersStats returns Success with empty list for empty members array`() {
         server.enqueue(
             MockResponse()
                 .setResponseCode(200)
                 .addHeader("Content-Type", "application/json")
-                .setBody("[]")
+                .setBody("""{"members":[]}""")
         )
 
         val result = gateway.getMembersStats("12345")

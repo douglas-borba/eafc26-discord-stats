@@ -127,7 +127,8 @@ class EaResponseParserTest {
     // -- parseMembersStats --
 
     @Test
-    fun `parseMembersStats returns Success with entries from fixture (root object with object-of-objects)`() {
+    fun `parseMembersStats returns Success with entries from fixture`() {
+        // Fixture uses confirmed real shape: {"members":[{"name":"...","proName":"..."},...]}
         val result = parser.parseMembersStats(fixture("members-stats.json"))
 
         assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
@@ -139,32 +140,25 @@ class EaResponseParserTest {
     }
 
     @Test
-    fun `parseMembersStats handles root object with array field`() {
-        val json = """{"members":[{"playername":"user1","proName":"Pro One"},{"playername":"user2","proName":"Pro Two"}]}"""
+    fun `parseMembersStats reads name field as playerName`() {
+        // "name" is the gamertag field in the real EA response (confirmed 2026-07-22)
+        val json = """{"members":[{"name":"dbeng_bass","proName":"R. Nazário","proPos":"14"}]}"""
         val members = (parser.parseMembersStats(json) as EaApiResult.Success).data
-        assertThat(members).hasSize(2)
-        assertThat(members[0].playerName).isEqualTo("user1")
-        assertThat(members[0].proName).isEqualTo("Pro One")
+        assertThat(members).hasSize(1)
+        assertThat(members[0].playerName).isEqualTo("dbeng_bass")
+        assertThat(members[0].proName).isEqualTo("R. Nazário")
     }
 
     @Test
-    fun `parseMembersStats handles root object with object-of-objects field`() {
-        val json = """{"members":{"id1":{"playername":"user1","proName":"Pro One"},"id2":{"playername":"user2","proName":"Pro Two"}}}"""
-        val members = (parser.parseMembersStats(json) as EaApiResult.Success).data
-        assertThat(members).hasSize(2)
-        assertThat(members.map { it.playerName }).containsExactlyInAnyOrder("user1", "user2")
-    }
-
-    @Test
-    fun `parseMembersStats returns empty list for root object with empty members object`() {
-        val result = parser.parseMembersStats("""{"members":{}}""")
+    fun `parseMembersStats returns empty list for empty members array`() {
+        val result = parser.parseMembersStats("""{"members":[]}""")
         assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
         assertThat((result as EaApiResult.Success).data).isEmpty()
     }
 
     @Test
-    fun `parseMembersStats returns empty list for root object with empty members array`() {
-        val result = parser.parseMembersStats("""{"members":[]}""")
+    fun `parseMembersStats returns empty list when members key is absent`() {
+        val result = parser.parseMembersStats("""{"otherField":"value"}""")
         assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
         assertThat((result as EaApiResult.Success).data).isEmpty()
     }
@@ -177,17 +171,20 @@ class EaResponseParserTest {
 
     @Test
     fun `parseMembersStats ignores unknown fields in member entries`() {
-        val json = """{"members":{"1":{"playername":"user1","proName":"Pro One","unknownField":"ignored","proPos":"14"}}}"""
+        val json = """{"members":[{"name":"user1","proName":"Pro One","gamesPlayed":"14","winRate":"35","proPos":"14"}]}"""
         val members = (parser.parseMembersStats(json) as EaApiResult.Success).data
+        assertThat(members).hasSize(1)
         assertThat(members[0].playerName).isEqualTo("user1")
         assertThat(members[0].proName).isEqualTo("Pro One")
     }
 
     @Test
-    fun `parseMembersStats skips member entries without a playername`() {
-        val json = """{"members":{"1":{"proName":"No Name Here"},"2":{"playername":"user2","proName":"Has Name"}}}"""
+    fun `parseMembersStats handles member entry with null proName`() {
+        // Members without a Virtual Pro name are still parsed; the service filters them downstream
+        val json = """{"members":[{"name":"user1"},{"name":"user2","proName":"Has Name"}]}"""
         val members = (parser.parseMembersStats(json) as EaApiResult.Success).data
-        assertThat(members).hasSize(1)
-        assertThat(members[0].playerName).isEqualTo("user2")
+        assertThat(members).hasSize(2)
+        assertThat(members.first { it.playerName == "user1" }.proName).isNull()
+        assertThat(members.first { it.playerName == "user2" }.proName).isEqualTo("Has Name")
     }
 }

@@ -6,15 +6,19 @@ import com.fasterxml.jackson.annotation.JsonProperty
 /**
  * Represents a single entry from the /members/stats endpoint.
  *
- * The endpoint returns an array of objects, each containing the platform
- * gamertag ([playerName]) and the in-game Virtual Pro name ([proName]).
+ * The endpoint returns `{"members": [{…}, …]}`. Each member object uses
+ * `"name"` (not `"playername"`) as the gamertag identifier, and `"proName"`
+ * (camelCase) for the in-game Virtual Pro display name.
  *
- * Used to resolve display names: [proName] is shown in Discord when
- * available; otherwise [playerName] is used as fallback.
+ * Both field names are confirmed from the live EA API response (2026-07-22).
+ *
+ * Used to resolve display names: [proName] is shown in Discord when available;
+ * otherwise the match-payload [playerName] (from the `"playername"` field) is
+ * used as fallback.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class MemberStats(
-    @JsonProperty("playername") val playerName: String? = null,
-    @JsonProperty("proName")    val proName: String? = null,
+    @JsonProperty("name")    val playerName: String? = null,
+    @JsonProperty("proName") val proName: String? = null,
 )
 
