@@ -89,6 +89,16 @@ class MatchSummaryBuilder(
         val outfield = allActive.filter { !it.isGoalkeeper() }
         val matchId = match.matchId
 
+        // Determine Bagre first so positive awards can exclude that player.
+        // playerName is the canonical identity key — proName is never used for comparisons.
+        val bagrePlayerName: String? = BagrePerformanceEvaluator.selectBagrePlayer(outfield)?.playerName
+
+        // Positive awards must never be given to the Bagre player.
+        val positiveOutfield: List<PlayerEntry> = if (bagrePlayerName != null)
+            outfield.filter { it.playerName != bagrePlayerName }
+        else
+            outfield
+
         // ── Diagnostic trace for award pipeline ──────────────────────────────
         // Log at INFO so this is always visible in production logs.
         // Remove once the root cause of missing awards is confirmed.
@@ -132,12 +142,12 @@ class MatchSummaryBuilder(
             matchId = matchId,
             goals = buildGoalsSection(allActive, proNames),
             assists = buildAssistsSection(allActive, proNames),
-            highlights = buildHighlightsSection(outfield, allActive, proNames),
-            craque = buildCraqueSection(outfield, matchId, random, proNames),
-            perigoConstante = buildPerigoConstanteSection(outfield, matchId, random, proNames),
+            highlights = buildHighlightsSection(positiveOutfield, allActive, proNames),
+            craque = buildCraqueSection(positiveOutfield, matchId, random, proNames),
+            perigoConstante = buildPerigoConstanteSection(positiveOutfield, matchId, random, proNames),
             bagre = buildBagreSection(outfield, matchId, random, proNames),
-            xerife = buildXerifeSection(outfield, matchId, random, proNames),
-            passePrecisao = buildPassePrecisaoSection(outfield, matchId, random, proNames),
+            xerife = buildXerifeSection(positiveOutfield, matchId, random, proNames),
+            passePrecisao = buildPassePrecisaoSection(positiveOutfield, matchId, random, proNames),
             correioExtraviado = buildCorreioSection(outfield, matchId, random, proNames),
             muralha = buildMuralhaSection(goalkeeper, matchId, random, proNames),
         )
