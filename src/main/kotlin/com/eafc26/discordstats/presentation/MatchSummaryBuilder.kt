@@ -144,7 +144,7 @@ class MatchSummaryBuilder(
             assists = buildAssistsSection(allActive, proNames),
             highlights = buildHighlightsSection(positiveOutfield, allActive, proNames),
             craque = buildCraqueSection(positiveOutfield, matchId, random, proNames),
-            perigoConstante = buildPerigoConstanteSection(positiveOutfield, matchId, random, proNames),
+            perigoConstante = buildPerigoConstanteSection(positiveOutfield, matchId, resolved.ourScore, resolved.oppScore, proNames),
             bagre = buildBagreSection(outfield, matchId, random, proNames),
             xerife = buildXerifeSection(positiveOutfield, matchId, random, proNames),
             passePrecisao = buildPassePrecisaoSection(positiveOutfield, matchId, random, proNames),
@@ -212,18 +212,30 @@ class MatchSummaryBuilder(
         )
     }
 
-    private fun buildPerigoConstanteSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): PerigoConstanteSection? {
+    private fun buildPerigoConstanteSection(
+        outfield: Collection<PlayerEntry>,
+        matchId: String,
+        teamGoals: Int,
+        opponentGoals: Int,
+        proNames: Map<String, String>,
+    ): PerigoConstanteSection? {
         val selection = PerigoConstanteSelector.select(outfield) ?: return null
         val name = selection.player.displayName(proNames)
-        val category = if (selection.efficient) PhraseCategory.PERIGO_EFICIENTE else PhraseCategory.PERIGO_VOLUME
-        val phrase = pickFromCategory(category, matchId, name, random)
+        val ctx = com.eafc26.discordstats.discord.AttackingThreatPresenter.AttackingThreatContext(
+            shots = selection.shots,
+            goals = selection.goals,
+            teamGoals = teamGoals,
+            opponentGoals = opponentGoals,
+        )
+        val presentation = com.eafc26.discordstats.discord.AttackingThreatPresenter.resolve(ctx)
 
         return PerigoConstanteSection(
             name = name,
             shots = selection.shots,
             goals = selection.goals,
-            efficient = selection.efficient,
-            phrase = phrase,
+            title = presentation.title,
+            emoji = presentation.emoji,
+            message = presentation.message,
         )
     }
 

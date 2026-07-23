@@ -259,10 +259,9 @@ class MatchSummaryBuilderTest {
 
     // ── Match 874612175930485 pipeline regression ────────────────────────────
     //
-    // Before the DIS refactor, XerifeSelector required success rate > 60%.
-    // All players in this match had rates ≤ 40 %, so the Sheriff was never rendered.
-    //
-    // Playing time is no longer part of Sheriff eligibility.
+    // In this match the highest tacklesMade among outfield players is 2.
+    // Under the updated eligibility rules (tacklesMade >= 5 AND precision >= 70%),
+    // no player qualifies for Xerife and the section must be absent.
 
     @Nested
     inner class Match874612175930485Pipeline {
@@ -322,23 +321,21 @@ class MatchSummaryBuilderTest {
         }
 
         @Test
-        fun `Sheriff is dbeng_bass`() {
+        fun `Sheriff is absent because no player has 5 or more successful tackles`() {
             val presentation = builder.build(buildRealMatch(withSeconds = true), ourClubId)
 
-            assertThat(presentation.xerife).isNotNull
-            assertThat(presentation.xerife!!.name).isEqualTo("dbeng_bass")
-            assertThat(presentation.xerife!!.tacklesMade).isEqualTo(2)
-            assertThat(presentation.xerife!!.tackleAttempts).isEqualTo(5)
-            assertThat(presentation.xerife!!.successRate).isEqualTo(40)
+            assertThat(presentation.xerife)
+                .describedAs("Xerife must be absent — max tacklesMade in this match is 2")
+                .isNull()
         }
 
         @Test
-        fun `Sheriff is dbeng_bass even when secondsPlayed is null`() {
-            // Playing time is no longer part of Sheriff eligibility
+        fun `Sheriff is absent even when secondsPlayed is null`() {
             val presentation = builder.build(buildRealMatch(withSeconds = false), ourClubId)
 
-            assertThat(presentation.xerife).isNotNull
-            assertThat(presentation.xerife!!.name).isEqualTo("dbeng_bass")
+            assertThat(presentation.xerife)
+                .describedAs("Xerife must be absent with null secondsPlayed")
+                .isNull()
         }
 
         @Test

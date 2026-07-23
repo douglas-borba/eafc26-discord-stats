@@ -7,26 +7,23 @@ import org.slf4j.LoggerFactory
  * Selects the "Perigo Constante" highlight - the player who posed the most threat to the opponent's goal.
  *
  * Requirements:
- * - Must have attempted at least 3 shots
- * - Selection is by highest number of shots
- * - Context-aware phrases based on efficiency (goals vs shots)
+ * - Must have attempted at least [MIN_SHOTS] shots
+ * - Selection is by highest number of shots (goals then name as tiebreakers)
  *
- * Disconnected or AI-replaced players are excluded via the eligibility filter
- * applied before calling this selector.
+ * Presentation (title, emoji, message) is determined by [AttackingThreatPresenter],
+ * which receives the selected player's statistics and the match score context.
  */
 object PerigoConstanteSelector {
 
     private val log = LoggerFactory.getLogger(PerigoConstanteSelector::class.java)
 
-    /** Minimum shots required to be considered */
-    const val MIN_SHOTS = 3
+    /** Minimum shots required to be considered — also gates COULD_HAVE_DECIDED and LACKED_COMPOSURE */
+    const val MIN_SHOTS = 5
 
     data class PerigoConstanteSelection(
         val player: PlayerEntry,
         val shots: Int,
         val goals: Int,
-        /** true if player was efficient (scored goals), false if mostly missed */
-        val efficient: Boolean,
     )
 
     /**
@@ -65,15 +62,13 @@ object PerigoConstanteSelector {
 
         val shots = best.second
         val goals = best.third
-        val efficient = shots > 0 && goals.toDouble() / shots >= 0.75
 
-        log.debug("[PERIGO] WINNER '{}': shots={} goals={} efficient={}", best.first.playerName, shots, goals, efficient)
+        log.debug("[PERIGO] WINNER '{}': shots={} goals={}", best.first.playerName, shots, goals)
 
         return PerigoConstanteSelection(
             player = best.first,
             shots = shots,
             goals = goals,
-            efficient = efficient,
         )
     }
 }

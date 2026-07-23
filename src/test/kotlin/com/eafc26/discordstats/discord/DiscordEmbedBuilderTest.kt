@@ -542,8 +542,9 @@ class DiscordEmbedBuilderTest {
 
     @Test
     fun `secao XERIFE contem frase dinamica`() {
+        // tacklesMade=5, tackleAttempts=7 → precision ≈ 71.4% — passes both gates
         val embed = buildEmbedWithPlayers(
-            player("Xerife", rating = "7.5", tackleAttempts = "5", tacklesMade = "4"),
+            player("Xerife", rating = "7.5", tackleAttempts = "7", tacklesMade = "5"),
             player("Bagre",  rating = "5.5"),  // Bagre to allow Xerife to be selected
         ).embeds[0]
         val text = embed.fields.field("🚧 XERIFE DA PARTIDA").value
@@ -552,9 +553,10 @@ class DiscordEmbedBuilderTest {
 
     @Test
     fun `goleiro nunca e Xerife`() {
+        // Linha: tacklesMade=5, tackleAttempts=7 → precision ≈ 71.4% — eligible
         val embed = buildEmbedWithPlayers(
             goalkeeper("GKXerife", rating = "8.0", saves = "5"),
-            player("Linha", rating = "7.5", tackleAttempts = "3", tacklesMade = "2"),
+            player("Linha", rating = "7.5", tackleAttempts = "7", tacklesMade = "5"),
             player("Bagre", rating = "5.5"),  // Bagre to allow Linha to be selected
         ).embeds[0]
         val text = embed.fields.field("🚧 XERIFE DA PARTIDA").value
@@ -906,29 +908,24 @@ class DiscordEmbedBuilderTest {
 
     // ── Match 874612175930485 pipeline regression ────────────────────────────
     //
-    // Root cause (fixed): the old XerifeSelector required success rate > 60%.
-    // Every player in this match had a rate ≤ 40 %, so no Sheriff was ever rendered.
-    // The DIS formula replaced the binary gate; dbeng_bass (DIS=0.800) now wins.
-    //
-    // Playing time is no longer part of Sheriff eligibility.
+    // In this match the best outfield players had at most 2 successful tackles.
+    // Under the new eligibility rules (tacklesMade >= 5 AND precision >= 70%),
+    // no player qualifies for Xerife and the section must be absent.
 
     @Test
-    fun `match 874612175930485 - Sheriff is dbeng_bass`() {
+    fun `match 874612175930485 - Sheriff is absent because no player has 5 or more successful tackles`() {
         val embed = buildMatch874612175930485(withSeconds = true).embeds[0]
-        val xerifeField = embed.fields.firstOrNull { it.name == "🚧 XERIFE DA PARTIDA" }
-        assertThat(xerifeField).describedAs("Xerife field must be present").isNotNull
-        assertThat(xerifeField!!.value).contains("dbeng_bass")
-        assertThat(xerifeField.value).contains("2/5 desarmes")
-        assertThat(xerifeField.value).contains("Aproveitamento: 40%")
+        assertThat(embed.fields.none { it.name == "🚧 XERIFE DA PARTIDA" })
+            .describedAs("Xerife field must be absent — max tacklesMade in this match is 2")
+            .isTrue()
     }
 
     @Test
-    fun `match 874612175930485 - Sheriff is dbeng_bass even when secondsPlayed is null`() {
-        // secondsPlayed is no longer part of Sheriff eligibility
+    fun `match 874612175930485 - Sheriff is absent even when secondsPlayed is null`() {
         val embed = buildMatch874612175930485(withSeconds = false).embeds[0]
-        val xerifeField = embed.fields.firstOrNull { it.name == "🚧 XERIFE DA PARTIDA" }
-        assertThat(xerifeField).describedAs("Xerife field must be present with null secondsPlayed").isNotNull
-        assertThat(xerifeField!!.value).contains("dbeng_bass")
+        assertThat(embed.fields.none { it.name == "🚧 XERIFE DA PARTIDA" })
+            .describedAs("Xerife field must be absent with null secondsPlayed")
+            .isTrue()
     }
 
     @Test

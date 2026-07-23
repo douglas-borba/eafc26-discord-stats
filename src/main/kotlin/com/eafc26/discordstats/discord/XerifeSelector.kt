@@ -6,46 +6,33 @@ import org.slf4j.LoggerFactory
 /**
  * Selects the Xerife da Partida (best defensive player).
  *
- * ## Defensive Impact Score (DIS)
+ * ## Eligibility gates (all must pass)
  *
- *   DIS = tacklesMade × (tacklesMade / tackleAttempts)
- *       = tacklesMade² / tackleAttempts
+   *   1. tacklesMade >= [MIN_TACKLES_MADE] (4) — meaningful defensive volume
+ *   2. tacklePrecision >= [MIN_TACKLE_PRECISION] (0.70) — good tackling efficiency
+ *   3. redCards == 0 — red card is a hard disqualifier
+ *   4. Bagre exclusion — applied upstream by MatchSummaryBuilder
  *
- * ### Components
+ *   tacklePrecision = tacklesMade.toDouble() / tackleAttempts
+ *   Zero tackle attempts → not eligible (no division by zero risk).
  *
- *   - **tacklesMade** — raw defensive volume.
+ * ## Ranking (among eligible candidates)
  *
- *   - **successRateFraction** = tacklesMade / tackleAttempts  (0.0 – 1.0)
- *     Multiplying by this fraction continuously penalises sloppy tackling without
- *     an arbitrary binary gate: a 40 % tackler scores half what an 80 % tackler
- *     produces at the same volume.
+ *   Defensive Impact Score (DIS) = tacklesMade² / tackleAttempts
  *
- * Playing time is **not** considered.  In a Pro Clubs environment almost every
- * player starts and finishes the match; substitutions are extremely rare.
- * Adding a time weight adds complexity without improving the result and has
- * caused production issues (players with success rates below any old binary gate
- * were silently dropped even though they had the best DIS in the match).
- *
- * ## Eligibility
- *   - tackleAttempts >= [MIN_TACKLE_ATTEMPTS]  — must have genuinely engaged
- *     defensively to compete for the award.  The minimum of 2 prevents a player
- *     who won a single lucky tackle from winning over someone who attempted many.
- *
- * ## Tiebreaker
  *   Equal DIS → higher successRate → more tacklesMade.
  *
- * Disconnected or AI-replaced players are excluded via the eligibility filter
- * applied before calling this selector.
+ * Playing time is **not** considered.
  */
 object XerifeSelector {
 
     private val log = LoggerFactory.getLogger(XerifeSelector::class.java)
 
-    /**
-     * Minimum tackle attempts required to be eligible.
-     * Prevents a player with a single lucky tackle from winning the award.
-     */
-    const val MIN_TACKLE_ATTEMPTS = 2
+    /** Minimum successful tackles required. */
+    const val MIN_TACKLES_MADE = 4
+
+    /** Minimum tackle precision required (inclusive). */
+    const val MIN_TACKLE_PRECISION = 0.70
 
     data class XerifeSelection(
         val player: PlayerEntry,
@@ -59,6 +46,8 @@ object XerifeSelector {
     /**
      * Selects the Xerife from eligible outfield players.
      * Returns null if no player passes the eligibility criteria.
+     *
+     * Bagre exclusion is expected to be applied by the caller before passing [outfield].
      */
     fun select(outfield: Collection<PlayerEntry>): XerifeSelection? {
         data class Candidate(
@@ -73,23 +62,40 @@ object XerifeSelector {
 
         val candidates = outfield.mapNotNull { player ->
             val name = player.playerName ?: "(unknown)"
-            val attempts = player.tackleAttempts?.toIntOrNull()
-            if (attempts == null) {
-                log.debug("[XERIFE] SKIP '{}': tackleAttempts is null/non-numeric (raw='{}')", name, player.tackleAttempts)
+
+            // Red card is a hard disqualification
+            val redCards = player.redCards?.toIntOrNull() ?: 0
+            if (redCards > 0) {
+                log.debug("[XERIFE] SKIP '{}': has {} red card(s)", name, redCards)
                 return@mapNotNull null
             }
-            if (attempts < MIN_TACKLE_ATTEMPTS) {
-                log.debug("[XERIFE] SKIP '{}': tackleAttempts={} < MIN={}", name, attempts, MIN_TACKLE_ATTEMPTS)
+
+            val attempts = player.tackleAttempts?.toIntOrNull()
+            if (attempts == null || attempts == 0) {
+                log.debug("[XERIFE] SKIP '{}': tackleAttempts is null/zero (raw='{}')", name, player.tackleAttempts)
                 return@mapNotNull null
             }
 
             val made = player.tacklesMade?.toIntOrNull() ?: 0
-            val successRateFraction = made.toDouble() / attempts
-            val score = made * successRateFraction
-            val successRateInt = (successRateFraction * 100).toInt()
 
-            log.debug("[XERIFE] CANDIDATE '{}': made={} att={} rate={}% DIS={:.3f}",
-                name, made, attempts, successRateInt, score)
+            // Gate 1: minimum volume
+            if (made < MIN_TACKLES_MADE) {
+                log.debug("[XERIFE] SKIP '{}': tacklesMade={} < MIN={}", name, made, MIN_TACKLES_MADE)
+                return@mapNotNull null
+            }
+
+            // Gate 2: minimum precision (no rounding before comparison)
+            val precision = made.toDouble() / attempts
+            if (precision < MIN_TACKLE_PRECISION) {
+                log.debug("[XERIFE] SKIP '{}': precision={:.3f} < MIN={}", name, precision, MIN_TACKLE_PRECISION)
+                return@mapNotNull null
+            }
+
+            val score = made.toDouble() * made.toDouble() / attempts.toDouble()
+            val successRateInt = (precision * 100).toInt()
+
+            log.debug("[XERIFE] CANDIDATE '{}': made={} att={} precision={:.3f} DIS={:.3f}",
+                name, made, attempts, precision, score)
 
             Candidate(player, made, attempts, successRateInt, score)
         }

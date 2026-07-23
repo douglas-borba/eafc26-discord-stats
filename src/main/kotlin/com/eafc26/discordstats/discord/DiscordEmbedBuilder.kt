@@ -124,7 +124,7 @@ object DiscordEmbedBuilder {
         addSection(assistsField(allActive, proNames))
         addSection(top3AndAvgField(outfield, allActive, proNames))
         addSection(craqueField(outfield, matchId, excludeFromPositive, proNames))
-        addSection(perigoConstanteField(outfield, matchId, excludeFromPositive, proNames))
+        addSection(perigoConstanteField(outfield, matchId, excludeFromPositive, resolved.ourScore, resolved.oppScore, proNames))
         addSection(bagreField(outfield, matchId, proNames))
         addSection(xerifeField(outfield, matchId, excludeFromPositive, proNames))
         addSection(passePrecisaoField(outfield, matchId, excludeFromPositive, proNames))
@@ -264,21 +264,33 @@ object DiscordEmbedBuilder {
         return EmbedField("🎯 PASSE DE PRECISÃO", value)
     }
 
-    private fun perigoConstanteField(outfield: Collection<PlayerEntry>, matchId: String, excludeFromPositive: Set<String>, proNames: Map<String, String>): EmbedField? {
+    private fun perigoConstanteField(
+        outfield: Collection<PlayerEntry>,
+        matchId: String,
+        excludeFromPositive: Set<String>,
+        teamGoals: Int,
+        opponentGoals: Int,
+        proNames: Map<String, String>,
+    ): EmbedField? {
         val eligible = outfield.filter { it.playerName !in excludeFromPositive }
         val selection = PerigoConstanteSelector.select(eligible) ?: return null
         val name = selection.player.displayName(proNames)
 
-        val category = if (selection.efficient) PhraseCategory.PERIGO_EFICIENTE else PhraseCategory.PERIGO_VOLUME
-        val phrase = pickFromCategory(category, matchId, name)
+        val ctx = AttackingThreatPresenter.AttackingThreatContext(
+            shots = selection.shots,
+            goals = selection.goals,
+            teamGoals = teamGoals,
+            opponentGoals = opponentGoals,
+        )
+        val presentation = AttackingThreatPresenter.resolve(ctx)
 
+        val goalsLabel = if (selection.goals == 1) "gol" else "gols"
         val value = buildString {
             append("$BLANK\n$name\n$BLANK\n")
-            append("🥅 ${selection.shots} finalizações\n")
-            append("⚽ ${selection.goals} ${if (selection.goals == 1) "gol" else "gols"}\n$BLANK\n")
-            append("💬 \"$phrase\"")
+            append("${selection.shots} chutes • ${selection.goals} $goalsLabel\n$BLANK\n")
+            append("💬 \"${presentation.message}\"")
         }
-        return EmbedField("🔥 PERIGO CONSTANTE", value)
+        return EmbedField("${presentation.emoji} ${presentation.title}", value)
     }
 
     private fun correioField(outfield: Collection<PlayerEntry>, matchId: String, proNames: Map<String, String>): EmbedField? {

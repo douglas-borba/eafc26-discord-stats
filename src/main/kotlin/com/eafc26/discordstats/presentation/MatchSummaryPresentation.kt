@@ -84,8 +84,12 @@ data class PerigoConstanteSection(
     val name: String,
     val shots: Int,
     val goals: Int,
-    val efficient: Boolean,
-    val phrase: String,
+    /** Uppercase title without emoji, e.g. "PODERIA TER DECIDIDO". */
+    val title: String,
+    /** Leading emoji, e.g. "🎯". */
+    val emoji: String,
+    /** Contextual narrative displayed as a quote. */
+    val message: String,
 )
 
 data class BagreSection(
