@@ -118,8 +118,8 @@ object DiscordEmbedBuilder {
             fields += field
         }
 
-        // Section order as requested:
-        // 🥇 DESTAQUES, ⭐ CRAQUE, 🔥 OFFENSIVE NARRATIVES, 🍍 BAGRE, 🚧 XERIFE, 🎯 PASSE DE PRECISÃO, 📮 CORREIO
+        // Section order:
+        // 🥇 DESTAQUES, ⭐ CRAQUE, 🔥 OFFENSIVE NARRATIVES, 🍍 BAGRE, 🟥 RED CARD, 🚧 XERIFE, 🎯 PASSE DE PRECISÃO, 📮 CORREIO
         addSection(goalsField(allActive, proNames))
         addSection(assistsField(allActive, proNames))
         addSection(top3AndAvgField(outfield, allActive, proNames))
@@ -127,6 +127,7 @@ object DiscordEmbedBuilder {
         offensiveNarrativeFields(outfield, excludeFromPositive, resolved.ourScore, resolved.oppScore, proNames)
             .forEach { addSection(it) }
         addSection(bagreField(outfield, matchId, proNames))
+        addSection(redCardField(outfield, matchId, proNames))
         addSection(xerifeField(outfield, matchId, excludeFromPositive, proNames))
         addSection(passePrecisaoField(outfield, matchId, excludeFromPositive, proNames))
         addSection(correioField(outfield, matchId, proNames))
@@ -233,6 +234,18 @@ object DiscordEmbedBuilder {
         }
 
         return EmbedField("🍍 BAGRE DA PARTIDA", value)
+    }
+
+    private fun redCardField(outfield: Collection<PlayerEntry>, matchId: String, proNames: Map<String, String>): EmbedField? {
+        val selection = RedCardEvaluator.evaluate(outfield) ?: return null
+        val name      = selection.player.displayName(proNames)
+        val phrase    = pickFromCategory(PhraseCategory.PERDEU_A_CABECA, matchId, name)
+        val value = buildString {
+            append("$BLANK\n$name\n$BLANK\n")
+            append("Cartão vermelho\n$BLANK\n")
+            append("💬 \"$phrase\"")
+        }
+        return EmbedField("🟥 PERDEU A CABEÇA", value)
     }
 
     private fun xerifeField(outfield: Collection<PlayerEntry>, matchId: String, excludeFromPositive: Set<String>, proNames: Map<String, String>): EmbedField? {

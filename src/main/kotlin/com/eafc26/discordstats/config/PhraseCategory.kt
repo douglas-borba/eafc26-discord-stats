@@ -439,4 +439,23 @@ enum class PhraseCategory(val key: String, val displayName: String, val defaults
             "Passou a bola como quem passa trote.",
         ),
     ),
+
+    PERDEU_A_CABECA(
+        key = "perdeu_a_cabeca",
+        displayName = "Perdeu a Cabeça (Cartão Vermelho)",
+        defaults = listOf(
+            "Perdeu a cabeça e complicou a vida da equipe.",
+            "Deixou o time com um a menos.",
+            "Foi mais cedo para o vestiário.",
+            "Terminou a partida antes da hora.",
+            "Passou do ponto e recebeu o cartão vermelho.",
+            "Não conseguiu se controlar e foi expulso.",
+            "Entrou forte demais e pagou o preço.",
+            "Exagerou e acabou expulso.",
+            "Viu o vermelho e deixou a equipe com um a menos.",
+            "Saiu de campo antes do apito final.",
+            "O árbitro tirou o vermelho do bolso.",
+            "Recebeu a expulsão e deixou o time em desvantagem numérica.",
+        ),
+    ),
 }

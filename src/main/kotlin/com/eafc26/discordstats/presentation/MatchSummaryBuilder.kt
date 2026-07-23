@@ -145,6 +145,7 @@ class MatchSummaryBuilder(
             craque = buildCraqueSection(positiveOutfield, matchId, random, proNames),
             offensiveNarratives = buildOffensiveNarratives(positiveOutfield, resolved.ourScore, resolved.oppScore, proNames),
             bagre = buildBagreSection(outfield, matchId, random, proNames),
+            redCard = buildRedCardSection(outfield, matchId, random, proNames),
             xerife = buildXerifeSection(positiveOutfield, matchId, random, proNames),
             passePrecisao = buildPassePrecisaoSection(positiveOutfield, matchId, random, proNames),
             correioExtraviado = buildCorreioSection(outfield, matchId, random, proNames),
@@ -241,6 +242,13 @@ class MatchSummaryBuilder(
             passStats = evaluation.passStats,
             phrase = evaluation.phrase,
         )
+    }
+
+    private fun buildRedCardSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): RedCardSection? {
+        val selection = com.eafc26.discordstats.discord.RedCardEvaluator.evaluate(outfield) ?: return null
+        val name = selection.player.displayName(proNames)
+        val phrase = pickFromCategory(PhraseCategory.PERDEU_A_CABECA, matchId, name, random)
+        return RedCardSection(name = name, redCards = selection.redCards, phrase = phrase)
     }
 
     private fun buildXerifeSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): XerifeSection? {

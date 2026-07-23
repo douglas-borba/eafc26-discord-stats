@@ -433,6 +433,13 @@
         html += '</div></div>';
       }
 
+      // Red card
+      if (p.redCard) {
+        html += '<div class="divider"></div>';
+        const rc = p.redCard;
+        html += renderHighlight('🟥 PERDEU A CABEÇA', rc.name, 'Cartão vermelho', rc.phrase);
+      }
+
       // Xerife
       if (p.xerife) {
         html += '<div class="divider"></div>';

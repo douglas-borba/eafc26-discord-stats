@@ -976,6 +976,13 @@
         html += '</div></div>';
       }
 
+      // Red card
+      if (p.redCard) {
+        html += '<div class="card-divider"></div>';
+        const rc = p.redCard;
+        html += renderHighlight('🟥 PERDEU A CABEÇA', rc.name, 'Cartão vermelho', rc.phrase);
+      }
+
       // Xerife - full width stacked
       if (p.xerife) {
         html += '<div class="card-divider"></div>';

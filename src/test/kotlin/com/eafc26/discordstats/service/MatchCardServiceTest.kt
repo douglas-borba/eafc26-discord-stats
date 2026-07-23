@@ -192,6 +192,7 @@ class MatchCardServiceTest {
             craque = null,
             offensiveNarratives = emptyList(),
             bagre = null,
+            redCard = null,
             xerife = null,
             passePrecisao = null,
             correioExtraviado = null,

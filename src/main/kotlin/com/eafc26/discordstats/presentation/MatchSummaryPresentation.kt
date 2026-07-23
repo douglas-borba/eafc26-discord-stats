@@ -30,6 +30,7 @@ data class MatchSummaryPresentation(
     val craque: CraqueSection?,
     val offensiveNarratives: List<OffensiveNarrativeSection>,
     val bagre: BagreSection?,
+    val redCard: RedCardSection?,
     val xerife: XerifeSection?,
     val passePrecisao: PassePrecisaoSection?,
     val correioExtraviado: CorreioExtraviadoSection?,
@@ -90,6 +91,12 @@ data class OffensiveNarrativeSection(
     val emoji: String,
     /** Contextual narrative displayed as a quote. */
     val message: String,
+)
+
+data class RedCardSection(
+    val name: String,
+    val redCards: Int,
+    val phrase: String,
 )
 
 data class BagreSection(
