@@ -401,4 +401,143 @@ class AttackingThreatPresenterTest {
             goals = goals,
             secondsPlayed = "900",
         )
+
+    // ── Regression: 6 shots 1 goal (real-match observation) ──────────────────
+    //
+    // Root cause of the observed "🔥 PERIGO CONSTANTE" + empty message:
+    //   The HTML templates (index.html, match-card.html) read pc.phrase, but
+    //   PerigoConstanteSection now exposes message. The template received
+    //   undefined, which rendered as "".  The title was hardcoded to
+    //   '🔥 PERIGO CONSTANTE' in both templates, masking the real category.
+    //
+    // With the current classify() logic, 6 shots + 1 goal can never reach
+    // CONSTANT_THREAT — the tests below assert the correct categories.
+
+    @Nested
+    inner class SixShotsOneGoalRegression {
+
+        @Test
+        fun `6 shots 1 goal draw is COULD_HAVE_DECIDED`() {
+            // goalDiff=0, shots=6>=5, conv=0.167<0.50 → rule 1
+            assertThat(category(shots = 6, goals = 1, teamGoals = 1, opponentGoals = 1))
+                .isEqualTo(Category.COULD_HAVE_DECIDED)
+        }
+
+        @Test
+        fun `6 shots 1 goal one-goal defeat is COULD_HAVE_DECIDED`() {
+            // goalDiff=-1, shots=6>=5, conv=0.167<0.50 → rule 1
+            assertThat(category(shots = 6, goals = 1, teamGoals = 1, opponentGoals = 2))
+                .isEqualTo(Category.COULD_HAVE_DECIDED)
+        }
+
+        @Test
+        fun `6 shots 1 goal victory is FELL_SHORT`() {
+            // goalDiff=1>0 → rule 1 fails; goals=1 → rule 2 fails;
+            // goals=1<2 → rule 3 fails; conv=0.167<0.35, shots=6>=5 → rule 4 FELL_SHORT
+            assertThat(category(shots = 6, goals = 1, teamGoals = 2, opponentGoals = 1))
+                .isEqualTo(Category.FELL_SHORT)
+        }
+
+        @Test
+        fun `6 shots 1 goal comfortable victory is FELL_SHORT`() {
+            // goalDiff=3; same reasoning as above
+            assertThat(category(shots = 6, goals = 1, teamGoals = 3, opponentGoals = 0))
+                .isEqualTo(Category.FELL_SHORT)
+        }
+
+        @Test
+        fun `6 shots 1 goal heavy defeat is FELL_SHORT`() {
+            // goalDiff=-3 → rule 1 fails (not narrow); goals=1 → rule 2 fails;
+            // rule 3 fails; conv=0.167<0.35, shots=6>=5 → FELL_SHORT
+            assertThat(category(shots = 6, goals = 1, teamGoals = 1, opponentGoals = 4))
+                .isEqualTo(Category.FELL_SHORT)
+        }
+
+        @Test
+        fun `6 shots 1 goal never resolves to CONSTANT_THREAT`() {
+            // Verify against every plausible goalDiff — none should reach CONSTANT_THREAT
+            val goalDiffs = listOf(-5, -4, -3, -2, 1, 2, 3, 4, 5)
+            goalDiffs.forEach { diff ->
+                val teamG = if (diff >= 0) diff else 0
+                val oppG  = if (diff < 0) -diff else 0
+                assertThat(category(shots = 6, goals = 1, teamGoals = teamG, opponentGoals = oppG))
+                    .withFailMessage("Expected non-CONSTANT_THREAT for goalDiff=$diff but got CONSTANT_THREAT")
+                    .isNotEqualTo(Category.CONSTANT_THREAT)
+            }
+        }
+    }
+
+    // ── Blank-string guarantee ────────────────────────────────────────────────
+    //
+    // Every presentation returned by the presenter must have a non-blank title,
+    // emoji, and message.  This test exhaustively covers all five categories
+    // using a representative input for each so that a stale or missing string
+    // literal is caught immediately.
+
+    @Nested
+    inner class NoBlanksGuarantee {
+
+        private fun assertNoBlanks(p: AttackingThreatPresenter.AttackingThreatPresentation) {
+            assertThat(p.title).withFailMessage("title must not be blank for category ${p.category}").isNotBlank()
+            assertThat(p.emoji).withFailMessage("emoji must not be blank for category ${p.category}").isNotBlank()
+            assertThat(p.message).withFailMessage("message must not be blank for category ${p.category}").isNotBlank()
+        }
+
+        @Test
+        fun `COULD_HAVE_DECIDED presentation has no blank strings`() {
+            // 5 shots, 2 goals, draw
+            assertNoBlanks(presentation(shots = 5, goals = 2, teamGoals = 1, opponentGoals = 1))
+        }
+
+        @Test
+        fun `LACKED_COMPOSURE presentation has no blank strings`() {
+            // 6 shots, 0 goals, big win
+            assertNoBlanks(presentation(shots = 6, goals = 0, teamGoals = 3, opponentGoals = 0))
+        }
+
+        @Test
+        fun `DECISIVE presentation has no blank strings`() {
+            // 5 shots, 3 goals, victory
+            assertNoBlanks(presentation(shots = 5, goals = 3, teamGoals = 3, opponentGoals = 1))
+        }
+
+        @Test
+        fun `FELL_SHORT presentation has no blank strings`() {
+            // 6 shots, 1 goal, victory
+            assertNoBlanks(presentation(shots = 6, goals = 1, teamGoals = 2, opponentGoals = 1))
+        }
+
+        @Test
+        fun `CONSTANT_THREAT presentation has no blank strings`() {
+            // 5 shots, 2 goals, comfortable win (40% conversion → not decisive, not fell-short)
+            assertNoBlanks(presentation(shots = 5, goals = 2, teamGoals = 3, opponentGoals = 1))
+        }
+
+        @Test
+        fun `all five Category enum values are covered and return non-blank presentations`() {
+            // Force every category via the internal classify() function and verify
+            val cases = mapOf(
+                Category.COULD_HAVE_DECIDED to Triple(5, 2, 0),   // shots=5, goals=2, goalDiff=0
+                Category.LACKED_COMPOSURE   to Triple(6, 0, 2),   // shots=6, goals=0, goalDiff=2
+                Category.DECISIVE           to Triple(5, 3, 2),   // shots=5, goals=3, goalDiff=2
+                Category.FELL_SHORT         to Triple(6, 1, 1),   // shots=6, goals=1, goalDiff=1
+                Category.CONSTANT_THREAT    to Triple(5, 2, 2),   // shots=5, goals=2, goalDiff=2
+            )
+            cases.forEach { (expectedCategory, params) ->
+                val (shots, goals, goalDiff) = params
+                val conv = if (shots > 0) goals.toDouble() / shots else 0.0
+                val actualCategory = AttackingThreatPresenter.classify(shots, goals, goalDiff, conv)
+                assertThat(actualCategory)
+                    .withFailMessage("Expected classify() to produce $expectedCategory for inputs shots=$shots goals=$goals goalDiff=$goalDiff but got $actualCategory")
+                    .isEqualTo(expectedCategory)
+                // Resolve via the public API to check strings
+                val p = AttackingThreatPresenter.resolve(
+                    AttackingThreatContext(shots, goals,
+                        if (goalDiff >= 0) goalDiff else 0,
+                        if (goalDiff < 0) -goalDiff else 0)
+                )
+                assertNoBlanks(p)
+            }
+        }
+    }
 }

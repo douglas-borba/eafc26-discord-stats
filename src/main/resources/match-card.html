@@ -412,7 +412,7 @@
         html += '<div class="divider"></div>';
         const pc = p.perigoConstante;
         const stats = `${pc.shots} chutes • ${pc.goals} ${pc.goals === 1 ? 'gol' : 'gols'}`;
-        html += renderHighlight('🔥 PERIGO', pc.name, stats, pc.phrase);
+        html += renderHighlight(`${pc.emoji} ${pc.title}`, pc.name, stats, pc.message);
       }
 
       // Bagre - structured display
