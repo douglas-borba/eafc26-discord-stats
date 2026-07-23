@@ -339,10 +339,10 @@ class MatchSummaryBuilderTest {
         }
 
         @Test
-        fun `Constant Danger is absent - no player reached 3 shots`() {
+        fun `Constant Danger is absent - no player reached 5 shots`() {
             val presentation = builder.build(buildRealMatch(), ourClubId)
 
-            assertThat(presentation.perigoConstante).isNull()
+            assertThat(presentation.offensiveNarratives).isEmpty()
         }
     }
 }

@@ -8,7 +8,6 @@ import com.eafc26.discordstats.discord.CraqueSelector
 import com.eafc26.discordstats.discord.GoalkeeperEvaluator
 import com.eafc26.discordstats.discord.MatchOutcomeResolver
 import com.eafc26.discordstats.discord.PassePrecisaoSelector
-import com.eafc26.discordstats.discord.PerigoConstanteSelector
 import com.eafc26.discordstats.discord.XerifeSelector
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
@@ -144,7 +143,7 @@ class MatchSummaryBuilder(
             assists = buildAssistsSection(allActive, proNames),
             highlights = buildHighlightsSection(positiveOutfield, allActive, proNames),
             craque = buildCraqueSection(positiveOutfield, matchId, random, proNames),
-            perigoConstante = buildPerigoConstanteSection(positiveOutfield, matchId, resolved.ourScore, resolved.oppScore, proNames),
+            offensiveNarratives = buildOffensiveNarratives(positiveOutfield, resolved.ourScore, resolved.oppScore, proNames),
             bagre = buildBagreSection(outfield, matchId, random, proNames),
             xerife = buildXerifeSection(positiveOutfield, matchId, random, proNames),
             passePrecisao = buildPassePrecisaoSection(positiveOutfield, matchId, random, proNames),
@@ -212,32 +211,24 @@ class MatchSummaryBuilder(
         )
     }
 
-    private fun buildPerigoConstanteSection(
+    private fun buildOffensiveNarratives(
         outfield: Collection<PlayerEntry>,
-        matchId: String,
         teamGoals: Int,
         opponentGoals: Int,
         proNames: Map<String, String>,
-    ): PerigoConstanteSection? {
-        val selection = PerigoConstanteSelector.select(outfield) ?: return null
-        val name = selection.player.displayName(proNames)
-        val ctx = com.eafc26.discordstats.discord.AttackingThreatPresenter.AttackingThreatContext(
-            shots = selection.shots,
-            goals = selection.goals,
-            teamGoals = teamGoals,
-            opponentGoals = opponentGoals,
-        )
-        val presentation = com.eafc26.discordstats.discord.AttackingThreatPresenter.resolve(ctx)
-
-        return PerigoConstanteSection(
-            name = name,
-            shots = selection.shots,
-            goals = selection.goals,
-            title = presentation.title,
-            emoji = presentation.emoji,
-            message = presentation.message,
-        )
-    }
+    ): List<OffensiveNarrativeSection> =
+        com.eafc26.discordstats.discord.OffensiveNarrativeEvaluator
+            .evaluate(outfield, teamGoals, opponentGoals)
+            .map { narrative ->
+                OffensiveNarrativeSection(
+                    name    = narrative.player.displayName(proNames),
+                    shots   = narrative.shots,
+                    goals   = narrative.goals,
+                    title   = narrative.presentation.title,
+                    emoji   = narrative.presentation.emoji,
+                    message = narrative.presentation.message,
+                )
+            }
 
     private fun buildBagreSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): BagreSection? {
         val evaluation = BagrePerformanceEvaluator.evaluate(outfield, matchId, phraseBank, random) ?: return null

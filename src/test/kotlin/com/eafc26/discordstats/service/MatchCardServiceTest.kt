@@ -190,7 +190,7 @@ class MatchCardServiceTest {
             assists = null,
             highlights = null,
             craque = null,
-            perigoConstante = null,
+            offensiveNarratives = emptyList(),
             bagre = null,
             xerife = null,
             passePrecisao = null,

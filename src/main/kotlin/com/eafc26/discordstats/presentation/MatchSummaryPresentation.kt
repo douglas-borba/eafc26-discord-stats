@@ -28,7 +28,7 @@ data class MatchSummaryPresentation(
     val assists: AssistsSection?,
     val highlights: HighlightsSection?,
     val craque: CraqueSection?,
-    val perigoConstante: PerigoConstanteSection?,
+    val offensiveNarratives: List<OffensiveNarrativeSection>,
     val bagre: BagreSection?,
     val xerife: XerifeSection?,
     val passePrecisao: PassePrecisaoSection?,
@@ -80,7 +80,7 @@ data class CraqueSection(
     val phrase: String,
 )
 
-data class PerigoConstanteSection(
+data class OffensiveNarrativeSection(
     val name: String,
     val shots: Int,
     val goals: Int,

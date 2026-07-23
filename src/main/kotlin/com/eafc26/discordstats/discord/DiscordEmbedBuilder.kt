@@ -119,12 +119,13 @@ object DiscordEmbedBuilder {
         }
 
         // Section order as requested:
-        // 🥇 DESTAQUES, ⭐ CRAQUE, 🔥 PERIGO CONSTANTE, 🍍 BAGRE, 🚧 XERIFE, 🎯 PASSE DE PRECISÃO, 📮 CORREIO
+        // 🥇 DESTAQUES, ⭐ CRAQUE, 🔥 OFFENSIVE NARRATIVES, 🍍 BAGRE, 🚧 XERIFE, 🎯 PASSE DE PRECISÃO, 📮 CORREIO
         addSection(goalsField(allActive, proNames))
         addSection(assistsField(allActive, proNames))
         addSection(top3AndAvgField(outfield, allActive, proNames))
         addSection(craqueField(outfield, matchId, excludeFromPositive, proNames))
-        addSection(perigoConstanteField(outfield, matchId, excludeFromPositive, resolved.ourScore, resolved.oppScore, proNames))
+        offensiveNarrativeFields(outfield, excludeFromPositive, resolved.ourScore, resolved.oppScore, proNames)
+            .forEach { addSection(it) }
         addSection(bagreField(outfield, matchId, proNames))
         addSection(xerifeField(outfield, matchId, excludeFromPositive, proNames))
         addSection(passePrecisaoField(outfield, matchId, excludeFromPositive, proNames))
@@ -264,33 +265,30 @@ object DiscordEmbedBuilder {
         return EmbedField("🎯 PASSE DE PRECISÃO", value)
     }
 
-    private fun perigoConstanteField(
+    /**
+     * Returns up to two offensive narrative embed fields.
+     * The evaluator returns all narratives ordered by priority; the embed builder
+     * caps the display at two — a presentation constraint, not a domain one.
+     */
+    private fun offensiveNarrativeFields(
         outfield: Collection<PlayerEntry>,
-        matchId: String,
         excludeFromPositive: Set<String>,
         teamGoals: Int,
         opponentGoals: Int,
         proNames: Map<String, String>,
-    ): EmbedField? {
-        val eligible = outfield.filter { it.playerName !in excludeFromPositive }
-        val selection = PerigoConstanteSelector.select(eligible) ?: return null
-        val name = selection.player.displayName(proNames)
-
-        val ctx = AttackingThreatPresenter.AttackingThreatContext(
-            shots = selection.shots,
-            goals = selection.goals,
-            teamGoals = teamGoals,
-            opponentGoals = opponentGoals,
-        )
-        val presentation = AttackingThreatPresenter.resolve(ctx)
-
-        val goalsLabel = if (selection.goals == 1) "gol" else "gols"
-        val value = buildString {
-            append("$BLANK\n$name\n$BLANK\n")
-            append("${selection.shots} chutes • ${selection.goals} $goalsLabel\n$BLANK\n")
-            append("💬 \"${presentation.message}\"")
+    ): List<EmbedField> {
+        val eligible   = outfield.filter { it.playerName !in excludeFromPositive }
+        val narratives = OffensiveNarrativeEvaluator.evaluate(eligible, teamGoals, opponentGoals)
+        return narratives.take(2).map { narrative ->
+            val name       = narrative.player.displayName(proNames)
+            val goalsLabel = if (narrative.goals == 1) "gol" else "gols"
+            val value = buildString {
+                append("$BLANK\n$name\n$BLANK\n")
+                append("${narrative.shots} chutes • ${narrative.goals} $goalsLabel\n$BLANK\n")
+                append("💬 \"${narrative.presentation.message}\"")
+            }
+            EmbedField("${narrative.presentation.emoji} ${narrative.presentation.title}", value)
         }
-        return EmbedField("${presentation.emoji} ${presentation.title}", value)
     }
 
     private fun correioField(outfield: Collection<PlayerEntry>, matchId: String, proNames: Map<String, String>): EmbedField? {

@@ -943,11 +943,10 @@
       }
 
       // Perigo - full width stacked
-      if (p.perigoConstante) {
+      (p.offensiveNarratives || []).forEach(n => {
         html += '<div class="card-divider"></div>';
-        const pc = p.perigoConstante;
-        html += renderHighlight(`${pc.emoji} ${pc.title}`, pc.name, `${pc.shots} chutes • ${pc.goals} gols`, pc.message);
-      }
+        html += renderHighlight(`${n.emoji} ${n.title}`, n.name, `${n.shots} chutes • ${n.goals} ${n.goals === 1 ? 'gol' : 'gols'}`, n.message);
+      });
 
       // Bagre - full width with clear structure
       if (p.bagre) {

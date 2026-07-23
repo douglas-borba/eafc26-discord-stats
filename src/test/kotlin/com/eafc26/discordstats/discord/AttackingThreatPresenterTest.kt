@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test
  * Tests for [AttackingThreatPresenter].
  *
  * Thresholds:
- * - MIN_SHOTS = 5  (PerigoConstanteSelector.MIN_SHOTS)
+ * - MIN_SHOTS = 5  (OffensiveNarrativeEvaluator.MIN_SHOTS)
  * - DECISIVE_CONVERSION_THRESHOLD  = 0.50
  * - DECISIVE_MIN_GOALS             = 2
  * - FELL_SHORT_CONVERSION_THRESHOLD = 0.35
@@ -41,20 +41,26 @@ class AttackingThreatPresenterTest {
     inner class Eligibility {
 
         @Test
-        fun `4 shots is below threshold - selector returns null`() {
-            val result = PerigoConstanteSelector.select(listOf(player("P", shots = "4")))
-            assertThat(result).isNull()
+        fun `4 shots is below threshold - evaluator returns empty list`() {
+            val result = OffensiveNarrativeEvaluator.evaluate(
+                listOf(player("P", shots = "4")), teamGoals = 1, opponentGoals = 0
+            )
+            assertThat(result).isEmpty()
         }
 
         @Test
-        fun `5 shots meets threshold - selector returns a selection`() {
-            val result = PerigoConstanteSelector.select(listOf(player("P", shots = "5")))
-            assertThat(result).isNotNull
+        fun `5 shots meets threshold - evaluator returns at least one narrative`() {
+            val result = OffensiveNarrativeEvaluator.evaluate(
+                listOf(player("P", shots = "5")), teamGoals = 1, opponentGoals = 0
+            )
+            assertThat(result).isNotEmpty
         }
 
         @Test
-        fun `no eligible candidates - selector returns null`() {
-            assertThat(PerigoConstanteSelector.select(emptyList())).isNull()
+        fun `no eligible candidates - evaluator returns empty list`() {
+            assertThat(
+                OffensiveNarrativeEvaluator.evaluate(emptyList(), teamGoals = 1, opponentGoals = 0)
+            ).isEmpty()
         }
     }
 
@@ -221,10 +227,11 @@ class AttackingThreatPresenterTest {
         }
 
         @Test
-        fun `4 shots 2 goals victory is omitted via selector - below MIN_SHOTS`() {
-            // The selector would not pick this player (4 < MIN_SHOTS=5)
-            val result = PerigoConstanteSelector.select(listOf(player("P", shots = "4", goals = "2")))
-            assertThat(result).isNull()
+        fun `4 shots 2 goals victory is omitted via evaluator - below MIN_SHOTS`() {
+            val result = OffensiveNarrativeEvaluator.evaluate(
+                listOf(player("P", shots = "4", goals = "2")), teamGoals = 2, opponentGoals = 0
+            )
+            assertThat(result).isEmpty()
         }
 
         @Test
@@ -349,45 +356,45 @@ class AttackingThreatPresenterTest {
         }
 
         @Test
-        fun `deterministic tie-breaking by goals then name in selector`() {
+        fun `deterministic tie-breaking by goals then name in evaluator`() {
             val players = listOf(
                 player("Alpha", shots = "5", goals = "3"),
                 player("Beta",  shots = "5", goals = "3"),
             )
-            // Same shots and same goals → name tiebreaker is thenByDescending(name).
-            // maxWithOrNull picks the maximum per comparator; descending name order means
-            // the lexicographically smallest name ('A' < 'B') is ranked highest → Alpha wins.
-            val result = PerigoConstanteSelector.select(players)
-            assertThat(result).isNotNull
-            assertThat(result!!.player.playerName).isEqualTo("Alpha")
+            // Both get the same category; tiebreaker: thenByDescending(name) with maxWithOrNull
+            // makes lexicographically smallest name win → Alpha wins.
+            val result = OffensiveNarrativeEvaluator.evaluate(players, teamGoals = 3, opponentGoals = 1)
+            assertThat(result).hasSize(1)
+            assertThat(result.first().player.playerName).isEqualTo("Alpha")
         }
     }
 
-    // ── Bagre exclusion (integration with selector) ───────────────────────────
+    // ── Bagre exclusion (integration with evaluator) ──────────────────────────
 
     @Nested
     inner class BagreExclusion {
 
         @Test
-        fun `bagre player excluded before selector is called`() {
-            // Simulates the DiscordEmbedBuilder excluding the bagre player by name
+        fun `bagre player excluded before evaluator is called`() {
             val bagreName = "LowRated"
             val candidates = listOf(
                 player(bagreName, shots = "7", goals = "2"),
                 player("OtherPlayer", shots = "5", goals = "1"),
             )
             val eligible = candidates.filter { it.playerName != bagreName }
-            val result = PerigoConstanteSelector.select(eligible)
-            assertThat(result).isNotNull
-            assertThat(result!!.player.playerName).isEqualTo("OtherPlayer")
+            val result = OffensiveNarrativeEvaluator.evaluate(eligible, teamGoals = 2, opponentGoals = 1)
+            assertThat(result).isNotEmpty
+            assertThat(result.none { it.player.playerName == bagreName }).isTrue()
         }
 
         @Test
-        fun `when only candidate is the bagre player no award is produced`() {
+        fun `when only candidate is the bagre player no narrative is produced`() {
             val bagreName = "OnlyPlayer"
             val candidates = listOf(player(bagreName, shots = "7", goals = "2"))
             val eligible = candidates.filter { it.playerName != bagreName }
-            assertThat(PerigoConstanteSelector.select(eligible)).isNull()
+            assertThat(
+                OffensiveNarrativeEvaluator.evaluate(eligible, teamGoals = 2, opponentGoals = 1)
+            ).isEmpty()
         }
     }
 

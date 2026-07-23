@@ -408,12 +408,11 @@
       }
 
       // Perigo Constante
-      if (p.perigoConstante) {
+      (p.offensiveNarratives || []).forEach(n => {
         html += '<div class="divider"></div>';
-        const pc = p.perigoConstante;
-        const stats = `${pc.shots} chutes • ${pc.goals} ${pc.goals === 1 ? 'gol' : 'gols'}`;
-        html += renderHighlight(`${pc.emoji} ${pc.title}`, pc.name, stats, pc.message);
-      }
+        const stats = `${n.shots} chutes • ${n.goals} ${n.goals === 1 ? 'gol' : 'gols'}`;
+        html += renderHighlight(`${n.emoji} ${n.title}`, n.name, stats, n.message);
+      });
 
       // Bagre - structured display
       if (p.bagre) {

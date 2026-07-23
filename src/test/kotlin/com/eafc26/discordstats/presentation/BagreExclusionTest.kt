@@ -176,7 +176,7 @@ class BagreExclusionTest {
             val summary = buildSummary(players)
 
             assertThat(summary.bagre?.name).isEqualTo("Bagre")
-            assertThat(summary.perigoConstante?.name).isNotEqualTo("Bagre")
+            assertThat(summary.offensiveNarratives.none { it.name == "Bagre" }).isTrue()
         }
 
         @Test
@@ -189,7 +189,7 @@ class BagreExclusionTest {
             val summary = buildSummary(players)
 
             assertThat(summary.bagre?.name).isEqualTo("Bagre")
-            assertThat(summary.perigoConstante).isNull()
+            assertThat(summary.offensiveNarratives).isEmpty()
         }
     }
 

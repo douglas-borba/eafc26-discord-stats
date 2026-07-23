@@ -109,19 +109,19 @@ object AttackingThreatPresenter {
             //    The player had enough chances to change the result but did not convert enough of them.
             //    Players who converted >= 50% of their shots are not blamed for the result.
             (goalDiff == 0 || goalDiff == -1)
-                && shots >= PerigoConstanteSelector.MIN_SHOTS
+                && shots >= OffensiveNarrativeEvaluator.MIN_SHOTS
                 && conversionRate < DECISIVE_CONVERSION_THRESHOLD ->
                 Category.COULD_HAVE_DECIDED
 
             // 2. LACKED_COMPOSURE: high volume, zero goals in any other result context.
-            goals == 0 && shots >= PerigoConstanteSelector.MIN_SHOTS -> Category.LACKED_COMPOSURE
+            goals == 0 && shots >= OffensiveNarrativeEvaluator.MIN_SHOTS -> Category.LACKED_COMPOSURE
 
             // 3. DECISIVE: victory with multiple goals and strong conversion (>= 50%).
             goalDiff > 0 && goals >= DECISIVE_MIN_GOALS && conversionRate >= DECISIVE_CONVERSION_THRESHOLD ->
                 Category.DECISIVE
 
             // 4. FELL_SHORT: sufficient volume, at least one goal, but poor conversion (< 35%).
-            shots >= PerigoConstanteSelector.MIN_SHOTS && goals >= 1 && conversionRate < FELL_SHORT_CONVERSION_THRESHOLD ->
+            shots >= OffensiveNarrativeEvaluator.MIN_SHOTS && goals >= 1 && conversionRate < FELL_SHORT_CONVERSION_THRESHOLD ->
                 Category.FELL_SHORT
 
             // 5. CONSTANT_THREAT: positive fallback for any remaining eligible performance.

@@ -124,24 +124,20 @@ class OffensiveNarrativeEvaluatorTest {
         }
 
         @Test
-        fun `DECISIVE player appears before COULD_HAVE_DECIDED`() {
-            // PlayerA: 5 shots, 3 goals, draw → COULD_HAVE_DECIDED? No: conv=60%>=50% → NOT COULD_HAVE_DECIDED
-            // Let's use: PlayerA: 5 shots, 3 goals, victory → DECISIVE
-            //            PlayerB: 5 shots, 2 goals, draw → COULD_HAVE_DECIDED (conv=40%<50%)
+        fun `DECISIVE appears before LACKED_COMPOSURE in a victory`() {
+            // Both players in a 3-0 win (goalDiff=3):
+            // Decisivo: 5 shots, 3 goals → conv=60%>=50%, goals=3>=2 → DECISIVE
+            // SemGol:   6 shots, 0 goals → goals=0, shots>=5 → LACKED_COMPOSURE
             val result = evaluate(
                 listOf(
-                    player("Decisivo", shots = "5", goals = "3"),  // victory player
-                    player("Poderia",  shots = "5", goals = "2"),  // draw player
+                    player("Decisivo", shots = "5", goals = "3"),
+                    player("SemGol",   shots = "6", goals = "0"),
                 ),
-                teamGoals = 2, opponentGoals = 2, // draw — but Decisivo scored 3?
-                // Note: goals are per-player, not team totals. teamGoals is independent.
+                teamGoals = 3, opponentGoals = 0,
             )
-            // With teamGoals=2, opponentGoals=2 (draw):
-            // Decisivo: conv=60%>=50%, draw → COULD_HAVE_DECIDED (rule 1 fires first due to draw)
-            // Poderia:  conv=40%<50%,  draw → COULD_HAVE_DECIDED
-            // Both same category → best (5 shots, 3 goals → Decisivo) wins
-            assertThat(result).hasSize(1)
-            assertThat(result.first().player.playerName).isEqualTo("Decisivo")
+            assertThat(result).hasSize(2)
+            assertThat(result[0].category).isEqualTo(Category.DECISIVE)
+            assertThat(result[1].category).isEqualTo(Category.LACKED_COMPOSURE)
         }
 
         @Test
@@ -341,4 +337,5 @@ class OffensiveNarrativeEvaluatorTest {
         }
     }
 }
+
 

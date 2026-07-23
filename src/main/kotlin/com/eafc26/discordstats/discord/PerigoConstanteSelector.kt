@@ -4,21 +4,23 @@ import com.eafc26.discordstats.ea.model.PlayerEntry
 import org.slf4j.LoggerFactory
 
 /**
- * Selects the "Perigo Constante" highlight - the player who posed the most threat to the opponent's goal.
+ * @deprecated Replaced by [OffensiveNarrativeEvaluator].
  *
- * Requirements:
- * - Must have attempted at least [MIN_SHOTS] shots
- * - Selection is by highest number of shots (goals then name as tiebreakers)
- *
- * Presentation (title, emoji, message) is determined by [AttackingThreatPresenter],
- * which receives the selected player's statistics and the match score context.
+ * This class is retained only so that existing test references compile
+ * while the migration is completed. New code must use
+ * [OffensiveNarrativeEvaluator.evaluate] instead.
  */
+@Deprecated(
+    message = "Use OffensiveNarrativeEvaluator instead.",
+    replaceWith = ReplaceWith("OffensiveNarrativeEvaluator"),
+)
 object PerigoConstanteSelector {
 
     private val log = LoggerFactory.getLogger(PerigoConstanteSelector::class.java)
 
-    /** Minimum shots required to be considered — also gates COULD_HAVE_DECIDED and LACKED_COMPOSURE */
-    const val MIN_SHOTS = 5
+    /** Delegates to [OffensiveNarrativeEvaluator.MIN_SHOTS]. */
+    @Deprecated("Use OffensiveNarrativeEvaluator.MIN_SHOTS")
+    const val MIN_SHOTS = OffensiveNarrativeEvaluator.MIN_SHOTS
 
     data class PerigoConstanteSelection(
         val player: PlayerEntry,
@@ -72,4 +74,3 @@ object PerigoConstanteSelector {
         )
     }
 }
-
