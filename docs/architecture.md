@@ -24,6 +24,8 @@ flowchart TD
     MS --> CM
     CM --> PORT["CanonicalMatchRepository"]
     PORT --> JSON["JSON repository<br/>one atomic file per match"]
+    PORT --> HIST["MatchHistoryService<br/>read-only canonical queries"]
+    HIST -.-> FUTURE["Future historical renderers<br/>Dashboard / Profiles / Comparison / Export"]
     FM --> DASH["Dashboard renderer"]
     INT --> DASH
     MS --> DASH
@@ -132,6 +134,23 @@ duplicate state from entering the stable format.
 - repository metadata: count, time range, latest generation time and observed
   schema/engine versions.
 
+`MatchHistoryService` is the read-only application boundary over that port. It
+returns complete `CanonicalMatch` records without accessing EA or invoking the
+football engine. Its generic query supports:
+
+- all matches in deterministic newest-first or oldest-first order;
+- latest `N` matches;
+- lookup by `MatchId`;
+- inclusive-start/exclusive-end periods;
+- normalized competition;
+- canonical player ID across participants;
+- repository metadata.
+
+Filters can be combined and the optional limit is applied after chronological
+ordering. This service is the input boundary for future historical Dashboard,
+profile, comparison and export renderers; it contains no football or
+presentation rules.
+
 `JsonCanonicalMatchRepository` is the initial infrastructure adapter. It stores
 one UTF-8 JSON file per match below
 `Application Support/EAFC26DiscordStats/canonical-matches`. Match IDs are
@@ -192,6 +211,8 @@ Renderers must not own:
 - `PublishedMatchStore` owns delivery deduplication and storage migration.
 - `JsonCanonicalMatchRepository` owns durable canonical history; it does not
   decide football or presentation.
+- `MatchHistoryService` organizes read-only canonical queries; it does not
+  normalize, reinterpret or render matches.
 
 ## Dependency rules
 

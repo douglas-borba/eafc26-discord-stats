@@ -108,6 +108,24 @@ class CanonicalProductionArchitectureTest {
             .contains("FootballMatch")
     }
 
+    @Test
+    fun `history reads canonical repository without EA or football engine dependencies`() {
+        val source = Files.readString(productionRoot.resolve("service/MatchHistoryService.kt"))
+
+        assertThat(source).contains("CanonicalMatchRepository")
+        listOf(
+            "EaClubsGateway",
+            "MatchResponse",
+            "EaMatchMapper",
+            "MatchInterpreter",
+            "MatchStoryExtractor",
+        ).forEach {
+            assertThat(source)
+                .describedAs("History must not regenerate canonical matches")
+                .doesNotContain(it)
+        }
+    }
+
     private fun productionSources(): List<Path> = kotlinSources(productionRoot)
 
     private fun kotlinSources(root: Path): List<Path> {
