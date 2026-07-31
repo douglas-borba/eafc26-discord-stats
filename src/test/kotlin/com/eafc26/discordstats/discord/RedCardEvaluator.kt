@@ -79,4 +79,3 @@ object RedCardEvaluator {
         return RedCardSelection(player = best.first, redCards = best.second)
     }
 }
-

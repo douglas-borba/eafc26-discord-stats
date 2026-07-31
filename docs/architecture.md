@@ -1,198 +1,205 @@
-# Architecture
+# Canonical architecture
 
-## Objective
+## Purpose
 
-The application turns EA SPORTS FC Pro Clubs match data into deterministic,
-auditable football interpretations that can later be rendered for Discord, a
-dashboard, social media or an optional language model.
+The application turns EA SPORTS FC Pro Clubs payloads into deterministic,
+auditable football interpretations and then renders them for external channels.
+Football decisions belong to the canonical engine. A renderer may choose
+language, layout and channel limits, but it may never select a winner,
+recalculate a metric or reinterpret a statistic.
 
-Football decisions belong to code. Presentation components may express a
-decision, but must not decide who won, who was eligible or who earned an
-award.
+## Definitive architecture
 
-The repository is in an incremental migration. Dashboard and Discord production
-now use the normalized interpretation and story pipeline.
+```mermaid
+flowchart TD
+    EA["EA API payload"] --> GW["EA gateway and DTO parsing"]
+    GW --> ACL["Anti-Corruption Layer<br/>EaMatchMapper"]
+    ACL --> FM["FootballMatch<br/>normalized immutable facts"]
+    FM --> MI["MatchInterpreter<br/>deterministic evaluators"]
+    MI --> INT["MatchInterpretation<br/>decisions, rules and evidence"]
+    INT --> SE["MatchStoryExtractor"]
+    SE --> MS["MatchStories<br/>presentation-neutral stories"]
+    FM --> DASH["Dashboard renderer"]
+    INT --> DASH
+    MS --> DASH
+    FM --> DISC["DiscordRenderer"]
+    INT --> DISC
+    MS --> DISC
+    DASH --> WEB["Dashboard / web card"]
+    DISC --> PAYLOAD["DiscordPayload"]
+    PAYLOAD --> HOOK["DiscordWebhookClient"]
+```
+
+`MatchAcquisitionService` orchestrates this flow. It may handle EA DTOs at the
+infrastructure boundary, but no DTO enters the domain, application rules or a
+renderer.
 
 ## Layers and responsibilities
 
-### Infrastructure
+### EA infrastructure and ACL
 
-Infrastructure contains integration details:
+The `ea` package owns gateways, browser/HTTP integration, JSON parsing and EA
+DTOs. DTO fields may retain EA naming, optionality and string encodings.
 
-- `ea`: HTTP/browser gateways, JSON parsing and EA DTOs;
-- `ea.mapping`: the Anti-Corruption Layer that translates EA DTOs into the
-  normalized domain;
-- `discord`: Discord payload models, canonical rendering, webhook delivery and
-  legacy evaluators retained only for characterization tests;
-- `web`, `scheduler`, `cli`, `store`, `config` and `service`: runtime adapters,
-  orchestration, persistence and framework configuration.
+`ea.mapping` is the Anti-Corruption Layer and the only translator from
+`MatchResponse` to `FootballMatch`. `EaMatchMapper`:
 
-Infrastructure may depend on application and domain types. Domain and
-application code must not depend on these adapters.
+- parses string statistics into typed values;
+- normalizes identities, competition, score and player roles;
+- supplies documented fallbacks required by domain invariants;
+- rejects unrecoverable identity or participant structure;
+- normalizes inconsistent completed/attempted values;
+- reports every anomaly through normalization issues.
+
+No football award or narrative rule belongs in the ACL.
 
 ### Domain
 
-`domain.match` contains immutable football facts and typed values:
+`domain.match` owns immutable normalized facts:
 
-- match, clubs and players;
-- score and reported result;
-- player role and participation;
-- attacking, passing, defending, discipline and goalkeeping statistics.
+- `FootballMatch`, match identity and time;
+- clubs, participants and score;
+- player identity, role and participation;
+- attacking, passing, defending, discipline and goalkeeping statistics;
+- EA recognition as a source fact, not as a presentation decision.
 
-`domain.interpretation` contains deterministic decisions and their audit
-contracts:
+`domain.interpretation` owns decision contracts:
 
-- result;
-- statistical eligibility;
+- outcome and eligibility;
 - team metrics;
-- awards;
-- player contributions, highlights and consumer-facing football features;
-- `RuleReference`;
-- `DecisionEvidence`;
-- the canonical `MatchInterpretation`.
+- Craque, Bagre and Xerife awards;
+- contributions, highlights and match features;
+- `RuleReference` and `DecisionEvidence`;
+- the complete `MatchInterpretation`.
 
-The domain contains no Spring, Jackson, EA DTO, Discord or transport concern.
+`domain.story` owns presentation-neutral narrative availability:
+
+- semantic story type and narrative key;
+- involved players and structured content;
+- priority and ordering;
+- provenance linking every story to rules and evidence.
+
+The domain has no Spring, Jackson, EA DTO or Discord dependency.
 
 ### Application
 
-`application.interpretation` applies and composes football rules:
+`application.interpretation` is the single football decision engine:
 
 - `MatchOutcomeEvaluator`;
 - `PlayerEligibilityEvaluator`;
 - `TeamMetricsCalculator`;
-- award evaluators and `MatchAwardsEvaluator`;
-- `MatchInterpreter`, which composes the canonical interpretation.
-- `MatchStoryExtractor`, which projects decisions into presentation-neutral
-  stories without recalculating them.
+- `BagreEvaluator`, `CraqueEvaluator` and `XerifeEvaluator`;
+- `MatchAwardsEvaluator`;
+- `MatchFeaturesEvaluator`;
+- `MatchInterpreter`, which composes one canonical interpretation.
 
-Application services consume normalized domain objects. They do not parse EA
-fields and do not build presentation payloads.
+`application.story.MatchStoryExtractor` projects decisions into `MatchStories`.
+It does not re-evaluate candidates or statistics.
 
-### Presentation
+### Renderers
 
-`MatchSummaryBuilder` renders the Dashboard exclusively from `FootballMatch`,
-`MatchInterpretation` and `MatchStories`. `DiscordRenderer` consumes the same
-canonical inputs and applies only Discord structure and formatting.
-The legacy builders are kept only for shadow-mode and characterization tests.
+`MatchSummaryBuilder` renders the Dashboard. `DiscordRenderer` renders both the
+main and history Discord payloads. Both receive exactly:
 
-## Current production flow
+- `FootballMatch` for normalized context and identity;
+- `MatchInterpretation` for decisions and supporting metrics;
+- `MatchStories` for available narratives and provenance.
 
-```text
-EA HTTP/browser payload
-  -> EaClubsGateway implementation
-  -> EaResponseParser/Jackson
-  -> MatchResponse and PlayerEntry EA DTOs
-  -> MatchAcquisitionService
-     -> EaMatchMapper
-     -> MatchInterpreter
-     -> MatchStoryExtractor
-     -> MatchSummaryBuilder
-        -> MatchSummaryPresentation
-        -> LatestMatchHolder
-        -> MatchCardService/web dashboard
-     -> DiscordRenderer
-        -> DiscordWebhookClient
-     -> PublishedMatchStore
-```
+Renderers may own:
 
-This is the observable production path. Dashboard and Discord have completed
-their cutovers; legacy builders remain outside runtime orchestration.
+- language, date and number formatting;
+- copy, emojis, colors and visual hierarchy;
+- phrase selection from configured phrase banks;
+- field/section order;
+- API limits such as Discord's two-story cap.
 
-## Normalized interpretation flow
+Renderers must not own:
 
-```text
-EA MatchResponse
-  -> EaMatchMapper (Anti-Corruption Layer)
-  -> MatchNormalizationResult
-     -> FootballMatch
-     -> normalization warnings
-  -> MatchInterpreter
-     -> MatchOutcomeEvaluator
-     -> PlayerEligibilityEvaluator
-     -> TeamMetricsCalculator
-     -> MatchAwardsEvaluator
-        -> BagreEvaluator
-        -> CraqueEvaluator
-        -> XerifeEvaluator
-     -> MatchFeaturesEvaluator
-        -> contributions and highlights
-        -> offensive narratives and red card
-        -> pass precision and lost mail
-        -> Bagre assessment and goalkeeper archetype
-  -> MatchInterpretation
-     -> decisions
-     -> RuleReference values
-     -> DecisionEvidence values
-  -> MatchStoryExtractor
-  -> MatchStories
-```
+- eligibility or candidate filtering;
+- score or outcome resolution;
+- award selection;
+- ranking, aggregation or percentage calculation;
+- football narrative classification.
 
-This path feeds both the Dashboard and Discord renderers.
+### Runtime adapters
 
-## Anti-Corruption Layer
-
-`EaMatchMapper` is the only place where EA-specific representations are
-translated into the normalized match domain. It:
-
-- parses text-based statistics into typed values;
-- supplies documented fallbacks required by domain invariants;
-- rejects unrecoverable match identity or structure;
-- clamps inconsistent completed/attempted values;
-- records every anomaly as a normalization issue.
-
-EA DTOs must not escape through this boundary into domain or application
-rules. Conversely, the domain must not know field names or encoding
-conventions from the EA payload.
+- `DiscordWebhookClient` serializes and sends an existing payload.
+- `LatestMatchHolder` stores the latest Dashboard presentation.
+- web controllers expose state without football decisions.
+- schedulers and CLI trigger acquisition.
+- `PublishedMatchStore` owns delivery deduplication and storage migration.
 
 ## Dependency rules
 
 Allowed:
 
 ```text
-Infrastructure/presentation -> Application -> Domain
-Infrastructure/ACL          -> Domain
-Tests                        -> any layer under test
+Runtime/infrastructure -> Application -> Domain
+ACL                    -> Domain
+Renderers              -> Domain + presentation configuration
+Tests                  -> production + retained test-only legacy baselines
 ```
 
 Prohibited:
 
-- Domain -> Spring, Jackson, Discord, EA DTOs or application services.
-- Application -> Spring, Jackson, Discord, EA DTOs or web transports.
-- Renderers -> football selection or eligibility rules in the target
-  architecture.
-- ACL -> presentation models.
-- Optional LLM -> winner selection, eligibility or award decisions.
+- Domain -> application, Spring, Jackson, EA DTOs or transports.
+- Application -> EA DTOs, Discord, web or presentation types.
+- Renderer -> EA DTO, ACL, selector or evaluator.
+- ACL -> renderer or presentation model.
+- Optional LLM -> winner selection, eligibility, metric interpretation or
+  award decisions.
 
-Legacy Discord evaluators remain compiled only to protect characterization
-tests and are not referenced by the production orchestration path.
+These rules are guarded by `CanonicalProductionArchitectureTest`.
 
-## Principles
+## Adding a football decision
 
-### Determinism
+1. Confirm the required source fact exists in `FootballMatch`. If it is
+   EA-specific, normalize it in the ACL.
+2. Define a presentation-neutral decision type in `domain.interpretation`.
+3. Assign a stable, versioned `RuleReference`.
+4. Produce sufficient `DecisionEvidence` for candidates, thresholds,
+   exclusions and supporting metrics, including the no-decision path.
+5. Implement the deterministic rule in `application.interpretation`.
+6. Compose it through `MatchInterpreter`; do not call it from a renderer.
+7. If narratively relevant, add structured `StoryContent` and project it from
+   `MatchStoryExtractor`.
+8. Test the rule, evidence, orchestration and renderer behavior separately.
 
-Given the same normalized match and club perspective, evaluators must produce
-the same result. Random phrase selection and language generation are not
-football decisions.
+Changing a rule's behavior requires a deliberate rule-version decision and
+updated characterization documentation.
 
-### Traceability
+## Adding a renderer
 
-Every deterministic decision identifies the rule and version that produced it
-through `RuleReference`. `DecisionEvidence` records the facts, candidates,
-thresholds and exclusions needed to audit the outcome.
+A new Dashboard, Discord variant, LLM adapter, API or social-media renderer:
 
-### One canonical interpretation
+1. accepts `FootballMatch`, `MatchInterpretation` and `MatchStories`;
+2. reads structured decisions and evidence without recalculating them;
+3. owns only channel formatting, wording and delivery constraints;
+4. remains independently testable from transport;
+5. never imports EA DTOs or application evaluators;
+6. uses semantic narrative keys for LLM prompts or localized copy;
+7. adds architectural tests preventing decision logic from entering the
+   adapter.
 
-`MatchInterpretation` is the intended single source for every future
-presentation channel. Consumers must not independently reinterpret the match.
+An LLM may rewrite an already interpreted story. It must not infer an award,
+override eligibility or rank players.
 
-### Separation of football and language
+## Preserved principles
 
-The domain describes football facts and decisions. Story and rendering layers
-select structure and wording. Discord, dashboards and an optional LLM render
-an already interpreted result; they do not decide it.
+- **Determinism:** equal normalized input and perspective produce equal
+  interpretation and stories.
+- **Traceability:** every decision identifies its rule and supporting evidence.
+- **One canonical interpretation:** every consumer observes the same football
+  decisions.
+- **Presentation independence:** stories describe football meaning, not Discord
+  fields or Dashboard sections.
+- **Typed normalization:** raw EA strings stop at the ACL.
+- **Backward-compatible delivery:** behavior changes are deliberate,
+  documented and protected by characterization tests.
 
-### Incremental migration
+## Characterization retention
 
-The normalized pipeline remains side-by-side with production until parity is
-demonstrated. Each phase compiles independently, preserves existing tests and
-does not change observable behavior unless that change is explicitly approved.
+Legacy builders and evaluators are retained only under `src/test`. They are not
+part of the production artifact and cannot create a parallel runtime decision
+path. They remain valuable executable evidence for Dashboard and Discord shadow
+parity. Historical divergence catalogs and ADRs remain part of the audit trail.

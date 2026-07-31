@@ -5,41 +5,13 @@ import com.eafc26.discordstats.config.PhraseCategory
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.ea.model.PlayerStatisticsEligibility
-import com.fasterxml.jackson.annotation.JsonInclude
+import com.eafc26.discordstats.ea.model.displayName
 import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
-
-// --------------------------------------------------------------------------
-// Discord webhook payload model
-// --------------------------------------------------------------------------
-
-data class DiscordPayload(val embeds: List<DiscordEmbed>)
-
-@JsonInclude(JsonInclude.Include.NON_NULL)
-data class DiscordEmbed(
-    val title: String,
-    val description: String? = null,
-    val color: Int,
-    val fields: List<EmbedField>,
-    val footer: EmbedFooter? = null,
-    val timestamp: String? = null,
-)
-
-data class EmbedField(
-    val name: String,
-    val value: String,
-    val inline: Boolean = false,
-)
-
-data class EmbedFooter(val text: String)
-
-// --------------------------------------------------------------------------
-// Builder
-// --------------------------------------------------------------------------
 
 private val PT_BR = Locale.forLanguageTag("pt-BR")
 private val DATE_FMT = DateTimeFormatter.ofPattern("dd MMM yyyy '•' HH:mm", PT_BR)

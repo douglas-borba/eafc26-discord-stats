@@ -3,6 +3,7 @@ package com.eafc26.discordstats.discord
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.PhraseCategory
 import com.eafc26.discordstats.ea.model.PlayerEntry
+import com.eafc26.discordstats.ea.model.displayName
 import java.util.Random
 import kotlin.math.abs
 

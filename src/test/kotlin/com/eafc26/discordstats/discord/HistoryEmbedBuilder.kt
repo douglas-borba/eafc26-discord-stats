@@ -2,6 +2,7 @@ package com.eafc26.discordstats.discord
 
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerStatisticsEligibility
+import com.eafc26.discordstats.ea.model.displayName
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter

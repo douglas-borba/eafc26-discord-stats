@@ -157,4 +157,3 @@ object OffensiveNarrativeEvaluator {
         return narratives
     }
 }
-

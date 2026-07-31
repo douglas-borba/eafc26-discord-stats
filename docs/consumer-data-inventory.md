@@ -1,8 +1,8 @@
 # Consumer data inventory
 
-This inventory covers every football fact, decision and presentation value read
-by `MatchSummaryBuilder`, `DiscordEmbedBuilder`, `HistoryEmbedBuilder` and the
-web match card.
+This Phase 8 inventory is retained as migration history. The “current source”
+column records the pre-cutover source; Dashboard and Discord now consume the
+canonical destinations exclusively.
 
 | Information | Current source | Canonical destination | Owner |
 |---|---|---|---|
@@ -53,7 +53,7 @@ web match card.
 | Section order and separators | hard-coded renderer order | canonical presentation model/renderer | Presentation |
 | Discord field names, inline flags and payload shape | `DiscordEmbedBuilder` | Discord renderer | Presentation |
 | History result emoji | `HistoryEmbedBuilder` | history renderer from outcome story | Presentation |
-| History MVP | direct EA MVP lookup, including goalkeeper | canonical Craque story | Engine/Stories |
+| History MVP | direct EA MVP lookup, including goalkeeper | `EA_RECOGNIZED_MVP` story | Engine/Stories |
 | ISO timestamp | `MatchResponse.timestamp` | renderer from `FootballMatch.playedAt` | Presentation |
 
 ## Explicit ownership decisions
@@ -67,9 +67,10 @@ web match card.
   their semantic keys and their complete provenance.
 - A canonical presentation model is required for localized labels, emojis,
   colors, phrases, number/date formatting, section order and channel limits.
-  `MatchSummaryDecisionProjection` is the first slice of that model.
+  The current renderers apply those presentation concerns directly over the
+  canonical inputs.
 
 There are no unowned input facts after this assignment. The known Dashboard
-highlight defect and history goalkeeper-MVP defect are not represented as
-second canonical decisions. The complete canonical collection is rendered
-according to the migration dispositions in the Phase 0 divergence catalog.
+highlight behavior is represented by filtered and unfiltered canonical
+highlight projections. History EA recognition remains an explicitly audited
+decision separate from Craque so the characterized payload can be preserved.

@@ -12,6 +12,7 @@ import com.eafc26.discordstats.discord.XerifeSelector
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.ea.model.PlayerStatisticsEligibility
+import com.eafc26.discordstats.ea.model.displayName
 import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.time.ZoneId

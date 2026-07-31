@@ -28,4 +28,3 @@ enum class GoalkeeperArchetype(
     /** Very little involvement — barely worked during the match. */
     QUIET("🤷 Discreto"),
 }
-

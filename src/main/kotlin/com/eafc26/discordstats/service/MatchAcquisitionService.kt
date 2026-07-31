@@ -625,12 +625,18 @@ class MatchAcquisitionService(
      * Builds a human-readable summary of a match.
      */
     private fun buildSummary(match: MatchResponse, clubId: String): String {
-        val ourEntry = match.clubs[clubId]
-        val oppEntry = match.clubs.entries.firstOrNull { it.key != clubId }
-        val ourName = ourEntry?.resolvedName() ?: props.ea.clubName
-        val oppName = oppEntry?.value?.resolvedName() ?: "Adversário"
-        val ourScore = ourEntry?.score?.toIntOrNull() ?: 0
-        val oppScore = oppEntry?.value?.score?.toIntOrNull() ?: 0
-        return "$ourName $ourScore × $oppScore $oppName"
+        val normalized = when (val result = eaMatchMapper.map(match)) {
+            is MatchNormalizationResult.Success -> result.match
+            is MatchNormalizationResult.Rejected -> error(
+                "EA match ${match.matchId} cannot be normalized for summary: " +
+                    result.errors.joinToString { it.message }
+            )
+        }
+        val interpretation = matchInterpreter.interpret(normalized, ClubId(clubId))
+        val ourClub = normalized.participants.first { it.club.id == interpretation.perspectiveClubId }
+        val opponent = normalized.participants.first { it.club.id == interpretation.result.opponentClub }
+        return "${ourClub.club.name?.value ?: props.ea.clubName} " +
+            "${interpretation.result.ourScore.goals} × ${interpretation.result.opponentScore.goals} " +
+            (opponent.club.name?.value ?: "Adversário")
     }
 }

@@ -15,7 +15,7 @@ import com.eafc26.discordstats.domain.match.Score
  * Resolves the result from one club's perspective.
  *
  * Valid scores are authoritative. The source-reported result is used only when
- * either score is absent, matching the current MatchOutcomeResolver behavior.
+ * either score is absent, preserving the characterized pre-migration behavior.
  */
 class MatchOutcomeEvaluator {
 

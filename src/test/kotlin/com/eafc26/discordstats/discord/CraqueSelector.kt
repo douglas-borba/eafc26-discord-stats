@@ -81,4 +81,3 @@ object CraqueSelector {
     private fun pluralize(count: Int, singular: String, plural: String): String =
         if (count == 1) "$count $singular" else "$count $plural"
 }
-
