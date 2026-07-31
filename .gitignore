@@ -7,3 +7,6 @@ jar-contents.txt
 # Pacotes gerados
 dist/
 *.zip
+
+# IntelliJ local caches
+.idea/caches/
