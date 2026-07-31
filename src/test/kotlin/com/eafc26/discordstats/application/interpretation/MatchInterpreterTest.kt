@@ -87,6 +87,7 @@ class MatchInterpreterTest {
                 "award.pass-precision",
                 "award.lost-mail",
                 "narrative.goalkeeper",
+                "recognition.ea-mvp",
             )
         assertThat(interpretation.evidence).isNotEmpty()
         assertThat(interpretation.awards.craque.evidence).isNotEmpty()

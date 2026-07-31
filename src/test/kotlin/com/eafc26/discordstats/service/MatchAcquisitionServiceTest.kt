@@ -5,6 +5,7 @@ import com.eafc26.discordstats.config.EaProperties
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.PollingProperties
 import com.eafc26.discordstats.discord.DiscordDeliveryException
+import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.discord.DiscordWebhookClient
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
@@ -49,7 +50,16 @@ class MatchAcquisitionServiceTest {
             ea = EaProperties(clubId = clubId, clubName = "Test FC"),
             polling = PollingProperties(publishExistingOnFirstRun = publishExistingOnFirstRun),
         )
-        return MatchAcquisitionService(gateway, store, webhookClient, props, stateHolder, latestMatchHolder, matchSummaryBuilder)
+        return MatchAcquisitionService(
+            gateway,
+            store,
+            webhookClient,
+            props,
+            stateHolder,
+            latestMatchHolder,
+            matchSummaryBuilder,
+            DiscordRenderer(matchSummaryBuilder),
+        )
     }
 
     @BeforeEach
@@ -1037,7 +1047,6 @@ class MatchAcquisitionServiceTest {
         }
     }
 }
-
 
 
 

@@ -87,6 +87,7 @@ class MatchStoryExtractor {
                         features.highlights.players.mapTo(linkedSetOf()) { it.playerId },
                         StoryContent.Highlights(
                             features.highlights.players,
+                            features.highlights.unfilteredPlayers,
                             features.highlights.teamAverageRating,
                         ),
                         features.highlights.rule,
@@ -185,6 +186,18 @@ class MatchStoryExtractor {
                             it.archetype,
                             it.narrativeVariant,
                         ),
+                        it.rule,
+                        it.evidence,
+                    )
+                )
+            }
+            features.eaRecognizedMvp?.let {
+                add(
+                    featureStory(
+                        StoryType.EA_RECOGNIZED_MVP,
+                        "recognition.ea-mvp",
+                        setOf(it.playerId),
+                        StoryContent.EaRecognizedMvp(it.playerId, it.rating),
                         it.rule,
                         it.evidence,
                     )

@@ -12,6 +12,7 @@ data class MatchFeatures(
     val passPrecision: PassPrecisionDecision?,
     val lostMail: LostMailDecision?,
     val goalkeeper: GoalkeeperDecision?,
+    val eaRecognizedMvp: EaRecognizedMvpDecision?,
     val evaluations: List<FeatureEvaluation>,
 ) {
     val rules: List<RuleReference>
@@ -41,6 +42,7 @@ enum class MatchFeatureType {
     PASS_PRECISION,
     LOST_MAIL,
     GOALKEEPER,
+    EA_RECOGNIZED_MVP,
 }
 
 data class ContributionDecision(
@@ -54,7 +56,15 @@ data class PlayerContribution(val playerId: PlayerId, val goals: Int, val assist
 
 data class HighlightsDecision(
     val players: List<RatedHighlight>,
+    val unfilteredPlayers: List<RatedHighlight>,
     val teamAverageRating: BigDecimal?,
+    val rule: RuleReference,
+    val evidence: List<DecisionEvidence>,
+)
+
+data class EaRecognizedMvpDecision(
+    val playerId: PlayerId,
+    val rating: BigDecimal?,
     val rule: RuleReference,
     val evidence: List<DecisionEvidence>,
 )

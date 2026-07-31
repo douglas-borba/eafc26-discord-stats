@@ -3,9 +3,8 @@ package com.eafc26.discordstats.presentation
 /**
  * Unified presentation model for match summaries.
  * 
- * This model is used by both:
- * - DiscordEmbedBuilder (for Discord webhook)
- * - Match Card renderer (for visual card)
+ * This model is used by the Match Card renderer and reused as formatted input
+ * by the canonical Discord renderer.
  * 
  * Football decisions come from the canonical interpretation and story models.
  * This class contains presentation-ready values only.

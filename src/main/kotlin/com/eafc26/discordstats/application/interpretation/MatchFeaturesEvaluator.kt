@@ -6,6 +6,7 @@ import com.eafc26.discordstats.domain.interpretation.BagreCriticism
 import com.eafc26.discordstats.domain.interpretation.BagrePerformanceDecision
 import com.eafc26.discordstats.domain.interpretation.DecisionEvidence
 import com.eafc26.discordstats.domain.interpretation.EligibilityInterpretation
+import com.eafc26.discordstats.domain.interpretation.EaRecognizedMvpDecision
 import com.eafc26.discordstats.domain.interpretation.GoalkeeperArchetype
 import com.eafc26.discordstats.domain.interpretation.GoalkeeperDecision
 import com.eafc26.discordstats.domain.interpretation.GoalkeeperNarrativeVariant
@@ -55,6 +56,7 @@ class MatchFeaturesEvaluator {
         val passPrecision = passPrecision(positiveOutfield, bagreId)
         val lostMail = lostMail(outfield)
         val goalkeeper = goalkeeper(players)
+        val eaRecognizedMvp = eaRecognizedMvp(eligible)
         val population = listOf(populationEvidence(players))
 
         return MatchFeatures(
@@ -66,6 +68,7 @@ class MatchFeaturesEvaluator {
             passPrecision = passPrecision,
             lostMail = lostMail,
             goalkeeper = goalkeeper,
+            eaRecognizedMvp = eaRecognizedMvp,
             evaluations = listOf(
                 FeatureEvaluation(
                     MatchFeatureType.CONTRIBUTIONS,
@@ -128,6 +131,19 @@ class MatchFeaturesEvaluator {
                     GOALKEEPER_RULE,
                     goalkeeper?.evidence ?: population,
                 ),
+                FeatureEvaluation(
+                    MatchFeatureType.EA_RECOGNIZED_MVP,
+                    eaRecognizedMvp != null,
+                    EA_RECOGNIZED_MVP_RULE,
+                    eaRecognizedMvp?.evidence ?: (
+                        population + eligible.map {
+                            DecisionEvidence.EaRecognition(
+                                it.player.id,
+                                it.eaRecognition.manOfTheMatch,
+                            )
+                        }
+                    ),
+                ),
             ),
         )
     }
@@ -160,6 +176,11 @@ class MatchFeaturesEvaluator {
             .sortedByDescending { it.rating!!.value }
             .take(HIGHLIGHT_LIMIT)
             .map { RatedHighlight(it.player.id, it.rating!!.value) },
+        unfilteredPlayers = teamPlayers
+            .filter { it.role is PlayerRole.Outfield && it.rating != null }
+            .sortedByDescending { it.rating!!.value }
+            .take(HIGHLIGHT_LIMIT)
+            .map { RatedHighlight(it.player.id, it.rating!!.value) },
         teamAverageRating = metrics.averageRating,
         rule = HIGHLIGHTS_RULE,
         evidence = listOf(populationEvidence(teamPlayers)) + teamPlayers.map {
@@ -175,6 +196,20 @@ class MatchFeaturesEvaluator {
             }
         ),
     )
+
+    private fun eaRecognizedMvp(
+        players: List<PlayerMatchPerformance>,
+    ): EaRecognizedMvpDecision? {
+        val winner = players.firstOrNull { it.eaRecognition.manOfTheMatch == true } ?: return null
+        return EaRecognizedMvpDecision(
+            playerId = winner.player.id,
+            rating = winner.rating?.value,
+            rule = EA_RECOGNIZED_MVP_RULE,
+            evidence = players.map {
+                DecisionEvidence.EaRecognition(it.player.id, it.eaRecognition.manOfTheMatch)
+            },
+        )
+    }
 
     private fun bagrePerformance(
         players: List<PlayerMatchPerformance>,
@@ -549,6 +584,7 @@ class MatchFeaturesEvaluator {
         val PASS_PRECISION_RULE = RuleReference(RuleId("award.pass-precision"), 1)
         val LOST_MAIL_RULE = RuleReference(RuleId("award.lost-mail"), 1)
         val GOALKEEPER_RULE = RuleReference(RuleId("narrative.goalkeeper"), 1)
+        val EA_RECOGNIZED_MVP_RULE = RuleReference(RuleId("recognition.ea-mvp"), 1)
 
         private val OFFENSIVE_PRIORITY = listOf(
             OffensiveNarrativeCategory.DECISIVE,

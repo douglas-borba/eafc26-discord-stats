@@ -43,7 +43,27 @@ class MatchFeaturesEvaluatorTest {
             .containsExactly(creator.player.id, scorer.player.id)
         assertThat(features.highlights.players.map { it.playerId })
             .containsExactly(scorer.player.id, creator.player.id)
+        assertThat(features.highlights.unfilteredPlayers.map { it.playerId })
+            .containsExactly(scorer.player.id, creator.player.id, bagre.player.id)
         assertThat(features.highlights.teamAverageRating).isEqualByComparingTo("6.666667")
+    }
+
+    @Test
+    fun `EA recognized MVP is selected from eligible players with auditable evidence`() {
+        val goalkeeper = awardPlayer(
+            "keeper",
+            rating = "9.4",
+            eaMvp = true,
+            role = PlayerRole.Goalkeeper,
+        )
+        val player = awardPlayer("line", rating = "8.0")
+
+        val decision = evaluate(listOf(player, goalkeeper)).eaRecognizedMvp
+
+        assertThat(decision!!.playerId).isEqualTo(goalkeeper.player.id)
+        assertThat(decision.rating).isEqualByComparingTo("9.4")
+        assertThat(decision.rule).isEqualTo(MatchFeaturesEvaluator.EA_RECOGNIZED_MVP_RULE)
+        assertThat(decision.evidence).isNotEmpty()
     }
 
     @Test
@@ -152,7 +172,7 @@ class MatchFeaturesEvaluatorTest {
         assertThat(features.contributions.evidence).isNotEmpty()
         assertThat(features.highlights.rule).isEqualTo(MatchFeaturesEvaluator.HIGHLIGHTS_RULE)
         assertThat(features.highlights.evidence).isNotEmpty()
-        assertThat(features.evaluations).hasSize(8)
+        assertThat(features.evaluations).hasSize(9)
         assertThat(features.evaluations).allMatch { it.evidence.isNotEmpty() }
         assertThat(features.evaluations.single {
             it.feature == com.eafc26.discordstats.domain.interpretation.MatchFeatureType.RED_CARD

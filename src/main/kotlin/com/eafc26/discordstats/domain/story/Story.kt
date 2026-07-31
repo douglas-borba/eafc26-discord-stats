@@ -44,6 +44,7 @@ enum class StoryType {
     PASS_PRECISION,
     LOST_MAIL,
     GOALKEEPER,
+    EA_RECOGNIZED_MVP,
 }
 
 enum class StoryPriority {
@@ -83,7 +84,13 @@ sealed interface StoryContent {
 
     data class Highlights(
         val players: List<RatedHighlight>,
+        val unfilteredPlayers: List<RatedHighlight>,
         val teamAverageRating: java.math.BigDecimal?,
+    ) : StoryContent
+
+    data class EaRecognizedMvp(
+        val playerId: PlayerId,
+        val rating: java.math.BigDecimal?,
     ) : StoryContent
 
     data class BagrePerformance(

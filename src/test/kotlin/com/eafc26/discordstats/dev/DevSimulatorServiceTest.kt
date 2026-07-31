@@ -6,6 +6,7 @@ import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.PollingProperties
 import com.eafc26.discordstats.config.WebhookConfigService
 import com.eafc26.discordstats.discord.DiscordWebhookClient
+import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.service.AcquisitionResult
 import com.eafc26.discordstats.service.AcquisitionStateHolder
@@ -62,6 +63,7 @@ class DevSimulatorServiceTest {
             stateHolder,
             latestMatchHolder,
             matchSummaryBuilder,
+            DiscordRenderer(matchSummaryBuilder),
         )
 
         simulatorService = DevSimulatorService(
@@ -280,4 +282,3 @@ class DevSimulatorServiceTest {
         }
     }
 }
-

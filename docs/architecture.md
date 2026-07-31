@@ -10,9 +10,8 @@ Football decisions belong to code. Presentation components may express a
 decision, but must not decide who won, who was eligible or who earned an
 award.
 
-The repository is in an incremental migration. Dashboard production now uses
-the normalized interpretation and story pipeline. Discord still consumes EA
-DTOs directly and remains the next consumer to migrate.
+The repository is in an incremental migration. Dashboard and Discord production
+now use the normalized interpretation and story pipeline.
 
 ## Layers and responsibilities
 
@@ -23,8 +22,8 @@ Infrastructure contains integration details:
 - `ea`: HTTP/browser gateways, JSON parsing and EA DTOs;
 - `ea.mapping`: the Anti-Corruption Layer that translates EA DTOs into the
   normalized domain;
-- `discord`: Discord payload models, webhook delivery and legacy
-  presentation-oriented evaluators;
+- `discord`: Discord payload models, canonical rendering, webhook delivery and
+  legacy evaluators retained only for characterization tests;
 - `web`, `scheduler`, `cli`, `store`, `config` and `service`: runtime adapters,
   orchestration, persistence and framework configuration.
 
@@ -72,9 +71,9 @@ fields and do not build presentation payloads.
 ### Presentation
 
 `MatchSummaryBuilder` renders the Dashboard exclusively from `FootballMatch`,
-`MatchInterpretation` and `MatchStories`. `LegacyMatchSummaryBuilder` is kept
-only for shadow-mode tests. The `discord` package still contains its legacy
-football rules until the Discord migration.
+`MatchInterpretation` and `MatchStories`. `DiscordRenderer` consumes the same
+canonical inputs and applies only Discord structure and formatting.
+The legacy builders are kept only for shadow-mode and characterization tests.
 
 ## Current production flow
 
@@ -91,13 +90,13 @@ EA HTTP/browser payload
         -> MatchSummaryPresentation
         -> LatestMatchHolder
         -> MatchCardService/web dashboard
-     -> DiscordEmbedBuilder and HistoryEmbedBuilder
+     -> DiscordRenderer
         -> DiscordWebhookClient
      -> PublishedMatchStore
 ```
 
-This is the observable production path. Dashboard has completed its cutover;
-Discord builders and selectors remain unchanged.
+This is the observable production path. Dashboard and Discord have completed
+their cutovers; legacy builders remain outside runtime orchestration.
 
 ## Normalized interpretation flow
 
@@ -128,8 +127,7 @@ EA MatchResponse
   -> MatchStories
 ```
 
-This path currently feeds the Dashboard renderer. Discord does not consume it
-yet.
+This path feeds both the Dashboard and Discord renderers.
 
 ## Anti-Corruption Layer
 
@@ -165,8 +163,8 @@ Prohibited:
 - ACL -> presentation models.
 - Optional LLM -> winner selection, eligibility or award decisions.
 
-The Discord production path temporarily violates the target renderer rule. Its
-behavior is protected by characterization tests until that consumer migrates.
+Legacy Discord evaluators remain compiled only to protect characterization
+tests and are not referenced by the production orchestration path.
 
 ## Principles
 

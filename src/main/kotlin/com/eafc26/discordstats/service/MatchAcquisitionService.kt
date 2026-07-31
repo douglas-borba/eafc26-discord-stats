@@ -2,9 +2,9 @@ package com.eafc26.discordstats.service
 
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.discord.DiscordDeliveryException
-import com.eafc26.discordstats.discord.DiscordEmbedBuilder
+import com.eafc26.discordstats.discord.DiscordPayload
+import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.discord.DiscordWebhookClient
-import com.eafc26.discordstats.discord.HistoryEmbedBuilder
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.MatchResponse
@@ -55,6 +55,7 @@ class MatchAcquisitionService(
     private val stateHolder: AcquisitionStateHolder,
     private val latestMatchHolder: LatestMatchHolder,
     private val matchSummaryBuilder: MatchSummaryBuilder,
+    private val discordRenderer: DiscordRenderer,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
@@ -354,9 +355,9 @@ class MatchAcquisitionService(
             stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Enviando partida ${index + 1}/${newMatches.size}...")
 
             try {
-                val payload = DiscordEmbedBuilder.build(match, clubId, proNames = proNames)
-                webhookClient.send(payload)
-                webhookClient.sendHistory(HistoryEmbedBuilder.build(match, clubId, proNames = proNames))
+                val payloads = buildDiscordPayloads(match, clubId, proNames)
+                webhookClient.send(payloads.match)
+                webhookClient.sendHistory(payloads.history)
 
                 stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando partida ${index + 1}/${newMatches.size}...")
 
@@ -443,9 +444,9 @@ class MatchAcquisitionService(
             val summary = buildSummary(match, clubId)
 
             try {
-                val payload = DiscordEmbedBuilder.build(match, clubId, proNames = proNames)
-                webhookClient.send(payload)
-                webhookClient.sendHistory(HistoryEmbedBuilder.build(match, clubId, proNames = proNames))
+                val payloads = buildDiscordPayloads(match, clubId, proNames)
+                webhookClient.send(payloads.match)
+                webhookClient.sendHistory(payloads.history)
 
                 currentIds += match.matchId
                 val persisted = try {
@@ -530,10 +531,10 @@ class MatchAcquisitionService(
         clubId: String,
         proNames: Map<String, String> = emptyMap(),
     ): AcquisitionResult? {
-        val payload = DiscordEmbedBuilder.build(match, clubId, proNames = proNames)
+        val payloads = buildDiscordPayloads(match, clubId, proNames)
 
         try {
-            webhookClient.send(payload)
+            webhookClient.send(payloads.match)
         } catch (ex: IllegalStateException) {
             log.error("Discord webhook not configured: {}", ex.message)
             return AcquisitionResult.WebhookNotConfigured
@@ -553,7 +554,7 @@ class MatchAcquisitionService(
         }
 
         // History webhook — optional, fire-and-forget
-        webhookClient.sendHistory(HistoryEmbedBuilder.build(match, clubId, proNames = proNames))
+        webhookClient.sendHistory(payloads.history)
 
         return null // Success
     }
@@ -594,6 +595,31 @@ class MatchAcquisitionService(
             forceRandomPhrases = forceRandomPhrases,
         )
     }
+
+    private fun buildDiscordPayloads(
+        source: MatchResponse,
+        clubId: String,
+        proNames: Map<String, String>,
+    ): DiscordPayloads {
+        val normalized = when (val result = eaMatchMapper.map(source, proNames)) {
+            is MatchNormalizationResult.Success -> result.match
+            is MatchNormalizationResult.Rejected -> error(
+                "EA match ${source.matchId} cannot be normalized for Discord: " +
+                    result.errors.joinToString { it.message }
+            )
+        }
+        val interpretation = matchInterpreter.interpret(normalized, ClubId(clubId))
+        val stories = matchStoryExtractor.extract(interpretation)
+        return DiscordPayloads(
+            match = discordRenderer.renderMatch(normalized, interpretation, stories),
+            history = discordRenderer.renderHistory(normalized, interpretation, stories),
+        )
+    }
+
+    private data class DiscordPayloads(
+        val match: DiscordPayload,
+        val history: DiscordPayload,
+    )
 
     /**
      * Builds a human-readable summary of a match.
