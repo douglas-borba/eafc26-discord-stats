@@ -25,7 +25,9 @@ flowchart TD
     CM --> PORT["CanonicalMatchRepository"]
     PORT --> JSON["JSON repository<br/>one atomic file per match"]
     PORT --> HIST["MatchHistoryService<br/>read-only canonical queries"]
-    HIST -.-> FUTURE["Future historical renderers<br/>Dashboard / Profiles / Comparison / Export"]
+    HIST --> HDASH["Historical Dashboard presenter<br/>list + match detail"]
+    HDASH --> HWEB["Historical Dashboard<br/>HTML + JSON endpoints"]
+    HIST -.-> FUTURE["Future history consumers<br/>Profiles / Comparison / Export"]
     FM --> DASH["Dashboard renderer"]
     INT --> DASH
     MS --> DASH
@@ -147,9 +149,35 @@ football engine. Its generic query supports:
 - repository metadata.
 
 Filters can be combined and the optional limit is applied after chronological
-ordering. This service is the input boundary for future historical Dashboard,
-profile, comparison and export renderers; it contains no football or
-presentation rules.
+ordering. This service is the sole data boundary for the Historical Dashboard
+and the future profile, comparison and export consumers; it contains no
+football or presentation rules.
+
+### Historical Dashboard
+
+`MatchHistoryController` exposes the persisted history through:
+
+- `GET /history`, the historical Dashboard;
+- `GET /api/history/matches`, the newest-first match list and repository
+  metadata;
+- `GET /api/history/matches/{matchId}`, the complete historical match detail.
+
+Its only data dependency is `MatchHistoryService`. It does not access the
+repository, EA, `MatchInterpreter` or `MatchStoryExtractor`.
+
+`HistoricalMatchPresenter` is a presentation-only projection of a
+`CanonicalMatch`. It supplies localized labels and stable view models for:
+
+- result, score, date, competition and clubs;
+- the perspective club's players and persisted normalized statistics;
+- Craque, Bagre, Xerife and their persisted supporting metrics;
+- every canonical story, narrative key, involved player and provenance;
+- canonical schema, engine and generation metadata.
+
+The presenter may format dates, labels and already-computed values. It does not
+sort candidates, calculate percentages, select awards or classify narratives.
+The browser consumes only these historical JSON contracts and never calls the
+EA acquisition endpoints.
 
 `JsonCanonicalMatchRepository` is the initial infrastructure adapter. It stores
 one UTF-8 JSON file per match below

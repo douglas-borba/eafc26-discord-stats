@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Histórico de Partidas — EA FC 26</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --panel: #161b22;
+      --panel-soft: #1c2128;
+      --border: #30363d;
+      --text: #f0f6fc;
+      --muted: #8b949e;
+      --accent: #2f81f7;
+      --win: #3fb950;
+      --draw: #d29922;
+      --loss: #f85149;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, a { font: inherit; }
+    .shell { width: min(1440px, 100%); margin: 0 auto; padding: 24px; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .eyebrow { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+    h1 { margin: 3px 0 0; font-size: clamp(22px, 3vw, 32px); }
+    .back {
+      color: var(--text);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      background: var(--panel);
+    }
+    .layout { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 18px; }
+    .panel { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); overflow: hidden; }
+    .panel-head { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .panel-head h2 { margin: 0; font-size: 16px; }
+    .meta { margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .match-list { max-height: calc(100vh - 150px); overflow: auto; }
+    .match-item {
+      display: block;
+      width: 100%;
+      padding: 14px 16px;
+      color: inherit;
+      text-align: left;
+      border: 0;
+      border-bottom: 1px solid var(--border);
+      background: transparent;
+      cursor: pointer;
+    }
+    .match-item:hover, .match-item.active { background: var(--panel-soft); }
+    .match-item.active { box-shadow: inset 3px 0 var(--accent); }
+    .match-item-top, .scoreline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .match-item-top { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+    .result { font-weight: 700; }
+    .result.WIN { color: var(--win); }
+    .result.DRAW { color: var(--draw); }
+    .result.LOSS { color: var(--loss); }
+    .teams { min-width: 0; }
+    .team { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .score { font-size: 18px; font-weight: 800; white-space: nowrap; }
+    .detail { min-height: 560px; }
+    .detail-inner { padding: 20px; }
+    .hero { border-bottom: 1px solid var(--border); padding-bottom: 18px; margin-bottom: 18px; }
+    .hero-score { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; margin: 16px 0; }
+    .hero-team { font-size: clamp(17px, 2vw, 24px); font-weight: 700; }
+    .hero-team:last-child { text-align: right; }
+    .hero-score strong { font-size: clamp(28px, 5vw, 48px); }
+    .section { margin-top: 24px; }
+    .section h3 { margin: 0 0 12px; font-size: 15px; }
+    .award-grid, .story-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .card { padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-soft); }
+    .card-title { font-weight: 700; }
+    .winner { margin: 8px 0 4px; font-size: 17px; }
+    .muted { color: var(--muted); }
+    .facts { margin: 9px 0 0; padding: 0; list-style: none; font-size: 12px; }
+    .facts li { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; }
+    .story-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .story-key { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .players-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; }
+    table { width: 100%; border-collapse: collapse; min-width: 820px; }
+    th, td { padding: 10px 11px; text-align: left; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .state { display: grid; place-items: center; min-height: 420px; padding: 32px; color: var(--muted); text-align: center; }
+    .state-icon { display: block; font-size: 38px; margin-bottom: 8px; }
+    .error { color: var(--loss); }
+    .provenance { margin-top: 20px; color: var(--muted); font-size: 11px; text-align: right; }
+    @media (max-width: 900px) {
+      .shell { padding: 14px; }
+      .layout { grid-template-columns: 1fr; }
+      .match-list { max-height: 380px; }
+      .award-grid, .story-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">EA FC 26 — Associação BF</div>
+        <h1>Histórico de Partidas</h1>
+      </div>
+      <a class="back" href="/">← Dashboard</a>
+    </header>
+
+    <div class="layout">
+      <section class="panel" aria-label="Partidas persistidas">
+        <div class="panel-head">
+          <h2>Partidas</h2>
+          <div class="meta" id="history-meta">Carregando histórico…</div>
+        </div>
+        <div class="match-list" id="match-list">
+          <div class="state"><div><span class="state-icon">⏳</span>Carregando…</div></div>
+        </div>
+      </section>
+
+      <section class="panel detail" aria-live="polite">
+        <div id="match-detail" class="state">
+          <div><span class="state-icon">⚽</span>Selecione uma partida para ver os detalhes.</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const listElement = document.getElementById('match-list');
+    const detailElement = document.getElementById('match-detail');
+    const metaElement = document.getElementById('history-meta');
+    let selectedMatchId = null;
+
+    const escapeHtml = (value) => String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+
+    const display = (value) => value === null || value === undefined ? '—' : escapeHtml(value);
+
+    function renderList(matches, metadata) {
+      metaElement.textContent = `${metadata.matchCount} partida${metadata.matchCount === 1 ? '' : 's'} persistida${metadata.matchCount === 1 ? '' : 's'}`;
+      if (!matches.length) {
+        listElement.innerHTML = '<div class="state"><div><span class="state-icon">📭</span>Nenhuma partida no histórico ainda.</div></div>';
+        detailElement.className = 'state';
+        detailElement.innerHTML = '<div><span class="state-icon">🗂️</span>As partidas aparecerão aqui após serem processadas.</div>';
+        return;
+      }
+
+      listElement.innerHTML = matches.map(match => `
+        <button class="match-item" data-match-id="${escapeHtml(match.matchId)}">
+          <div class="match-item-top">
+            <span>${escapeHtml(match.dateLabel)}</span>
+            <span class="result ${escapeHtml(match.outcome.code)}">${escapeHtml(match.outcome.icon)} ${escapeHtml(match.outcome.label)}</span>
+          </div>
+          <div class="scoreline">
+            <div class="teams">
+              <div class="team">${escapeHtml(match.ourClub.name)}</div>
+              <div class="team muted">${escapeHtml(match.opponentClub.name)}</div>
+            </div>
+            <div class="score">${match.ourClub.score} × ${match.opponentClub.score}</div>
+          </div>
+          ${match.competition ? `<div class="meta">${escapeHtml(match.competition)}</div>` : ''}
+        </button>
+      `).join('');
+
+      listElement.querySelectorAll('.match-item').forEach(button => {
+        button.addEventListener('click', () => openMatch(button.dataset.matchId));
+      });
+      openMatch(matches[0].matchId);
+    }
+
+    async function openMatch(matchId) {
+      selectedMatchId = matchId;
+      listElement.querySelectorAll('.match-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.matchId === matchId);
+      });
+      detailElement.className = 'state';
+      detailElement.innerHTML = '<div><span class="state-icon">⏳</span>Carregando partida…</div>';
+
+      try {
+        const response = await fetch(`/api/history/matches/${encodeURIComponent(matchId)}`);
+        const payload = await response.json();
+        if (!response.ok || payload.status !== 'success') {
+          throw new Error(payload.message || 'Não foi possível recuperar a partida.');
+        }
+        if (selectedMatchId === matchId) renderDetail(payload.match);
+      } catch (error) {
+        detailElement.className = 'state error';
+        detailElement.innerHTML = `<div><span class="state-icon">⚠️</span>${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function renderDetail(match) {
+      const summary = match.summary;
+      const awards = match.awards.map(award => `
+        <article class="card">
+          <div class="card-title">${escapeHtml(award.icon)} ${escapeHtml(award.label)}</div>
+          <div class="winner">${award.awarded ? escapeHtml(award.winnerName || award.winnerId) : 'Não concedido'}</div>
+          <div class="muted">${escapeHtml(award.reason)}</div>
+          ${renderFacts(award.facts)}
+        </article>
+      `).join('');
+
+      const stories = match.stories.map(story => `
+        <article class="card">
+          <div class="card-title">${escapeHtml(story.title)}</div>
+          <div class="story-key">${escapeHtml(story.narrativeKey)} · ${escapeHtml(story.priority)}</div>
+          ${story.involvedPlayers.length ? `<div class="muted">${story.involvedPlayers.map(escapeHtml).join(', ')}</div>` : ''}
+          ${renderFacts(story.facts)}
+        </article>
+      `).join('');
+
+      const players = match.players.map(player => `
+        <tr>
+          <td><strong>${escapeHtml(player.name)}</strong><br><span class="muted">${escapeHtml(player.role)}</span></td>
+          <td>${display(player.rating)}</td>
+          <td>${display(player.goals)}</td>
+          <td>${display(player.assists)}</td>
+          <td>${display(player.shots)}</td>
+          <td>${display(player.passesCompleted)}/${display(player.passesAttempted)}</td>
+          <td>${display(player.tacklesCompleted)}/${display(player.tacklesAttempted)}</td>
+          <td>${display(player.redCards)}</td>
+          <td>${display(player.saves)}</td>
+          <td>${display(player.eligibility)}</td>
+        </tr>
+      `).join('');
+
+      detailElement.className = 'detail-inner';
+      detailElement.innerHTML = `
+        <div class="hero">
+          <div class="match-item-top">
+            <span>${escapeHtml(summary.dateLabel)}${summary.competition ? ` · ${escapeHtml(summary.competition)}` : ''}</span>
+            <span class="result ${escapeHtml(summary.outcome.code)}">${escapeHtml(summary.outcome.icon)} ${escapeHtml(summary.outcome.label)}</span>
+          </div>
+          <div class="hero-score">
+            <div class="hero-team">${escapeHtml(summary.ourClub.name)}</div>
+            <strong>${summary.ourClub.score} × ${summary.opponentClub.score}</strong>
+            <div class="hero-team">${escapeHtml(summary.opponentClub.name)}</div>
+          </div>
+        </div>
+        <section class="section">
+          <h3>Premiações</h3>
+          <div class="award-grid">${awards}</div>
+        </section>
+        <section class="section">
+          <h3>Jogadores e estatísticas</h3>
+          <div class="players-wrap">
+            <table>
+              <thead><tr><th>Jogador</th><th>Nota</th><th>G</th><th>A</th><th>Fin.</th><th>Passes</th><th>Desarmes</th><th>CV</th><th>Def.</th><th>Elegível</th></tr></thead>
+              <tbody>${players}</tbody>
+            </table>
+          </div>
+        </section>
+        <section class="section">
+          <h3>Histórias e narrativas</h3>
+          <div class="story-grid">${stories}</div>
+        </section>
+        <div class="provenance">Schema ${match.provenance.schemaVersion} · Engine ${escapeHtml(match.provenance.engineVersion)} · MatchId ${escapeHtml(summary.matchId)}</div>
+      `;
+    }
+
+    function renderFacts(facts) {
+      if (!facts || !facts.length) return '';
+      return `<ul class="facts">${facts.map(fact => `<li><span class="muted">${escapeHtml(fact.label)}</span><strong>${escapeHtml(fact.value)}</strong></li>`).join('')}</ul>`;
+    }
+
+    async function loadHistory() {
+      try {
+        const response = await fetch('/api/history/matches');
+        if (!response.ok) throw new Error('Não foi possível carregar o histórico.');
+        const payload = await response.json();
+        renderList(payload.matches || [], payload.metadata);
+      } catch (error) {
+        metaElement.textContent = 'Histórico indisponível';
+        listElement.innerHTML = `<div class="state error"><div><span class="state-icon">⚠️</span>${escapeHtml(error.message)}</div></div>`;
+      }
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>
