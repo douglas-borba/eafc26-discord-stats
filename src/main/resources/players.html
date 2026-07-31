@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Perfis de Jogadores — EA FC 26</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --soft:#1c2128; --border:#30363d; --text:#f0f6fc; --muted:#8b949e; --accent:#2f81f7; --win:#3fb950; --draw:#d29922; --loss:#f85149; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    button,a,input { font:inherit; }
+    .shell { width:min(1280px,100%); margin:auto; padding:24px; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:20px; }
+    .eyebrow,.muted { color:var(--muted); }
+    .eyebrow { font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+    h1 { margin:3px 0 0; font-size:clamp(22px,3vw,32px); }
+    .nav { display:flex; gap:8px; }
+    .nav a { color:var(--text); text-decoration:none; border:1px solid var(--border); border-radius:8px; padding:8px 12px; background:var(--panel); }
+    .layout { display:grid; grid-template-columns:minmax(260px,340px) minmax(0,1fr); gap:18px; }
+    .panel { border:1px solid var(--border); border-radius:12px; background:var(--panel); overflow:hidden; }
+    .panel-head { padding:14px 16px; border-bottom:1px solid var(--border); }
+    .panel-head h2 { margin:0 0 10px; font-size:16px; }
+    .search { width:100%; padding:9px 11px; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:7px; outline:none; }
+    .search:focus { border-color:var(--accent); }
+    .player-list { max-height:calc(100vh - 190px); overflow:auto; }
+    .player-item { width:100%; display:flex; justify-content:space-between; gap:12px; padding:13px 16px; color:inherit; text-align:left; border:0; border-bottom:1px solid var(--border); background:transparent; cursor:pointer; }
+    .player-item:hover,.player-item.active { background:var(--soft); }
+    .player-item.active { box-shadow:inset 3px 0 var(--accent); }
+    .player-name { font-weight:700; }
+    .count { color:var(--muted); white-space:nowrap; }
+    .detail { min-height:560px; padding:20px; }
+    .state { display:grid; place-items:center; min-height:500px; color:var(--muted); text-align:center; }
+    .state-icon { display:block; font-size:38px; margin-bottom:8px; }
+    .profile-head { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; padding-bottom:18px; border-bottom:1px solid var(--border); }
+    .profile-head h2 { margin:0; font-size:28px; }
+    .record { display:flex; gap:8px; }
+    .record span { padding:5px 9px; border-radius:999px; font-weight:700; }
+    .record .WIN { color:var(--win); background:rgba(63,185,80,.12); }
+    .record .DRAW { color:var(--draw); background:rgba(210,153,34,.12); }
+    .record .LOSS { color:var(--loss); background:rgba(248,81,73,.12); }
+    .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-top:18px; }
+    .stat { padding:14px; border:1px solid var(--border); border-radius:9px; background:var(--soft); }
+    .stat strong { display:block; font-size:24px; }
+    .stat span { color:var(--muted); font-size:12px; }
+    .section { margin-top:24px; }
+    .section h3 { margin:0 0 12px; font-size:15px; }
+    .matches { display:grid; gap:8px; }
+    .match { display:grid; grid-template-columns:130px minmax(0,1fr) auto; align-items:center; gap:14px; padding:12px 14px; border:1px solid var(--border); border-radius:9px; background:var(--soft); }
+    .result.WIN { color:var(--win); }.result.DRAW { color:var(--draw); }.result.LOSS { color:var(--loss); }
+    .score { font-size:17px; font-weight:800; white-space:nowrap; }
+    .awards { color:var(--muted); font-size:12px; margin-top:3px; }
+    .error { color:var(--loss); }
+    @media(max-width:850px) {
+      .shell { padding:14px; }.layout { grid-template-columns:1fr; }.player-list { max-height:300px; }
+      .stats { grid-template-columns:repeat(2,minmax(0,1fr)); }.match { grid-template-columns:1fr auto; }.match-date { grid-column:1/-1; }
+      .profile-head { align-items:flex-start; flex-direction:column; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div><div class="eyebrow">EA FC 26 — Associação BF</div><h1>Perfis de Jogadores</h1></div>
+      <nav class="nav"><a href="/history">Histórico</a><a href="/">Dashboard</a></nav>
+    </header>
+    <div class="layout">
+      <section class="panel">
+        <div class="panel-head"><h2>Jogadores</h2><input id="search" class="search" type="search" placeholder="Buscar jogador…" aria-label="Buscar jogador"></div>
+        <div id="player-list" class="player-list"><div class="state"><div><span class="state-icon">⏳</span>Carregando…</div></div></div>
+      </section>
+      <section id="profile-detail" class="panel detail state" aria-live="polite"><div><span class="state-icon">👤</span>Selecione um jogador.</div></section>
+    </div>
+  </main>
+  <script>
+    const listElement=document.getElementById('player-list'), detailElement=document.getElementById('profile-detail'), searchElement=document.getElementById('search');
+    let players=[],selectedId=null;
+    const escapeHtml=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+    const display=value=>value===null||value===undefined?'—':escapeHtml(value);
+
+    function renderPlayers() {
+      const term=searchElement.value.trim().toLocaleLowerCase('pt-BR');
+      const filtered=players.filter(player=>player.name.toLocaleLowerCase('pt-BR').includes(term));
+      if(!filtered.length) {
+        listElement.innerHTML=`<div class="state"><div><span class="state-icon">📭</span>${players.length?'Nenhum jogador encontrado.':'Nenhum perfil disponível ainda.'}</div></div>`;
+        return;
+      }
+      listElement.innerHTML=filtered.map(player=>`<button class="player-item ${player.playerId===selectedId?'active':''}" data-id="${escapeHtml(player.playerId)}"><span><span class="player-name">${escapeHtml(player.name)}</span><br><span class="muted">${escapeHtml(player.latestMatchLabel)}</span></span><span class="count">${player.matchCount} jogo${player.matchCount===1?'':'s'}</span></button>`).join('');
+      listElement.querySelectorAll('.player-item').forEach(button=>button.addEventListener('click',()=>openProfile(button.dataset.id)));
+    }
+
+    async function openProfile(playerId) {
+      selectedId=playerId; renderPlayers();
+      detailElement.className='panel detail state';
+      detailElement.innerHTML='<div><span class="state-icon">⏳</span>Carregando perfil…</div>';
+      try {
+        const response=await fetch(`/api/player-profiles/detail?playerId=${encodeURIComponent(playerId)}`);
+        const payload=await response.json();
+        if(!response.ok||payload.status!=='success') throw new Error(payload.message||'Não foi possível carregar o perfil.');
+        if(selectedId===playerId) renderProfile(payload.profile);
+      } catch(error) {
+        detailElement.className='panel detail state error';
+        detailElement.innerHTML=`<div><span class="state-icon">⚠️</span>${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function renderProfile(profile) {
+      const stats=[
+        ['Partidas',profile.matchCount],['Média',profile.averageRating??'—'],['Gols',profile.goals],['Assistências',profile.assists],
+        ['⭐ Craques',profile.craques],['🐟 Bagres',profile.bagres],['🛡️ Xerifes',profile.xerifes],['🟥 Vermelhos',profile.redCards]
+      ];
+      const matches=profile.recentMatches.map(match=>`<article class="match">
+        <div class="match-date"><span class="result ${escapeHtml(match.outcomeCode)}">${escapeHtml(match.outcomeIcon)} ${escapeHtml(match.outcomeLabel)}</span><br><span class="muted">${escapeHtml(match.dateLabel)}</span></div>
+        <div><strong>${escapeHtml(match.ourClubName)} × ${escapeHtml(match.opponentClubName)}</strong><div class="awards">Nota ${display(match.rating)} · ${display(match.goals)} G · ${display(match.assists)} A${match.awards.length?' · '+match.awards.map(escapeHtml).join(' · '):''}</div></div>
+        <div class="score">${match.ourScore} × ${match.opponentScore}</div>
+      </article>`).join('');
+      detailElement.className='panel detail';
+      detailElement.innerHTML=`<div class="profile-head"><div><div class="eyebrow">Perfil histórico</div><h2>${escapeHtml(profile.name)}</h2><div class="muted">${profile.ratedMatchCount} partida${profile.ratedMatchCount===1?'':'s'} com nota</div></div><div class="record"><span class="WIN">${profile.wins}V</span><span class="DRAW">${profile.draws}E</span><span class="LOSS">${profile.losses}D</span></div></div><div class="stats">${stats.map(([label,value])=>`<div class="stat"><strong>${display(value)}</strong><span>${escapeHtml(label)}</span></div>`).join('')}</div><section class="section"><h3>Últimas partidas</h3><div class="matches">${matches}</div></section>`;
+    }
+
+    async function loadPlayers() {
+      try {
+        const response=await fetch('/api/player-profiles'),payload=await response.json();
+        if(!response.ok) throw new Error('Não foi possível carregar os jogadores.');
+        players=payload.players||[]; renderPlayers();
+        const requested=new URLSearchParams(location.search).get('playerId');
+        if(players.length) openProfile(players.some(player=>player.playerId===requested)?requested:players[0].playerId);
+        else { detailElement.innerHTML='<div><span class="state-icon">🗂️</span>Os perfis aparecerão após partidas persistidas.</div>'; }
+      } catch(error) {
+        listElement.innerHTML=`<div class="state error"><div><span class="state-icon">⚠️</span>${escapeHtml(error.message)}</div></div>`;
+      }
+    }
+    searchElement.addEventListener('input',renderPlayers);
+    loadPlayers();
+  </script>
+</body>
+</html>

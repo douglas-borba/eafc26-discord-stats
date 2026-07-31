@@ -27,7 +27,10 @@ flowchart TD
     PORT --> HIST["MatchHistoryService<br/>read-only canonical queries"]
     HIST --> HDASH["Historical Dashboard presenter<br/>list + match detail"]
     HDASH --> HWEB["Historical Dashboard<br/>HTML + JSON endpoints"]
-    HIST -.-> FUTURE["Future history consumers<br/>Profiles / Comparison / Export"]
+    HIST --> PROFILE["PlayerProfileService<br/>historical aggregation"]
+    PROFILE --> PVIEW["Player profile presenter"]
+    PVIEW --> PWEB["Player Profiles Dashboard"]
+    HIST -.-> FUTURE["Future history consumers<br/>Comparison / Export"]
     FM --> DASH["Dashboard renderer"]
     INT --> DASH
     MS --> DASH
@@ -178,6 +181,39 @@ The presenter may format dates, labels and already-computed values. It does not
 sort candidates, calculate percentages, select awards or classify narratives.
 The browser consumes only these historical JSON contracts and never calls the
 EA acquisition endpoints.
+
+### Player profiles
+
+`PlayerProfileService` is the historical aggregation boundary for
+player-centered product queries. It depends only on `MatchHistoryService` and
+uses the newest-first canonical history to produce:
+
+- a searchable index of players from the interpretation perspective club;
+- matches, wins, draws and losses;
+- average rating and the number of rated appearances;
+- goals, assists and red cards;
+- counts of canonical Craque, Bagre and Xerife decisions;
+- the five latest appearances with their persisted match context.
+
+The MVP intentionally includes players from the perspective club only.
+Canonical outcomes and awards are defined from that perspective, so this scope
+reuses them directly. Supporting opponent profiles would require an explicit
+product decision about opponent identity and result perspective; the profile
+layer does not infer or invert those decisions.
+
+`PlayerProfile` and `PlayerProfileMatch` are historical query models. Their
+sums, counts and rating average are product aggregations, not new football
+rules. `PlayerProfilePresenter` owns localized labels and dates, while
+`PlayerProfileController` depends only on `PlayerProfileService`.
+
+The web surface exposes:
+
+- `GET /players`, the profiles Dashboard;
+- `GET /api/player-profiles`, the player index;
+- `GET /api/player-profiles/detail?playerId=...`, one complete profile.
+
+The query-parameter detail endpoint preserves arbitrary canonical player IDs
+without requiring them to be safe URL path segments.
 
 `JsonCanonicalMatchRepository` is the initial infrastructure adapter. It stores
 one UTF-8 JSON file per match below
