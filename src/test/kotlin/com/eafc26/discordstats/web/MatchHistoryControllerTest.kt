@@ -77,6 +77,7 @@ class MatchHistoryControllerTest {
         assertThat(detail.players.map { it.name }).containsExactly("MVP", "Defender", "Bagre")
         assertThat(detail.awards.map { it.type }).containsExactly("CRAQUE", "BAGRE", "XERIFE")
         assertThat(detail.awards.first { it.type == "CRAQUE" }.winnerName).isEqualTo("MVP")
+        assertThat(detail.awards.first { it.type == "BAGRE" }.label).isEqualTo("Bagre")
         assertThat(detail.stories).isNotEmpty
         assertThat(detail.stories.first().ruleIds).isNotEmpty
         assertThat(detail.stories.first().evidenceCount).isPositive()

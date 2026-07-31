@@ -66,6 +66,84 @@ narrativas. Ela apresenta exclusivamente decisões produzidas pela engine.
 O mesmo conceito deve preservar nome, componente, cor, comportamento e
 hierarquia em toda a aplicação.
 
+### Toda narrativa segue Fato → Evidência → Mensagem
+
+O fato é a conclusão objetiva produzida pela engine. A evidência apresenta o
+motivo e os dados determinísticos existentes. A mensagem acrescenta um
+complemento humano, curto e coerente com o espírito esportivo.
+
+Nenhuma mensagem pode alterar critérios, inventar justificativas, exagerar uma
+conclusão ou contradizer a engine.
+
+## Tom Editorial
+
+O produto celebra boas atuações sem exagerar seu impacto. Desempenhos abaixo
+dos demais são reconhecidos com honestidade e respeito, sempre limitados à
+partida observada.
+
+O desempenho de uma partida não define a capacidade de um jogador. A interface
+deve falar sobre “esta atuação” e “esta partida”, nunca classificar a pessoa.
+Nenhuma mensagem pode ridicularizar, humilhar, atribuir falta de esforço ou
+culpar individualmente um jogador por um resultado coletivo.
+
+A comunicação incentiva evolução contínua sem esconder os fatos. Evidência e
+mensagem possuem responsabilidades diferentes:
+
+```text
+Fato
+→ o que a engine concluiu
+
+Evidência
+→ por que concluiu
+
+Mensagem
+→ como comunicar humanamente
+```
+
+A mensagem permanece curta, esportiva e conectada ao jogo. O produto evita
+frases genéricas de autoajuda e inferências sobre intenção, potencial ou estado
+emocional que não tenham sido produzidas pela engine.
+
+### Voz das premiações e narrativas
+
+| Decisão canônica | Apresentação | Propósito editorial |
+|---|---|---|
+| Craque | Craque | Celebrar protagonismo sem exagero |
+| Xerife | Xerife | Valorizar consistência e segurança defensiva |
+| BAGRE | Menor Desempenho | Registrar a menor atuação elegível com respeito e perspectiva de evolução |
+| CONSTANT_THREAT | Perigo Constante | Reconhecer presença ofensiva contínua e criação de oportunidades |
+| COULD_HAVE_DECIDED / FELL_SHORT / LACKED_COMPOSURE | Ficou no Quase | Valorizar participação ofensiva relevante sem tratar conversão insuficiente como fracasso pessoal |
+| DECISIVE | Fez a Diferença | Destacar impacto comprovadamente decisivo |
+| RED_CARD | Cartão Vermelho | Registrar o fato disciplinar sem ridicularização ou julgamento de caráter |
+| PASS_PRECISION | Passe de Precisão | Celebrar segurança e consistência na circulação da bola |
+| LOST_MAIL | Correio Extraviado | Comunicar precisão abaixo da referência coletiva com objetividade e respeito |
+| GOALKEEPER | Muralha / atuação no gol | Contextualizar a participação do goleiro conforme a leitura canônica |
+| EA_RECOGNIZED_MVP | MVP da EA | Registrar o reconhecimento externo sem confundi-lo com a decisão de Craque |
+| GOALS / ASSISTS | Participações ofensivas | Reconhecer contribuições factuais sem criar uma nova premiação |
+| HIGHLIGHTS | Destaques por nota | Dar contexto às avaliações sem produzir outro ranking |
+
+`BAGRE` permanece como identificador técnico. “Menor Desempenho” é o rótulo
+oficial apresentado ao usuário. A interface descreve uma atuação, nunca uma
+identidade.
+
+### Mensagens editoriais iniciais
+
+- Craque: “Uma atuação que fez a diferença nesta partida.”
+- Xerife: “Consistência e segurança para proteger o time.”
+- Menor Desempenho: “Nem toda partida sai como esperado. A próxima é uma nova oportunidade para responder em campo.”
+- Perigo Constante: “Participação ofensiva constante, pressionando e criando oportunidades.”
+- Ficou no Quase: “A presença ofensiva apareceu; faltou transformar mais oportunidades em resultado.”
+- Fez a Diferença: “Uma atuação que mudou o rumo da partida, sustentada pelos fatos do jogo.”
+- Cartão Vermelho: “Um momento difícil que também faz parte da história deste jogo.”
+- Passe de Precisão: “Consistência com a bola para dar continuidade ao jogo do time.”
+- Correio Extraviado: “Um aspecto desta atuação que pode encontrar uma resposta diferente no próximo jogo.”
+- Muralha: “A presença do goleiro também escreveu parte desta partida.”
+- MVP da EA: “Um reconhecimento registrado pela própria EA nesta atuação.”
+- Participações ofensivas: “Gols e assistências que ajudam a contar como o placar foi construído.”
+
+Essas mensagens pertencem exclusivamente à apresentação e nunca substituem o
+motivo ou as evidências determinísticas.
+
 ## Arquitetura da experiência
 
 ```text
