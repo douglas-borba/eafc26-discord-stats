@@ -8,6 +8,11 @@ import com.eafc26.discordstats.discord.HistoryEmbedBuilder
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.MatchResponse
+import com.eafc26.discordstats.ea.mapping.EaMatchMapper
+import com.eafc26.discordstats.ea.mapping.MatchNormalizationResult
+import com.eafc26.discordstats.application.interpretation.MatchInterpreter
+import com.eafc26.discordstats.application.story.MatchStoryExtractor
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.store.PublishedMatchStore
 import org.slf4j.LoggerFactory
@@ -53,6 +58,9 @@ class MatchAcquisitionService(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
+    private val eaMatchMapper = EaMatchMapper()
+    private val matchInterpreter = MatchInterpreter()
+    private val matchStoryExtractor = MatchStoryExtractor()
 
     /**
      * Executes the acquisition pipeline.
@@ -201,7 +209,7 @@ class MatchAcquisitionService(
 
         // Phase: CACHING - Generate and cache presentation BEFORE deduplication check
         stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-        val presentation = matchSummaryBuilder.build(latest, clubId, proNames = proNames)
+        val presentation = buildDashboardPresentation(latest, clubId, proNames)
         val newVersion = latestMatchHolder.update(presentation)
         log.debug("Cached presentation for match {} (version={})", latest.matchId, newVersion)
 
@@ -265,7 +273,12 @@ class MatchAcquisitionService(
         // Phase: CACHING - Generate and cache presentation (marked as simulated)
         // Use forceRandomPhrases=true so each simulation gets new random phrases
         stateHolder.enterPhase(AcquisitionPhase.CACHING, "Gerando card simulado...")
-        val presentation = matchSummaryBuilder.build(latestMatch, clubId, forceRandomPhrases = true, proNames = proNames)
+        val presentation = buildDashboardPresentation(
+            latestMatch,
+            clubId,
+            proNames,
+            forceRandomPhrases = true,
+        )
         val newVersion = latestMatchHolder.update(presentation, simulated = true)
         log.debug("Cached simulated presentation for match {} (version={})", latestMatch.matchId, newVersion)
 
@@ -304,7 +317,7 @@ class MatchAcquisitionService(
         // Phase: CACHING - Cache the latest presentation BEFORE checking deduplication
         if (latestMatch != null) {
             stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-            val presentation = matchSummaryBuilder.build(latestMatch, clubId, proNames = proNames)
+            val presentation = buildDashboardPresentation(latestMatch, clubId, proNames)
             val newVersion = latestMatchHolder.update(presentation)
             log.debug("Cached presentation for match {} (version={})", latestMatch.matchId, newVersion)
         }
@@ -390,7 +403,7 @@ class MatchAcquisitionService(
         val latestMatch = matches.maxByOrNull { it.timestamp }
         if (latestMatch != null) {
             stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-            val presentation = matchSummaryBuilder.build(latestMatch, clubId, proNames = proNames)
+            val presentation = buildDashboardPresentation(latestMatch, clubId, proNames)
             val newVersion = latestMatchHolder.update(presentation)
             log.debug("Cached presentation for match {} (version={})", latestMatch.matchId, newVersion)
         }
@@ -483,7 +496,7 @@ class MatchAcquisitionService(
 
         // Phase: CACHING - Generate and cache presentation
         stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-        val presentation = matchSummaryBuilder.build(latest, clubId, proNames = proNames)
+        val presentation = buildDashboardPresentation(latest, clubId, proNames)
         val newVersion = latestMatchHolder.update(presentation)
         log.debug("Cached presentation for match {} (version={})", latest.matchId, newVersion)
 
@@ -559,6 +572,29 @@ class MatchAcquisitionService(
         }
     }
 
+    private fun buildDashboardPresentation(
+        source: MatchResponse,
+        clubId: String,
+        proNames: Map<String, String>,
+        forceRandomPhrases: Boolean = false,
+    ): com.eafc26.discordstats.presentation.MatchSummaryPresentation {
+        val normalized = when (val result = eaMatchMapper.map(source, proNames)) {
+            is MatchNormalizationResult.Success -> result.match
+            is MatchNormalizationResult.Rejected -> error(
+                "EA match ${source.matchId} cannot be normalized for Dashboard: " +
+                    result.errors.joinToString { it.message }
+            )
+        }
+        val interpretation = matchInterpreter.interpret(normalized, ClubId(clubId))
+        val stories = matchStoryExtractor.extract(interpretation)
+        return matchSummaryBuilder.build(
+            footballMatch = normalized,
+            interpretation = interpretation,
+            stories = stories,
+            forceRandomPhrases = forceRandomPhrases,
+        )
+    }
+
     /**
      * Builds a human-readable summary of a match.
      */
@@ -572,4 +608,3 @@ class MatchAcquisitionService(
         return "$ourName $ourScore × $oppScore $oppName"
     }
 }
-

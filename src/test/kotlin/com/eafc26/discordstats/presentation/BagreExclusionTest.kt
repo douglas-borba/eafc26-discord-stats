@@ -22,12 +22,12 @@ import org.junit.jupiter.api.Test
  */
 class BagreExclusionTest {
 
-    private lateinit var builder: MatchSummaryBuilder
+    private lateinit var builder: LegacyMatchSummaryBuilder
     private val clubId = "42"
 
     @BeforeEach
     fun setUp() {
-        builder = MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))
+        builder = LegacyMatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -226,4 +226,3 @@ class BagreExclusionTest {
         }
     }
 }
-

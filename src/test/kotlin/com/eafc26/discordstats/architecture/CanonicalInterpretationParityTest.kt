@@ -9,13 +9,62 @@ import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
+import com.eafc26.discordstats.presentation.LegacyMatchSummaryBuilder
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
+import com.eafc26.discordstats.presentation.DashboardShadowMode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.ZoneOffset
 
 class CanonicalInterpretationParityTest {
+
+    @Test
+    fun `shadow mode proves complete structural parity for rich Dashboard output`() {
+        val phrases = PhraseBank(jacksonObjectMapper())
+        val result = DashboardShadowMode(
+            LegacyMatchSummaryBuilder(phrases),
+            MatchSummaryBuilder(phrases),
+        ).compare(richMatch(), OUR_CLUB, ZoneOffset.UTC)
+
+        assertThat(result.divergentSections).isEmpty()
+        assertThat(result.canonical).isEqualTo(result.legacy)
+        assertThat(result.hasParity).isTrue()
+    }
+
+    @Test
+    fun `shadow mode proves optional-section parity for minimal Dashboard output`() {
+        val source = richMatch().copy(players = mapOf(OUR_CLUB to emptyMap()))
+        val phrases = PhraseBank(jacksonObjectMapper())
+        val result = DashboardShadowMode(
+            LegacyMatchSummaryBuilder(phrases),
+            MatchSummaryBuilder(phrases),
+        ).compare(source, OUR_CLUB, ZoneOffset.UTC)
+
+        assertThat(result.divergentSections).isEmpty()
+        assertThat(result.canonical).isEqualTo(result.legacy)
+    }
+
+    @Test
+    fun `shadow mode preserves Virtual Pro display names without changing phrase seeds`() {
+        val phrases = PhraseBank(jacksonObjectMapper())
+        val result = DashboardShadowMode(
+            LegacyMatchSummaryBuilder(phrases),
+            MatchSummaryBuilder(phrases),
+        ).compare(
+            richMatch(),
+            OUR_CLUB,
+            ZoneOffset.UTC,
+            proNames = mapOf(
+                "Bagre" to "Pro Bagre",
+                "Star" to "Pro Star",
+                "Keeper" to "Pro Keeper",
+            ),
+        )
+
+        assertThat(result.divergentSections).isEmpty()
+        assertThat(result.canonical).isEqualTo(result.legacy)
+    }
 
     @Test
     fun `canonical interpretation covers every current dashboard football decision`() {
@@ -25,7 +74,7 @@ class CanonicalInterpretationParityTest {
             normalized.match,
             com.eafc26.discordstats.domain.match.ClubId(OUR_CLUB),
         )
-        val legacy = MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))
+        val legacy = LegacyMatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))
             .build(source, OUR_CLUB, ZoneOffset.UTC)
         val names = interpretation.footballMatch.participants
             .first { it.club.id.value == OUR_CLUB }

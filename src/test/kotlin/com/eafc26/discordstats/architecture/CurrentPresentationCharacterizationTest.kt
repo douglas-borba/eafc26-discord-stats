@@ -8,7 +8,7 @@ import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
-import com.eafc26.discordstats.presentation.MatchSummaryBuilder
+import com.eafc26.discordstats.presentation.LegacyMatchSummaryBuilder
 import com.eafc26.discordstats.presentation.OutcomeType
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
@@ -29,12 +29,12 @@ class CurrentPresentationCharacterizationTest {
     private val ourClubId = "club-us"
     private val zone = ZoneOffset.UTC
 
-    private lateinit var summaryBuilder: MatchSummaryBuilder
+    private lateinit var summaryBuilder: LegacyMatchSummaryBuilder
 
     @BeforeEach
     fun setUp() {
         val phraseBank = PhraseBank(jacksonObjectMapper())
-        summaryBuilder = MatchSummaryBuilder(phraseBank)
+        summaryBuilder = LegacyMatchSummaryBuilder(phraseBank)
         DiscordEmbedBuilder.phraseBank = phraseBank
     }
 

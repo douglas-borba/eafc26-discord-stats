@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.domain.interpretation
 
 import com.eafc26.discordstats.domain.match.PlayerId
+import java.math.BigDecimal
 
 data class MatchAwards(
     val craque: AwardDecision,
@@ -14,6 +15,7 @@ data class AwardDecision(
     val reason: AwardDecisionReason,
     val rule: RuleReference,
     val evidence: List<DecisionEvidence>,
+    val metrics: AwardMetrics? = null,
 ) {
     init {
         require(evidence.isNotEmpty()) { "An award decision must contain evidence" }
@@ -24,6 +26,22 @@ data class AwardDecision(
 
     val awarded: Boolean
         get() = winnerId != null
+}
+
+sealed interface AwardMetrics {
+    data class Craque(
+        val rating: BigDecimal?,
+        val goals: Int,
+        val assists: Int,
+        val eaManOfTheMatch: Boolean,
+    ) : AwardMetrics
+
+    data class Xerife(
+        val tacklesCompleted: Int,
+        val tacklesAttempted: Int,
+        val accuracyPercent: Int,
+        val defensiveImpactScore: BigDecimal,
+    ) : AwardMetrics
 }
 
 enum class AwardType {

@@ -2,6 +2,7 @@ package com.eafc26.discordstats.domain.story
 
 import com.eafc26.discordstats.domain.interpretation.AwardDecisionReason
 import com.eafc26.discordstats.domain.interpretation.AwardType
+import com.eafc26.discordstats.domain.interpretation.AwardMetrics
 import com.eafc26.discordstats.domain.interpretation.DecisionEvidence
 import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.domain.interpretation.GoalkeeperArchetype
@@ -73,6 +74,7 @@ sealed interface StoryContent {
         val awardType: AwardType,
         val winnerId: PlayerId,
         val reason: AwardDecisionReason,
+        val metrics: AwardMetrics?,
     ) : StoryContent
 
     data class Contributions(

@@ -15,14 +15,14 @@ import org.junit.jupiter.api.Test
 class MatchSummaryBuilderTest {
 
     private lateinit var phraseBank: PhraseBank
-    private lateinit var builder: MatchSummaryBuilder
+    private lateinit var builder: LegacyMatchSummaryBuilder
 
     private val clubId = "12345"
 
     @BeforeEach
     fun setUp() {
         phraseBank = PhraseBank(jacksonObjectMapper())
-        builder = MatchSummaryBuilder(phraseBank)
+        builder = LegacyMatchSummaryBuilder(phraseBank)
     }
 
     private fun match(

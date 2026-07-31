@@ -3,6 +3,7 @@ package com.eafc26.discordstats.application.interpretation
 import com.eafc26.discordstats.domain.interpretation.AwardDecision
 import com.eafc26.discordstats.domain.interpretation.AwardDecisionReason
 import com.eafc26.discordstats.domain.interpretation.AwardType
+import com.eafc26.discordstats.domain.interpretation.AwardMetrics
 import com.eafc26.discordstats.domain.interpretation.DecisionEvidence
 import com.eafc26.discordstats.domain.interpretation.EligibilityInterpretation
 import com.eafc26.discordstats.domain.interpretation.RuleId
@@ -36,6 +37,7 @@ class XerifeEvaluator {
                     .divide(attempted.toBigDecimal(), SCORE_SCALE, RoundingMode.HALF_UP),
                 accuracyPercent = completed * 100 / attempted,
                 completed = completed,
+                attempted = attempted,
             )
         }
         val winner = candidates.maxWithOrNull(
@@ -66,6 +68,14 @@ class XerifeEvaluator {
             },
             RULE,
             evidence,
+            winner?.let {
+                AwardMetrics.Xerife(
+                    tacklesCompleted = it.completed,
+                    tacklesAttempted = it.attempted,
+                    accuracyPercent = it.accuracyPercent,
+                    defensiveImpactScore = it.impact,
+                )
+            },
         )
     }
 
@@ -74,6 +84,7 @@ class XerifeEvaluator {
         val impact: BigDecimal,
         val accuracyPercent: Int,
         val completed: Int,
+        val attempted: Int,
     )
 
     companion object {

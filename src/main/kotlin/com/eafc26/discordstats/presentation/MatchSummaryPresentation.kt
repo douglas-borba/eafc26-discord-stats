@@ -7,8 +7,8 @@ package com.eafc26.discordstats.presentation
  * - DiscordEmbedBuilder (for Discord webhook)
  * - Match Card renderer (for visual card)
  * 
- * Business logic remains in the existing selectors.
- * This class only aggregates their results into a presentation-ready format.
+ * Football decisions come from the canonical interpretation and story models.
+ * This class contains presentation-ready values only.
  *
  * The presentation is built by [MatchSummaryBuilder], a Spring-managed component.
  */
@@ -137,9 +137,8 @@ data class MuralhaSection(
     val name: String,
     val saves: Int,
     val goalsConceded: Int,
-    val archetype: com.eafc26.discordstats.discord.GoalkeeperArchetype,
+    val archetype: com.eafc26.discordstats.domain.interpretation.GoalkeeperArchetype,
     /** Localised title, e.g. "🧱 Paredão". */
     val archetypeTitle: String,
     val phrase: String,
 )
-

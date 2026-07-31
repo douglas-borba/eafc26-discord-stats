@@ -224,6 +224,7 @@ class MatchStoryExtractor {
                 awardType = decision.type,
                 winnerId = winnerId,
                 reason = decision.reason,
+                metrics = decision.metrics,
             ),
             provenance = StoryProvenance(
                 rules = listOf(decision.rule),

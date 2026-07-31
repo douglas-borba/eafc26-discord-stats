@@ -10,10 +10,9 @@ Football decisions belong to code. Presentation components may express a
 decision, but must not decide who won, who was eligible or who earned an
 award.
 
-The repository is in an incremental migration. The production presentation
-flow still consumes EA DTOs directly. In parallel, an isolated normalized flow
-now reaches `MatchInterpretation`; it is not connected to production
-consumers yet.
+The repository is in an incremental migration. Dashboard production now uses
+the normalized interpretation and story pipeline. Discord still consumes EA
+DTOs directly and remains the next consumer to migrate.
 
 ## Layers and responsibilities
 
@@ -72,10 +71,10 @@ fields and do not build presentation payloads.
 
 ### Presentation
 
-The current `presentation` and `discord` packages build the dashboard summary
-and Discord embeds. During migration they still contain legacy football rules.
-The target responsibility is rendering already interpreted stories without
-re-evaluating football facts.
+`MatchSummaryBuilder` renders the Dashboard exclusively from `FootballMatch`,
+`MatchInterpretation` and `MatchStories`. `LegacyMatchSummaryBuilder` is kept
+only for shadow-mode tests. The `discord` package still contains its legacy
+football rules until the Discord migration.
 
 ## Current production flow
 
@@ -85,6 +84,9 @@ EA HTTP/browser payload
   -> EaResponseParser/Jackson
   -> MatchResponse and PlayerEntry EA DTOs
   -> MatchAcquisitionService
+     -> EaMatchMapper
+     -> MatchInterpreter
+     -> MatchStoryExtractor
      -> MatchSummaryBuilder
         -> MatchSummaryPresentation
         -> LatestMatchHolder
@@ -94,8 +96,8 @@ EA HTTP/browser payload
      -> PublishedMatchStore
 ```
 
-This is the observable production path. Its legacy builders and selectors
-remain unchanged while the normalized path is developed and tested.
+This is the observable production path. Dashboard has completed its cutover;
+Discord builders and selectors remain unchanged.
 
 ## Normalized interpretation flow
 
@@ -126,9 +128,8 @@ EA MatchResponse
   -> MatchStories
 ```
 
-This path currently ends at `MatchStories` and the parallel
-`MatchSummaryDecisionProjection`. It has no production consumer and therefore
-cannot alter Discord or dashboard behavior.
+This path currently feeds the Dashboard renderer. Discord does not consume it
+yet.
 
 ## Anti-Corruption Layer
 
@@ -164,8 +165,8 @@ Prohibited:
 - ACL -> presentation models.
 - Optional LLM -> winner selection, eligibility or award decisions.
 
-The legacy production path temporarily violates the target renderer rule. Its
-behavior is protected by characterization tests until consumers are migrated.
+The Discord production path temporarily violates the target renderer rule. Its
+behavior is protected by characterization tests until that consumer migrates.
 
 ## Principles
 

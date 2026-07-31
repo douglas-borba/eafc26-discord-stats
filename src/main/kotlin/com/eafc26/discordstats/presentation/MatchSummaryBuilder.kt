@@ -2,19 +2,23 @@ package com.eafc26.discordstats.presentation
 
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.PhraseCategory
-import com.eafc26.discordstats.discord.BagrePerformanceEvaluator
-import com.eafc26.discordstats.discord.CorreioExtraviadoSelector
-import com.eafc26.discordstats.discord.CraqueSelector
-import com.eafc26.discordstats.discord.GoalkeeperEvaluator
-import com.eafc26.discordstats.discord.MatchOutcomeResolver
-import com.eafc26.discordstats.discord.PassePrecisaoSelector
-import com.eafc26.discordstats.discord.XerifeSelector
-import com.eafc26.discordstats.ea.model.MatchResponse
-import com.eafc26.discordstats.ea.model.PlayerEntry
-import com.eafc26.discordstats.ea.model.PlayerStatisticsEligibility
-import org.slf4j.LoggerFactory
+import com.eafc26.discordstats.domain.interpretation.AwardDecisionReason
+import com.eafc26.discordstats.domain.interpretation.AwardMetrics
+import com.eafc26.discordstats.domain.interpretation.AwardType
+import com.eafc26.discordstats.domain.interpretation.BagreCriticism
+import com.eafc26.discordstats.domain.interpretation.GoalkeeperArchetype
+import com.eafc26.discordstats.domain.interpretation.GoalkeeperNarrativeVariant
+import com.eafc26.discordstats.domain.interpretation.MatchInterpretation
+import com.eafc26.discordstats.domain.interpretation.MatchOutcome as DomainOutcome
+import com.eafc26.discordstats.domain.match.FootballMatch
+import com.eafc26.discordstats.domain.match.PlayerId
+import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
+import com.eafc26.discordstats.domain.match.PlayerRole
+import com.eafc26.discordstats.domain.story.MatchStories
+import com.eafc26.discordstats.domain.story.StoryContent
+import com.eafc26.discordstats.domain.story.StoryType
 import org.springframework.stereotype.Component
-import java.time.Instant
+import java.math.BigDecimal
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -22,318 +26,421 @@ import java.util.Random
 import kotlin.math.abs
 
 /**
- * Builds the presentation model from match data.
+ * Dashboard renderer for the canonical match pipeline.
  *
- * This is a Spring-managed component that receives [PhraseBank] via
- * constructor injection. No global mutable state is required.
- *
- * Reuses all existing selectors and evaluators.
- *
- * Phrase selection can be:
- * - **Deterministic** (default): Uses matchId hash for consistent results
- * - **Random**: When [forceRandomPhrases] is true, uses true random selection
- *
- * For DEV_SIMULATOR, random selection is enabled so repeated simulations
- * of the same fixture produce different phrase combinations.
+ * It formats already-made decisions and never reads EA DTOs or invokes a
+ * football selector.
  */
 @Component
 class MatchSummaryBuilder(
     private val phraseBank: PhraseBank,
 ) {
-    private val log = LoggerFactory.getLogger(javaClass)
     private val dateFmt = DateTimeFormatter.ofPattern("dd MMM yyyy '•' HH:mm", PT_BR)
 
-    /**
-     * Builds a presentation from match data.
-     *
-     * @param match The match data from EA API
-     * @param ourClubId Our club's ID
-     * @param zoneId Time zone for date formatting
-     * @param forceRandomPhrases When true, uses random phrase selection instead of deterministic.
-     *                           Used by DEV_SIMULATOR to ensure new phrases on each simulation.
-     */
     fun build(
-        match: MatchResponse,
-        ourClubId: String,
+        footballMatch: FootballMatch,
+        interpretation: MatchInterpretation,
+        stories: MatchStories,
         zoneId: ZoneId = ZoneId.systemDefault(),
         forceRandomPhrases: Boolean = false,
-        proNames: Map<String, String> = emptyMap(),
     ): MatchSummaryPresentation {
-        // Create a Random instance for this build if random phrases are requested
-        val random: Random? = if (forceRandomPhrases) Random() else null
-        
-        val ourEntry = match.clubs[ourClubId]
-        val oppEntry = match.clubs.entries.firstOrNull { it.key != ourClubId }
-
-        val ourName = ourEntry?.resolvedName() ?: "Nós"
-        val oppName = oppEntry?.value?.resolvedName() ?: "Adversário"
-
-        val resolved = MatchOutcomeResolver.resolve(ourEntry, oppEntry?.value)
-        val outcome = resolved.outcome
-
-        val date = Instant.ofEpochSecond(match.timestamp).atZone(zoneId).format(dateFmt)
-
-        // Get all players from the match (including BOT goalkeeper)
-        val allPlayers = (match.players[ourClubId] ?: emptyMap()).values
-
-        // Eligible players for stats (excludes substitutes with low playtime)
-        val allActive = PlayerStatisticsEligibility.eligiblePlayers(allPlayers)
-
-        // Find goalkeeper from ALL players (not just eligible) since BOT GK may not pass eligibility
-        val goalkeeper = allPlayers
-            .filter { it.isGoalkeeper() }
-            .maxByOrNull { it.secondsPlayed?.toIntOrNull() ?: 0 }
-
-        // Outfield players for awards (from eligible players, excluding goalkeeper)
-        val outfield = allActive.filter { !it.isGoalkeeper() }
-        val matchId = match.matchId
-
-        // Determine Bagre first so positive awards can exclude that player.
-        // playerName is the canonical identity key — proName is never used for comparisons.
-        val bagrePlayerName: String? = BagrePerformanceEvaluator.selectBagrePlayer(outfield)?.playerName
-
-        // Positive awards must never be given to the Bagre player.
-        val positiveOutfield: List<PlayerEntry> = if (bagrePlayerName != null)
-            outfield.filter { it.playerName != bagrePlayerName }
-        else
-            outfield
-
-        // ── Diagnostic trace for award pipeline ──────────────────────────────
-        // Log at INFO so this is always visible in production logs.
-        // Remove once the root cause of missing awards is confirmed.
-        log.info("[AWARDS-DIAG] match={} allPlayers={} allActive={} outfield={}",
-            matchId, allPlayers.size, allActive.size, outfield.size)
-        outfield.forEach { p ->
-            log.info("[AWARDS-DIAG]   player='{}' pos={} rating={} shots={} " +
-                "tackleAtt={} tackleMade={} secondsPlayed={}",
-                p.playerName, p.position, p.rating,
-                p.shots, p.tackleAttempts, p.tacklesMade, p.secondsPlayed)
+        require(footballMatch.id == interpretation.matchId && stories.matchId == footballMatch.id) {
+            "Match facts, interpretation and stories must belong to the same match"
         }
-        // Log players excluded by PlayerStatisticsEligibility so we know if the filter is culprit
-        val excluded = allPlayers.filter { !it.isGoalkeeper() && it !in allActive }
-        if (excluded.isNotEmpty()) {
-            log.info("[AWARDS-DIAG] Excluded by eligibility filter ({} player(s)):", excluded.size)
-            val maxSec = allPlayers.mapNotNull { it.secondsPlayed?.toIntOrNull()?.takeIf { s -> s > 0 } }.maxOrNull() ?: 0
-            excluded.forEach { p ->
-                log.info("[AWARDS-DIAG]   EXCLUDED '{}': secondsPlayed={} (max={}, threshold={})",
-                    p.playerName, p.secondsPlayed, maxSec, maxSec * 90 / 100)
-            }
-        }
-        // ─────────────────────────────────────────────────────────────────────
+        val random = if (forceRandomPhrases) Random() else null
+        val ourClub = footballMatch.participants.first { it.club.id == interpretation.perspectiveClubId }
+        val opponent = footballMatch.participants.first { it.club.id == interpretation.result.opponentClub }
+        val players = ourClub.players.associateBy { it.player.id }
+        val storyByType = stories.stories.groupBy { it.type }
+        val result = interpretation.result
 
         return MatchSummaryPresentation(
-            ourName = ourName,
-            oppName = oppName,
-            ourScore = resolved.ourScore,
-            oppScore = resolved.oppScore,
-            outcome = MatchOutcome(
-                emoji = outcome.emoji,
-                label = outcome.label,
-                color = outcome.color,
-                type = when {
-                    resolved.ourScore > resolved.oppScore -> OutcomeType.WIN
-                    resolved.ourScore < resolved.oppScore -> OutcomeType.LOSS
-                    else -> OutcomeType.DRAW
-                }
+            ourName = ourClub.club.name?.value ?: "Nós",
+            oppName = opponent.club.name?.value ?: "Adversário",
+            ourScore = result.ourScore.goals,
+            oppScore = result.opponentScore.goals,
+            outcome = outcome(result.outcome),
+            date = footballMatch.playedAt.atZone(zoneId).format(dateFmt),
+            timestamp = footballMatch.playedAt.toString(),
+            matchId = footballMatch.id.value,
+            goals = goals(storyByType[StoryType.GOALS], players),
+            assists = assists(storyByType[StoryType.ASSISTS], players),
+            highlights = highlights(storyByType[StoryType.HIGHLIGHTS], players),
+            craque = craque(storyByType[StoryType.AWARD], players, footballMatch.id.value, random),
+            offensiveNarratives = offensive(storyByType[StoryType.OFFENSIVE_NARRATIVE], players),
+            bagre = bagre(
+                storyByType[StoryType.BAGRE_PERFORMANCE],
+                players,
+                footballMatch.id.value,
+                random,
             ),
-            date = date,
-            timestamp = Instant.ofEpochSecond(match.timestamp).toString(),
-            matchId = matchId,
-            goals = buildGoalsSection(allActive, proNames),
-            assists = buildAssistsSection(allActive, proNames),
-            highlights = buildHighlightsSection(positiveOutfield, allActive, proNames),
-            craque = buildCraqueSection(positiveOutfield, matchId, random, proNames),
-            offensiveNarratives = buildOffensiveNarratives(positiveOutfield, resolved.ourScore, resolved.oppScore, proNames),
-            bagre = buildBagreSection(outfield, matchId, random, proNames),
-            redCard = buildRedCardSection(outfield, matchId, random, proNames),
-            xerife = buildXerifeSection(positiveOutfield, matchId, random, proNames),
-            passePrecisao = buildPassePrecisaoSection(positiveOutfield, matchId, random, proNames),
-            correioExtraviado = buildCorreioSection(outfield, matchId, random, proNames),
-            muralha = buildMuralhaSection(goalkeeper, matchId, random, proNames),
+            redCard = redCard(storyByType[StoryType.RED_CARD], players, footballMatch.id.value, random),
+            xerife = xerife(storyByType[StoryType.AWARD], players, footballMatch.id.value, random),
+            passePrecisao = passPrecision(
+                storyByType[StoryType.PASS_PRECISION],
+                players,
+                footballMatch.id.value,
+                random,
+            ),
+            correioExtraviado = lostMail(
+                storyByType[StoryType.LOST_MAIL],
+                players,
+                footballMatch.id.value,
+                random,
+            ),
+            muralha = goalkeeper(
+                storyByType[StoryType.GOALKEEPER],
+                players,
+                footballMatch.id.value,
+                random,
+            ),
         )
     }
 
-    private fun buildGoalsSection(players: Collection<PlayerEntry>, proNames: Map<String, String>): GoalsSection? {
-        val scorers = players
-            .filter { (it.goals?.toIntOrNull() ?: 0) > 0 }
-            .sortedByDescending { it.goals?.toIntOrNull() ?: 0 }
-            .map { PlayerGoal(it.displayName(proNames), it.goals?.toIntOrNull() ?: 0) }
-
-        return if (scorers.isEmpty()) null else GoalsSection(scorers)
+    private fun outcome(value: DomainOutcome): MatchOutcome = when (value) {
+        DomainOutcome.WIN -> MatchOutcome("🟢", "Vitória", 0x2ECC71, OutcomeType.WIN)
+        DomainOutcome.DRAW -> MatchOutcome("🟡", "Empate", 0x95A5A6, OutcomeType.DRAW)
+        DomainOutcome.LOSS -> MatchOutcome("🔴", "Derrota", 0xE74C3C, OutcomeType.LOSS)
     }
 
-    private fun buildAssistsSection(players: Collection<PlayerEntry>, proNames: Map<String, String>): AssistsSection? {
-        val assisters = players
-            .filter { (it.assists?.toIntOrNull() ?: 0) > 0 }
-            .sortedByDescending { it.assists?.toIntOrNull() ?: 0 }
-            .map { PlayerAssist(it.displayName(proNames), it.assists?.toIntOrNull() ?: 0) }
-
-        return if (assisters.isEmpty()) null else AssistsSection(assisters)
+    private fun goals(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        players: Map<PlayerId, PlayerMatchPerformance>,
+    ): GoalsSection? {
+        val content = stories?.singleOrNull()?.content as? StoryContent.Contributions ?: return null
+        return GoalsSection(content.players.map { PlayerGoal(name(players.getValue(it.playerId)), it.goals) })
     }
 
-    private fun buildHighlightsSection(
-        outfield: Collection<PlayerEntry>,
-        allActive: Collection<PlayerEntry>,
-        proNames: Map<String, String>,
+    private fun assists(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        players: Map<PlayerId, PlayerMatchPerformance>,
+    ): AssistsSection? {
+        val content = stories?.singleOrNull()?.content as? StoryContent.Contributions ?: return null
+        return AssistsSection(content.players.map { PlayerAssist(name(players.getValue(it.playerId)), it.assists) })
+    }
+
+    private fun highlights(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        players: Map<PlayerId, PlayerMatchPerformance>,
     ): HighlightsSection? {
-        val top = outfield
-            .filter { it.rating != null }
-            .sortedByDescending { it.rating?.toDoubleOrNull() ?: 0.0 }
-            .take(3)
-        val allRatings = allActive.mapNotNull { it.rating?.toDoubleOrNull() }
-
-        if (top.isEmpty() && allRatings.isEmpty()) return null
-
+        val content = stories?.singleOrNull()?.content as? StoryContent.Highlights ?: return null
         val medals = listOf("🥇", "🥈", "🥉")
-        val top3 = top.mapIndexed { i, p ->
-            TopPlayer(
-                medal = medals[i],
-                name = p.displayName(proNames),
-                rating = fmtRating(p.rating),
-            )
-        }
-
-        val teamAverage = if (allRatings.isNotEmpty()) {
-            fmtRating("%.2f".format(allRatings.average()))
-        } else null
-
-        return HighlightsSection(top3, teamAverage)
-    }
-
-    private fun buildCraqueSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): CraqueSection? {
-        val selection = CraqueSelector.select(outfield) ?: return null
-        val name = selection.player.displayName(proNames)
-        val phrase = pickFromCategory(PhraseCategory.MVP, matchId, name, random)
-
-        return CraqueSection(
-            name = name,
-            reason = selection.reason,
-            phrase = phrase,
+        return HighlightsSection(
+            top3 = content.players.mapIndexed { index, rated ->
+                TopPlayer(medals[index], name(players.getValue(rated.playerId)), fmtRating(rated.rating))
+            },
+            teamAverage = content.teamAverageRating?.let(::fmtRating),
         )
     }
 
-    private fun buildOffensiveNarratives(
-        outfield: Collection<PlayerEntry>,
-        teamGoals: Int,
-        opponentGoals: Int,
-        proNames: Map<String, String>,
-    ): List<OffensiveNarrativeSection> =
-        com.eafc26.discordstats.discord.OffensiveNarrativeEvaluator
-            .evaluate(outfield, teamGoals, opponentGoals)
-            .map { narrative ->
-                OffensiveNarrativeSection(
-                    name    = narrative.player.displayName(proNames),
-                    shots   = narrative.shots,
-                    goals   = narrative.goals,
-                    title   = narrative.presentation.title,
-                    emoji   = narrative.presentation.emoji,
-                    message = narrative.presentation.message,
-                )
-            }
+    private fun award(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        type: AwardType,
+    ): StoryContent.Award? = stories
+        ?.mapNotNull { it.content as? StoryContent.Award }
+        ?.singleOrNull { it.awardType == type }
 
-    private fun buildBagreSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): BagreSection? {
-        val evaluation = BagrePerformanceEvaluator.evaluate(outfield, matchId, phraseBank, random) ?: return null
-
-        return BagreSection(
-            name = evaluation.player.displayName(proNames),
-            rating = evaluation.rating,
-            reason = evaluation.reason,
-            tackleStats = evaluation.tackleStats,
-            passStats = evaluation.passStats,
-            phrase = evaluation.phrase,
-        )
-    }
-
-    private fun buildRedCardSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): RedCardSection? {
-        val selection = com.eafc26.discordstats.discord.RedCardEvaluator.evaluate(outfield) ?: return null
-        val name = selection.player.displayName(proNames)
-        val phrase = pickFromCategory(PhraseCategory.PERDEU_A_CABECA, matchId, name, random)
-        return RedCardSection(name = name, redCards = selection.redCards, phrase = phrase)
-    }
-
-    private fun buildXerifeSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): XerifeSection? {
-        val selection = XerifeSelector.select(outfield) ?: return null
-        val name = selection.player.displayName(proNames)
-        val phrase = pickFromCategory(PhraseCategory.XERIFE, matchId, name, random)
-
-        return XerifeSection(
-            name = name,
-            tacklesMade = selection.tacklesMade,
-            tackleAttempts = selection.tackleAttempts,
-            successRate = selection.successRate,
-            phrase = phrase,
-        )
-    }
-
-    private fun buildPassePrecisaoSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): PassePrecisaoSection? {
-        val selection = PassePrecisaoSelector.select(outfield) ?: return null
-        val name = selection.player.displayName(proNames)
-        val phrase = pickFromCategory(PhraseCategory.PASSE_PRECISAO, matchId, name, random)
-
-        return PassePrecisaoSection(
-            name = name,
-            passesMade = selection.passesMade,
-            passAttempts = selection.passAttempts,
-            accuracy = selection.accuracy,
-            phrase = phrase,
-        )
-    }
-
-    private fun buildCorreioSection(outfield: Collection<PlayerEntry>, matchId: String, random: Random?, proNames: Map<String, String>): CorreioExtraviadoSection? {
-        val sel = CorreioExtraviadoSelector.select(outfield) ?: return null
-        val name = sel.player.displayName(proNames)
-        val phrase = pickFromCategory(PhraseCategory.CORREIO, matchId, name, random)
-        return CorreioExtraviadoSection(
-            name              = name,
-            missedPasses      = sel.passAttempts - sel.passesMade,
-            playerAccuracyPct = sel.playerAccuracyPct,
-            teamAccuracyPct   = sel.teamAccuracyPct,
-            deltaPct          = sel.deltaPct,
-            phrase            = phrase,
-        )
-    }
-
-    private fun buildMuralhaSection(gk: PlayerEntry?, matchId: String, random: Random?, proNames: Map<String, String>): MuralhaSection? {
-        gk ?: return null
-        val performance = GoalkeeperEvaluator.evaluate(gk, matchId, phraseBank, random)
-
-        return MuralhaSection(
-            name          = gk.displayName(proNames),
-            saves         = gk.saves?.toIntOrNull() ?: 0,
-            goalsConceded = gk.goalsConceded?.toIntOrNull() ?: 0,
-            archetype     = performance.archetype,
-            archetypeTitle = performance.title,
-            phrase        = performance.message,
-        )
-    }
-
-    /**
-     * Picks a phrase from the given category.
-     *
-     * @param cat The phrase category
-     * @param matchId The match ID (used for deterministic selection)
-     * @param seed Additional seed (usually player name) for deterministic selection
-     * @param random If provided, uses random selection instead of deterministic hash
-     */
-    private fun pickFromCategory(cat: PhraseCategory, matchId: String, seed: String, random: Random?): String {
-        val list = phraseBank.get(cat)
-        return if (random != null) {
-            // Random selection for simulations
-            list[random.nextInt(list.size)]
+    private fun craque(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        players: Map<PlayerId, PlayerMatchPerformance>,
+        matchId: String,
+        random: Random?,
+    ): CraqueSection? {
+        val content = award(stories, AwardType.CRAQUE) ?: return null
+        val metrics = content.metrics as AwardMetrics.Craque
+        val playerName = name(players.getValue(content.winnerId))
+        val parts = mutableListOf("Nota ${metrics.rating?.let(::fmtRating) ?: "N/D"}")
+        val stats = mutableListOf<String>()
+        if (metrics.goals > 0) stats += plural(metrics.goals, "gol", "gols")
+        if (metrics.assists > 0) stats += plural(metrics.assists, "assistência", "assistências")
+        if (stats.isNotEmpty()) parts += stats.joinToString(" e ")
+        parts += if (content.reason == AwardDecisionReason.EA_MAN_OF_THE_MATCH) {
+            "Craque da Partida (EA)"
         } else {
-            // Deterministic selection for production
-            val hash = matchId.hashCode().toLong() + seed.hashCode().toLong()
-            list[(abs(hash) % list.size).toInt()]
+            "Melhor nota da partida"
         }
+        return CraqueSection(
+            playerName,
+            parts.joinToString(" • "),
+            phrase(PhraseCategory.MVP, matchId, playerName, random),
+        )
     }
 
-    private fun fmtRating(raw: String?): String {
-        val d = raw?.toDoubleOrNull() ?: return "N/D"
-        return "%.2f".format(d).replace('.', ',')
+    private fun bagre(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        players: Map<PlayerId, PlayerMatchPerformance>,
+        matchId: String,
+        random: Random?,
+    ): BagreSection? {
+        val content = stories?.singleOrNull()?.content as? StoryContent.BagrePerformance ?: return null
+        val player = players.getValue(content.playerId)
+        val playerName = name(player)
+        val tackle = content.tackleSummary?.let {
+            "${it.completed}/${it.attempted} certos (${it.accuracyPercent}%)"
+        }
+        val passing = content.passingSummary?.let {
+            "${it.completed}/${it.attempted} certos (${it.accuracyPercent}%) · " +
+                "${it.attempted - it.completed} errados"
+        }
+        val category = when (content.criticism) {
+            BagreCriticism.TACKLING -> PhraseCategory.TACKLE
+            BagreCriticism.PASSING -> PhraseCategory.PASS
+            BagreCriticism.RATING -> PhraseCategory.RATING
+        }
+        return BagreSection(
+            playerName,
+            fmtRating(content.rating),
+            "Menor nota entre os jogadores elegíveis.",
+            tackle,
+            passing,
+            phrase(category, matchId, bagreSeed(seedName(player), content.criticism), random),
+        )
     }
+
+    private fun redCard(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        players: Map<PlayerId, PlayerMatchPerformance>,
+        matchId: String,
+        random: Random?,
+    ): RedCardSection? {
+        val content = stories?.singleOrNull()?.content as? StoryContent.RedCard ?: return null
+        val playerName = name(players.getValue(content.playerId))
+        return RedCardSection(
+            playerName,
+            content.redCards,
+            phrase(PhraseCategory.PERDEU_A_CABECA, matchId, playerName, random),
+        )
+    }
+
+    private fun xerife(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        players: Map<PlayerId, PlayerMatchPerformance>,
+        matchId: String,
+        random: Random?,
+    ): XerifeSection? {
+        val content = award(stories, AwardType.XERIFE) ?: return null
+        val metrics = content.metrics as AwardMetrics.Xerife
+        val playerName = name(players.getValue(content.winnerId))
+        return XerifeSection(
+            playerName,
+            metrics.tacklesCompleted,
+            metrics.tacklesAttempted,
+            metrics.accuracyPercent,
+            phrase(PhraseCategory.XERIFE, matchId, playerName, random),
+        )
+    }
+
+    private fun offensive(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        players: Map<PlayerId, PlayerMatchPerformance>,
+    ): List<OffensiveNarrativeSection> = stories.orEmpty().map {
+        val content = it.content as StoryContent.OffensiveNarrative
+        val presentation = offensivePresentation(content.category)
+        OffensiveNarrativeSection(
+            name(players.getValue(content.playerId)),
+            content.shots,
+            content.goals,
+            presentation.first,
+            presentation.second,
+            presentation.third,
+        )
+    }
+
+    private fun passPrecision(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        players: Map<PlayerId, PlayerMatchPerformance>,
+        matchId: String,
+        random: Random?,
+    ): PassePrecisaoSection? {
+        val content = stories?.singleOrNull()?.content as? StoryContent.PassPrecision ?: return null
+        val playerName = name(players.getValue(content.playerId))
+        return PassePrecisaoSection(
+            playerName,
+            content.completed,
+            content.attempted,
+            content.accuracyPercent,
+            phrase(PhraseCategory.PASSE_PRECISAO, matchId, playerName, random),
+        )
+    }
+
+    private fun lostMail(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        players: Map<PlayerId, PlayerMatchPerformance>,
+        matchId: String,
+        random: Random?,
+    ): CorreioExtraviadoSection? {
+        val content = stories?.singleOrNull()?.content as? StoryContent.LostMail ?: return null
+        val playerName = name(players.getValue(content.playerId))
+        return CorreioExtraviadoSection(
+            playerName,
+            content.attempted - content.completed,
+            content.playerAccuracyPercent,
+            content.teamAccuracyPercent,
+            content.deltaPercent,
+            phrase(PhraseCategory.CORREIO, matchId, playerName, random),
+        )
+    }
+
+    private fun goalkeeper(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        players: Map<PlayerId, PlayerMatchPerformance>,
+        matchId: String,
+        random: Random?,
+    ): MuralhaSection? {
+        val content = stories?.singleOrNull()?.content as? StoryContent.Goalkeeper ?: return null
+        val player = players.getValue(content.playerId)
+        val playerName = name(player)
+        return MuralhaSection(
+            playerName,
+            content.saves,
+            content.goalsConceded,
+            content.archetype,
+            goalkeeperTitle(content.archetype),
+            goalkeeperPhrase(content, matchId, seedName(player), random),
+        )
+    }
+
+    private fun name(player: PlayerMatchPerformance): String =
+        player.player.preferredDisplayName?.value
+            ?: if (player.role == PlayerRole.Goalkeeper) "Goleiro BOT" else "Desconhecido"
+
+    private fun seedName(player: PlayerMatchPerformance): String =
+        player.player.platformName?.value
+            ?: if (player.role == PlayerRole.Goalkeeper) "Goleiro BOT" else "Desconhecido"
+
+    private fun phrase(
+        category: PhraseCategory,
+        matchId: String,
+        seed: String,
+        random: Random?,
+    ): String = pick(phraseBank.get(category), matchId, seed, random)
+
+    private fun pick(values: List<String>, matchId: String, seed: String, random: Random?): String =
+        if (random != null) {
+            values[random.nextInt(values.size)]
+        } else {
+            values[(abs(matchId.hashCode().toLong() + seed.hashCode().toLong()) % values.size).toInt()]
+        }
+
+    private fun bagreSeed(name: String, criticism: BagreCriticism): String = when (criticism) {
+        BagreCriticism.TACKLING -> "${name}desarmes"
+        BagreCriticism.PASSING -> "${name}passes"
+        BagreCriticism.RATING -> name
+    }
+
+    private fun goalkeeperPhrase(
+        content: StoryContent.Goalkeeper,
+        matchId: String,
+        name: String,
+        random: Random?,
+    ): String {
+        if (content.narrativeVariant == GoalkeeperNarrativeVariant.POOR_MILD ||
+            content.narrativeVariant == GoalkeeperNarrativeVariant.POOR_MODERATE ||
+            content.narrativeVariant == GoalkeeperNarrativeVariant.POOR_SEVERE
+        ) {
+            val category = goalkeeperCategory(content.archetype)
+            val custom = phraseBank.get(category)
+            if (custom.isNotEmpty() && custom != category.defaults) {
+                return pick(custom, matchId, name, random)
+            }
+        }
+        val contextual = GOALKEEPER_CONTEXT[content.narrativeVariant]
+        if (contextual != null) return pick(contextual, matchId, name, random)
+        return phrase(goalkeeperCategory(content.archetype), matchId, name, random)
+    }
+
+    private fun goalkeeperCategory(value: GoalkeeperArchetype): PhraseCategory = when (value) {
+        GoalkeeperArchetype.WALL -> PhraseCategory.GOALKEEPER_WALL
+        GoalkeeperArchetype.SOLID -> PhraseCategory.GOALKEEPER_SOLID
+        GoalkeeperArchetype.UNDER_SIEGE -> PhraseCategory.GOALKEEPER_UNDER_SIEGE
+        GoalkeeperArchetype.POOR -> PhraseCategory.GOALKEEPER_POOR
+        GoalkeeperArchetype.QUIET -> PhraseCategory.GOALKEEPER_QUIET
+    }
+
+    private fun goalkeeperTitle(value: GoalkeeperArchetype): String = when (value) {
+        GoalkeeperArchetype.WALL -> "🧱 Paredão"
+        GoalkeeperArchetype.SOLID -> "🧤 Seguro"
+        GoalkeeperArchetype.UNDER_SIEGE -> "💣 Bombardeado"
+        GoalkeeperArchetype.POOR -> "🥬 Mão de Alface"
+        GoalkeeperArchetype.QUIET -> "🤷 Discreto"
+    }
+
+    private fun offensivePresentation(
+        category: com.eafc26.discordstats.domain.interpretation.OffensiveNarrativeCategory,
+    ): Triple<String, String, String> = when (category) {
+        com.eafc26.discordstats.domain.interpretation.OffensiveNarrativeCategory.COULD_HAVE_DECIDED ->
+            Triple("PODERIA TER DECIDIDO", "🎯", "Teve chances para mudar o resultado, mas deixou a vitória escapar.")
+        com.eafc26.discordstats.domain.interpretation.OffensiveNarrativeCategory.LACKED_COMPOSURE ->
+            Triple("FALTOU CAPRICHO", "🎯", "As chances apareceram, mas a pontaria não ajudou.")
+        com.eafc26.discordstats.domain.interpretation.OffensiveNarrativeCategory.DECISIVE ->
+            Triple("DECISIVO", "⚡", "Quando a chance apareceu, ele resolveu.")
+        com.eafc26.discordstats.domain.interpretation.OffensiveNarrativeCategory.FELL_SHORT ->
+            Triple("FICOU NO QUASE", "😬", "Criou bastante, mas faltou transformar mais chances em gol.")
+        com.eafc26.discordstats.domain.interpretation.OffensiveNarrativeCategory.CONSTANT_THREAT ->
+            Triple("PERIGO CONSTANTE", "🔥", "A defesa adversária não teve sossego quando ele recebeu a bola.")
+    }
+
+    private fun fmtRating(value: BigDecimal): String =
+        "%.2f".format(value.toDouble()).replace('.', ',')
+
+    private fun plural(count: Int, singular: String, plural: String) =
+        if (count == 1) "$count $singular" else "$count $plural"
 
     companion object {
         private val PT_BR = Locale.forLanguageTag("pt-BR")
+        private val GOALKEEPER_CONTEXT = mapOf(
+            GoalkeeperNarrativeVariant.REFLEX to listOf(
+                "Fez defesas praticamente impossíveis.",
+                "Os reflexos fizeram a diferença.",
+                "Respondeu rápido em cada situação de perigo.",
+                "O instinto salvou o time mais de uma vez.",
+                "Tirou de onde não havia mais tempo para pensar.",
+            ),
+            GoalkeeperNarrativeVariant.PARRY to listOf(
+                "Espalmou tudo que apareceu.",
+                "Tirou o perigo com firmeza em cada oportunidade.",
+                "As espalmadas mantiveram o time vivo.",
+                "Cada intervenção foi precisa e segura.",
+                "A luva trabalhou em horas extras.",
+            ),
+            GoalkeeperNarrativeVariant.CROSS to listOf(
+                "Dominou completamente a área.",
+                "Saiu com autoridade em cada bola aérea.",
+                "O domínio da área foi total.",
+                "Transmitiu segurança nas saídas.",
+                "Limpou a área com eficiência.",
+            ),
+            GoalkeeperNarrativeVariant.GOOD_DIRECTION to listOf(
+                "Leu muito bem as finalizações.",
+                "Antecipou os chutes com inteligência.",
+                "Posicionamento impecável nas defesas.",
+                "Sabia para onde a bola ia antes do chute.",
+                "A leitura de jogo foi o grande diferencial.",
+            ),
+            GoalkeeperNarrativeVariant.POOR_MILD to listOf(
+                "Não conseguiu passar segurança.",
+                "A atuação deixou a desejar.",
+                "Houve momentos de hesitação que custaram caro.",
+                "Não foi o jogo que o time precisava do goleiro.",
+                "A segurança que o setor precisava não apareceu.",
+                "Oscilou mais do que o ideal nas intervenções.",
+            ),
+            GoalkeeperNarrativeVariant.POOR_MODERATE to listOf(
+                "As intervenções não evitaram os gols sofridos.",
+                "Quando o time precisou, a resposta não veio.",
+                "Os gols sofridos disseram mais que as defesas.",
+                "A luva não ajudou hoje.",
+                "Hoje o gol foi mais fácil de fazer.",
+                "A defesa errou e o goleiro não compensou.",
+            ),
+            GoalkeeperNarrativeVariant.POOR_SEVERE to listOf(
+                "Hoje qualquer chute parecia perigoso.",
+                "A goleira virou uma meta aberta.",
+                "Cada finalização era uma ameaça real.",
+                "O adversário entendeu cedo que marcar era questão de tempo.",
+                "A falta de segurança contaminou todo o setor.",
+                "O time defendeu praticamente sem goleiro.",
+            ),
+        )
     }
 }
-
