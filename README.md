@@ -122,6 +122,58 @@ Requires Java 21.
 **All 15 tests pass with zero live network calls.** MockWebServer intercepts all HTTP
 requests; the EA endpoint does not need to be reachable.
 
+### Aplicativo nativo para macOS
+
+O projeto usa `org.beryx.runtime`, a variante Beryx apropriada para aplicações
+não modulares como Spring Boot. Ela cria um runtime Java 21 reduzido com
+`jlink` e usa `jpackage` para produzir um bundle autocontido.
+
+O `.app` precisa ser gerado em um Mac com JDK 21:
+
+```bash
+./gradlew macApp
+```
+
+Resultado:
+
+```text
+build/macos/EA FC STATS.app
+```
+
+Para gerar e abrir o aplicativo:
+
+```bash
+./gradlew openMacApp
+```
+
+O aplicativo inicia o servidor local. A interface fica disponível em
+`http://localhost:8080`.
+
+Depois de alterar código ou recursos, gere uma versão completamente nova,
+removendo os artefatos anteriores:
+
+```bash
+./gradlew rebuildMacApp
+```
+
+Para também atualizar a versão registrada no bundle:
+
+```bash
+./gradlew rebuildMacApp -PmacAppVersion=1.0.1
+```
+
+A versão padrão é `1.0.0`. O valor de `macAppVersion` deve ter de um a três
+números separados por pontos e começar com um número positivo, conforme a
+restrição do `jpackage` no macOS.
+
+As tasks normais (`test`, `build` e `bootJar`) permanecem independentes do
+empacotamento macOS. O bundle inclui seu próprio runtime; não exige uma
+instalação externa do Java para execução.
+
+O script legado `scripts/package-macos.sh` permanece como atalho compatível,
+mas agora apenas delega para `rebuildMacApp`, evitando dois processos de
+empacotamento diferentes.
+
 ---
 
 ## Result type
