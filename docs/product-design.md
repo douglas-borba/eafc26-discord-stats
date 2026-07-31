@@ -144,6 +144,125 @@ identidade.
 Essas mensagens pertencem exclusivamente à apresentação e nunca substituem o
 motivo ou as evidências determinísticas.
 
+## Design System Editorial
+
+O Design System Editorial é a linguagem visual oficial do EA FC STATS. Seu
+objetivo não é produzir variedade decorativa: é permitir que o propósito de
+cada informação seja reconhecido antes da leitura. Todos os consumidores web
+devem usar os tokens, componentes e estados descritos nesta seção.
+
+### Fundamentos visuais
+
+- **Superfícies:** fundo profundo, superfície estrutural e superfície elevada.
+  Elevação comunica hierarquia editorial, nunca importância esportiva.
+- **Texto:** branco para fatos centrais, cinza claro para mensagens e cinza
+  médio para contexto. Chaves técnicas usam fonte monoespaçada.
+- **Cor:** possui significado estável. Verde, amarelo e vermelho ficam
+  reservados a resultado; os acentos de personagens e capítulos identificam
+  categorias, não notas de qualidade.
+- **Forma:** raios discretos e bordas finas preservam a sensação de arquivo
+  esportivo. Sombras não são necessárias para estabelecer hierarquia.
+- **Foco:** todo controle interativo recebe contorno visível na cor de ação.
+  Cor nunca é o único meio de comunicar um estado.
+
+### Hierarquia e ordem de leitura
+
+1. `HeroSection`: resultado, placar, clubes, competição e data.
+2. `CharacterCard`: quem marcou a partida.
+3. `StoryChapter`: como o jogo aconteceu.
+4. `MetricStrip`: números que sustentam a leitura.
+5. `PlayerPerformanceTable` ou `PlayerPerformanceCard`: detalhe individual.
+6. `EvidenceDisclosure`: critérios técnicos sob demanda.
+
+A manchete usa o maior tipo e o maior respiro da página. Capítulos recebem mais
+ritmo e espaço que métricas. Dados coletivos usam uma faixa aberta, sem criar um
+painel tradicional. Evidências permanecem recolhidas por padrão.
+
+### Espaçamento e legibilidade
+
+A escala oficial é `4, 8, 12, 16, 24, 32 e 48px`. Distâncias internas usam até
+`24px`; mudanças de assunto usam `32` ou `48px`. Textos narrativos possuem
+largura máxima de `76ch`. Blocos adjacentes são separados por respiro e um
+divisor progressivo, nunca por uma sucessão indiscriminada de cards.
+
+No desktop, a leitura acontece da esquerda para a direita apenas dentro de um
+mesmo grupo semântico. No mobile, todos os grupos se tornam uma sequência
+vertical. Tabelas técnicas são substituídas por cards de desempenho, mantendo
+nome, posição e nota como primeira linha de leitura.
+
+### Guia visual das seções
+
+| Seção | Linguagem visual | Prioridade |
+|---|---|---|
+| A Partida | Abertura espaçosa de reportagem, placar dominante e resultado em badge | Resultado → placar → clubes → contexto |
+| Personagens da Partida | Mesma anatomia, acento e ícone próprios por reconhecimento | Categoria → jogador → fato → evidência → mensagem |
+| A História do Jogo | Capítulos com trilho cromático, título editorial e mensagem separada da prova | Fato → envolvidos → evidência → mensagem |
+| O Time em Números | Faixa aberta, valores grandes e divisores leves | Valor → rótulo; nunca compete com capítulos |
+| Jogador por Jogador | Grade técnica de alta legibilidade; nome e nota dominantes | Jogador → nota → posição → indicadores |
+| Critérios e Evidências | Superfície documental, chaves técnicas e disclosures fechados | Título técnico → regra → evidência → proveniência |
+
+### Sistema oficial de iconografia
+
+| Ícone | Uso permanente | Regra |
+|---|---|---|
+| ⭐ | Craque e protagonismo reconhecido | Não usar como decoração genérica |
+| 🛡️ | Xerife e consistência defensiva | Reservado a leituras defensivas canônicas |
+| 📉 | Menor Desempenho | Refere-se à atuação na partida, nunca à pessoa |
+| ⚡ | Fez a Diferença | Exige impacto decisivo já concluído pela engine |
+| 🎯 | Perigo Constante e precisão | O título sempre esclarece o contexto |
+| ⏳ | Ficou no Quase | Reconhece participação sem comunicar fracasso |
+| 🟥 | Cartão Vermelho | Registro disciplinar objetivo |
+| 📨 | Correio Extraviado | Leitura canônica de precisão abaixo da referência |
+| 🧤 | Muralha | Participação do goleiro reconhecida pela engine |
+
+Ícones acompanham sempre um rótulo textual, possuem função de reconhecimento e
+são ignorados por leitores de tela quando repetem esse rótulo. Novas categorias
+devem reutilizar um ícone apenas quando o significado permanecer inequívoco.
+
+### Componentes oficiais
+
+| Componente | Propósito e responsabilidade | Estados e comportamento | Reutilização prevista |
+|---|---|---|---|
+| `EditorialSection` | Delimitar um assunto e sua pergunta editorial | Título, kicker, pergunta opcional e divisor entre assuntos | Todas as páginas narrativas |
+| `HeroSection` | Abrir uma entidade como manchete | Resultado, neutro, carregando e indisponível; conteúdo responsivo | Partida e, com variante de conteúdo, perfil de jogador e recorde |
+| `CharacterCard` | Apresentar reconhecimento individual sem variar sua anatomia | Concedido e não concedido; tons `highlight`, `defense` e `development` | Premiações de Partidas e reconhecimentos em Jogadores |
+| `StoryChapter` | Contar uma decisão como capítulo em Fato → Evidência → Mensagem | Tons `impact`, `pressure`, `near-miss`, `precision`, `defense`, `discipline`, `development` e `neutral` | Partidas, trajetória do jogador e História do Clube |
+| `MetricStrip` | Sustentar uma narrativa com poucas métricas | 1–3 colunas; quebra para duas e depois uma no mobile | Todas as entidades, sem criar dashboards densos |
+| `EvidenceDisclosure` | Expor auditoria no segundo nível de profundidade | Fechado por padrão, aberto por ação explícita e foco visível | Toda decisão auditável |
+| `PlayerPerformanceTable` | Comparar atuações individuais no desktop | Cabeçalho fixo semanticamente, rolagem horizontal de segurança | Partidas e listas técnicas futuras |
+| `PlayerPerformanceCard` | Preservar a hierarquia da tabela no mobile | Nome e nota dominantes; posição e indicadores secundários | Partidas e resumos de perfil |
+| `OutcomeBadge` | Identificar vitória, empate ou derrota | `WIN`, `DRAW`, `LOSS`; texto, ícone e cor combinados | Listas, heróis e comparações |
+| `SectionDivider` | Marcar mudança de assunto sem criar outro contêiner | Linha progressiva aplicada entre `EditorialSection` | Páginas editoriais longas |
+| `EmptyEditorialState` | Explicar ausência de conteúdo sem inventar narrativa | Página ou compacto; instrução contextual quando houver | Arquivos, histórias e perfis |
+| `LoadingEditorialState` | Comunicar espera sem antecipar conteúdo | Página ou região; nunca substitui erro | Consumidores assíncronos |
+
+### Sistema dos personagens
+
+Todos os personagens compartilham categoria, ícone, nome, fato, evidência e
+mensagem. O sistema permite individualidade apenas pelo ícone e pelo acento:
+
+- Craque: estrela e acento dourado, com maior energia de reconhecimento;
+- Xerife: escudo e acento azul, associado a segurança e consistência;
+- Menor Desempenho: gráfico descendente e acento coral sóbrio, sem vermelho de
+  erro ou linguagem punitiva;
+- não concedido: borda tracejada, superfície neutra e mensagem humana omitida.
+
+Fez a Diferença, Perigo Constante e Ficou no Quase são capítulos narrativos,
+não novas premiações visuais. Usam respectivamente raio dourado, alvo alaranjado
+e ampulheta violeta dentro da anatomia compartilhada de `StoryChapter`.
+
+### Reuso na Etapa 3
+
+Podem ser reutilizados sem alteração em Jogadores: `EditorialSection`,
+`StoryChapter`, `MetricStrip`, `EvidenceDisclosure`, `OutcomeBadge`, estados e
+divisores. `CharacterCard` também pode representar reconhecimentos já
+persistidos, desde que sua semântica continue sendo uma atuação.
+
+Precisarão apenas de variantes de conteúdo, não de nova linguagem visual:
+`HeroSection` para nome e resumo do jogador; `PlayerPerformanceTable` e
+`PlayerPerformanceCard` para agregados e partidas recentes. A lista lateral de
+Partidas permanece um padrão de página, não um componente do Design System.
+
 ## Arquitetura da experiência
 
 ```text

@@ -5,8 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Partidas — EA FC STATS</title>
   <link rel="stylesheet" href="/app-shell.css">
+  <link rel="stylesheet" href="/editorial-design-system.css">
   <link rel="stylesheet" href="/match-history.css">
   <script src="/app-shell.js" defer></script>
+  <script src="/editorial-design-system.js" defer></script>
   <script src="/match-history.js" defer></script>
 </head>
 <body data-app-page="matches">
@@ -26,14 +28,14 @@
           <div class="matches-meta" id="history-meta">Carregando partidas…</div>
         </div>
         <div class="match-list" id="match-list">
-          <div class="matches-state">
+          <div class="matches-state loading-editorial-state">
             <div><span class="matches-state-icon" aria-hidden="true">⏳</span>Carregando…</div>
           </div>
         </div>
       </aside>
 
       <section class="matches-panel match-detail" aria-live="polite" aria-label="Detalhe da partida">
-        <div id="match-detail" class="matches-state">
+        <div id="match-detail" class="matches-state empty-editorial-state">
           <div>
             <span class="matches-state-icon" aria-hidden="true">⚽</span>
             Selecione uma partida para explorar sua história.

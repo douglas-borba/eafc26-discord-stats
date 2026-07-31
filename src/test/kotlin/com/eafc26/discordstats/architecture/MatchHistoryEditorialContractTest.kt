@@ -8,6 +8,7 @@ import kotlin.io.path.readText
 class MatchHistoryEditorialContractTest {
     private val html = Path.of("src/main/resources/history.html").readText()
     private val script = Path.of("src/main/resources/static/match-history.js").readText()
+    private val editorialLanguage = Path.of("src/main/resources/static/editorial-design-system.js").readText()
 
     @Test
     fun partidasPageDefinesTheApprovedEditorialReadingOrder() {
@@ -29,11 +30,12 @@ class MatchHistoryEditorialContractTest {
 
     @Test
     fun technicalBagreRemainsTheContractKeyWhilePresentationUsesMenorDesempenho() {
-        assertThat(script)
+        assertThat(editorialLanguage)
             .contains("BAGRE: {")
             .contains("label: \"Menor Desempenho\"")
             .contains("Menor desempenho entre os jogadores elegíveis nesta partida.")
             .doesNotContain("Bagre da Partida", "Atuação do Bagre")
+        assertThat(script).contains("const awardVoice = editorialDesign.characters")
     }
 
     @Test

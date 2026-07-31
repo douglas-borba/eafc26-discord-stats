@@ -3,6 +3,7 @@
   const detailElement = document.getElementById("match-detail");
   const metaElement = document.getElementById("history-meta");
   const layoutElement = document.getElementById("matches-layout");
+  const editorialDesign = window.EafcEditorialDesign;
   let selectedMatchId = null;
 
   const escapeHtml = (value) => String(value ?? "")
@@ -18,24 +19,7 @@
       ? "—"
       : `${escapeHtml(completed)}/${escapeHtml(attempted)}`;
 
-  const awardVoice = {
-    CRAQUE: {
-      label: "Craque",
-      icon: "⭐",
-      message: "Uma atuação que fez a diferença nesta partida.",
-    },
-    BAGRE: {
-      label: "Menor Desempenho",
-      icon: "📉",
-      fact: "Menor desempenho entre os jogadores elegíveis nesta partida.",
-      message: "Nem toda partida sai como esperado. A próxima é uma nova oportunidade para responder em campo.",
-    },
-    XERIFE: {
-      label: "Xerife",
-      icon: "🛡️",
-      message: "Consistência e segurança para proteger o time.",
-    },
-  };
+  const awardVoice = editorialDesign.characters;
 
   function sectionHeading(kicker, title, question) {
     return `
@@ -60,8 +44,8 @@
 
     if (!matches.length) {
       listElement.innerHTML =
-        '<div class="matches-state"><div><span class="matches-state-icon" aria-hidden="true">📭</span>Nenhuma partida registrada ainda.</div></div>';
-      detailElement.className = "matches-state";
+        '<div class="matches-state empty-editorial-state"><div><span class="matches-state-icon" aria-hidden="true">📭</span>Nenhuma partida registrada ainda.</div></div>';
+      detailElement.className = "matches-state empty-editorial-state";
       detailElement.innerHTML =
         '<div><span class="matches-state-icon" aria-hidden="true">🗂️</span>As histórias aparecerão aqui depois da primeira partida processada.</div>';
       return;
@@ -71,7 +55,7 @@
       <button class="match-list-item" type="button" data-match-id="${escapeHtml(match.matchId)}">
         <div class="match-list-top">
           <span>${escapeHtml(match.dateLabel)}</span>
-          <span class="outcome ${escapeHtml(match.outcome.code)}">
+          <span class="outcome-badge ${escapeHtml(match.outcome.code)}">
             ${escapeHtml(match.outcome.icon)} ${escapeHtml(match.outcome.label)}
           </span>
         </div>
@@ -101,7 +85,7 @@
       item.classList.toggle("active", item.dataset.matchId === matchId);
     });
     layoutElement.classList.add("is-viewing-match");
-    detailElement.className = "matches-state";
+    detailElement.className = "matches-state loading-editorial-state";
     detailElement.innerHTML =
       '<div><span class="matches-state-icon" aria-hidden="true">⏳</span>Carregando a história da partida…</div>';
 
@@ -131,8 +115,11 @@
       : "Nenhum jogador atendeu aos critérios desta categoria.";
 
     return `
-      <article class="editorial-card" data-awarded="${award.awarded}">
-        <div class="editorial-card-label">${escapeHtml(voice.icon)} ${escapeHtml(voice.label)}</div>
+      <article class="character-card character-card--${escapeHtml(voice.tone || "neutral")}" data-awarded="${award.awarded}">
+        <div class="character-card__identity">
+          <span class="character-card__icon" aria-hidden="true">${escapeHtml(voice.icon)}</span>
+          <span class="editorial-card-label">${escapeHtml(voice.label)}</span>
+        </div>
         <h3>${escapeHtml(winner)}</h3>
         <p class="editorial-fact">${escapeHtml(fact)}</p>
         ${renderFacts(award.facts)}
@@ -145,63 +132,34 @@
     if (story.type === "OFFENSIVE_NARRATIVE") {
       const reading = story.facts.find(fact => fact.label === "Leitura")?.value;
       if (reading === "Decisivo") {
-        return {
-          title: "Fez a Diferença",
-          fact: "A engine identificou uma participação ofensiva decisiva.",
-          message: "Uma atuação que mudou o rumo da partida, sustentada pelos fatos do jogo.",
-        };
+        return editorialDesign.stories.DECISIVE;
       }
       if (reading === "Ameaça constante") {
-        return {
-          title: "Perigo Constante",
-          fact: "A engine identificou presença ofensiva constante.",
-          message: "Participação ofensiva frequente, pressionando e criando oportunidades.",
-        };
+        return editorialDesign.stories.CONSTANT_THREAT;
       }
       return {
-        title: "Ficou no Quase",
+        ...editorialDesign.stories.NEAR_MISS,
         fact: `A participação ofensiva recebeu a leitura “${reading || "oportunidades não convertidas"}”.`,
-        message: "A presença ofensiva apareceu; faltou transformar mais oportunidades em resultado.",
       };
     }
 
-    const voices = {
-      RED_CARD: {
-        title: "Cartão Vermelho",
-        fact: "A partida registrou uma ocorrência disciplinar.",
-        message: "Um momento difícil que também faz parte da história deste jogo.",
-      },
-      PASS_PRECISION: {
-        title: "Passe de Precisão",
-        fact: "A engine reconheceu uma atuação de destaque na precisão dos passes.",
-        message: "Consistência com a bola para dar continuidade ao jogo do time.",
-      },
-      LOST_MAIL: {
-        title: "Correio Extraviado",
-        fact: "A precisão de passes ficou abaixo da referência coletiva registrada.",
-        message: "Um aspecto desta atuação que pode encontrar uma resposta diferente no próximo jogo.",
-      },
-      GOALKEEPER: {
-        title: "Muralha",
-        fact: "A atuação no gol recebeu uma leitura específica da engine.",
-        message: "A presença do goleiro também escreveu parte desta partida.",
-      },
-    };
-    return voices[story.type] || {
+    return editorialDesign.stories[story.type] || {
+      ...editorialDesign.stories.DEFAULT,
       title: story.title,
-      fact: "Uma história identificada deterministicamente nesta partida.",
-      message: "Mais um fato que ajuda a compreender como o jogo aconteceu.",
     };
   }
 
   function renderStory(story) {
     const voice = storyVoice(story);
     return `
-      <article class="editorial-card">
-        <div class="editorial-card-label">História da partida</div>
+      <article class="story-chapter story-chapter--${escapeHtml(voice.tone)}">
+        <div class="story-chapter__identity">
+          <span class="story-chapter__icon" aria-hidden="true">${escapeHtml(voice.icon)}</span>
+          <span class="editorial-card-label">Capítulo da partida</span>
+        </div>
         <h3>${escapeHtml(voice.title)}</h3>
         ${story.involvedPlayers.length
-          ? `<div class="story-players">${story.involvedPlayers.map(escapeHtml).join(", ")}</div>`
+          ? `<div class="story-chapter__players">${story.involvedPlayers.map(escapeHtml).join(", ")}</div>`
           : ""}
         <p class="editorial-fact">${escapeHtml(voice.fact)}</p>
         ${renderFacts(story.facts)}
@@ -238,11 +196,11 @@
     return `
       <div class="metric-strip">
         ${metrics.map(([label, value]) => `
-          <div class="metric-card"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>
+          <div class="metric-strip__item"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>
         `).join("")}
       </div>
       ${highlightFacts.length ? `
-        <article class="editorial-card collective-highlights">
+        <article class="collective-highlights">
           <div class="editorial-card-label">Destaques por nota</div>
           ${renderFacts(highlightFacts)}
         </article>
@@ -276,7 +234,7 @@
       if (player.redCards) stats.push(`${display(player.redCards)} cartão vermelho`);
       if (player.saves !== null && player.saves !== undefined) stats.push(`${display(player.saves)} defesas`);
       return `
-        <article class="player-mobile-card">
+        <article class="player-performance-card player-mobile-card">
           <div class="player-mobile-head">
             <div><strong>${escapeHtml(player.name)}</strong><span class="player-role">${escapeHtml(player.role)}</span></div>
             <span class="player-mobile-rating">${display(player.rating)}</span>
@@ -288,7 +246,7 @@
 
     return `
       <div class="players-table-wrap">
-        <table class="players-table">
+        <table class="player-performance-table">
           <thead>
             <tr><th>Jogador</th><th>Nota</th><th>G</th><th>A</th><th>Fin.</th><th>Passes</th><th>Desarmes</th><th>CV</th><th>Def.</th></tr>
           </thead>
@@ -367,14 +325,14 @@
       <article class="match-article">
         <button class="mobile-archive-button" type="button">← Todas as partidas</button>
 
-        <header class="match-hero">
+        <header class="hero-section match-hero">
           <div class="match-hero-label">
             <span class="editorial-kicker">O que aconteceu</span>
             <h2>A Partida</h2>
           </div>
           <div class="match-hero-meta">
             <span>${escapeHtml(summary.dateLabel)}${summary.competition ? ` · ${escapeHtml(summary.competition)}` : ""}</span>
-            <span class="outcome ${escapeHtml(summary.outcome.code)}">
+            <span class="outcome-badge ${escapeHtml(summary.outcome.code)}">
               ${escapeHtml(summary.outcome.icon)} ${escapeHtml(summary.outcome.label)}
             </span>
           </div>
@@ -398,7 +356,7 @@
           <div class="story-grid" id="stories-title">
             ${narrativeStories.length
               ? narrativeStories.map(renderStory).join("")
-              : '<div class="editorial-empty">Nenhuma narrativa especial foi identificada nesta partida.</div>'}
+              : '<div class="empty-editorial-state empty-editorial-state--compact">Nenhuma narrativa especial foi identificada nesta partida.</div>'}
           </div>
         </section>
 
