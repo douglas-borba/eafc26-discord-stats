@@ -78,6 +78,7 @@ runtime {
         installerName = "EA FC STATS"
         appVersion = providers.gradleProperty("macAppVersion").getOrElse("1.0.0")
         skipInstaller = true
+        jvmArgs = listOf("-Deafc.dashboard.auto-open=true")
         imageOptions = listOf(
             "--mac-package-identifier", "com.eafc26.stats",
             "--mac-package-name", "EA FC STATS",
@@ -119,6 +120,12 @@ tasks.register<Exec>("openMacApp") {
     description = "Builds and opens the macOS application bundle."
     dependsOn("macApp")
     commandLine("open", macAppPath.get().asFile.absolutePath)
+}
+
+tasks.register("packageApp") {
+    group = "application"
+    description = "Compatibility task: builds and opens EA FC STATS.app."
+    dependsOn("openMacApp")
 }
 
 tasks.register("rebuildMacApp") {

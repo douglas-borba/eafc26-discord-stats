@@ -146,8 +146,20 @@ Para gerar e abrir o aplicativo:
 ./gradlew openMacApp
 ```
 
-O aplicativo inicia o servidor local. A interface fica disponível em
-`http://localhost:8080`.
+O atalho histórico também foi restaurado:
+
+```bash
+./gradlew packageApp
+```
+
+`openMacApp` e `packageApp` iniciam o bundle. O aplicativo aguarda o evento
+`ApplicationReadyEvent` do Spring Boot — emitido depois que o servidor web está
+pronto — e abre automaticamente `http://localhost:8080/` no navegador padrão.
+Se a porta tiver sido alterada, a URL usa a porta efetivamente iniciada.
+
+Esse comportamento é habilitado apenas no `.app` pela propriedade
+`eafc.dashboard.auto-open`. Execuções normais do servidor e testes não abrem o
+navegador.
 
 Depois de alterar código ou recursos, gere uma versão completamente nova,
 removendo os artefatos anteriores:
