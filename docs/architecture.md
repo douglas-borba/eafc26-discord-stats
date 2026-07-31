@@ -30,7 +30,11 @@ flowchart TD
     HIST --> PROFILE["PlayerProfileService<br/>historical aggregation"]
     PROFILE --> PVIEW["Player profile presenter"]
     PVIEW --> PWEB["Player Profiles Dashboard"]
-    HIST -.-> FUTURE["Future history consumers<br/>Comparison / Export"]
+    HIST --> COMP["MatchComparisonService<br/>two canonical matches"]
+    COMP --> CVIEW["Comparison presenter"]
+    CVIEW --> CWEB["Match Comparison Dashboard"]
+    COMP -.-> FUTURE["Future consumers<br/>Records / Insights / Alerts"]
+    HIST -.-> EXPORT["Future exports"]
     FM --> DASH["Dashboard renderer"]
     INT --> DASH
     MS --> DASH
@@ -214,6 +218,44 @@ The web surface exposes:
 
 The query-parameter detail endpoint preserves arbitrary canonical player IDs
 without requiring them to be safe URL path segments.
+
+### Match comparison
+
+`MatchComparisonService` is the application boundary for comparing two
+persisted matches. It depends only on `MatchHistoryService`; it never accesses
+the canonical repository, EA, ACL or football engine directly.
+
+For each side, `ComparedMatch` preserves:
+
+- date, competition, canonical outcome and score;
+- team average, goals, assists, shots, passing, tackling, discipline and
+  goalkeeper saves available in the canonical record;
+- canonical Craque, Bagre and Xerife decisions;
+- every `MatchStories` entry with its structured content and involved players.
+
+`MatchDifferences` is a structured, presentation-neutral comparison containing:
+
+- numeric differences as `second - first`, with explicit units and null when
+  either value is unavailable;
+- award winner changes by canonical player ID;
+- story-presence differences by `StoryType`.
+
+Pass accuracy is arithmetic over the persisted completed and attempted team
+passes. It is not a new football classification. Possession is explicitly
+unavailable because CanonicalMatch schema version 1 contains no possession
+fact; the service and UI do not estimate it.
+
+The comparison web surface exposes:
+
+- `GET /compare`, the side-by-side Dashboard;
+- `GET /api/match-comparisons/options`, selector data sourced through the
+  comparison layer;
+- `GET /api/match-comparisons?firstMatchId=...&secondMatchId=...`, the complete
+  structured comparison.
+
+`MatchComparisonPresenter` owns labels, date/number formatting and narrative
+display. The browser calls only comparison endpoints and contains no football
+rules.
 
 `JsonCanonicalMatchRepository` is the initial infrastructure adapter. It stores
 one UTF-8 JSON file per match below
