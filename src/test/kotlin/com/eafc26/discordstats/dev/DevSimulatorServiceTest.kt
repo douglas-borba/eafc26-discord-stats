@@ -5,6 +5,7 @@ import com.eafc26.discordstats.config.EaProperties
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.PollingProperties
 import com.eafc26.discordstats.config.WebhookConfigService
+import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.discord.DiscordWebhookClient
 import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
@@ -36,6 +37,7 @@ class DevSimulatorServiceTest {
     private lateinit var simulatorService: DevSimulatorService
     private lateinit var webhookConfigService: WebhookConfigService
     private lateinit var webhookClient: DiscordWebhookClient
+    private lateinit var canonicalMatchRepository: CanonicalMatchRepository
 
     private val clubId = "1104972"
 
@@ -49,6 +51,7 @@ class DevSimulatorServiceTest {
         matchSummaryBuilder = MatchSummaryBuilder(PhraseBank(objectMapper))
         webhookConfigService = mock()
         webhookClient = mock()
+        canonicalMatchRepository = mock()
 
         val props = AppProperties(
             ea = EaProperties(clubId = clubId, clubName = "Associação BF"),
@@ -64,6 +67,7 @@ class DevSimulatorServiceTest {
             latestMatchHolder,
             matchSummaryBuilder,
             DiscordRenderer(matchSummaryBuilder),
+            canonicalMatchRepository,
         )
 
         simulatorService = DevSimulatorService(
@@ -137,6 +141,7 @@ class DevSimulatorServiceTest {
 
             // Verify store was NEVER updated
             verify(publishedMatchStore, never()).saveIds(any())
+            verify(canonicalMatchRepository, never()).save(any())
         }
 
         @Test

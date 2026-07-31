@@ -11,13 +11,16 @@ import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.mapping.EaMatchMapper
 import com.eafc26.discordstats.ea.mapping.MatchNormalizationResult
 import com.eafc26.discordstats.application.interpretation.MatchInterpreter
+import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.application.story.MatchStoryExtractor
+import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.store.PublishedMatchStore
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
+import java.time.Instant
 
 /**
  * Single acquisition pipeline for match data.
@@ -56,6 +59,7 @@ class MatchAcquisitionService(
     private val latestMatchHolder: LatestMatchHolder,
     private val matchSummaryBuilder: MatchSummaryBuilder,
     private val discordRenderer: DiscordRenderer,
+    private val canonicalMatchRepository: CanonicalMatchRepository,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
@@ -279,6 +283,7 @@ class MatchAcquisitionService(
             clubId,
             proNames,
             forceRandomPhrases = true,
+            persist = false,
         )
         val newVersion = latestMatchHolder.update(presentation, simulated = true)
         log.debug("Cached simulated presentation for match {} (version={})", latestMatch.matchId, newVersion)
@@ -578,20 +583,14 @@ class MatchAcquisitionService(
         clubId: String,
         proNames: Map<String, String>,
         forceRandomPhrases: Boolean = false,
+        persist: Boolean = true,
     ): com.eafc26.discordstats.presentation.MatchSummaryPresentation {
-        val normalized = when (val result = eaMatchMapper.map(source, proNames)) {
-            is MatchNormalizationResult.Success -> result.match
-            is MatchNormalizationResult.Rejected -> error(
-                "EA match ${source.matchId} cannot be normalized for Dashboard: " +
-                    result.errors.joinToString { it.message }
-            )
-        }
-        val interpretation = matchInterpreter.interpret(normalized, ClubId(clubId))
-        val stories = matchStoryExtractor.extract(interpretation)
+        val canonical = canonicalize(source, clubId, proNames, "Dashboard")
+        if (persist) canonicalMatchRepository.save(canonical)
         return matchSummaryBuilder.build(
-            footballMatch = normalized,
-            interpretation = interpretation,
-            stories = stories,
+            footballMatch = canonical.footballMatch,
+            interpretation = canonical.interpretation,
+            stories = canonical.stories,
             forceRandomPhrases = forceRandomPhrases,
         )
     }
@@ -601,18 +600,42 @@ class MatchAcquisitionService(
         clubId: String,
         proNames: Map<String, String>,
     ): DiscordPayloads {
+        val canonical = canonicalize(source, clubId, proNames, "Discord")
+        canonicalMatchRepository.save(canonical)
+        return DiscordPayloads(
+            match = discordRenderer.renderMatch(
+                canonical.footballMatch,
+                canonical.interpretation,
+                canonical.stories,
+            ),
+            history = discordRenderer.renderHistory(
+                canonical.footballMatch,
+                canonical.interpretation,
+                canonical.stories,
+            ),
+        )
+    }
+
+    private fun canonicalize(
+        source: MatchResponse,
+        clubId: String,
+        proNames: Map<String, String> = emptyMap(),
+        consumer: String,
+    ): CanonicalMatch {
         val normalized = when (val result = eaMatchMapper.map(source, proNames)) {
             is MatchNormalizationResult.Success -> result.match
             is MatchNormalizationResult.Rejected -> error(
-                "EA match ${source.matchId} cannot be normalized for Discord: " +
+                "EA match ${source.matchId} cannot be normalized for $consumer: " +
                     result.errors.joinToString { it.message }
             )
         }
         val interpretation = matchInterpreter.interpret(normalized, ClubId(clubId))
         val stories = matchStoryExtractor.extract(interpretation)
-        return DiscordPayloads(
-            match = discordRenderer.renderMatch(normalized, interpretation, stories),
-            history = discordRenderer.renderHistory(normalized, interpretation, stories),
+        return CanonicalMatch.current(
+            footballMatch = normalized,
+            interpretation = interpretation,
+            stories = stories,
+            generatedAt = Instant.now(),
         )
     }
 
@@ -625,14 +648,9 @@ class MatchAcquisitionService(
      * Builds a human-readable summary of a match.
      */
     private fun buildSummary(match: MatchResponse, clubId: String): String {
-        val normalized = when (val result = eaMatchMapper.map(match)) {
-            is MatchNormalizationResult.Success -> result.match
-            is MatchNormalizationResult.Rejected -> error(
-                "EA match ${match.matchId} cannot be normalized for summary: " +
-                    result.errors.joinToString { it.message }
-            )
-        }
-        val interpretation = matchInterpreter.interpret(normalized, ClubId(clubId))
+        val canonical = canonicalize(match, clubId, consumer = "summary")
+        val normalized = canonical.footballMatch
+        val interpretation = canonical.interpretation
         val ourClub = normalized.participants.first { it.club.id == interpretation.perspectiveClubId }
         val opponent = normalized.participants.first { it.club.id == interpretation.result.opponentClub }
         return "${ourClub.club.name?.value ?: props.ea.clubName} " +

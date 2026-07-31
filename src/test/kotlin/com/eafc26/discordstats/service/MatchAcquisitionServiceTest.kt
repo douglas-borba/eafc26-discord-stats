@@ -4,6 +4,7 @@ import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.config.EaProperties
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.PollingProperties
+import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.discord.DiscordDeliveryException
 import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.discord.DiscordWebhookClient
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -42,6 +44,7 @@ class MatchAcquisitionServiceTest {
     private lateinit var latestMatchHolder: LatestMatchHolder
     private lateinit var matchSummaryBuilder: MatchSummaryBuilder
     private lateinit var service: MatchAcquisitionService
+    private lateinit var canonicalMatchRepository: CanonicalMatchRepository
 
     private val clubId = "12345"
 
@@ -59,6 +62,7 @@ class MatchAcquisitionServiceTest {
             latestMatchHolder,
             matchSummaryBuilder,
             DiscordRenderer(matchSummaryBuilder),
+            canonicalMatchRepository,
         )
     }
 
@@ -70,6 +74,7 @@ class MatchAcquisitionServiceTest {
         stateHolder = AcquisitionStateHolder()  // Use real instance for integration-style tests
         latestMatchHolder = LatestMatchHolder()  // Use real instance
         matchSummaryBuilder = MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))  // Use real instance
+        canonicalMatchRepository = mock()
         service = makeService()
         whenever(store.loadIds()).thenReturn(emptySet())
     }
@@ -163,6 +168,7 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.published[0].summary).contains("Test FC")
             verify(webhookClient).send(any())
             verify(store).saveIds(setOf("m1"))
+            verify(canonicalMatchRepository, atLeastOnce()).save(any())
         }
 
         @Test
@@ -1047,8 +1053,6 @@ class MatchAcquisitionServiceTest {
         }
     }
 }
-
-
 
 
 

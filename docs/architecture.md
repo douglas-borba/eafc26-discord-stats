@@ -19,6 +19,11 @@ flowchart TD
     MI --> INT["MatchInterpretation<br/>decisions, rules and evidence"]
     INT --> SE["MatchStoryExtractor"]
     SE --> MS["MatchStories<br/>presentation-neutral stories"]
+    FM --> CM["CanonicalMatch<br/>schema + engine + generatedAt"]
+    INT --> CM
+    MS --> CM
+    CM --> PORT["CanonicalMatchRepository"]
+    PORT --> JSON["JSON repository<br/>one atomic file per match"]
     FM --> DASH["Dashboard renderer"]
     INT --> DASH
     MS --> DASH
@@ -32,7 +37,8 @@ flowchart TD
 
 `MatchAcquisitionService` orchestrates this flow. It may handle EA DTOs at the
 infrastructure boundary, but no DTO enters the domain, application rules or a
-renderer.
+renderer. Every non-simulated canonical result is stored before it becomes a
+long-term product data source.
 
 ## Layers and responsibilities
 
@@ -96,6 +102,62 @@ The domain has no Spring, Jackson, EA DTO or Discord dependency.
 `application.story.MatchStoryExtractor` projects decisions into `MatchStories`.
 It does not re-evaluate candidates or statistics.
 
+`application.repository.CanonicalMatchRepository` is the persistence port.
+The engine produces no storage calls and has no knowledge of the concrete
+repository.
+
+### Canonical persistence
+
+`CanonicalMatch` is the complete persistence envelope:
+
+```text
+CanonicalMatch
+  schemaVersion
+  engineVersion
+  generatedAt
+  FootballMatch
+  MatchInterpretation
+  MatchStories
+```
+
+Its constructor enforces that facts, interpretation and stories share the same
+match ID. Derived convenience properties are not serialized, preventing
+duplicate state from entering the stable format.
+
+`CanonicalMatchRepository` supports:
+
+- atomic save or replacement by `MatchId`;
+- lookup by `MatchId`;
+- deterministic listing by match time descending;
+- repository metadata: count, time range, latest generation time and observed
+  schema/engine versions.
+
+`JsonCanonicalMatchRepository` is the initial infrastructure adapter. It stores
+one UTF-8 JSON file per match below
+`Application Support/EAFC26DiscordStats/canonical-matches`. Match IDs are
+URL-safe encoded before becoming filenames. Writes use a sibling temporary file
+and atomic replacement where supported. A malformed record fails explicitly
+instead of silently removing history.
+
+Development simulations are intentionally not persisted.
+
+### Versioning strategy
+
+- `schemaVersion` is an increasing positive integer. Version `1` defines the
+  initial envelope and stable polymorphic `kind` names used by stories,
+  evidence, roles and award metrics.
+- Readers ignore unknown JSON properties, allowing additive fields within a
+  schema. Removing, renaming or changing the meaning of a field requires a new
+  schema version and an explicit migration/reader.
+- The current adapter rejects unsupported schema versions rather than guessing.
+- `engineVersion` uses semantic `major.minor.patch` form. Version `1.0.0`
+  identifies the deterministic rules that generated the record.
+- A football-rule behavior change must update the relevant `RuleReference`; a
+  release containing meaningful rule changes must also advance
+  `engineVersion`.
+- Re-saving a match replaces its record atomically and records the version of
+  the interpretation most recently generated.
+
 ### Renderers
 
 `MatchSummaryBuilder` renders the Dashboard. `DiscordRenderer` renders both the
@@ -128,6 +190,8 @@ Renderers must not own:
 - web controllers expose state without football decisions.
 - schedulers and CLI trigger acquisition.
 - `PublishedMatchStore` owns delivery deduplication and storage migration.
+- `JsonCanonicalMatchRepository` owns durable canonical history; it does not
+  decide football or presentation.
 
 ## Dependency rules
 
@@ -137,6 +201,7 @@ Allowed:
 Runtime/infrastructure -> Application -> Domain
 ACL                    -> Domain
 Renderers              -> Domain + presentation configuration
+Storage adapter        -> Canonical model + repository port
 Tests                  -> production + retained test-only legacy baselines
 ```
 
@@ -148,6 +213,7 @@ Prohibited:
 - ACL -> renderer or presentation model.
 - Optional LLM -> winner selection, eligibility, metric interpretation or
   award decisions.
+- Engine/domain -> concrete canonical storage.
 
 These rules are guarded by `CanonicalProductionArchitectureTest`.
 

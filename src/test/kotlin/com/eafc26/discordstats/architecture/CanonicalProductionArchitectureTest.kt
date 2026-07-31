@@ -42,6 +42,7 @@ class CanonicalProductionArchitectureTest {
         val guardedDirectories = listOf(
             productionRoot.resolve("domain"),
             productionRoot.resolve("application"),
+            productionRoot.resolve("canonical"),
         )
         val forbiddenImports = listOf(
             "com.eafc26.discordstats.ea.model",
