@@ -3,6 +3,7 @@ package com.eafc26.discordstats.architecture
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.discord.DiscordEmbed
 import com.eafc26.discordstats.discord.DiscordEmbedBuilder
+import com.eafc26.discordstats.discord.HistoryEmbedBuilder
 import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
@@ -93,6 +94,118 @@ class CurrentPresentationCharacterizationTest {
         }
 
         @Test
+        fun `web card and Discord attribute goals and assists to the same players`() {
+            val match = match(
+                players = linkedMapOf(
+                    "scorer-id" to player(name = "Scorer", rating = "8.8", goals = "2", assists = "1"),
+                    "creator-id" to player(name = "Creator", rating = "8.2", goals = "1", assists = "3"),
+                    "bagre-id" to player(name = "Bagre", rating = "5.5"),
+                ),
+            )
+
+            val card = summaryBuilder.build(match, ourClubId, zone)
+            val discord = discordEmbed(match)
+
+            card.goals!!.scorers.forEach { scorer ->
+                assertThat(discord.fieldValue("⚽ GOLS")).contains("${scorer.name} ×${scorer.count}")
+            }
+            card.assists!!.assisters.forEach { assister ->
+                assertThat(discord.fieldValue("🎯 ASSISTÊNCIAS")).contains("${assister.name} ×${assister.count}")
+            }
+        }
+
+        @Test
+        fun `draw with missed chances produces the same offensive narrative in both paths`() {
+            val match = match(
+                ourScore = "1",
+                opponentScore = "1",
+                players = linkedMapOf(
+                    "shooter-id" to player(
+                        name = "WastefulShooter",
+                        rating = "7.5",
+                        shots = "6",
+                        goals = "0",
+                    ),
+                    "creator-id" to player(name = "Creator", rating = "8.0"),
+                    "bagre-id" to player(name = "Bagre", rating = "5.5"),
+                ),
+            )
+
+            val card = summaryBuilder.build(match, ourClubId, zone)
+            val narrative = card.offensiveNarratives.single()
+            val discord = discordEmbed(match)
+
+            assertThat(narrative.name).isEqualTo("WastefulShooter")
+            assertThat(narrative.title).isEqualTo("PODERIA TER DECIDIDO")
+            assertThat(discord.fieldValue("🎯 PODERIA TER DECIDIDO")).contains(narrative.name)
+        }
+
+        @Test
+        fun `defeat selects the same Bagre in both paths`() {
+            val match = match(
+                ourScore = "0",
+                opponentScore = "2",
+                players = linkedMapOf(
+                    "best-id" to player(name = "Best", rating = "8.0"),
+                    "worst-id" to player(name = "DefeatBagre", rating = "5.2"),
+                ),
+            )
+
+            val card = summaryBuilder.build(match, ourClubId, zone)
+            val discord = discordEmbed(match)
+
+            assertThat(card.outcome.type).isEqualTo(OutcomeType.LOSS)
+            assertThat(card.bagre!!.name).isEqualTo("DefeatBagre")
+            assertThat(discord.fieldValue("🍍 BAGRE DA PARTIDA")).contains(card.bagre!!.name)
+        }
+
+        @Test
+        fun `Bagre who is EA MVP is excluded from Craque in both paths`() {
+            val match = match(
+                players = linkedMapOf(
+                    "bagre-mvp-id" to player(name = "BagreMvp", rating = "5.5", mom = "1"),
+                    "eligible-star-id" to player(name = "EligibleStar", rating = "8.5"),
+                ),
+            )
+
+            val card = summaryBuilder.build(match, ourClubId, zone)
+            val discord = discordEmbed(match)
+
+            assertThat(card.bagre!!.name).isEqualTo("BagreMvp")
+            assertThat(card.craque!!.name).isEqualTo("EligibleStar")
+            assertThat(discord.fieldValue("⭐ CRAQUE DA PARTIDA")).contains("EligibleStar")
+            assertThat(discord.fieldValue("⭐ CRAQUE DA PARTIDA")).doesNotContain("BagreMvp")
+        }
+
+        @Test
+        fun `Bagre with the strongest defensive numbers is excluded from Xerife in both paths`() {
+            val match = match(
+                players = linkedMapOf(
+                    "bagre-defender-id" to player(
+                        name = "BagreDefender",
+                        rating = "5.5",
+                        tackleAttempts = "8",
+                        tacklesMade = "8",
+                    ),
+                    "eligible-defender-id" to player(
+                        name = "EligibleDefender",
+                        rating = "7.5",
+                        tackleAttempts = "5",
+                        tacklesMade = "4",
+                    ),
+                ),
+            )
+
+            val card = summaryBuilder.build(match, ourClubId, zone)
+            val discord = discordEmbed(match)
+
+            assertThat(card.bagre!!.name).isEqualTo("BagreDefender")
+            assertThat(card.xerife!!.name).isEqualTo("EligibleDefender")
+            assertThat(discord.fieldValue("🚧 XERIFE DA PARTIDA")).contains("EligibleDefender")
+            assertThat(discord.fieldValue("🚧 XERIFE DA PARTIDA")).doesNotContain("BagreDefender")
+        }
+
+        @Test
         fun `web card and Discord agree on a red card selection independent of positive awards`() {
             val match = match(
                 players = linkedMapOf(
@@ -136,6 +249,33 @@ class CurrentPresentationCharacterizationTest {
             val discordGoalkeeper = discordEmbed(match).fieldValue("🧤 GOLEIRO")
 
             assertThat(card.muralha!!.name).isEqualTo("Keeper")
+            assertThat(discordGoalkeeper).contains(card.muralha!!.name)
+            assertThat(discordGoalkeeper).contains(card.muralha!!.archetypeTitle)
+        }
+
+        @Test
+        fun `web card and Discord agree on a poor goalkeeper performance`() {
+            val match = match(
+                ourScore = "1",
+                opponentScore = "4",
+                players = linkedMapOf(
+                    "line-id" to player(name = "Line", rating = "8.0"),
+                    "bagre-id" to player(name = "Bagre", rating = "5.5"),
+                    "gk-id" to goalkeeper(
+                        name = "PoorKeeper",
+                        rating = "4.8",
+                        saves = "3",
+                        goalsConceded = "4",
+                        reflexSaves = "0",
+                    ),
+                ),
+            )
+
+            val card = summaryBuilder.build(match, ourClubId, zone)
+            val discordGoalkeeper = discordEmbed(match).fieldValue("🧤 GOLEIRO")
+
+            assertThat(card.muralha!!.name).isEqualTo("PoorKeeper")
+            assertThat(card.muralha!!.archetypeTitle).isEqualTo("🥬 Mão de Alface")
             assertThat(discordGoalkeeper).contains(card.muralha!!.name)
             assertThat(discordGoalkeeper).contains(card.muralha!!.archetypeTitle)
         }
@@ -247,6 +387,69 @@ class CurrentPresentationCharacterizationTest {
             assertThat(firstDiscord.fieldValue("⭐ CRAQUE DA PARTIDA")).contains(firstCard.craque!!.phrase)
             assertThat(firstDiscord.fieldValue("🍍 BAGRE DA PARTIDA")).contains(firstCard.bagre!!.phrase)
         }
+
+        @Test
+        fun `malformed optional statistics are ignored consistently without aborting presentation`() {
+            val match = match(
+                players = linkedMapOf(
+                    "valid-id" to player(name = "Valid", rating = "8.0", goals = "1"),
+                    "bagre-id" to player(name = "ValidBagre", rating = "5.5"),
+                    "malformed-id" to player(
+                        name = "Malformed",
+                        rating = "not-a-rating",
+                        goals = "not-a-goal",
+                        assists = "",
+                        shots = "invalid",
+                        passAttempts = "invalid",
+                        passesMade = "invalid",
+                        tackleAttempts = "invalid",
+                        tacklesMade = "invalid",
+                        redCards = "invalid",
+                    ),
+                ),
+            )
+
+            val card = summaryBuilder.build(match, ourClubId, zone)
+            val discord = discordEmbed(match)
+            val allDiscordFields = discord.fields.joinToString("\n") { it.value }
+
+            assertThat(card.goals!!.scorers.map { it.name }).containsExactly("Valid")
+            assertThat(card.craque!!.name).isEqualTo("Valid")
+            assertThat(card.bagre!!.name).isEqualTo("ValidBagre")
+            assertThat(allDiscordFields).contains("Valid")
+            assertThat(discord.fields.none { it.name == "🟥 PERDEU A CABEÇA" }).isTrue()
+        }
+
+        @Test
+        fun `complete award ties resolve consistently between current paths`() {
+            val match = match(
+                players = linkedMapOf(
+                    "first-id" to player(
+                        name = "FirstInPayload",
+                        rating = "8.0",
+                        goals = "1",
+                        assists = "1",
+                        passAttempts = "20",
+                        passesMade = "18",
+                    ),
+                    "second-id" to player(
+                        name = "SecondInPayload",
+                        rating = "8.0",
+                        goals = "1",
+                        assists = "1",
+                        passAttempts = "20",
+                        passesMade = "18",
+                    ),
+                    "bagre-id" to player(name = "Bagre", rating = "5.5"),
+                ),
+            )
+
+            val card = summaryBuilder.build(match, ourClubId, zone)
+            val discord = discordEmbed(match)
+
+            assertThat(discord.fieldValue("⭐ CRAQUE DA PARTIDA")).contains(card.craque!!.name)
+            assertThat(discord.fieldValue("🎯 PASSE DE PRECISÃO")).contains(card.passePrecisao!!.name)
+        }
     }
 
     @Nested
@@ -306,6 +509,76 @@ class CurrentPresentationCharacterizationTest {
             assertThat(card.bagre!!.name).isEqualTo("Bagre")
             assertThat(card.highlights!!.top3.map { it.name }).doesNotContain("Bagre")
             assertThat(discordHighlights).contains("Bagre")
+        }
+
+        @Test
+        fun `dashboard keeps all offensive narratives while Discord intentionally caps them at two`() {
+            val match = match(
+                ourScore = "4",
+                opponentScore = "1",
+                players = linkedMapOf(
+                    "decisive-id" to player(
+                        name = "Decisive",
+                        rating = "9.0",
+                        shots = "6",
+                        goals = "3",
+                    ),
+                    "fell-short-id" to player(
+                        name = "FellShort",
+                        rating = "8.0",
+                        shots = "6",
+                        goals = "1",
+                    ),
+                    "no-composure-id" to player(
+                        name = "NoComposure",
+                        rating = "7.5",
+                        shots = "6",
+                        goals = "0",
+                    ),
+                    "constant-id" to player(
+                        name = "Constant",
+                        rating = "7.8",
+                        shots = "5",
+                        goals = "2",
+                    ),
+                    "bagre-id" to player(name = "Bagre", rating = "5.5"),
+                ),
+            )
+
+            val card = summaryBuilder.build(match, ourClubId, zone)
+            val discordFieldNames = discordEmbed(match).fields.map { it.name }.toSet()
+            val renderedNarratives = card.offensiveNarratives.count {
+                "${it.emoji} ${it.title}" in discordFieldNames
+            }
+
+            assertThat(card.offensiveNarratives).hasSize(4)
+            assertThat(renderedNarratives).isEqualTo(2)
+        }
+
+        @Test
+        fun `history currently reports goalkeeper EA MVP while card Craque remains outfield`() {
+            val match = match(
+                players = linkedMapOf(
+                    "outfield-star-id" to player(name = "OutfieldStar", rating = "8.8"),
+                    "bagre-id" to player(name = "Bagre", rating = "5.5"),
+                    "gk-mvp-id" to goalkeeper(
+                        name = "KeeperEaMvp",
+                        rating = "9.5",
+                        saves = "8",
+                        goalsConceded = "0",
+                        reflexSaves = "5",
+                    ).copy(manOfTheMatch = "1"),
+                ),
+            )
+
+            val card = summaryBuilder.build(match, ourClubId, zone)
+            val historyMvp = HistoryEmbedBuilder.build(match, ourClubId, zone)
+                .embeds.single()
+                .fieldValue("⭐ MVP")
+
+            assertThat(card.craque!!.name).isEqualTo("OutfieldStar")
+            assertThat(historyMvp).contains("KeeperEaMvp")
+            assertThat(historyMvp).doesNotContain(card.craque!!.name)
         }
     }
 
