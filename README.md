@@ -122,6 +122,27 @@ Requires Java 21.
 **All 15 tests pass with zero live network calls.** MockWebServer intercepts all HTTP
 requests; the EA endpoint does not need to be reachable.
 
+### Desenvolvimento local
+
+Inicie o ambiente de desenvolvimento com um único comando:
+
+```bash
+./gradlew dev
+```
+
+A aplicação permanece em primeiro plano, com os logs visíveis no terminal. Quando
+o Spring Boot estiver iniciado, o launcher consulta repetidamente `/api/health` e
+só abre o Dashboard no navegador padrão depois de receber uma resposta HTTP de
+sucesso.
+
+A URL é construída com a porta efetivamente utilizada pelo servidor, portanto o
+fluxo continua funcionando se `server.port` mudar ou for configurado dinamicamente.
+Se a inicialização falhar, o erro permanece visível no terminal e o navegador não
+é aberto. Use `Ctrl+C` para encerrar o Gradle e a aplicação.
+
+Esse fluxo é independente do `.app`; as tasks de empacotamento abaixo continuam
+reservadas para distribuição e validação do bundle.
+
 ### Aplicativo nativo para macOS
 
 O projeto usa `org.beryx.runtime`, a variante Beryx apropriada para aplicações
@@ -153,9 +174,9 @@ O atalho histórico também foi restaurado:
 ```
 
 `openMacApp` e `packageApp` iniciam o bundle. O aplicativo aguarda o evento
-`ApplicationReadyEvent` do Spring Boot — emitido depois que o servidor web está
-pronto — e abre automaticamente `http://localhost:8080/` no navegador padrão.
-Se a porta tiver sido alterada, a URL usa a porta efetivamente iniciada.
+`ApplicationReadyEvent` do Spring Boot e confirma `/api/health` antes de abrir o
+Dashboard no navegador padrão. Se a porta tiver sido alterada, a URL usa a porta
+efetivamente iniciada.
 
 Esse comportamento é habilitado apenas no `.app` pela propriedade
 `eafc.dashboard.auto-open`. Execuções normais do servidor e testes não abrem o

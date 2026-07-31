@@ -7,13 +7,17 @@ import org.springframework.boot.web.context.WebServerApplicationContext
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.time.Duration
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Opens the local Dashboard only for distributions that explicitly opt in.
+ * Opens the local Dashboard only for executions that explicitly opt in.
  *
- * The macOS package supplies the opt-in JVM property. Regular server, test and
- * development executions remain unchanged.
+ * The macOS package and the Gradle development task supply the opt-in JVM
+ * property. Regular server and test executions remain unchanged.
  */
 @Component
 class DashboardAutoLauncher(
@@ -21,6 +25,7 @@ class DashboardAutoLauncher(
     private val enabled: Boolean,
     private val webServerContext: WebServerApplicationContext,
     private val browser: DashboardBrowser,
+    private val readinessProbe: DashboardReadinessProbe,
 ) {
     private val opened = AtomicBoolean(false)
 
@@ -28,7 +33,15 @@ class DashboardAutoLauncher(
     fun onApplicationReady() {
         if (!enabled || !opened.compareAndSet(false, true)) return
 
-        val dashboardUri = URI("http://localhost:${webServerContext.webServer.port}/")
+        val baseUri = URI("http://localhost:${webServerContext.webServer.port}/")
+        val healthUri = baseUri.resolve("api/health")
+
+        if (!readinessProbe.awaitHealthy(healthUri)) {
+            log.error("Application started, but its health endpoint did not become ready at {}", healthUri)
+            return
+        }
+
+        val dashboardUri = baseUri
         runCatching { browser.open(dashboardUri) }
             .onSuccess { log.info("Dashboard opened at {}", dashboardUri) }
             .onFailure { error ->
@@ -43,6 +56,49 @@ class DashboardAutoLauncher(
 
 fun interface DashboardBrowser {
     fun open(uri: URI)
+}
+
+fun interface DashboardReadinessProbe {
+    fun awaitHealthy(uri: URI): Boolean
+}
+
+@Component
+class HttpDashboardReadinessProbe : DashboardReadinessProbe {
+    private val client = HttpClient.newBuilder()
+        .connectTimeout(REQUEST_TIMEOUT)
+        .build()
+
+    override fun awaitHealthy(uri: URI): Boolean {
+        val deadline = System.nanoTime() + STARTUP_TIMEOUT.toNanos()
+
+        while (System.nanoTime() < deadline) {
+            if (isHealthy(uri)) return true
+
+            try {
+                Thread.sleep(RETRY_INTERVAL.toMillis())
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        }
+
+        return false
+    }
+
+    private fun isHealthy(uri: URI): Boolean =
+        runCatching {
+            val request = HttpRequest.newBuilder(uri)
+                .timeout(REQUEST_TIMEOUT)
+                .GET()
+                .build()
+            client.send(request, HttpResponse.BodyHandlers.discarding()).statusCode() in 200..299
+        }.getOrDefault(false)
+
+    private companion object {
+        val STARTUP_TIMEOUT: Duration = Duration.ofSeconds(30)
+        val REQUEST_TIMEOUT: Duration = Duration.ofSeconds(1)
+        val RETRY_INTERVAL: Duration = Duration.ofMillis(100)
+    }
 }
 
 @Component

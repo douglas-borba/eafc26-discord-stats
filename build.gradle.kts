@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.springframework.boot.gradle.tasks.run.BootRun
 
 plugins {
     id("org.springframework.boot") version "3.3.0"
@@ -45,6 +46,14 @@ tasks.withType<KotlinCompile> {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+tasks.register<BootRun>("dev") {
+    group = "application"
+    description = "Runs the application for development and opens the Dashboard when healthy."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set(application.mainClass)
+    systemProperty("eafc.dashboard.auto-open", "true")
 }
 
 runtime {
