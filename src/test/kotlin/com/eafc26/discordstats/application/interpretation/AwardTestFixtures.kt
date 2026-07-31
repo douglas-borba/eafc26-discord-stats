@@ -8,14 +8,17 @@ import com.eafc26.discordstats.domain.interpretation.PlayerEligibilityDecision
 import com.eafc26.discordstats.domain.match.AttackingStats
 import com.eafc26.discordstats.domain.match.DefendingStats
 import com.eafc26.discordstats.domain.match.DisciplineStats
+import com.eafc26.discordstats.domain.match.DisplayName
 import com.eafc26.discordstats.domain.match.EaRecognition
 import com.eafc26.discordstats.domain.match.MatchRating
+import com.eafc26.discordstats.domain.match.GoalkeepingStats
 import com.eafc26.discordstats.domain.match.Participation
 import com.eafc26.discordstats.domain.match.PassingStats
 import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.match.PlayerIdentity
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
 import com.eafc26.discordstats.domain.match.PlayerRole
+import com.eafc26.discordstats.domain.match.SaveBreakdown
 import java.math.BigDecimal
 
 internal fun awardPlayer(
@@ -31,8 +34,14 @@ internal fun awardPlayer(
     redCards: Int? = 0,
     eaMvp: Boolean? = false,
     role: PlayerRole = PlayerRole.Outfield(null),
+    saves: Int? = null,
+    goalsConceded: Int? = null,
+    goodDirectionSaves: Int? = null,
+    reflexSaves: Int? = null,
+    parrySaves: Int? = null,
+    crossSaves: Int? = null,
 ): PlayerMatchPerformance = PlayerMatchPerformance(
-    player = PlayerIdentity(PlayerId(id), platformName = null, proName = null),
+    player = PlayerIdentity(PlayerId(id), platformName = DisplayName(id), proName = null),
     role = role,
     participation = Participation(duration = null, status = null),
     rating = rating?.let { MatchRating(BigDecimal(it)) },
@@ -40,7 +49,24 @@ internal fun awardPlayer(
     passing = PassingStats(passesAttempted, passesCompleted),
     defending = DefendingStats(tacklesAttempted, tacklesCompleted),
     discipline = DisciplineStats(redCards),
-    goalkeeping = null,
+    goalkeeping = if (role == PlayerRole.Goalkeeper) {
+        GoalkeepingStats(
+            saves = saves,
+            goalsConceded = goalsConceded,
+            cleanSheetAsGoalkeeper = null,
+            cleanSheetAsAny = null,
+            saveBreakdown = SaveBreakdown(
+                goodDirection = goodDirectionSaves,
+                reflex = reflexSaves,
+                parry = parrySaves,
+                punch = null,
+                diving = null,
+                crosses = crossSaves,
+            ),
+        )
+    } else {
+        null
+    },
     eaRecognition = EaRecognition(eaMvp),
 )
 

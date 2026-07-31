@@ -44,11 +44,170 @@ class MatchStoryExtractor {
             interpretation.awards.xerife,
         ).mapNotNull(::awardStory)
 
+        val featureStories = featureStories(interpretation)
+
         return MatchStories(
             matchId = interpretation.matchId,
-            stories = listOf(outcomeStory) + awardStories,
+            stories = listOf(outcomeStory) + awardStories + featureStories,
         )
     }
+
+    private fun featureStories(interpretation: MatchInterpretation): List<Story> {
+        val features = interpretation.features
+        return buildList {
+            if (features.contributions.goalScorers.isNotEmpty()) {
+                add(
+                    featureStory(
+                        StoryType.GOALS,
+                        "match.goals",
+                        features.contributions.goalScorers.mapTo(linkedSetOf()) { it.playerId },
+                        StoryContent.Contributions(features.contributions.goalScorers),
+                        features.contributions.rule,
+                        features.contributions.evidence,
+                    )
+                )
+            }
+            if (features.contributions.assistProviders.isNotEmpty()) {
+                add(
+                    featureStory(
+                        StoryType.ASSISTS,
+                        "match.assists",
+                        features.contributions.assistProviders.mapTo(linkedSetOf()) { it.playerId },
+                        StoryContent.Contributions(features.contributions.assistProviders),
+                        features.contributions.rule,
+                        features.contributions.evidence,
+                    )
+                )
+            }
+            if (features.highlights.players.isNotEmpty() || features.highlights.teamAverageRating != null) {
+                add(
+                    featureStory(
+                        StoryType.HIGHLIGHTS,
+                        "match.highlights",
+                        features.highlights.players.mapTo(linkedSetOf()) { it.playerId },
+                        StoryContent.Highlights(
+                            features.highlights.players,
+                            features.highlights.teamAverageRating,
+                        ),
+                        features.highlights.rule,
+                        features.highlights.evidence,
+                    )
+                )
+            }
+            features.bagrePerformance?.let {
+                add(
+                    featureStory(
+                        StoryType.BAGRE_PERFORMANCE,
+                        "bagre.${it.criticism.name.lowercase()}",
+                        setOf(it.playerId),
+                        StoryContent.BagrePerformance(
+                            it.playerId,
+                            it.rating,
+                            it.criticism,
+                            it.tackleSummary,
+                            it.passingSummary,
+                        ),
+                        it.rule,
+                        it.evidence,
+                    )
+                )
+            }
+            features.offensiveNarratives.forEach {
+                add(
+                    featureStory(
+                        StoryType.OFFENSIVE_NARRATIVE,
+                        "offensive.${it.category.name.lowercase()}",
+                        setOf(it.playerId),
+                        StoryContent.OffensiveNarrative(it.playerId, it.shots, it.goals, it.category),
+                        it.rule,
+                        it.evidence,
+                    )
+                )
+            }
+            features.redCard?.let {
+                add(
+                    featureStory(
+                        StoryType.RED_CARD,
+                        "discipline.red_card",
+                        setOf(it.playerId),
+                        StoryContent.RedCard(it.playerId, it.redCards),
+                        it.rule,
+                        it.evidence,
+                    )
+                )
+            }
+            features.passPrecision?.let {
+                add(
+                    featureStory(
+                        StoryType.PASS_PRECISION,
+                        "award.pass_precision",
+                        setOf(it.playerId),
+                        StoryContent.PassPrecision(
+                            it.playerId,
+                            it.completed,
+                            it.attempted,
+                            it.accuracyPercent,
+                        ),
+                        it.rule,
+                        it.evidence,
+                    )
+                )
+            }
+            features.lostMail?.let {
+                add(
+                    featureStory(
+                        StoryType.LOST_MAIL,
+                        "award.lost_mail",
+                        setOf(it.playerId),
+                        StoryContent.LostMail(
+                            it.playerId,
+                            it.completed,
+                            it.attempted,
+                            it.playerAccuracyPercent,
+                            it.teamAccuracyPercent,
+                            it.deltaPercent,
+                        ),
+                        it.rule,
+                        it.evidence,
+                    )
+                )
+            }
+            features.goalkeeper?.let {
+                add(
+                    featureStory(
+                        StoryType.GOALKEEPER,
+                        "goalkeeper.${it.archetype.name.lowercase()}.${it.narrativeVariant.name.lowercase()}",
+                        setOf(it.playerId),
+                        StoryContent.Goalkeeper(
+                            it.playerId,
+                            it.saves,
+                            it.goalsConceded,
+                            it.archetype,
+                            it.narrativeVariant,
+                        ),
+                        it.rule,
+                        it.evidence,
+                    )
+                )
+            }
+        }
+    }
+
+    private fun featureStory(
+        type: StoryType,
+        key: String,
+        players: Set<com.eafc26.discordstats.domain.match.PlayerId>,
+        content: StoryContent,
+        rule: com.eafc26.discordstats.domain.interpretation.RuleReference,
+        evidence: List<com.eafc26.discordstats.domain.interpretation.DecisionEvidence>,
+    ) = Story(
+        type = type,
+        priority = StoryPriority.SECONDARY,
+        involvedPlayers = players,
+        narrativeKey = NarrativeKey(key),
+        content = content,
+        provenance = StoryProvenance(listOf(rule), evidence),
+    )
 
     private fun awardStory(decision: AwardDecision): Story? {
         val winnerId = decision.winnerId ?: return null

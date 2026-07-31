@@ -48,6 +48,7 @@ contracts:
 - statistical eligibility;
 - team metrics;
 - awards;
+- player contributions, highlights and consumer-facing football features;
 - `RuleReference`;
 - `DecisionEvidence`;
 - the canonical `MatchInterpretation`.
@@ -63,6 +64,8 @@ The domain contains no Spring, Jackson, EA DTO, Discord or transport concern.
 - `TeamMetricsCalculator`;
 - award evaluators and `MatchAwardsEvaluator`;
 - `MatchInterpreter`, which composes the canonical interpretation.
+- `MatchStoryExtractor`, which projects decisions into presentation-neutral
+  stories without recalculating them.
 
 Application services consume normalized domain objects. They do not parse EA
 fields and do not build presentation payloads.
@@ -110,14 +113,22 @@ EA MatchResponse
         -> BagreEvaluator
         -> CraqueEvaluator
         -> XerifeEvaluator
+     -> MatchFeaturesEvaluator
+        -> contributions and highlights
+        -> offensive narratives and red card
+        -> pass precision and lost mail
+        -> Bagre assessment and goalkeeper archetype
   -> MatchInterpretation
      -> decisions
      -> RuleReference values
      -> DecisionEvidence values
+  -> MatchStoryExtractor
+  -> MatchStories
 ```
 
-This path currently ends at `MatchInterpretation`. It has no production
-consumer and therefore cannot alter Discord or dashboard behavior.
+This path currently ends at `MatchStories` and the parallel
+`MatchSummaryDecisionProjection`. It has no production consumer and therefore
+cannot alter Discord or dashboard behavior.
 
 ## Anti-Corruption Layer
 

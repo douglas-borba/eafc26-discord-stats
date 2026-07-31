@@ -15,6 +15,7 @@ class MatchInterpreter(
     private val eligibilityEvaluator: PlayerEligibilityEvaluator = PlayerEligibilityEvaluator(),
     private val metricsCalculator: TeamMetricsCalculator = TeamMetricsCalculator(),
     private val awardsEvaluator: MatchAwardsEvaluator = MatchAwardsEvaluator(),
+    private val featuresEvaluator: MatchFeaturesEvaluator = MatchFeaturesEvaluator(),
 ) {
 
     fun interpret(
@@ -30,13 +31,24 @@ class MatchInterpreter(
             it.player.id in eligibility.eligiblePlayerIds
         }
 
+        val result = outcomeEvaluator.evaluate(match, perspective)
+        val teamMetrics = metricsCalculator.calculate(statisticallyEligiblePlayers)
+        val awards = awardsEvaluator.evaluate(clubPerformance.players, eligibility)
+
         return MatchInterpretation(
-            matchId = match.id,
+            footballMatch = match,
             perspectiveClubId = perspective,
-            result = outcomeEvaluator.evaluate(match, perspective),
+            result = result,
             eligibility = eligibility,
-            teamMetrics = metricsCalculator.calculate(statisticallyEligiblePlayers),
-            awards = awardsEvaluator.evaluate(clubPerformance.players, eligibility),
+            teamMetrics = teamMetrics,
+            awards = awards,
+            features = featuresEvaluator.evaluate(
+                players = clubPerformance.players,
+                eligibility = eligibility,
+                result = result,
+                teamMetrics = teamMetrics,
+                awards = awards,
+            ),
         )
     }
 }

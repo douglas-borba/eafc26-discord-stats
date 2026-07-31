@@ -4,6 +4,13 @@ import com.eafc26.discordstats.domain.interpretation.AwardDecisionReason
 import com.eafc26.discordstats.domain.interpretation.AwardType
 import com.eafc26.discordstats.domain.interpretation.DecisionEvidence
 import com.eafc26.discordstats.domain.interpretation.MatchOutcome
+import com.eafc26.discordstats.domain.interpretation.GoalkeeperArchetype
+import com.eafc26.discordstats.domain.interpretation.GoalkeeperNarrativeVariant
+import com.eafc26.discordstats.domain.interpretation.BagreCriticism
+import com.eafc26.discordstats.domain.interpretation.AccuracySummary
+import com.eafc26.discordstats.domain.interpretation.OffensiveNarrativeCategory
+import com.eafc26.discordstats.domain.interpretation.PlayerContribution
+import com.eafc26.discordstats.domain.interpretation.RatedHighlight
 import com.eafc26.discordstats.domain.interpretation.ResultDecisionSource
 import com.eafc26.discordstats.domain.interpretation.RuleReference
 import com.eafc26.discordstats.domain.match.ClubId
@@ -27,6 +34,15 @@ data class Story(
 enum class StoryType {
     MATCH_OUTCOME,
     AWARD,
+    GOALS,
+    ASSISTS,
+    HIGHLIGHTS,
+    BAGRE_PERFORMANCE,
+    OFFENSIVE_NARRATIVE,
+    RED_CARD,
+    PASS_PRECISION,
+    LOST_MAIL,
+    GOALKEEPER,
 }
 
 enum class StoryPriority {
@@ -57,6 +73,59 @@ sealed interface StoryContent {
         val awardType: AwardType,
         val winnerId: PlayerId,
         val reason: AwardDecisionReason,
+    ) : StoryContent
+
+    data class Contributions(
+        val players: List<PlayerContribution>,
+    ) : StoryContent
+
+    data class Highlights(
+        val players: List<RatedHighlight>,
+        val teamAverageRating: java.math.BigDecimal?,
+    ) : StoryContent
+
+    data class BagrePerformance(
+        val playerId: PlayerId,
+        val rating: java.math.BigDecimal,
+        val criticism: BagreCriticism,
+        val tackleSummary: AccuracySummary?,
+        val passingSummary: AccuracySummary?,
+    ) : StoryContent
+
+    data class OffensiveNarrative(
+        val playerId: PlayerId,
+        val shots: Int,
+        val goals: Int,
+        val category: OffensiveNarrativeCategory,
+    ) : StoryContent
+
+    data class RedCard(
+        val playerId: PlayerId,
+        val redCards: Int,
+    ) : StoryContent
+
+    data class PassPrecision(
+        val playerId: PlayerId,
+        val completed: Int,
+        val attempted: Int,
+        val accuracyPercent: Int,
+    ) : StoryContent
+
+    data class LostMail(
+        val playerId: PlayerId,
+        val completed: Int,
+        val attempted: Int,
+        val playerAccuracyPercent: Int,
+        val teamAccuracyPercent: Int,
+        val deltaPercent: Int,
+    ) : StoryContent
+
+    data class Goalkeeper(
+        val playerId: PlayerId,
+        val saves: Int,
+        val goalsConceded: Int,
+        val archetype: GoalkeeperArchetype,
+        val narrativeVariant: GoalkeeperNarrativeVariant,
     ) : StoryContent
 }
 

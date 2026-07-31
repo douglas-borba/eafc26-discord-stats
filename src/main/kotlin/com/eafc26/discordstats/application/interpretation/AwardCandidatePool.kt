@@ -11,7 +11,7 @@ internal object AwardCandidatePool {
 
     data class Result(
         val candidates: List<PlayerMatchPerformance>,
-        val evidence: List<DecisionEvidence.AwardCandidate>,
+        val evidence: List<DecisionEvidence>,
     )
 
     fun outfield(
@@ -20,7 +20,7 @@ internal object AwardCandidatePool {
         exclusions: Map<PlayerId, AwardType> = emptyMap(),
     ): Result {
         val eligibleIds = eligibility.eligiblePlayerIds
-        val evidence = players.map { player ->
+        val candidateEvidence = players.map { player ->
             DecisionEvidence.AwardCandidate(
                 playerId = player.player.id,
                 statisticallyEligible = player.player.id in eligibleIds,
@@ -33,6 +33,13 @@ internal object AwardCandidatePool {
                 player.role is PlayerRole.Outfield &&
                 player.player.id !in exclusions
         }
-        return Result(candidates, evidence)
+        val population = DecisionEvidence.PlayerPopulation(
+            totalPlayers = players.size,
+            statisticallyEligiblePlayers = players.count { it.player.id in eligibleIds },
+            eligibleOutfieldPlayers = players.count {
+                it.player.id in eligibleIds && it.role is PlayerRole.Outfield
+            },
+        )
+        return Result(candidates, listOf(population) + candidateEvidence)
     }
 }

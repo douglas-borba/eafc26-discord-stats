@@ -106,8 +106,8 @@ class MatchStoryExtractorTest {
 
         val stories = extractor.extract(interpretation)
 
-        assertThat(stories.stories).hasSize(1)
-        assertThat(stories.stories.single().type).isEqualTo(StoryType.MATCH_OUTCOME)
+        assertThat(stories.stories.count { it.type == StoryType.MATCH_OUTCOME }).isEqualTo(1)
+        assertThat(stories.stories.filter { it.type == StoryType.AWARD }).isEmpty()
         assertThat(interpretation.awards.craque.awarded).isFalse()
         assertThat(interpretation.awards.bagre.awarded).isFalse()
         assertThat(interpretation.awards.xerife.awarded).isFalse()
@@ -119,13 +119,68 @@ class MatchStoryExtractorTest {
         val positive = awardPlayer("positive", rating = "8.0")
 
         val keys = extractor.extract(interpretation(listOf(bagre, positive)))
-            .stories.map { it.narrativeKey.value }
+            .stories
+            .filter { it.type == StoryType.MATCH_OUTCOME || it.type == StoryType.AWARD }
+            .map { it.narrativeKey.value }
 
         assertThat(keys).containsExactly(
             "match.outcome.win",
             "award.craque.highest_rating",
             "award.bagre.lowest_eligible_rating",
         )
+    }
+
+    @Test
+    fun `rich interpretation exposes every story family required by current consumers`() {
+        val bagre = awardPlayer(
+            "bagre",
+            rating = "5.0",
+            passesCompleted = 2,
+            passesAttempted = 10,
+            tacklesCompleted = 1,
+            tacklesAttempted = 5,
+        )
+        val star = awardPlayer(
+            "star",
+            rating = "9.0",
+            goals = 2,
+            assists = 1,
+            shots = 6,
+            passesCompleted = 10,
+            passesAttempted = 10,
+            tacklesCompleted = 4,
+            tacklesAttempted = 5,
+            redCards = 1,
+        )
+        val goalkeeper = awardPlayer(
+            "keeper",
+            rating = "8.5",
+            role = PlayerRole.Goalkeeper,
+            saves = 5,
+            goalsConceded = 1,
+            reflexSaves = 3,
+        )
+
+        val stories = extractor.extract(
+            interpretation(listOf(bagre, star, goalkeeper), ourScore = 3, opponentScore = 1)
+        )
+
+        assertThat(stories.stories.map { it.type }.toSet()).contains(
+            StoryType.MATCH_OUTCOME,
+            StoryType.AWARD,
+            StoryType.GOALS,
+            StoryType.ASSISTS,
+            StoryType.HIGHLIGHTS,
+            StoryType.BAGRE_PERFORMANCE,
+            StoryType.OFFENSIVE_NARRATIVE,
+            StoryType.RED_CARD,
+            StoryType.PASS_PRECISION,
+            StoryType.LOST_MAIL,
+            StoryType.GOALKEEPER,
+        )
+        assertThat(stories.stories).allMatch {
+            it.provenance.rules.isNotEmpty() && it.provenance.evidence.isNotEmpty()
+        }
     }
 
     private fun interpretation(

@@ -79,6 +79,14 @@ class MatchInterpreterTest {
                 "award.craque",
                 "award.bagre",
                 "award.xerife",
+                "match.player-contributions",
+                "match.rated-highlights",
+                "narrative.bagre-performance",
+                "narrative.offensive-performance",
+                "narrative.red-card",
+                "award.pass-precision",
+                "award.lost-mail",
+                "narrative.goalkeeper",
             )
         assertThat(interpretation.evidence).isNotEmpty()
         assertThat(interpretation.awards.craque.evidence).isNotEmpty()

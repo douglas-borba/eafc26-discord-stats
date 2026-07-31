@@ -5,6 +5,12 @@ import com.eafc26.discordstats.domain.match.ReportedMatchResult
 import java.math.BigDecimal
 
 sealed interface DecisionEvidence {
+    data class PlayerPopulation(
+        val totalPlayers: Int,
+        val statisticallyEligiblePlayers: Int,
+        val eligibleOutfieldPlayers: Int,
+    ) : DecisionEvidence
+
     data class Scoreboard(
         val ourScore: Int?,
         val opponentScore: Int?,
@@ -63,5 +69,22 @@ sealed interface DecisionEvidence {
     data class EaRecognition(
         val playerId: PlayerId,
         val manOfTheMatch: Boolean?,
+    ) : DecisionEvidence
+
+    data class TeamPassingPerformance(
+        val completed: Int?,
+        val attempted: Int?,
+        val accuracyPercent: Int?,
+    ) : DecisionEvidence
+
+    data class GoalkeepingPerformance(
+        val playerId: PlayerId,
+        val saves: Int?,
+        val goalsConceded: Int?,
+        val rating: BigDecimal?,
+        val goodDirectionSaves: Int?,
+        val reflexSaves: Int?,
+        val parrySaves: Int?,
+        val crossSaves: Int?,
     ) : DecisionEvidence
 }
