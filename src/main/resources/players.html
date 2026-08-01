@@ -107,7 +107,7 @@
     function renderProfile(profile) {
       const stats=[
         ['Partidas',profile.matchCount],['Média',profile.averageRating??'—'],['Gols',profile.goals],['Assistências',profile.assists],
-        ['⭐ Craques',profile.craques],['🐟 Bagres',profile.bagres],['🛡️ Xerifes',profile.xerifes],['🟥 Vermelhos',profile.redCards]
+        ['⭐ Craques',profile.craques],['📉 Menor Desempenho',profile.bagres],['🛡️ Xerifes',profile.xerifes],['🟥 Vermelhos',profile.redCards]
       ];
       const matches=profile.recentMatches.map(match=>`<article class="match">
         <div class="match-date"><span class="result ${escapeHtml(match.outcomeCode)}">${escapeHtml(match.outcomeIcon)} ${escapeHtml(match.outcomeLabel)}</span><br><span class="muted">${escapeHtml(match.dateLabel)}</span></div>
@@ -125,7 +125,7 @@
         players=payload.players||[]; renderPlayers();
         const requested=new URLSearchParams(location.search).get('playerId');
         if(players.length) openProfile(players.some(player=>player.playerId===requested)?requested:players[0].playerId);
-        else { detailElement.innerHTML='<div><span class="state-icon">🗂️</span>Os perfis aparecerão após partidas persistidas.</div>'; }
+        else { detailElement.innerHTML='<div><span class="state-icon">🗂️</span>Os perfis aparecerão quando a primeira partida entrar para a história.</div>'; }
       } catch(error) {
         listElement.innerHTML=`<div class="state error"><div><span class="state-icon">⚠️</span>${escapeHtml(error.message)}</div></div>`;
       }

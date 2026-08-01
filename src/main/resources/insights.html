@@ -1,52 +1,26 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>História do Clube — EA FC 26</title>
-  <style>
-    :root{color-scheme:dark;--bg:#0d1117;--panel:#161b22;--soft:#1c2128;--border:#30363d;--text:#f0f6fc;--muted:#8b949e;--accent:#2f81f7}
-    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{width:min(1280px,100%);margin:auto;padding:24px}
-    .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}.eyebrow,.muted{color:var(--muted)}.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.08em}h1{margin:3px 0 0;font-size:clamp(22px,3vw,32px)}
-    .nav{display:flex;gap:8px;flex-wrap:wrap}.nav a{color:var(--text);text-decoration:none;border:1px solid var(--border);border-radius:8px;padding:8px 12px;background:var(--panel)}
-    .summary{padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:var(--panel);margin-bottom:20px}.category{margin-top:26px}.category h2{font-size:18px;margin:0 0 12px}
-    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.card{padding:16px;border:1px solid var(--border);border-radius:11px;background:var(--panel)}.card h3{margin:0;font-size:15px}.description{color:var(--muted);min-height:40px;margin:6px 0 14px}.value{font-size:28px;font-weight:900;color:#79c0ff}
-    .players{margin-top:8px;font-weight:700}.matches{margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px}.matches a{color:#58a6ff;text-decoration:none;margin-right:8px}.audit{margin-top:12px}.audit summary{color:var(--muted);font-size:11px;cursor:pointer}.audit-body{margin-top:7px;padding:9px;background:var(--soft);border-radius:7px;color:var(--muted);font-size:11px}.state{display:grid;place-items:center;min-height:420px;color:var(--muted);text-align:center}.state-icon{display:block;font-size:38px;margin-bottom:8px}.error{color:#f85149}
-    @media(max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.shell{padding:14px}.topbar{align-items:flex-start;flex-direction:column}.grid{grid-template-columns:1fr}}
-  </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>História do Clube — EA FC STATS</title>
   <link rel="stylesheet" href="/app-shell.css">
+  <link rel="stylesheet" href="/match-summary-card.css">
+  <link rel="stylesheet" href="/club-history.css">
   <script src="/app-shell.js" defer></script>
+  <script src="/club-history.js" defer></script>
 </head>
 <body data-app-page="clubHistory">
-<main class="shell" data-app-content>
-  <header class="topbar"><div><div class="eyebrow">EA FC 26 — Associação BF</div><h1>História do Clube</h1></div></header>
-  <div id="content" class="state"><div><span class="state-icon">⏳</span>Analisando histórico…</div></div>
+<main class="memorial" data-app-content>
+  <header class="memorial-intro">
+    <span class="memorial-kicker">Memorial esportivo</span>
+    <h1>História do Clube</h1>
+    <p id="memorial-scope">Reunindo as marcas preservadas da Associação BF.</p>
+  </header>
+  <div id="memorial-content" class="memorial-state" aria-live="polite">
+    <div class="state-mark" aria-hidden="true"></div>
+    <strong>Abrindo o acervo do clube…</strong>
+  </div>
 </main>
-<script>
-  const content=document.getElementById('content');
-  const escapeHtml=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
-  async function load(){
-    try{
-      const response=await fetch('/api/historical-insights'),payload=await response.json();
-      if(!response.ok)throw new Error('Não foi possível gerar os insights.');
-      if(!payload.insights.length){content.innerHTML='<div><span class="state-icon">📭</span>O histórico ainda não possui dados suficientes para insights.</div>';return}
-      render(payload);
-    }catch(error){content.className='state error';content.innerHTML=`<div><span class="state-icon">⚠️</span>${escapeHtml(error.message)}</div>`}
-  }
-  function render(payload){
-    const groups=['CLUB','PLAYER','TEMPORAL'];
-    content.className='';
-    content.innerHTML=`<div class="summary"><strong>${payload.insights.length} insights determinísticos</strong><div class="muted">Gerados a partir de ${payload.sourceMatchCount} partida${payload.sourceMatchCount===1?'':'s'} persistida${payload.sourceMatchCount===1?'':'s'}.</div></div>`+groups.map(category=>{
-      const items=payload.insights.filter(item=>item.category===category);if(!items.length)return'';
-      return `<section class="category"><h2>${escapeHtml(items[0].categoryLabel)}</h2><div class="grid">${items.map(card).join('')}</div></section>`;
-    }).join('');
-  }
-  function card(item){
-    const players=item.involvedPlayers.length?`<div class="players">${item.involvedPlayers.map(player=>escapeHtml(player.name)).join(', ')}</div>`:'';
-    const matches=item.involvedMatches.length?`<div class="matches"><span class="muted">Partidas: </span>${item.involvedMatches.map(id=>`<a href="/history?matchId=${encodeURIComponent(id)}">${escapeHtml(id)}</a>`).join('')}</div>`:'';
-    const observations=item.audit.observations.map(value=>`${escapeHtml(value.subjectId)} = ${escapeHtml(value.metricValue)}`).join('<br>');
-    return `<article class="card"><h3>${escapeHtml(item.title)}</h3><div class="description">${escapeHtml(item.description)}</div><div class="value">${escapeHtml(item.value)}</div>${players}${matches}<details class="audit"><summary>Como foi calculado</summary><div class="audit-body"><strong>${escapeHtml(item.audit.ruleId)} v${item.audit.ruleVersion}</strong><br>${escapeHtml(item.audit.criterion)}<br><br>Empates: ${escapeHtml(item.audit.tiePolicy)}<br>Candidatos: ${item.audit.candidateCount} · Elegíveis/recordistas: ${item.audit.eligibleCandidateCount}${observations?`<br><br>${observations}`:''}</div></details></article>`;
-  }
-  load();
-</script>
 </body>
 </html>

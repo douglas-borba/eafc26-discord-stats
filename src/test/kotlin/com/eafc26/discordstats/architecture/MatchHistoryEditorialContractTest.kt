@@ -54,4 +54,12 @@ class MatchHistoryEditorialContractTest {
             .contains("award.ruleIds", "story.ruleIds", "story.evidenceCount")
             .contains("match.provenance.schemaVersion", "match.provenance.engineVersion")
     }
+
+    @Test
+    fun canonicalEntityLinksAndRequestedMatchAreSupported() {
+        assertThat(script)
+            .contains("get(\"matchId\")")
+            .contains("/players?playerId=")
+            .contains("window.history.pushState")
+    }
 }

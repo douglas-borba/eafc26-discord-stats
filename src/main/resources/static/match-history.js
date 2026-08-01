@@ -5,6 +5,7 @@
   const layoutElement = document.getElementById("matches-layout");
   const editorialDesign = window.EafcEditorialDesign;
   let selectedMatchId = null;
+  const requestedMatchId = new URLSearchParams(window.location.search).get("matchId");
 
   const escapeHtml = (value) => String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -71,20 +72,26 @@
     `).join("");
 
     listElement.querySelectorAll(".match-list-item").forEach(button => {
-      button.addEventListener("click", () => openMatch(button.dataset.matchId));
+      button.addEventListener("click", () => openMatch(button.dataset.matchId, true));
     });
 
-    if (!window.matchMedia("(max-width: 760px)").matches) {
-      openMatch(matches[0].matchId);
+    const requestedExists = matches.some(match => match.matchId === requestedMatchId);
+    if (requestedExists || !window.matchMedia("(max-width: 760px)").matches) {
+      openMatch(requestedExists ? requestedMatchId : matches[0].matchId);
     }
   }
 
-  async function openMatch(matchId) {
+  async function openMatch(matchId, updateLocation = false) {
     selectedMatchId = matchId;
     listElement.querySelectorAll(".match-list-item").forEach(item => {
       item.classList.toggle("active", item.dataset.matchId === matchId);
     });
     layoutElement.classList.add("is-viewing-match");
+    if (updateLocation) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("matchId", matchId);
+      window.history.pushState({ matchId }, "", url);
+    }
     detailElement.className = "matches-state loading-editorial-state";
     detailElement.innerHTML =
       '<div><span class="matches-state-icon" aria-hidden="true">⏳</span>Carregando a história da partida…</div>';
@@ -211,7 +218,7 @@
   function renderPlayers(players) {
     const tableRows = players.map(player => `
       <tr>
-        <td><strong>${escapeHtml(player.name)}</strong><span class="player-role">${escapeHtml(player.role)}</span></td>
+        <td><a href="/players?playerId=${encodeURIComponent(player.id)}&from=match-history"><strong>${escapeHtml(player.name)}</strong></a><span class="player-role">${escapeHtml(player.role)}</span></td>
         <td>${display(player.rating)}</td>
         <td>${display(player.goals)}</td>
         <td>${display(player.assists)}</td>
@@ -236,7 +243,7 @@
       return `
         <article class="player-performance-card player-mobile-card">
           <div class="player-mobile-head">
-            <div><strong>${escapeHtml(player.name)}</strong><span class="player-role">${escapeHtml(player.role)}</span></div>
+            <div><a href="/players?playerId=${encodeURIComponent(player.id)}&from=match-history"><strong>${escapeHtml(player.name)}</strong></a><span class="player-role">${escapeHtml(player.role)}</span></div>
             <span class="player-mobile-rating">${display(player.rating)}</span>
           </div>
           <div class="player-mobile-stats">${stats.join(" · ")}</div>
@@ -274,7 +281,6 @@
       <div class="evidence-entry">
         <strong>${escapeHtml(storyVoice(story).title)}</strong><br>
         Prioridade: ${escapeHtml(story.priority)} · ${story.evidenceCount} evidência${story.evidenceCount === 1 ? "" : "s"}
-        <div class="technical-key">Narrativa: ${escapeHtml(story.narrativeKey)}</div>
         <div class="technical-key">Regras: ${story.ruleIds.map(escapeHtml).join(", ")}</div>
       </div>
     `).join("");

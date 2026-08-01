@@ -393,13 +393,13 @@ object HistoricalMatchPresenter {
 
     private fun AwardType.label() = when (this) {
         AwardType.CRAQUE -> "Craque"
-        AwardType.BAGRE -> "Bagre"
+        AwardType.BAGRE -> "Menor Desempenho"
         AwardType.XERIFE -> "Xerife"
     }
 
     private fun AwardType.icon() = when (this) {
         AwardType.CRAQUE -> "⭐"
-        AwardType.BAGRE -> "🐟"
+        AwardType.BAGRE -> "📉"
         AwardType.XERIFE -> "🛡️"
     }
 
@@ -423,7 +423,7 @@ object HistoricalMatchPresenter {
         StoryType.GOALS -> "Gols"
         StoryType.ASSISTS -> "Assistências"
         StoryType.HIGHLIGHTS -> "Destaques"
-        StoryType.BAGRE_PERFORMANCE -> "Atuação do Bagre"
+        StoryType.BAGRE_PERFORMANCE -> "Menor Desempenho"
         StoryType.OFFENSIVE_NARRATIVE -> "Narrativa ofensiva"
         StoryType.RED_CARD -> "Cartão vermelho"
         StoryType.PASS_PRECISION -> "Passe de Precisão"

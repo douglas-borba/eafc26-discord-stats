@@ -47,7 +47,8 @@ class AppShellContractTest {
             .contains("""label: "Partidas", href: "/history"""")
             .contains("""label: "Jogadores", href: "/players"""")
             .contains("""label: "História do Clube", href: "/insights"""")
-            .contains("""class="app-shell-sublink" href="/compare"""")
+            .doesNotContain("""href="/compare""", "Comparar partidas")
+            .contains("<svg viewBox=\"0 0 24 24\">")
             .contains("""class="app-shell-utility"""")
             .contains("""href="/settings"""")
     }

@@ -126,7 +126,7 @@ object HistoricalInsightPresenter {
         HistoricalInsightType.BEST_TEAM_AVERAGE -> "Melhor média da equipe"
         HistoricalInsightType.WORST_TEAM_AVERAGE -> "Pior média da equipe"
         HistoricalInsightType.MOST_CRAQUES -> "Mais Craques"
-        HistoricalInsightType.MOST_BAGRES -> "Mais Bagres"
+        HistoricalInsightType.MOST_BAGRES -> "Mais reconhecimentos de Menor Desempenho"
         HistoricalInsightType.MOST_XERIFES -> "Mais Xerifes"
         HistoricalInsightType.TOP_SCORER -> "Artilheiro histórico"
         HistoricalInsightType.ASSIST_LEADER -> "Líder em assistências"
@@ -145,7 +145,7 @@ object HistoricalInsightPresenter {
         HistoricalInsightType.BEST_TEAM_AVERAGE -> "Maior nota média registrada para a equipe."
         HistoricalInsightType.WORST_TEAM_AVERAGE -> "Menor nota média registrada para a equipe."
         HistoricalInsightType.MOST_CRAQUES -> leaderDescription(playerCount, "premiações de Craque")
-        HistoricalInsightType.MOST_BAGRES -> leaderDescription(playerCount, "premiações de Bagre")
+        HistoricalInsightType.MOST_BAGRES -> leaderDescription(playerCount, "reconhecimentos de Menor Desempenho")
         HistoricalInsightType.MOST_XERIFES -> leaderDescription(playerCount, "premiações de Xerife")
         HistoricalInsightType.TOP_SCORER -> leaderDescription(playerCount, "gols")
         HistoricalInsightType.ASSIST_LEADER -> leaderDescription(playerCount, "assistências")
