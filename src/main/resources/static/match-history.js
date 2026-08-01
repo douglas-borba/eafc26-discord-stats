@@ -345,7 +345,7 @@
           <div class="match-hero-score">
             <div class="match-hero-club">${escapeHtml(summary.ourClub.name)}</div>
             <strong>${summary.ourClub.score} × ${summary.opponentClub.score}</strong>
-            <div class="match-hero-club">${escapeHtml(summary.opponentClub.name)}</div>
+            <a class="match-hero-club opponent-history-link" href="/opponents/${encodeURIComponent(summary.opponentClub.id)}">${escapeHtml(summary.opponentClub.name)}</a>
           </div>
         </header>
 

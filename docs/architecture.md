@@ -33,11 +33,9 @@ flowchart TD
     HIST --> COMP["MatchComparisonService<br/>two canonical matches"]
     COMP --> CVIEW["Comparison presenter"]
     CVIEW --> CWEB["Match Comparison Dashboard"]
-    HIST --> INS["HistoricalInsightsService<br/>deterministic records"]
-    PROFILE --> INS
-    INS --> IVIEW["Historical insight presenter"]
-    IVIEW --> IWEB["Insights Dashboard"]
-    INS -.-> FUTURE["Future consumers<br/>Records / Achievements / Alerts"]
+    HIST --> OPP["OpponentHistoryService<br/>head-to-head aggregation"]
+    OPP --> OVIEW["Opponent history presenter"]
+    OVIEW --> OWEB["Opponents experience"]
     HIST -.-> EXPORT["Future exports"]
     FM --> DASH["Dashboard renderer"]
     INT --> DASH
@@ -261,54 +259,22 @@ The comparison web surface exposes:
 display. The browser calls only comparison endpoints and contains no football
 rules.
 
-### Historical insights
+### Opponent history
 
-`HistoricalInsightsService` creates proactive, deterministic facts from the
-persisted history. It reuses:
+`OpponentHistoryService` builds deterministic head-to-head projections from
+`MatchHistoryService`. Opponents are grouped exclusively by canonical `ClubId`;
+the latest non-empty name is presentation metadata and never identity.
 
-- `MatchHistoryService` for chronological club and temporal records;
-- `PlayerProfileService` for player totals, awards and rating averages.
+The service aggregates the exact record, goals, latest meeting, biggest wins
+and losses, current and historical runs, and player leaders restricted to that
+opponent. Existing match outcomes, player statistics and canonical awards are
+reused without executing the football engine. Ties preserve every match,
+sequence or player involved. Historical evidence identifies the opponent,
+source MatchIds, criterion, tie policy and result.
 
-`MatchComparisonService` is intentionally not invoked: it is optimized for one
-selected pair, while record discovery requires one complete chronological scan.
-The insight layer nevertheless uses the same canonical metrics and does not
-duplicate football interpretation.
-
-Every `HistoricalInsight` contains a stable versioned
-`HistoricalInsightRule`, structured value, involved matches/players and
-`HistoricalInsightEvidence`. Evidence records source size, candidate and
-eligible counts, plus every compared observation. Equal persisted inputs
-produce equal reports; no generation timestamp or randomness enters the model.
-
-#### MVP criteria
-
-All history is ordered oldest-first by match time, with the stable MatchId
-tie-break supplied by `MatchHistoryService`.
-
-| Insight | Criterion | Eligibility and ties |
-|---|---|---|
-| Winning streak | Maximum consecutive `WIN` outcomes | Preserve every tied run |
-| Unbeaten streak | Maximum consecutive outcome other than `LOSS` | Preserve every tied run |
-| Scoreless streak | Maximum consecutive matches with our score equal to zero | Preserve every tied run |
-| Conceding streak | Maximum consecutive matches with opponent score above zero | Preserve every tied run |
-| Best/worst team average | Maximum/minimum persisted `teamMetrics.averageRating` | Missing averages excluded; preserve tied matches |
-| Most Craques/Bagres/Xerifes | Maximum canonical award count from `PlayerProfile` | Zero produces no insight; preserve all tied players |
-| Top scorer/assist leader | Maximum historical total from `PlayerProfile` | Zero produces no insight; preserve all tied players |
-| Highest player average | Maximum `PlayerProfile.averageRating` | At least three rated matches; preserve all tied players |
-| First/latest win | First/last canonical `WIN` in chronological order | Stable MatchId ordering resolves equal timestamps |
-| Longest unbeaten interval | Maximum elapsed time from first to last match in an unbeaten run | A one-match run is zero seconds; preserve tied runs |
-| Biggest win | Maximum positive score margin among canonical wins | Preserve every tied match and each tied scoreline |
-
-Co-leading players are ordered by normalized display name and then PlayerId.
-Positive-only player records are omitted when nobody has recorded the event.
-
-The web surface exposes:
-
-- `GET /insights`, the Insights Dashboard;
-- `GET /api/historical-insights`, the complete deterministic report.
-
-The presenter owns Portuguese titles, descriptions, number/date formatting and
-audit display. It does not select records or alter eligibility.
+The web surface exposes `GET /opponents`, `GET /opponents/{clubId}` and their
+JSON APIs below `/api/opponents`. The legacy `GET /insights` redirects to
+`/opponents`; it has no independent implementation.
 
 `JsonCanonicalMatchRepository` is the initial infrastructure adapter. It stores
 one UTF-8 JSON file per match below

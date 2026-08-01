@@ -11,18 +11,17 @@ A experiência é organizada em torno de três entidades conectadas:
 
 - Partidas;
 - Jogadores;
-- História do Clube.
+- Adversários.
 
 A Visão Geral funciona como porta de entrada editorial para essas entidades.
 Configurações permanece como área utilitária, separada da exploração esportiva.
 
-### Por que “História do Clube”
+### Por que “Adversários”
 
-A antiga área de Insights reúne recordes, marcos, sequências, líderes e fatos
-relevantes. “Estatísticas” descreve a matéria-prima, não seu propósito.
-“Recordes” seria restritivo, “Destaques” seria genérico e “Hall da Fama”
-privilegiaria jogadores. “História do Clube” representa o conjunto e reforça a
-identidade narrativa do produto.
+A área organiza o histórico esportivo da Associação BF contra cada clube
+enfrentado. Ela responde perguntas recorrentes sobre retrospecto, último
+confronto, resultados, sequências e jogadores, sempre a partir do acervo
+canônico e da identidade `ClubId`.
 
 ## Princípios do Produto
 
@@ -51,7 +50,7 @@ exigir que o usuário conheça previamente o módulo técnico que contém a resp
 RuleReference, DecisionEvidence, versões, identificadores e critérios continuam
 acessíveis para auditoria, mas não competem com a narrativa principal.
 
-### Partidas, jogadores e a História do Clube são entidades conectadas
+### Partidas, jogadores e adversários são entidades conectadas
 
 Essas entidades não são módulos isolados. Cada uma deve servir como entrada
 natural para as demais.
@@ -226,7 +225,7 @@ devem reutilizar um ícone apenas quando o significado permanecer inequívoco.
 | `EditorialSection` | Delimitar um assunto e sua pergunta editorial | Título, kicker, pergunta opcional e divisor entre assuntos | Todas as páginas narrativas |
 | `HeroSection` | Abrir uma entidade como manchete | Resultado, neutro, carregando e indisponível; conteúdo responsivo | Partida e, com variante de conteúdo, perfil de jogador e recorde |
 | `CharacterCard` | Apresentar reconhecimento individual sem variar sua anatomia | Concedido e não concedido; tons `highlight`, `defense` e `development` | Premiações de Partidas e reconhecimentos em Jogadores |
-| `StoryChapter` | Contar uma decisão como capítulo em Fato → Evidência → Mensagem | Tons `impact`, `pressure`, `near-miss`, `precision`, `defense`, `discipline`, `development` e `neutral` | Partidas, trajetória do jogador e História do Clube |
+| `StoryChapter` | Contar uma decisão como capítulo em Fato → Evidência → Mensagem | Tons `impact`, `pressure`, `near-miss`, `precision`, `defense`, `discipline`, `development` e `neutral` | Partidas e trajetória do jogador |
 | `MetricStrip` | Sustentar uma narrativa com poucas métricas | 1–3 colunas; quebra para duas e depois uma no mobile | Todas as entidades, sem criar dashboards densos |
 | `EvidenceDisclosure` | Expor auditoria no segundo nível de profundidade | Fechado por padrão, aberto por ação explícita e foco visível | Toda decisão auditável |
 | `PlayerPerformanceTable` | Comparar atuações individuais no desktop | Cabeçalho fixo semanticamente, rolagem horizontal de segurança | Partidas e listas técnicas futuras |
@@ -272,11 +271,11 @@ Visão Geral
 │   └── Comparação contextual
 ├── Jogadores
 │   └── Perfil
-└── História do Clube
-    ├── Recordes
-    ├── Marcos
+└── Adversários
+    ├── Retrospecto
+    ├── Confrontos
     ├── Sequências
-    └── Líderes
+    └── Jogadores
 ```
 
 Configurações não faz parte da navegação narrativa e deve permanecer visualmente
@@ -307,10 +306,10 @@ explorar partidas, não uma entidade principal.
 Apresenta trajetória, desempenho, reconhecimentos e partidas recentes, sempre
 conectando o jogador às partidas em que sua história foi construída.
 
-### História do Clube
+### Adversários
 
-Transforma os insights determinísticos existentes em recordes, marcos,
-sequências, líderes e fatos históricos exploráveis.
+Apresenta o retrospecto contra cada `ClubId` enfrentado, conecta confrontos às
+partidas canônicas e jogadores e mantém toda agregação factual e auditável.
 
 ## Plano incremental aprovado
 
@@ -318,7 +317,7 @@ sequências, líderes e fatos históricos exploráveis.
 2. Transformar Histórico em Partidas.
 3. Integrar Jogadores e Partidas.
 4. Incorporar Comparação em Partidas.
-5. Transformar Insights em História do Clube.
+5. Substituir temporariamente História do Clube por Adversários.
 6. Redefinir a Visão Geral.
 7. Consolidar responsividade e acessibilidade.
 8. Remover duplicações após validação.

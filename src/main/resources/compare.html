@@ -42,7 +42,10 @@
       const response=await fetch('/api/match-comparisons/options'),payload=await response.json(),matches=payload.matches||[];
       if(!matches.length){content.innerHTML='<div><span class="state-icon">📭</span>É necessária ao menos uma partida persistida.</div>';button.disabled=true;return}
       const options=matches.map(match=>`<option value="${escapeHtml(match.matchId)}">${escapeHtml(match.label)}</option>`).join('');
-      first.innerHTML=options;second.innerHTML=options;second.selectedIndex=matches.length>1?1:0;
+      first.innerHTML=options;second.innerHTML=options;
+      const requested=new URLSearchParams(location.search),firstId=requested.get('firstMatchId'),secondId=requested.get('secondMatchId');
+      first.value=matches.some(match=>match.matchId===firstId)?firstId:matches[0].matchId;
+      second.value=matches.some(match=>match.matchId===secondId)?secondId:matches[Math.min(1,matches.length-1)].matchId;
       compare();
     }catch(error){showError('Não foi possível carregar as partidas.')}
   }
