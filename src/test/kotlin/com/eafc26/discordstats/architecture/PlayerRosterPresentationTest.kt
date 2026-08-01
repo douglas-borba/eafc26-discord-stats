@@ -49,4 +49,37 @@ class PlayerRosterPresentationTest {
             .contains("overflow:hidden", "text-overflow:ellipsis", "@media(max-width:420px)")
             .contains("function renderProfile(profile)", "Últimas partidas", "profile.recentMatches")
     }
+
+    @Test
+    fun `eligible players are ordered before players below the existing rated match minimum`() {
+        assertThat(page)
+            .contains("const MINIMUM_RATED_MATCHES=3")
+            .contains("profile.ratedMatchCount>=MINIMUM_RATED_MATCHES")
+            .contains("Number(isEligibleForHistoricalAverage(secondProfile))-Number(isEligibleForHistoricalAverage(firstProfile))")
+    }
+
+    @Test
+    fun `roster orders historical average descending after eligibility`() {
+        assertThat(page)
+            .contains("firstRating=ratingNumber(firstProfile?.averageRating)")
+            .contains("secondRating=ratingNumber(secondProfile?.averageRating)")
+            .contains("return secondRating-firstRating")
+            .contains("if(firstRating===null||Number.isNaN(firstRating)) return 1")
+            .contains("if(secondRating===null||Number.isNaN(secondRating)) return -1")
+    }
+
+    @Test
+    fun `rating ties use descending match count`() {
+        assertThat(page)
+            .contains("(secondProfile?.matchCount??second.matchCount)-(firstProfile?.matchCount??first.matchCount)")
+            .contains("if(matchCountDifference!==0) return matchCountDifference")
+    }
+
+    @Test
+    fun `final tie uses alphabetical name and ineligible players remain sortable`() {
+        assertThat(page)
+            .contains("first.name.localeCompare(second.name,'pt-BR',{sensitivity:'base'})")
+            .contains(".sort(rosterComparator)")
+            .doesNotContain("players.sort(rosterComparator)")
+    }
 }

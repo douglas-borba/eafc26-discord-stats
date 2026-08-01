@@ -92,6 +92,7 @@
     const listElement=document.getElementById('player-list'), detailElement=document.getElementById('profile-detail'), searchElement=document.getElementById('search');
     let players=[],selectedId=null;
     const profileCache=new Map();
+    const MINIMUM_RATED_MATCHES=3;
     const escapeHtml=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
     const display=value=>value===null||value===undefined?'—':escapeHtml(value);
     const ratingNumber=value=>value===null||value===undefined||value===''?null:Number(value);
@@ -108,10 +109,28 @@
       if(rating>=6) return 'regular';
       return 'low';
     };
+    const isEligibleForHistoricalAverage=profile=>profile!==undefined
+      && profile.averageRating!==null
+      && profile.averageRating!==undefined
+      && profile.ratedMatchCount>=MINIMUM_RATED_MATCHES;
+    const rosterComparator=(first,second)=>{
+      const firstProfile=profileCache.get(first.playerId),secondProfile=profileCache.get(second.playerId);
+      const eligibilityDifference=Number(isEligibleForHistoricalAverage(secondProfile))-Number(isEligibleForHistoricalAverage(firstProfile));
+      if(eligibilityDifference!==0) return eligibilityDifference;
+      const firstRating=ratingNumber(firstProfile?.averageRating),secondRating=ratingNumber(secondProfile?.averageRating);
+      if(firstRating!==secondRating) {
+        if(firstRating===null||Number.isNaN(firstRating)) return 1;
+        if(secondRating===null||Number.isNaN(secondRating)) return -1;
+        return secondRating-firstRating;
+      }
+      const matchCountDifference=(secondProfile?.matchCount??second.matchCount)-(firstProfile?.matchCount??first.matchCount);
+      if(matchCountDifference!==0) return matchCountDifference;
+      return first.name.localeCompare(second.name,'pt-BR',{sensitivity:'base'});
+    };
 
     function renderPlayers() {
       const term=searchElement.value.trim().toLocaleLowerCase('pt-BR');
-      const filtered=players.filter(player=>player.name.toLocaleLowerCase('pt-BR').includes(term));
+      const filtered=players.filter(player=>player.name.toLocaleLowerCase('pt-BR').includes(term)).sort(rosterComparator);
       if(!filtered.length) {
         listElement.innerHTML=`<div class="state"><div><span class="state-icon">📭</span>${players.length?'Nenhum jogador encontrado.':'Nenhum perfil disponível ainda.'}</div></div>`;
         return;
