@@ -30,7 +30,7 @@ data class EaProperties(
     val clubId: String = "",
     val clubName: String = "",
     val matchType: String = "leagueMatch",
-    val maxResultCount: Int = 5,
+    val maxResultCount: Int = 20,
     /**
      * EA's proclubs.ea.com endpoints return 403 without a browser-like User-Agent.
      * Confirmed by multiple community projects (Maldini80/bot-torneos-pro,

@@ -106,39 +106,4 @@ data class PlayerEntry(
     fun isGoalkeeper(): Boolean =
         position == POSITION_GOALKEEPER || position?.lowercase() == "goalkeeper"
 
-    /**
-     * Returns the display name for this player.
-     * 
-     * Uses the Pro player name (the in-game character name displayed on the player's
-     * shirt) with proper text normalization to fix EA's encoding issues.
-     * 
-     * Falls back to "Desconhecido" if the Pro player name is null or blank.
-     * For BOT goalkeepers, falls back to "Goleiro BOT".
-     */
-    fun displayName(): String {
-        val normalized = playerName
-            ?.let { normalizeEaText(it) }
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-        
-        return normalized ?: if (isGoalkeeper()) "Goleiro BOT" else "Desconhecido"
-    }
-
-    /**
-     * Returns the display name for this player, preferring the Virtual Pro name
-     * ([proNames] lookup) over the platform gamertag.
-     *
-     * Falls back to [displayName] when no entry is found in the map or the map
-     * is empty (e.g. when the /members/stats endpoint was unavailable).
-     */
-    fun displayName(proNames: Map<String, String>): String {
-        val key = playerName?.trim()?.lowercase()
-        if (key != null) {
-            // Try exact match first, then case-insensitive lookup
-            val proName = proNames[playerName]
-                ?: proNames.entries.firstOrNull { it.key.trim().lowercase() == key }?.value
-            if (!proName.isNullOrBlank()) return proName
-        }
-        return displayName()
-    }
 }

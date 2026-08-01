@@ -5,7 +5,7 @@ import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
-import com.eafc26.discordstats.presentation.MatchSummaryBuilder
+import com.eafc26.discordstats.presentation.LegacyMatchSummaryBuilder
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -25,7 +25,7 @@ class PlayerStatsAttributionTest {
     private val oppClubId = "99999"
     private val zone = ZoneId.of("America/Sao_Paulo")
     private val phraseBank = PhraseBank(jacksonObjectMapper())
-    private val matchSummaryBuilder = MatchSummaryBuilder(phraseBank)
+    private val matchSummaryBuilder = LegacyMatchSummaryBuilder(phraseBank)
 
     /**
      * Regression test for the dbeng_bass/Guilherme_cruzz scenario.
@@ -206,4 +206,3 @@ class PlayerStatsAttributionTest {
         secondsPlayed = secondsPlayed,
     )
 }
-

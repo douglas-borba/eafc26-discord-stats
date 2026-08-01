@@ -154,8 +154,11 @@
     #phrases-feedback.error { background: #3a1010; border: 1px solid #f85149; color: #f85149; }
     #phrases-feedback.info  { background: #0d2a1f; border: 1px solid #238636; color: #adf7b6; }
   </style>
+  <link rel="stylesheet" href="/app-shell.css" />
+  <script src="/app-shell.js" defer></script>
 </head>
-<body>
+<body data-app-page="settings">
+  <main class="settings-content" data-app-content>
   <div class="card">
     <h1>⚙️ Configurações</h1>
 
@@ -220,7 +223,7 @@
     <div id="phrases-feedback"></div>
   </div>
 
-  <a id="back-link" href="/">← Voltar</a>
+  </main>
 
   <script>
     (function () {
@@ -312,10 +315,10 @@
     }
 
     const PHRASE_LABELS = {
-      rating:     'Comentário de nota (Bagre)',
-      pass:       'Passes errados (Bagre)',
-      tackle:     'Desarmes (Bagre)',
-      shooting:   'Chutes (Bagre)',
+      rating:     'Comentário de nota (Menor Desempenho)',
+      pass:       'Passes errados (Menor Desempenho)',
+      tackle:     'Desarmes (Menor Desempenho)',
+      shooting:   'Chutes (Menor Desempenho)',
       mvp:        'Craque da Partida (MVP)',
       xerife:     'Xerife (melhor defensor)',
       goalkeeper: 'Muralha (goleiro)',

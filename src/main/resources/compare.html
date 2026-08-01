@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Comparação de Partidas — EA FC 26</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0d1117;--panel:#161b22;--soft:#1c2128;--border:#30363d;--text:#f0f6fc;--muted:#8b949e;--accent:#2f81f7;--win:#3fb950;--draw:#d29922;--loss:#f85149}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    button,select,a{font:inherit}.shell{width:min(1440px,100%);margin:auto;padding:24px}.topbar,.selectors{display:flex;align-items:center;justify-content:space-between;gap:16px}
+    .topbar{margin-bottom:20px}.eyebrow,.muted{color:var(--muted)}.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.08em}h1{margin:3px 0 0;font-size:clamp(22px,3vw,32px)}
+    .nav{display:flex;gap:8px}.nav a{color:var(--text);text-decoration:none;border:1px solid var(--border);border-radius:8px;padding:8px 12px;background:var(--panel)}
+    .panel{border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow:hidden}.selectors{padding:16px;margin-bottom:18px}.select-wrap{flex:1}.select-wrap label{display:block;margin-bottom:5px;color:var(--muted);font-size:12px}
+    select{width:100%;padding:10px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:8px}.vs{font-size:20px;font-weight:900}.btn{padding:10px 16px;color:white;background:var(--accent);border:0;border-radius:8px;font-weight:700;cursor:pointer}
+    .state{display:grid;place-items:center;min-height:400px;padding:30px;color:var(--muted);text-align:center}.state-icon{display:block;font-size:38px;margin-bottom:8px}.error{color:var(--loss)}
+    .comparison{display:grid;grid-template-columns:minmax(0,1fr) 320px minmax(0,1fr);gap:14px;align-items:start}.match-side,.differences{padding:18px}.match-head{padding-bottom:16px;border-bottom:1px solid var(--border)}
+    .result{font-weight:700}.result.WIN{color:var(--win)}.result.DRAW{color:var(--draw)}.result.LOSS{color:var(--loss)}.scoreline{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-top:12px}.score{font-size:30px;font-weight:900;white-space:nowrap}
+    .section{margin-top:20px}.section h2{font-size:15px;margin:0 0 10px}.rows{border:1px solid var(--border);border-radius:9px;overflow:hidden}.row{display:flex;justify-content:space-between;gap:12px;padding:9px 11px;border-bottom:1px solid var(--border)}.row:last-child{border-bottom:0}.row span:first-child{color:var(--muted)}.unavailable{color:var(--muted);font-style:italic}
+    .award,.story{padding:11px;border:1px solid var(--border);border-radius:9px;background:var(--soft);margin-top:8px}.story-key{font-size:11px;color:var(--muted);overflow-wrap:anywhere}.facts{list-style:none;padding:0;margin:7px 0 0;font-size:12px}.facts li{display:flex;justify-content:space-between;gap:10px}
+    .differences{position:sticky;top:14px}.differences h2{margin:0 0 12px;font-size:16px}.delta{font-weight:800}.delta.positive{color:var(--win)}.delta.negative{color:var(--loss)}.same{color:var(--muted)}
+    @media(max-width:1050px){.comparison{grid-template-columns:1fr 1fr}.differences{grid-column:1/-1;grid-row:1;position:static}}@media(max-width:720px){.shell{padding:12px}.selectors,.topbar{align-items:stretch;flex-direction:column}.comparison{grid-template-columns:1fr}.differences{grid-column:auto}.nav{flex-wrap:wrap}}
+  </style>
+  <link rel="stylesheet" href="/app-shell.css">
+  <script src="/app-shell.js" defer></script>
+</head>
+<body data-app-page="compare">
+<main class="shell" data-app-content>
+  <header class="topbar"><div><div class="eyebrow">EA FC 26 — Associação BF</div><h1>Comparação de Partidas</h1></div></header>
+  <section class="panel selectors">
+    <div class="select-wrap"><label for="first">Primeira partida</label><select id="first"></select></div><div class="vs">VS</div>
+    <div class="select-wrap"><label for="second">Segunda partida</label><select id="second"></select></div>
+    <button class="btn" id="compare">Comparar</button>
+  </section>
+  <div id="content" class="panel state"><div><span class="state-icon">⚖️</span>Selecione duas partidas para comparar.</div></div>
+</main>
+<script>
+  const first=document.getElementById('first'),second=document.getElementById('second'),content=document.getElementById('content'),button=document.getElementById('compare');
+  const escapeHtml=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+  const show=value=>value===null||value===undefined?'<span class="unavailable">Não disponível</span>':escapeHtml(value);
+
+  async function loadOptions(){
+    try{
+      const response=await fetch('/api/match-comparisons/options'),payload=await response.json(),matches=payload.matches||[];
+      if(!matches.length){content.innerHTML='<div><span class="state-icon">📭</span>É necessária ao menos uma partida persistida.</div>';button.disabled=true;return}
+      const options=matches.map(match=>`<option value="${escapeHtml(match.matchId)}">${escapeHtml(match.label)}</option>`).join('');
+      first.innerHTML=options;second.innerHTML=options;
+      const requested=new URLSearchParams(location.search),firstId=requested.get('firstMatchId'),secondId=requested.get('secondMatchId');
+      first.value=matches.some(match=>match.matchId===firstId)?firstId:matches[0].matchId;
+      second.value=matches.some(match=>match.matchId===secondId)?secondId:matches[Math.min(1,matches.length-1)].matchId;
+      compare();
+    }catch(error){showError('Não foi possível carregar as partidas.')}
+  }
+  async function compare(){
+    content.className='panel state';content.innerHTML='<div><span class="state-icon">⏳</span>Comparando…</div>';
+    try{
+      const query=new URLSearchParams({firstMatchId:first.value,secondMatchId:second.value});
+      const response=await fetch(`/api/match-comparisons?${query}`),payload=await response.json();
+      if(!response.ok||payload.status!=='success')throw new Error(payload.message||'Comparação indisponível.');
+      render(payload.comparison);
+    }catch(error){showError(error.message)}
+  }
+  function render(data){
+    content.className='comparison';
+    content.innerHTML=`${side(data.first)}${differences(data)}${side(data.second)}`;
+  }
+  function side(match){
+    return `<section class="panel match-side"><header class="match-head"><span class="result ${escapeHtml(match.outcomeCode)}">${escapeHtml(match.outcomeIcon)} ${escapeHtml(match.outcomeLabel)}</span><div class="scoreline"><div><strong>${escapeHtml(match.ourClub)}</strong><br><span class="muted">${escapeHtml(match.opponentClub)}</span></div><div class="score">${escapeHtml(match.score)}</div></div><div class="muted">${escapeHtml(match.date)}${match.competition?' · '+escapeHtml(match.competition):''}</div></header>
+      <div class="section"><h2>Estatísticas</h2><div class="rows">${match.statistics.map(metric=>`<div class="row"><span>${escapeHtml(metric.label)}</span><strong>${show(metric.value)}</strong></div>`).join('')}</div></div>
+      <div class="section"><h2>Premiações</h2>${match.awards.map(award=>`<div class="award"><strong>${escapeHtml(award.label)}</strong><div>${show(award.winner)}</div></div>`).join('')}</div>
+      <div class="section"><h2>Histórias e narrativas</h2>${match.stories.length?match.stories.map(story=>`<article class="story"><strong>${escapeHtml(story.title)}</strong>${story.players.length?`<div class="muted">${story.players.map(escapeHtml).join(', ')}</div>`:''}${story.facts.length?`<ul class="facts">${story.facts.map(fact=>`<li><span class="muted">${escapeHtml(fact.label)}</span><b>${escapeHtml(fact.value)}</b></li>`).join('')}</ul>`:''}</article>`).join(''):'<div class="unavailable">Nenhuma história disponível.</div>'}</div></section>`;
+  }
+  function differences(data){
+    const numeric=data.numericDifferences.map(item=>`<div class="row"><span>${escapeHtml(item.label)}</span>${item.available?`<strong class="delta ${deltaClass(item.delta)}">${escapeHtml(item.delta)}</strong>`:'<span class="unavailable">Indisponível</span>'}</div>`).join('');
+    const awards=data.awardDifferences.map(item=>`<div class="row"><span>${escapeHtml(item.label)}</span><strong class="${item.changed?'delta':'same'}">${item.changed?'Mudou':'Igual'}</strong></div>`).join('');
+    const stories=data.storyDifferences.filter(item=>item.firstCount||item.secondCount).map(item=>`<div class="row"><span>${escapeHtml(item.label)}</span><strong class="${item.delta===0?'same':'delta'}">${item.delta>0?'+':''}${item.delta}</strong></div>`).join('');
+    return `<aside class="panel differences"><h2>Diferenças</h2><div class="rows">${numeric}</div><div class="section"><h2>Premiações</h2><div class="rows">${awards}</div></div><div class="section"><h2>Presença de histórias</h2>${stories?`<div class="rows">${stories}</div>`:'<div class="unavailable">Sem diferenças narrativas.</div>'}</div><p class="muted">Valores representam a segunda partida menos a primeira. Posse aparece indisponível porque não existe no schema canônico atual.</p></aside>`;
+  }
+  function deltaClass(value){if(!value||value==='0'||value==='0%'||value==='0.0%')return'same';return value.startsWith('+')?'positive':'negative'}
+  function showError(message){content.className='panel state error';content.innerHTML=`<div><span class="state-icon">⚠️</span>${escapeHtml(message)}</div>`}
+  button.addEventListener('click',compare);loadOptions();
+</script>
+</body>
+</html>

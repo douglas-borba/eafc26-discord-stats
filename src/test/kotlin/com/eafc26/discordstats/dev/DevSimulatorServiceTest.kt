@@ -5,10 +5,13 @@ import com.eafc26.discordstats.config.EaProperties
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.PollingProperties
 import com.eafc26.discordstats.config.WebhookConfigService
+import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.discord.DiscordWebhookClient
+import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.service.AcquisitionResult
 import com.eafc26.discordstats.service.AcquisitionStateHolder
+import com.eafc26.discordstats.service.CanonicalMatchFactory
 import com.eafc26.discordstats.service.LatestMatchHolder
 import com.eafc26.discordstats.service.MatchAcquisitionService
 import com.eafc26.discordstats.store.PublishedMatchStore
@@ -35,6 +38,7 @@ class DevSimulatorServiceTest {
     private lateinit var simulatorService: DevSimulatorService
     private lateinit var webhookConfigService: WebhookConfigService
     private lateinit var webhookClient: DiscordWebhookClient
+    private lateinit var canonicalMatchRepository: CanonicalMatchRepository
 
     private val clubId = "1104972"
 
@@ -48,6 +52,7 @@ class DevSimulatorServiceTest {
         matchSummaryBuilder = MatchSummaryBuilder(PhraseBank(objectMapper))
         webhookConfigService = mock()
         webhookClient = mock()
+        canonicalMatchRepository = mock()
 
         val props = AppProperties(
             ea = EaProperties(clubId = clubId, clubName = "Associação BF"),
@@ -62,6 +67,9 @@ class DevSimulatorServiceTest {
             stateHolder,
             latestMatchHolder,
             matchSummaryBuilder,
+            DiscordRenderer(matchSummaryBuilder),
+            canonicalMatchRepository,
+            CanonicalMatchFactory(),
         )
 
         simulatorService = DevSimulatorService(
@@ -135,6 +143,7 @@ class DevSimulatorServiceTest {
 
             // Verify store was NEVER updated
             verify(publishedMatchStore, never()).saveIds(any())
+            verify(canonicalMatchRepository, never()).save(any())
         }
 
         @Test
@@ -280,4 +289,3 @@ class DevSimulatorServiceTest {
         }
     }
 }
-

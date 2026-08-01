@@ -1,0 +1,6 @@
+.match-summary-card {
+  overflow: hidden;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  background: linear-gradient(160deg, #1a1f26 0%, #161b22 50%, #12161c 100%);
+}

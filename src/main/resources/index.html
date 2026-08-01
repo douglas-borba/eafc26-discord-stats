@@ -354,13 +354,6 @@
       padding: 0.75rem;
     }
 
-    .match-card {
-      background: linear-gradient(160deg, #1a1f26 0%, #161b22 50%, #12161c 100%);
-      border-radius: 12px;
-      border: 1px solid #30363d;
-      overflow: hidden;
-    }
-
     /* Strong header with dominant score */
     .card-header {
       padding: 1rem 1.25rem;
@@ -663,9 +656,12 @@
       .match-score { font-size: 1.05rem; }
     }
   </style>
+  <link rel="stylesheet" href="/app-shell.css" />
+  <link rel="stylesheet" href="/match-summary-card.css" />
+  <script src="/app-shell.js" defer></script>
 </head>
-<body>
-  <div class="app-container">
+<body data-app-page="overview">
+  <div class="app-container" data-app-content>
     <!-- Main Grid: Left Column + Right Column (Card) -->
     <div class="main-grid">
       <!-- Left Column -->
@@ -742,12 +738,8 @@
           </div>
         </div>
 
-        <!-- Settings Panel -->
-        <div class="panel settings-panel">
-          <a href="/settings" class="settings-link">
-            <span>⚙️</span>
-            <span>Configurações</span>
-          </a>
+        <!-- Network access information remains contextual to this page. -->
+        <div class="panel settings-panel" id="network-panel" style="display: none;">
           <span class="network-url" id="network-url"></span>
         </div>
       </div>
@@ -767,7 +759,7 @@
         <!-- Card Content - Centered Canvas -->
         <div id="card-content" style="display: none;">
           <div class="card-canvas">
-            <div class="match-card" id="match-card">
+            <div class="match-card match-summary-card" id="match-card">
               <div class="card-header">
                 <div class="card-result-badge" id="card-result-badge"></div>
                 <div class="card-score-row">
@@ -818,6 +810,7 @@
           if (info.networkUrl) {
             document.getElementById('network-url').innerHTML =
               '<a href="' + esc(info.networkUrl) + '">' + esc(info.networkUrl) + '</a>';
+            document.getElementById('network-panel').style.display = 'block';
           }
           if (info.devMode) {
             document.getElementById('dev-panel').style.display = 'block';

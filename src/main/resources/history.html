@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Partidas — EA FC STATS</title>
+  <link rel="stylesheet" href="/app-shell.css">
+  <link rel="stylesheet" href="/editorial-design-system.css">
+  <link rel="stylesheet" href="/match-history.css">
+  <script src="/app-shell.js" defer></script>
+  <script src="/editorial-design-system.js" defer></script>
+  <script src="/match-history.js" defer></script>
+</head>
+<body data-app-page="matches">
+  <main class="matches-page" data-app-content>
+    <header class="matches-page-header">
+      <div>
+        <div class="matches-eyebrow">A trajetória do clube, jogo a jogo</div>
+        <h1>Partidas</h1>
+        <p>Cada resultado guarda personagens, histórias e evidências.</p>
+      </div>
+    </header>
+
+    <div class="matches-layout" id="matches-layout">
+      <aside class="matches-panel matches-archive" aria-label="Arquivo de partidas">
+        <div class="matches-panel-header">
+          <h2>Arquivo de partidas</h2>
+          <div class="matches-meta" id="history-meta">Carregando partidas…</div>
+        </div>
+        <div class="match-list" id="match-list">
+          <div class="matches-state loading-editorial-state">
+            <div><span class="matches-state-icon" aria-hidden="true">⏳</span>Carregando…</div>
+          </div>
+        </div>
+      </aside>
+
+      <section class="matches-panel match-detail" aria-live="polite" aria-label="Detalhe da partida">
+        <div id="match-detail" class="matches-state empty-editorial-state">
+          <div>
+            <span class="matches-state-icon" aria-hidden="true">⚽</span>
+            Selecione uma partida para explorar sua história.
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
