@@ -23,11 +23,23 @@
     .search { width:100%; padding:9px 11px; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:7px; outline:none; }
     .search:focus { border-color:var(--accent); }
     .player-list { max-height:calc(100vh - 190px); overflow:auto; }
-    .player-item { width:100%; display:flex; justify-content:space-between; gap:12px; padding:13px 16px; color:inherit; text-align:left; border:0; border-bottom:1px solid var(--border); background:transparent; cursor:pointer; }
+    .player-item { width:100%; display:grid; gap:7px; padding:11px 16px 10px; color:inherit; text-align:left; border:0; border-bottom:1px solid var(--border); background:transparent; cursor:pointer; overflow:hidden; }
     .player-item:hover,.player-item.active { background:var(--soft); }
     .player-item.active { box-shadow:inset 3px 0 var(--accent); }
-    .player-name { font-weight:700; }
-    .count { color:var(--muted); white-space:nowrap; }
+    .player-item-head,.player-item-meta { display:flex; justify-content:space-between; align-items:baseline; gap:10px; min-width:0; }
+    .player-name { min-width:0; overflow:hidden; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
+    .player-rating { flex:none; font-size:15px; font-variant-numeric:tabular-nums; font-weight:800; }
+    .performance-track { width:100%; height:4px; overflow:hidden; border-radius:999px; background:#30363d; }
+    .performance-fill { display:block; height:100%; border-radius:inherit; background:var(--muted); }
+    .performance-fill.elite { background:#58a6ff; }
+    .performance-fill.strong { background:#3fb950; }
+    .performance-fill.good { background:#7ee787; }
+    .performance-fill.regular { background:#d29922; }
+    .performance-fill.low { background:#f85149; }
+    .performance-fill.unrated { width:0!important; }
+    .player-item-meta { color:var(--muted); font-size:11px; }
+    .player-item-meta .latest { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .count { flex:none; white-space:nowrap; }
     .detail { min-height:560px; padding:20px; }
     .state { display:grid; place-items:center; min-height:500px; color:var(--muted); text-align:center; }
     .state-icon { display:block; font-size:38px; margin-bottom:8px; }
@@ -55,6 +67,10 @@
       .stats { grid-template-columns:repeat(2,minmax(0,1fr)); }.match { grid-template-columns:1fr auto; }.match-date { grid-column:1/-1; }
       .profile-head { align-items:flex-start; flex-direction:column; }
     }
+    @media(max-width:420px) {
+      .player-item { padding-inline:13px; }
+      .player-item-meta .latest { max-width:55%; }
+    }
   </style>
   <link rel="stylesheet" href="/app-shell.css">
   <script src="/app-shell.js" defer></script>
@@ -75,8 +91,23 @@
   <script>
     const listElement=document.getElementById('player-list'), detailElement=document.getElementById('profile-detail'), searchElement=document.getElementById('search');
     let players=[],selectedId=null;
+    const profileCache=new Map();
     const escapeHtml=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
     const display=value=>value===null||value===undefined?'—':escapeHtml(value);
+    const ratingNumber=value=>value===null||value===undefined||value===''?null:Number(value);
+    const performanceWidth=value=>{
+      const rating=ratingNumber(value);
+      return rating===null||Number.isNaN(rating)?0:Math.max(0,Math.min(100,((rating-4)/6)*100));
+    };
+    const performanceBand=value=>{
+      const rating=ratingNumber(value);
+      if(rating===null||Number.isNaN(rating)) return 'unrated';
+      if(rating>=8.5) return 'elite';
+      if(rating>=8) return 'strong';
+      if(rating>=7) return 'good';
+      if(rating>=6) return 'regular';
+      return 'low';
+    };
 
     function renderPlayers() {
       const term=searchElement.value.trim().toLocaleLowerCase('pt-BR');
@@ -85,7 +116,11 @@
         listElement.innerHTML=`<div class="state"><div><span class="state-icon">📭</span>${players.length?'Nenhum jogador encontrado.':'Nenhum perfil disponível ainda.'}</div></div>`;
         return;
       }
-      listElement.innerHTML=filtered.map(player=>`<button class="player-item ${player.playerId===selectedId?'active':''}" data-id="${escapeHtml(player.playerId)}"><span><span class="player-name">${escapeHtml(player.name)}</span><br><span class="muted">${escapeHtml(player.latestMatchLabel)}</span></span><span class="count">${player.matchCount} jogo${player.matchCount===1?'':'s'}</span></button>`).join('');
+      listElement.innerHTML=filtered.map(player=>{
+        const profile=profileCache.get(player.playerId),rating=profile?.averageRating??null,band=performanceBand(rating),width=performanceWidth(rating);
+        const ratingLabel=rating===null||rating===undefined?'—':escapeHtml(rating);
+        return `<button class="player-item ${player.playerId===selectedId?'active':''}" data-id="${escapeHtml(player.playerId)}"><span class="player-item-head"><span class="player-name">${escapeHtml(player.name)}</span><span class="player-rating">${ratingLabel}</span></span><span class="performance-track" role="img" aria-label="Média histórica ${ratingLabel} de 10"><span class="performance-fill ${band}" style="width:${width.toFixed(2)}%"></span></span><span class="player-item-meta"><span class="latest">${escapeHtml(player.latestMatchLabel)}</span><span class="count">${player.matchCount} partida${player.matchCount===1?'':'s'}</span></span></button>`;
+      }).join('');
       listElement.querySelectorAll('.player-item').forEach(button=>button.addEventListener('click',()=>openProfile(button.dataset.id)));
     }
 
@@ -97,6 +132,8 @@
         const response=await fetch(`/api/player-profiles/detail?playerId=${encodeURIComponent(playerId)}`);
         const payload=await response.json();
         if(!response.ok||payload.status!=='success') throw new Error(payload.message||'Não foi possível carregar o perfil.');
+        profileCache.set(playerId,payload.profile);
+        renderPlayers();
         if(selectedId===playerId) renderProfile(payload.profile);
       } catch(error) {
         detailElement.className='panel detail state error';
@@ -118,6 +155,17 @@
       detailElement.innerHTML=`<div class="profile-head"><div><div class="eyebrow">Perfil histórico</div><h2>${escapeHtml(profile.name)}</h2><div class="muted">${profile.ratedMatchCount} partida${profile.ratedMatchCount===1?'':'s'} com nota</div></div><div class="record"><span class="WIN">${profile.wins}V</span><span class="DRAW">${profile.draws}E</span><span class="LOSS">${profile.losses}D</span></div></div><div class="stats">${stats.map(([label,value])=>`<div class="stat"><strong>${display(value)}</strong><span>${escapeHtml(label)}</span></div>`).join('')}</div><section class="section"><h3>Últimas partidas</h3><div class="matches">${matches}</div></section>`;
     }
 
+    async function hydratePlayerSummaries() {
+      await Promise.all(players.map(async player=>{
+        if(profileCache.has(player.playerId)) return;
+        try {
+          const response=await fetch(`/api/player-profiles/detail?playerId=${encodeURIComponent(player.playerId)}`),payload=await response.json();
+          if(response.ok&&payload.status==='success') profileCache.set(player.playerId,payload.profile);
+        } catch(_) { /* A lista continua utilizável quando um perfil isolado falha. */ }
+      }));
+      renderPlayers();
+    }
+
     async function loadPlayers() {
       try {
         const response=await fetch('/api/player-profiles'),payload=await response.json();
@@ -126,6 +174,7 @@
         const requested=new URLSearchParams(location.search).get('playerId');
         if(players.length) openProfile(players.some(player=>player.playerId===requested)?requested:players[0].playerId);
         else { detailElement.innerHTML='<div><span class="state-icon">🗂️</span>Os perfis aparecerão quando a primeira partida entrar para a história.</div>'; }
+        void hydratePlayerSummaries();
       } catch(error) {
         listElement.innerHTML=`<div class="state error"><div><span class="state-icon">⚠️</span>${escapeHtml(error.message)}</div></div>`;
       }
