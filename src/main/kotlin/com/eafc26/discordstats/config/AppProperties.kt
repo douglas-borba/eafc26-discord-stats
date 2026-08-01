@@ -46,8 +46,8 @@ data class EaProperties(
 )
 
 data class PlaywrightProperties(
-    /** Run Chromium in headless mode. On Linux servers use xvfb-run with headless=false. */
-    val headless: Boolean = false,
+    /** Run Chromium invisibly. Override to false only for explicit local diagnosis. */
+    val headless: Boolean = true,
     /** Navigation timeout in milliseconds for the initial page load. */
     val navTimeoutMs: Long = 30_000,
     /** Fetch timeout in milliseconds for each window.fetch() call inside the browser. */
@@ -57,13 +57,9 @@ data class PlaywrightProperties(
     /** Page to navigate on startup so Akamai can establish its session cookies. */
     val initialPageUrl: String = "https://proclubs.ea.com",
     /**
-     * Extra Chromium launch arguments. Defaults reduce visual footprint on macOS:
-     * tiny window, start minimized, suppress first-run UI.
+     * Extra Chromium launch arguments used by the internal headless browser.
      */
     val launchArgs: List<String> = listOf(
-        "--window-size=1,1",
-        "--window-position=0,0",
-        "--start-minimized",
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-extensions",

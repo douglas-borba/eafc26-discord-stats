@@ -4,7 +4,6 @@ import com.eafc26.discordstats.config.AppProperties
 import com.microsoft.playwright.Browser
 import com.microsoft.playwright.BrowserContext
 import com.microsoft.playwright.Page
-import com.microsoft.playwright.Playwright
 import com.microsoft.playwright.PlaywrightException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.DisposableBean
@@ -15,7 +14,7 @@ import org.springframework.stereotype.Component
  * Playwright-backed browser fetcher.
  *
  * The browser is initialized lazily on the first fetch call so that Spring
- * can start even when Chromium, Xvfb, or the display is temporarily unavailable.
+ * can start even when Chromium is temporarily unavailable.
  *
  * All public methods are synchronized to allow safe concurrent use from a future
  * scheduler without requiring external locking.
@@ -24,20 +23,21 @@ import org.springframework.stereotype.Component
  * [AppProperties.ea.playwright.startupRetries] times before the error is surfaced
  * to the caller.
  *
- * Deployment: launch with `xvfb-run -a java -jar app.jar` on Linux servers
- * to provide a virtual display for the headed browser.
+ * Chromium is headless by default. A headed browser is available only through
+ * an explicit diagnostic configuration override.
  */
 @Component
 @ConditionalOnProperty(name = ["app.ea.client"], havingValue = "playwright")
 class PlaywrightBrowserFetcher(
     private val props: AppProperties,
+    private val playwrightFactory: PlaywrightFactory,
 ) : BrowserFetcher, DisposableBean {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
     private val lock = Any()
 
-    private var playwright: Playwright? = null
+    private var playwright: com.microsoft.playwright.Playwright? = null
     private var browser: Browser? = null
     private var context: BrowserContext? = null
     private var page: Page? = null
@@ -117,16 +117,24 @@ class PlaywrightBrowserFetcher(
         val pw = props.ea.playwright
         if (isHealthy()) return
 
+        val launchArgs = pw.launchArgs.filterNot { it.startsWith("--headless") } +
+            if (pw.headless) listOf("--headless=new") else emptyList()
+
         log.info("Initializing Playwright browser (headless={})", pw.headless)
         closeBrowser()
 
-        playwright = Playwright.create()
+        playwright = playwrightFactory.create()
         browser = playwright!!.chromium().launch(
             com.microsoft.playwright.BrowserType.LaunchOptions()
                 .setHeadless(pw.headless)
-                .setArgs(pw.launchArgs)
+                .setDevtools(false)
+                .setIgnoreDefaultArgs(if (pw.headless) listOf("--headless=old") else emptyList())
+                .setArgs(launchArgs)
         )
-        context = browser!!.newContext()
+        context = browser!!.newContext(
+            Browser.NewContextOptions()
+                .setUserAgent(props.ea.userAgent)
+        )
         page = context!!.newPage()
 
         log.info("Navigating to {} to establish Akamai session", pw.initialPageUrl)
@@ -136,9 +144,6 @@ class PlaywrightBrowserFetcher(
                 .setWaitUntil(com.microsoft.playwright.options.WaitUntilState.DOMCONTENTLOADED)
                 .setTimeout(pw.navTimeoutMs.toDouble())
         )
-        // Note: Chromium is already started with --start-minimized and --window-size=1,1
-        // so no additional window hiding is needed. Previously this called hideChromiumOnMac()
-        // which used System Events osascript, but that caused focus issues with other apps.
         log.info("Browser ready")
     }
 
