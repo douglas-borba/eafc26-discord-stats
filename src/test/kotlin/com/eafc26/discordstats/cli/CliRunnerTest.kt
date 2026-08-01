@@ -11,6 +11,8 @@ import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.service.AcquisitionResult
 import com.eafc26.discordstats.service.AcquisitionTrigger
+import com.eafc26.discordstats.service.CanonicalBackfillService
+import com.eafc26.discordstats.service.CanonicalBackfillResult
 import com.eafc26.discordstats.service.MatchAcquisitionService
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -27,6 +29,7 @@ class CliRunnerTest {
 
     private lateinit var client: EaClubsGateway
     private lateinit var acquisitionService: MatchAcquisitionService
+    private lateinit var canonicalBackfillService: CanonicalBackfillService
     private lateinit var output: ByteArrayOutputStream
     private lateinit var out: PrintStream
     private val exitCodes = mutableListOf<Int>()
@@ -35,6 +38,7 @@ class CliRunnerTest {
     fun setUp() {
         client = mock()
         acquisitionService = mock()
+        canonicalBackfillService = mock()
         output = ByteArrayOutputStream()
         out = PrintStream(output)
         exitCodes.clear()
@@ -42,7 +46,7 @@ class CliRunnerTest {
 
     private fun runner(clubName: String = "Test FC", clubId: String = "12345"): CliRunner {
         val props = AppProperties(ea = EaProperties(clubName = clubName, clubId = clubId))
-        return CliRunner(client, props, acquisitionService, out, exit = { exitCodes.add(it) })
+        return CliRunner(client, props, acquisitionService, canonicalBackfillService, out, exit = { exitCodes.add(it) })
     }
 
     private fun printed(): String = output.toString(Charsets.UTF_8)
@@ -225,7 +229,48 @@ class CliRunnerTest {
         assertThat(text).contains(CliRunner.CMD_SEARCH)
         assertThat(text).contains(CliRunner.CMD_MATCHES)
         assertThat(text).contains(CliRunner.CMD_NOTIFY_LATEST)
+        assertThat(text).contains(CliRunner.CMD_BACKFILL)
         assertThat(exitCodes).containsExactly(1)
+    }
+
+    @Test
+    fun `backfill canonical matches prints complete report and exits successfully`() {
+        whenever(canonicalBackfillService.backfill()).thenReturn(
+            CanonicalBackfillResult.Completed(
+                requested = 20,
+                returned = 10,
+                processed = 10,
+                created = 5,
+                updated = 5,
+                ignored = 0,
+                failures = emptyList(),
+                before = 5,
+                after = 10,
+            )
+        )
+
+        runner().run(args(CliRunner.CMD_BACKFILL))
+
+        assertThat(printed()).contains(
+            "Requested: 20",
+            "Returned: 10",
+            "Processed: 10",
+            "Created: 5",
+            "Updated: 5",
+            "Canonical matches: 5 -> 10",
+        )
+        assertThat(exitCodes).containsExactly(0)
+        verify(canonicalBackfillService).backfill()
+        verify(client, never()).getLatestMatches(org.mockito.kotlin.any())
+    }
+
+    @Test
+    fun `backfill canonical matches rejects blank club id without executing`() {
+        runner(clubId = "").run(args(CliRunner.CMD_BACKFILL))
+
+        assertThat(printed()).contains("app.ea.club-id is not set")
+        assertThat(exitCodes).containsExactly(1)
+        verify(canonicalBackfillService, never()).backfill()
     }
 
     //   notify-latest

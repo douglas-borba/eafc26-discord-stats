@@ -32,7 +32,7 @@ class WebClientEaClubsGatewayTest {
                 platform = "common-gen5",
                 clubId = "12345",
                 matchType = "leagueMatch",
-                maxResultCount = 5,
+                maxResultCount = 20,
             )
         )
 
@@ -257,7 +257,7 @@ class WebClientEaClubsGatewayTest {
         assertThat(path).contains("platform=common-gen5")
         assertThat(path).contains("clubIds=12345")
         assertThat(path).contains("matchType=leagueMatch")
-        assertThat(path).contains("maxResultCount=5")
+        assertThat(path).contains("maxResultCount=20")
     }
 
     @Test

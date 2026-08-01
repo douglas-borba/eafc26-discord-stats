@@ -11,6 +11,7 @@ import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.service.AcquisitionResult
 import com.eafc26.discordstats.service.AcquisitionStateHolder
+import com.eafc26.discordstats.service.CanonicalMatchFactory
 import com.eafc26.discordstats.service.LatestMatchHolder
 import com.eafc26.discordstats.service.MatchAcquisitionService
 import com.eafc26.discordstats.store.PublishedMatchStore
@@ -68,6 +69,7 @@ class DevSimulatorServiceTest {
             matchSummaryBuilder,
             DiscordRenderer(matchSummaryBuilder),
             canonicalMatchRepository,
+            CanonicalMatchFactory(),
         )
 
         simulatorService = DevSimulatorService(

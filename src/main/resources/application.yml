@@ -9,7 +9,7 @@ app:
     club-id: "1104972"
     club-name: "Associação BF"
     match-type: leagueMatch   # friendlyMatch | leagueMatch | playoffMatch
-    max-result-count: 5
+    max-result-count: 20
     # EA's endpoint returns 403 without a browser-like User-Agent.
     # Verified by community projects. Change here if EA updates bot detection.
     user-agent: >-

@@ -1,0 +1,163 @@
+package com.eafc26.discordstats.service
+
+import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
+import com.eafc26.discordstats.canonical.CanonicalMatch
+import com.eafc26.discordstats.config.AppProperties
+import com.eafc26.discordstats.config.EaProperties
+import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.ea.EaApiResult
+import com.eafc26.discordstats.ea.EaClubsGateway
+import com.eafc26.discordstats.ea.model.ClubDetails
+import com.eafc26.discordstats.ea.model.ClubMatchEntry
+import com.eafc26.discordstats.ea.model.MatchResponse
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
+
+class CanonicalBackfillServiceTest {
+    private val clubId = "12345"
+    private lateinit var gateway: EaClubsGateway
+    private lateinit var repository: InMemoryCanonicalRepository
+    private lateinit var factory: CanonicalMatchFactory
+    private lateinit var service: CanonicalBackfillService
+
+    @BeforeEach
+    fun setUp() {
+        gateway = mock()
+        repository = InMemoryCanonicalRepository()
+        factory = CanonicalMatchFactory()
+        service = CanonicalBackfillService(
+            gateway = gateway,
+            props = AppProperties(ea = EaProperties(clubId = clubId, maxResultCount = 20)),
+            canonicalMatchFactory = factory,
+            canonicalMatchRepository = repository,
+        )
+        whenever(gateway.getMembersStats(clubId)).thenReturn(EaApiResult.Success(emptyList()))
+    }
+
+    @Test
+    fun `creates missing records whether or not publication happened elsewhere`() {
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(
+            EaApiResult.Success(listOf(match("published-but-missing"), match("unpublished")))
+        )
+
+        val result = service.backfill() as CanonicalBackfillResult.Completed
+
+        assertThat(result.created).isEqualTo(2)
+        assertThat(result.updated).isZero()
+        assertThat(repository.ids()).containsExactlyInAnyOrder("published-but-missing", "unpublished")
+    }
+
+    @Test
+    fun `mixed window creates missing records and atomically replaces existing records`() {
+        val existingSource = match("existing", timestamp = 1)
+        repository.save(factory.create(existingSource, clubId))
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(
+            EaApiResult.Success(listOf(match("new-2", 3), existingSource, match("new-1", 2)))
+        )
+
+        val result = service.backfill() as CanonicalBackfillResult.Completed
+
+        assertThat(result.requested).isEqualTo(20)
+        assertThat(result.returned).isEqualTo(3)
+        assertThat(result.processed).isEqualTo(3)
+        assertThat(result.created).isEqualTo(2)
+        assertThat(result.updated).isEqualTo(1)
+        assertThat(result.before).isEqualTo(1)
+        assertThat(result.after).isEqualTo(3)
+        assertThat(result.failures).isEmpty()
+    }
+
+    @Test
+    fun `repeated execution is idempotent by MatchId`() {
+        val window = listOf(match("m1", 1), match("m2", 2))
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(window))
+
+        val first = service.backfill() as CanonicalBackfillResult.Completed
+        val second = service.backfill() as CanonicalBackfillResult.Completed
+
+        assertThat(first.created).isEqualTo(2)
+        assertThat(second.created).isZero()
+        assertThat(second.updated).isEqualTo(2)
+        assertThat(second.after).isEqualTo(2)
+        assertThat(repository.ids()).containsExactlyInAnyOrder("m1", "m2")
+        verify(gateway, times(2)).getLatestMatches(clubId)
+    }
+
+    @Test
+    fun `duplicate MatchId in the EA window is reported as ignored`() {
+        val duplicate = match("m1", 1)
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(duplicate, duplicate)))
+
+        val result = service.backfill() as CanonicalBackfillResult.Completed
+
+        assertThat(result.returned).isEqualTo(2)
+        assertThat(result.processed).isEqualTo(1)
+        assertThat(result.ignored).isEqualTo(1)
+        assertThat(result.after).isEqualTo(1)
+    }
+
+    @Test
+    fun `normalization failure is reported without blocking valid matches`() {
+        val invalid = MatchResponse(matchId = "invalid", timestamp = 1, clubs = emptyMap(), players = emptyMap())
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(
+            EaApiResult.Success(listOf(invalid, match("valid", 2)))
+        )
+
+        val result = service.backfill() as CanonicalBackfillResult.Completed
+
+        assertThat(result.created).isEqualTo(1)
+        assertThat(result.failures).extracting<String> { it.matchId }.containsExactly("invalid")
+        assertThat(repository.ids()).containsExactly("valid")
+    }
+
+    @Test
+    fun `empty EA window produces a complete zero-change report`() {
+        whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.NoMatches)
+
+        val result = service.backfill() as CanonicalBackfillResult.Completed
+
+        assertThat(result.returned).isZero()
+        assertThat(result.processed).isZero()
+        assertThat(result.before).isZero()
+        assertThat(result.after).isZero()
+    }
+
+    private fun match(id: String, timestamp: Long = 1): MatchResponse = MatchResponse(
+        matchId = id,
+        timestamp = timestamp,
+        clubs = mapOf(
+            clubId to ClubMatchEntry(details = ClubDetails(name = "Test FC"), score = "2", result = "1"),
+            "opponent" to ClubMatchEntry(details = ClubDetails(name = "Opponent"), score = "1", result = "0"),
+        ),
+        players = emptyMap(),
+    )
+
+    private class InMemoryCanonicalRepository : CanonicalMatchRepository {
+        private val records = linkedMapOf<MatchId, CanonicalMatch>()
+
+        override fun save(match: CanonicalMatch) {
+            records[match.matchId] = match
+        }
+
+        override fun findById(matchId: MatchId): CanonicalMatch? = records[matchId]
+
+        override fun findAll(): List<CanonicalMatch> = records.values.toList()
+
+        override fun metadata(): CanonicalRepositoryMetadata = CanonicalRepositoryMetadata(
+            matchCount = records.size,
+            oldestMatchAt = records.values.minOfOrNull { it.footballMatch.playedAt },
+            newestMatchAt = records.values.maxOfOrNull { it.footballMatch.playedAt },
+            lastGeneratedAt = records.values.maxOfOrNull { it.generatedAt },
+            schemaVersions = records.values.mapTo(linkedSetOf()) { it.schemaVersion },
+            engineVersions = records.values.mapTo(linkedSetOf()) { it.engineVersion },
+        )
+
+        fun ids(): List<String> = records.keys.map { it.value }
+    }
+}

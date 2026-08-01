@@ -5,6 +5,8 @@ import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.service.AcquisitionResult
 import com.eafc26.discordstats.service.AcquisitionTrigger
+import com.eafc26.discordstats.service.CanonicalBackfillResult
+import com.eafc26.discordstats.service.CanonicalBackfillService
 import com.eafc26.discordstats.service.MatchAcquisitionService
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.ApplicationArguments
@@ -28,6 +30,7 @@ class CliRunner(
     @Qualifier("production") private val client: EaClubsGateway,
     private val props: AppProperties,
     private val acquisitionService: MatchAcquisitionService,
+    private val canonicalBackfillService: CanonicalBackfillService,
     private val out: PrintStream = PrintStream(System.out, true, StandardCharsets.UTF_8),
     private val exit: (Int) -> Unit = { code -> exitProcess(code) },
 ) : ApplicationRunner {
@@ -39,9 +42,40 @@ class CliRunner(
             CMD_SEARCH        -> runSearchClub()
             CMD_MATCHES       -> runLatestMatches()
             CMD_NOTIFY_LATEST -> runNotifyLatest()
+            CMD_BACKFILL      -> runCanonicalBackfill()
             else -> {
                 out.println("Unknown command: '$command'")
-                out.println("Available commands: $CMD_SEARCH, $CMD_MATCHES, $CMD_NOTIFY_LATEST")
+                out.println("Available commands: $CMD_SEARCH, $CMD_MATCHES, $CMD_NOTIFY_LATEST, $CMD_BACKFILL")
+                exit(1)
+            }
+        }
+    }
+
+    private fun runCanonicalBackfill() {
+        if (props.ea.clubId.isBlank()) {
+            out.println("ERROR: app.ea.club-id is not set in application.yml")
+            exit(1)
+            return
+        }
+
+        out.println("Backfilling canonical ${props.ea.matchType} matches for club-id=${props.ea.clubId} ...")
+        when (val result = canonicalBackfillService.backfill()) {
+            is CanonicalBackfillResult.Completed -> {
+                out.println("Requested: ${result.requested}")
+                out.println("Returned: ${result.returned}")
+                out.println("Processed: ${result.processed}")
+                out.println("Created: ${result.created}")
+                out.println("Updated: ${result.updated}")
+                out.println("Ignored: ${result.ignored}")
+                out.println("Failures: ${result.failures.size}")
+                result.failures.forEach { failure ->
+                    out.println("  ${failure.matchId}: ${failure.message}")
+                }
+                out.println("Canonical matches: ${result.before} -> ${result.after}")
+                exit(if (result.failures.isEmpty()) 0 else 1)
+            }
+            is CanonicalBackfillResult.Unavailable -> {
+                out.println("ERROR: EA API unavailable (HTTP ${result.statusCode}): ${result.message}")
                 exit(1)
             }
         }
@@ -213,5 +247,6 @@ class CliRunner(
         const val CMD_SEARCH        = "search-club"
         const val CMD_MATCHES       = "latest-matches"
         const val CMD_NOTIFY_LATEST = "notify-latest"
+        const val CMD_BACKFILL      = "backfill-canonical-matches"
     }
 }

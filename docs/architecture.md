@@ -13,7 +13,8 @@ recalculate a metric or reinterpret a statistic.
 ```mermaid
 flowchart TD
     EA["EA API payload"] --> GW["EA gateway and DTO parsing"]
-    GW --> ACL["Anti-Corruption Layer<br/>EaMatchMapper"]
+    GW --> FACTORY["CanonicalMatchFactory<br/>shared import operation"]
+    FACTORY --> ACL["Anti-Corruption Layer<br/>EaMatchMapper"]
     ACL --> FM["FootballMatch<br/>normalized immutable facts"]
     FM --> MI["MatchInterpreter<br/>deterministic evaluators"]
     MI --> INT["MatchInterpretation<br/>decisions, rules and evidence"]
@@ -22,7 +23,9 @@ flowchart TD
     FM --> CM["CanonicalMatch<br/>schema + engine + generatedAt"]
     INT --> CM
     MS --> CM
-    CM --> PORT["CanonicalMatchRepository"]
+    CM --> PORT["CanonicalMatchRepository<br/>persist complete EA window first"]
+    PORT --> DEDUP["PublishedMatchStore<br/>Discord delivery state only"]
+    DEDUP --> DISC
     PORT --> JSON["JSON repository<br/>one atomic file per match"]
     PORT --> HIST["MatchHistoryService<br/>read-only canonical queries"]
     HIST --> HDASH["Historical Dashboard presenter<br/>list + match detail"]
@@ -50,8 +53,10 @@ flowchart TD
 
 `MatchAcquisitionService` orchestrates this flow. It may handle EA DTOs at the
 infrastructure boundary, but no DTO enters the domain, application rules or a
-renderer. Every non-simulated canonical result is stored before it becomes a
-long-term product data source.
+renderer. `CanonicalMatchFactory` is the single shared runtime operation from
+`MatchResponse` through the ACL, interpretation and story extraction. Every
+non-simulated match in a successful EA response is stored before publication
+state is consulted.
 
 ## Layers and responsibilities
 
@@ -284,6 +289,42 @@ and atomic replacement where supported. A malformed record fails explicitly
 instead of silently removing history.
 
 Development simulations are intentionally not persisted.
+
+### Continuous canonical capture
+
+The EA matches endpoint is configured with `maxResultCount=20`, while its
+observed response is capped at ten recent matches. It exposes no usable cursor,
+offset or page. Canonical persistence is therefore an accumulating local archive,
+not a mirror of an unbounded EA history:
+
+```text
+EA recent league window
+  -> deterministic order
+  -> CanonicalMatchFactory for every returned match
+  -> atomic save or replacement by MatchId
+  -> PublishedMatchStore lookup
+  -> Discord delivery for unpublished matches only
+```
+
+On the scheduler's first cycle with `publish-existing-on-first-run=false`, the
+entire returned window is stored canonically before all returned IDs become the
+Discord publication baseline. Manual and CLI acquisition still publish only the
+latest eligible match, but persist the complete returned window first. Repeated
+and overlapping windows replace existing records idempotently and add newly seen
+MatchIds, allowing the archive to grow without a functional local limit.
+
+`CanonicalBackfillService` provides the explicit
+`backfill-canonical-matches` operation. It uses the same gateway,
+`CanonicalMatchFactory` and repository as normal acquisition, but has no
+Dashboard, renderer, webhook or `PublishedMatchStore` dependency.
+
+The scheduler polls every 60 seconds. This is frequent relative to the ten-match
+window, but cannot guarantee completeness: matches that leave the window before
+any successful poll are unavailable through the current endpoint. In particular,
+keeping the application stopped for more than ten league matches can leave a
+permanent gap. Current capture is deliberately restricted to `leagueMatch`.
+`playoffMatch` and `friendlyMatch` have separate recent windows and remain a
+future, explicit expansion.
 
 ### Versioning strategy
 

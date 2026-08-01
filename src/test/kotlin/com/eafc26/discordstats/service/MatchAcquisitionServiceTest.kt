@@ -23,10 +23,12 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
+import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -63,6 +65,7 @@ class MatchAcquisitionServiceTest {
             matchSummaryBuilder,
             DiscordRenderer(matchSummaryBuilder),
             canonicalMatchRepository,
+            CanonicalMatchFactory(),
         )
     }
 
@@ -1052,8 +1055,70 @@ class MatchAcquisitionServiceTest {
             assertThat((result as EaApiResult.Success).data).isEmpty()
         }
     }
+
+    @Nested
+    inner class ContinuousCanonicalCapture {
+
+        @Test
+        fun `persists the complete returned window before publication filtering`() {
+            val older = match("m1", ts = 1000)
+            val newer = match("m2", ts = 2000)
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(newer, older)))
+            whenever(store.loadIds()).thenReturn(setOf("existing"))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER)
+
+            val order = inOrder(canonicalMatchRepository, store, webhookClient)
+            order.verify(canonicalMatchRepository, times(2)).save(any())
+            order.verify(store).loadIds()
+            order.verify(webhookClient).send(any())
+        }
+
+        @Test
+        fun `already published match is still persisted canonically`() {
+            val published = match("published")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(published)))
+            whenever(store.loadIds()).thenReturn(setOf("published"))
+
+            service.acquire(AcquisitionTrigger.MANUAL)
+
+            verify(canonicalMatchRepository).save(any())
+            verify(webhookClient, never()).send(any())
+            verify(store, never()).saveIds(any())
+        }
+
+        @Test
+        fun `first scheduler cycle persists complete window before establishing baseline`() {
+            val older = match("m1", ts = 1000)
+            val newer = match("m2", ts = 2000)
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(newer, older)))
+            whenever(store.loadIds()).thenReturn(emptySet())
+
+            val result = service.acquire(AcquisitionTrigger.SCHEDULER) as AcquisitionResult.Processed
+
+            assertThat(result.baselineEstablished).isTrue()
+            verify(canonicalMatchRepository, times(2)).save(any())
+            verify(store).saveIds(setOf("m1", "m2"))
+            verify(webhookClient, never()).send(any())
+        }
+
+        @Test
+        fun `repeated sliding windows persist every observation and expose continuous unique MatchIds`() {
+            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            whenever(gateway.getLatestMatches(clubId))
+                .thenReturn(EaApiResult.Success(listOf(match("m1", 1), match("m2", 2))))
+                .thenReturn(EaApiResult.Success(listOf(match("m2", 2), match("m3", 3))))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER)
+            service.acquire(AcquisitionTrigger.SCHEDULER)
+
+            val captor = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
+            verify(canonicalMatchRepository, times(4)).save(captor.capture())
+            assertThat(captor.allValues.map { it.matchId.value })
+                .containsExactly("m1", "m2", "m2", "m3")
+            assertThat(captor.allValues.map { it.matchId.value }.distinct())
+                .containsExactly("m1", "m2", "m3")
+        }
+    }
 }
-
-
-
 

@@ -24,6 +24,12 @@ class OpponentHistoryArchitectureTest {
             .doesNotContain("freguês","carrasco","rival equilibrado","vantagem","costumamos ganhar")
     }
 
+    @Test fun `latest meeting summary has no dominant open match action`() {
+        val script=Path.of("src/main/resources/static/opponents.js").readText()
+        assertThat(script).contains("match-summary-card", "Último confronto")
+            .doesNotContain("Abrir partida", "card-action")
+    }
+
     @Test fun `memorial assets and page are removed`() {
         assertThat(Path.of("src/main/resources/insights.html")).doesNotExist()
         assertThat(Path.of("src/main/resources/static/club-history.js")).doesNotExist()

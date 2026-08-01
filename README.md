@@ -53,7 +53,7 @@ Base: https://proclubs.ea.com/api/fc/
 GET /allTimeLeaderboard/search?platform=common-gen5&clubName=<NAME>
     Search for clubs by name to find your club's numeric ID.
 
-GET /clubs/matches?platform=common-gen5&clubIds=<ID>&matchType=<TYPE>&maxResultCount=5
+GET /clubs/matches?platform=common-gen5&clubIds=<ID>&matchType=<TYPE>&maxResultCount=20
     Retrieve the most recent matches for a club.
     matchType: friendlyMatch | leagueMatch | playoffMatch
 ```
@@ -76,12 +76,37 @@ app:
     club-id: ""         # Your club's numeric ID
     club-name: ""       # Human-readable name (for search)
     match-type: leagueMatch
-    max-result-count: 5
+    max-result-count: 20
     user-agent: "Mozilla/5.0 ..."  # Change if EA updates bot detection
 ```
 
 To find your `club-id`, use `EaProClubsClient.searchClubs("Your Club Name")` and note
 the `clubId` in the response.
+
+### Canonical capture and backfill
+
+The EA endpoint is requested with `maxResultCount=20`, but currently returns at
+most ten recent league matches. Every successful production acquisition stores
+the complete returned window in the canonical repository before Discord
+deduplication. The local history therefore grows by `MatchId` as windows overlap.
+
+To import the complete window currently available without publishing to Discord,
+changing the Dashboard or modifying published-match IDs, run:
+
+```bash
+./gradlew bootRun --args='backfill-canonical-matches'
+```
+
+The command reports requested, returned, processed, created, updated, ignored and
+failed records, plus repository counts before and after execution.
+
+The endpoint has no usable pagination and retains only a recent window. A match
+that leaves that window before a successful poll cannot be recovered from this
+endpoint. The scheduler currently polls every 60 seconds, which reduces but does
+not eliminate this risk. Leaving the application stopped while more than ten
+league matches are played can create an unrecoverable gap. This capture currently
+includes only `leagueMatch`; playoff and friendly matches have independent recent
+windows and may be added separately in a future delivery.
 
 ---
 

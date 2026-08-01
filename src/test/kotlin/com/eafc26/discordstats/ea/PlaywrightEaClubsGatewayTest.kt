@@ -31,7 +31,7 @@ class PlaywrightEaClubsGatewayTest {
             clubId = "12345",
             clubName = "Test FC",
             matchType = "leagueMatch",
-            maxResultCount = 5,
+            maxResultCount = 20,
         )
     )
 
@@ -65,7 +65,7 @@ class PlaywrightEaClubsGatewayTest {
         gateway.getLatestMatches("12345")
 
         verify(browserFetcher).fetch(
-            "https://proclubs.ea.com/api/fc/clubs/matches?platform=common-gen5&clubIds=12345&matchType=leagueMatch&maxResultCount=5"
+            "https://proclubs.ea.com/api/fc/clubs/matches?platform=common-gen5&clubIds=12345&matchType=leagueMatch&maxResultCount=20"
         )
     }
 

@@ -8,19 +8,13 @@ import com.eafc26.discordstats.discord.DiscordWebhookClient
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.MatchResponse
-import com.eafc26.discordstats.ea.mapping.EaMatchMapper
-import com.eafc26.discordstats.ea.mapping.MatchNormalizationResult
-import com.eafc26.discordstats.application.interpretation.MatchInterpreter
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
-import com.eafc26.discordstats.application.story.MatchStoryExtractor
 import com.eafc26.discordstats.canonical.CanonicalMatch
-import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.store.PublishedMatchStore
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
-import java.time.Instant
 
 /**
  * Single acquisition pipeline for match data.
@@ -34,10 +28,11 @@ import java.time.Instant
  * All callers use [acquire] which internally:
  * 1. Acquires the shared lock (via [AcquisitionLock])
  * 2. Fetches matches from EA API
- * 3. Applies deduplication
- * 4. Generates presentation and caches in [LatestMatchHolder]
- * 5. Delivers to Discord webhooks (if applicable)
- * 6. Persists published match IDs
+ * 3. Canonicalizes and persists the complete returned window
+ * 4. Applies Discord publication deduplication
+ * 5. Generates presentation and caches in [LatestMatchHolder]
+ * 6. Delivers new matches to Discord webhooks (if applicable)
+ * 7. Persists published match IDs
  *
  * The [AcquisitionLock] is an internal implementation detail.
  * Callers never interact with it directly.
@@ -60,12 +55,10 @@ class MatchAcquisitionService(
     private val matchSummaryBuilder: MatchSummaryBuilder,
     private val discordRenderer: DiscordRenderer,
     private val canonicalMatchRepository: CanonicalMatchRepository,
+    private val canonicalMatchFactory: CanonicalMatchFactory,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
-    private val eaMatchMapper = EaMatchMapper()
-    private val matchInterpreter = MatchInterpreter()
-    private val matchStoryExtractor = MatchStoryExtractor()
 
     /**
      * Executes the acquisition pipeline.
@@ -159,12 +152,24 @@ class MatchAcquisitionService(
         // Phase: PROCESSING
         stateHolder.enterPhase(AcquisitionPhase.PROCESSING, "Processando partidas...")
 
+        // Canonical storage is independent from presentation and Discord delivery.
+        // Development fixtures remain intentionally non-persistent.
+        val canonicalByMatchId = matches
+            .sortedWith(compareBy<MatchResponse> { it.timestamp }.thenBy { it.matchId })
+            .associate { match ->
+                match.matchId to canonicalMatchFactory.create(match, clubId, proNames)
+            }
+        if (trigger != AcquisitionTrigger.DEV_SIMULATOR) {
+            stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando acervo canônico...")
+            canonicalByMatchId.values.forEach(canonicalMatchRepository::save)
+        }
+
         // Step 3: Route to appropriate processing mode
         val result = when (trigger) {
-            AcquisitionTrigger.FORCE_RESEND -> processForceResend(matches, clubId, proNames)
-            AcquisitionTrigger.MANUAL, AcquisitionTrigger.CLI -> processLatestOnly(matches, clubId, proNames)
-            AcquisitionTrigger.SCHEDULER -> processAllNew(matches, clubId, trigger, proNames)
-            AcquisitionTrigger.DEV_SIMULATOR -> processSimulation(matches, clubId, proNames)
+            AcquisitionTrigger.FORCE_RESEND -> processForceResend(matches, canonicalByMatchId)
+            AcquisitionTrigger.MANUAL, AcquisitionTrigger.CLI -> processLatestOnly(matches, canonicalByMatchId)
+            AcquisitionTrigger.SCHEDULER -> processAllNew(matches, canonicalByMatchId)
+            AcquisitionTrigger.DEV_SIMULATOR -> processSimulation(matches, canonicalByMatchId)
         }
 
         // Update final state based on result
@@ -203,18 +208,18 @@ class MatchAcquisitionService(
      */
     private fun processLatestOnly(
         matches: List<MatchResponse>,
-        clubId: String,
-        proNames: Map<String, String>,
+        canonicalByMatchId: Map<String, CanonicalMatch>,
     ): AcquisitionResult {
         val latest = matches.maxByOrNull { it.timestamp }
             ?: return AcquisitionResult.NoMatches
+        val canonical = canonicalByMatchId.getValue(latest.matchId)
 
-        val summary = buildSummary(latest, clubId)
+        val summary = buildSummary(canonical)
         val publishedIds = store.loadIds()
 
         // Phase: CACHING - Generate and cache presentation BEFORE deduplication check
         stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-        val presentation = buildDashboardPresentation(latest, clubId, proNames)
+        val presentation = buildDashboardPresentation(canonical)
         val newVersion = latestMatchHolder.update(presentation)
         log.debug("Cached presentation for match {} (version={})", latest.matchId, newVersion)
 
@@ -232,7 +237,7 @@ class MatchAcquisitionService(
         stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Enviando para Discord...")
 
         // Deliver to Discord
-        val deliveryResult = deliverToDiscord(latest, clubId, proNames)
+        val deliveryResult = deliverToDiscord(canonical)
         if (deliveryResult != null) {
             return deliveryResult
         }
@@ -267,23 +272,20 @@ class MatchAcquisitionService(
      */
     private fun processSimulation(
         matches: List<MatchResponse>,
-        clubId: String,
-        proNames: Map<String, String> = emptyMap(),
+        canonicalByMatchId: Map<String, CanonicalMatch>,
     ): AcquisitionResult {
         val latestMatch = matches.maxByOrNull { it.timestamp }
             ?: return AcquisitionResult.NoMatches
+        val canonical = canonicalByMatchId.getValue(latestMatch.matchId)
 
-        val summary = buildSummary(latestMatch, clubId)
+        val summary = buildSummary(canonical)
 
         // Phase: CACHING - Generate and cache presentation (marked as simulated)
         // Use forceRandomPhrases=true so each simulation gets new random phrases
         stateHolder.enterPhase(AcquisitionPhase.CACHING, "Gerando card simulado...")
         val presentation = buildDashboardPresentation(
-            latestMatch,
-            clubId,
-            proNames,
+            canonical,
             forceRandomPhrases = true,
-            persist = false,
         )
         val newVersion = latestMatchHolder.update(presentation, simulated = true)
         log.debug("Cached simulated presentation for match {} (version={})", latestMatch.matchId, newVersion)
@@ -306,15 +308,13 @@ class MatchAcquisitionService(
      */
     private fun processAllNew(
         matches: List<MatchResponse>,
-        clubId: String,
-        trigger: AcquisitionTrigger,
-        proNames: Map<String, String> = emptyMap(),
+        canonicalByMatchId: Map<String, CanonicalMatch>,
     ): AcquisitionResult {
         val publishedIds = store.loadIds()
 
         // First-run detection
         if (publishedIds.isEmpty()) {
-            return handleFirstRun(matches, clubId, proNames)
+            return handleFirstRun(matches, canonicalByMatchId)
         }
 
         // Find the latest match for caching (regardless of publication status)
@@ -323,7 +323,7 @@ class MatchAcquisitionService(
         // Phase: CACHING - Cache the latest presentation BEFORE checking deduplication
         if (latestMatch != null) {
             stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-            val presentation = buildDashboardPresentation(latestMatch, clubId, proNames)
+            val presentation = buildDashboardPresentation(canonicalByMatchId.getValue(latestMatch.matchId))
             val newVersion = latestMatchHolder.update(presentation)
             log.debug("Cached presentation for match {} (version={})", latestMatch.matchId, newVersion)
         }
@@ -335,7 +335,7 @@ class MatchAcquisitionService(
 
         if (newMatches.isEmpty()) {
             log.debug("No new matches to publish")
-            val latestSummary = latestMatch?.let { buildSummary(it, clubId) }
+            val latestSummary = latestMatch?.let { buildSummary(canonicalByMatchId.getValue(it.matchId)) }
             return AcquisitionResult.Processed(
                 published = emptyList(),
                 alreadyPublished = latestSummary?.let {
@@ -356,11 +356,12 @@ class MatchAcquisitionService(
         val currentIds = publishedIds.toMutableSet()
 
         for ((index, match) in newMatches.withIndex()) {
-            val summary = buildSummary(match, clubId)
+            val canonical = canonicalByMatchId.getValue(match.matchId)
+            val summary = buildSummary(canonical)
             stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Enviando partida ${index + 1}/${newMatches.size}...")
 
             try {
-                val payloads = buildDiscordPayloads(match, clubId, proNames)
+                val payloads = buildDiscordPayloads(canonical)
                 webhookClient.send(payloads.match)
                 webhookClient.sendHistory(payloads.history)
 
@@ -402,21 +403,20 @@ class MatchAcquisitionService(
      */
     private fun handleFirstRun(
         matches: List<MatchResponse>,
-        clubId: String,
-        proNames: Map<String, String> = emptyMap(),
+        canonicalByMatchId: Map<String, CanonicalMatch>,
     ): AcquisitionResult {
         // Cache the latest presentation regardless of publish mode
         val latestMatch = matches.maxByOrNull { it.timestamp }
         if (latestMatch != null) {
             stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-            val presentation = buildDashboardPresentation(latestMatch, clubId, proNames)
+            val presentation = buildDashboardPresentation(canonicalByMatchId.getValue(latestMatch.matchId))
             val newVersion = latestMatchHolder.update(presentation)
             log.debug("Cached presentation for match {} (version={})", latestMatch.matchId, newVersion)
         }
 
         if (props.polling.publishExistingOnFirstRun) {
             log.info("First run with publish-existing-on-first-run=true: will publish {} match(es)", matches.size)
-            return publishExistingMatches(matches, clubId, proNames)
+            return publishExistingMatches(matches, canonicalByMatchId)
         } else {
             log.info("Automatic polling baseline established with {} matches.", matches.size)
             store.saveIds(matches.map { it.matchId }.toSet())
@@ -434,8 +434,7 @@ class MatchAcquisitionService(
      */
     private fun publishExistingMatches(
         matches: List<MatchResponse>,
-        clubId: String,
-        proNames: Map<String, String> = emptyMap(),
+        canonicalByMatchId: Map<String, CanonicalMatch>,
     ): AcquisitionResult {
         val sortedMatches = matches.sortedBy { it.timestamp }
         val published = mutableListOf<AcquisitionResult.MatchSummary>()
@@ -446,10 +445,11 @@ class MatchAcquisitionService(
         store.saveIds(currentIds)
 
         for (match in sortedMatches) {
-            val summary = buildSummary(match, clubId)
+            val canonical = canonicalByMatchId.getValue(match.matchId)
+            val summary = buildSummary(canonical)
 
             try {
-                val payloads = buildDiscordPayloads(match, clubId, proNames)
+                val payloads = buildDiscordPayloads(canonical)
                 webhookClient.send(payloads.match)
                 webhookClient.sendHistory(payloads.history)
 
@@ -491,18 +491,18 @@ class MatchAcquisitionService(
      */
     private fun processForceResend(
         matches: List<MatchResponse>,
-        clubId: String,
-        proNames: Map<String, String> = emptyMap(),
+        canonicalByMatchId: Map<String, CanonicalMatch>,
     ): AcquisitionResult {
         val latest = matches.maxByOrNull { it.timestamp }
             ?: return AcquisitionResult.NoMatches
+        val canonical = canonicalByMatchId.getValue(latest.matchId)
 
-        val summary = buildSummary(latest, clubId)
+        val summary = buildSummary(canonical)
         val alreadyPublished = store.loadIds().contains(latest.matchId)
 
         // Phase: CACHING - Generate and cache presentation
         stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-        val presentation = buildDashboardPresentation(latest, clubId, proNames)
+        val presentation = buildDashboardPresentation(canonical)
         val newVersion = latestMatchHolder.update(presentation)
         log.debug("Cached presentation for match {} (version={})", latest.matchId, newVersion)
 
@@ -510,7 +510,7 @@ class MatchAcquisitionService(
         stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Reenviando para Discord...")
 
         // Deliver to Discord (no dedup check)
-        val deliveryResult = deliverToDiscord(latest, clubId, proNames)
+        val deliveryResult = deliverToDiscord(canonical)
         if (deliveryResult != null) {
             return deliveryResult
         }
@@ -532,11 +532,9 @@ class MatchAcquisitionService(
      * @return An error result if delivery failed, or null if successful.
      */
     private fun deliverToDiscord(
-        match: MatchResponse,
-        clubId: String,
-        proNames: Map<String, String> = emptyMap(),
+        canonical: CanonicalMatch,
     ): AcquisitionResult? {
-        val payloads = buildDiscordPayloads(match, clubId, proNames)
+        val payloads = buildDiscordPayloads(canonical)
 
         try {
             webhookClient.send(payloads.match)
@@ -544,14 +542,14 @@ class MatchAcquisitionService(
             log.error("Discord webhook not configured: {}", ex.message)
             return AcquisitionResult.WebhookNotConfigured
         } catch (ex: DiscordDeliveryException) {
-            log.warn("Discord delivery failed for match {}: {}", match.matchId, ex.message)
+            log.warn("Discord delivery failed for match {}: {}", canonical.matchId.value, ex.message)
             // For single-match operations, return as a Processed with failure
-            val summary = buildSummary(match, clubId)
+            val summary = buildSummary(canonical)
             return AcquisitionResult.Processed(
                 published = emptyList(),
                 alreadyPublished = emptyList(),
                 failed = listOf(AcquisitionResult.MatchFailure(
-                    match.matchId,
+                    canonical.matchId.value,
                     summary,
                     ex.message ?: "Delivery failed"
                 )),
@@ -579,14 +577,9 @@ class MatchAcquisitionService(
     }
 
     private fun buildDashboardPresentation(
-        source: MatchResponse,
-        clubId: String,
-        proNames: Map<String, String>,
+        canonical: CanonicalMatch,
         forceRandomPhrases: Boolean = false,
-        persist: Boolean = true,
     ): com.eafc26.discordstats.presentation.MatchSummaryPresentation {
-        val canonical = canonicalize(source, clubId, proNames, "Dashboard")
-        if (persist) canonicalMatchRepository.save(canonical)
         return matchSummaryBuilder.build(
             footballMatch = canonical.footballMatch,
             interpretation = canonical.interpretation,
@@ -596,12 +589,8 @@ class MatchAcquisitionService(
     }
 
     private fun buildDiscordPayloads(
-        source: MatchResponse,
-        clubId: String,
-        proNames: Map<String, String>,
+        canonical: CanonicalMatch,
     ): DiscordPayloads {
-        val canonical = canonicalize(source, clubId, proNames, "Discord")
-        canonicalMatchRepository.save(canonical)
         return DiscordPayloads(
             match = discordRenderer.renderMatch(
                 canonical.footballMatch,
@@ -616,29 +605,6 @@ class MatchAcquisitionService(
         )
     }
 
-    private fun canonicalize(
-        source: MatchResponse,
-        clubId: String,
-        proNames: Map<String, String> = emptyMap(),
-        consumer: String,
-    ): CanonicalMatch {
-        val normalized = when (val result = eaMatchMapper.map(source, proNames)) {
-            is MatchNormalizationResult.Success -> result.match
-            is MatchNormalizationResult.Rejected -> error(
-                "EA match ${source.matchId} cannot be normalized for $consumer: " +
-                    result.errors.joinToString { it.message }
-            )
-        }
-        val interpretation = matchInterpreter.interpret(normalized, ClubId(clubId))
-        val stories = matchStoryExtractor.extract(interpretation)
-        return CanonicalMatch.current(
-            footballMatch = normalized,
-            interpretation = interpretation,
-            stories = stories,
-            generatedAt = Instant.now(),
-        )
-    }
-
     private data class DiscordPayloads(
         val match: DiscordPayload,
         val history: DiscordPayload,
@@ -647,8 +613,7 @@ class MatchAcquisitionService(
     /**
      * Builds a human-readable summary of a match.
      */
-    private fun buildSummary(match: MatchResponse, clubId: String): String {
-        val canonical = canonicalize(match, clubId, consumer = "summary")
+    private fun buildSummary(canonical: CanonicalMatch): String {
         val normalized = canonical.footballMatch
         val interpretation = canonical.interpretation
         val ourClub = normalized.participants.first { it.club.id == interpretation.perspectiveClubId }
