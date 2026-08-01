@@ -254,6 +254,39 @@ O script legado `scripts/package-macos.sh` permanece como atalho compatível,
 mas agora apenas delega para `rebuildMacApp`, evitando dois processos de
 empacotamento diferentes.
 
+### Container Linux
+
+A imagem Linux usa Java 21 e a imagem oficial do Playwright Java fixada na mesma
+versão da dependência da aplicação (`1.47.0-noble`). O Chromium permanece
+headless e os browsers já estão presentes em `/ms-playwright`.
+
+Pré-requisito: Docker com Compose disponível. Construa e inicie com:
+
+```bash
+docker compose up --build -d
+```
+
+O serviço fica disponível em `http://localhost:8080`. Valide a aplicação e a
+aquisição real da EA com:
+
+```bash
+curl --fail http://localhost:8080/api/health
+docker compose logs app | grep "EA API response: status=200"
+docker compose exec app ps aux
+```
+
+O Compose habilita `init`, compartilha IPC com o host conforme recomendado pelo
+Playwright e persiste os dados canônicos no volume `eafc-data`. A variável
+`APP_WEB_NETWORK_ENABLED=true` limita-se a permitir que o servidor escute a
+interface publicada pelo container; no macOS, a preferência local existente
+continua definindo esse comportamento.
+
+Encerre sem remover o volume persistente:
+
+```bash
+docker compose down
+```
+
 ---
 
 ## Result type

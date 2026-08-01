@@ -21,7 +21,9 @@ open class LocalConfigPostProcessor : EnvironmentPostProcessor {
         val prefs = Preferences.userNodeForPackage(SettingsService::class.java)
 
         // Derive server.address from network-enabled preference
-        val networkEnabled = prefs.getBoolean("web.network-enabled", false)
+        val networkEnabled =
+            environment.getProperty("app.web.network-enabled", Boolean::class.java) == true ||
+                prefs.getBoolean("web.network-enabled", false)
         val derived = Properties()
         derived.setProperty("server.address", if (networkEnabled) "0.0.0.0" else "127.0.0.1")
         environment.propertySources.addFirst(

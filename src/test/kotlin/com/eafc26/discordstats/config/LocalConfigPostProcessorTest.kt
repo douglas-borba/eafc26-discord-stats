@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.boot.SpringApplication
 import org.springframework.core.env.StandardEnvironment
+import org.springframework.core.env.MapPropertySource
 import java.util.prefs.Preferences
 
 class LocalConfigPostProcessorTest {
@@ -53,6 +54,19 @@ class LocalConfigPostProcessorTest {
         val env = StandardEnvironment()
         val processor = LocalConfigPostProcessor()
         processor.postProcessEnvironment(env, app)
+        assertThat(env.getProperty("server.address")).isEqualTo("0.0.0.0")
+    }
+
+    @Test
+    fun `external network configuration enables container binding without local preference`() {
+        val env = StandardEnvironment().apply {
+            propertySources.addFirst(
+                MapPropertySource("container", mapOf("app.web.network-enabled" to "true"))
+            )
+        }
+
+        LocalConfigPostProcessor().postProcessEnvironment(env, app)
+
         assertThat(env.getProperty("server.address")).isEqualTo("0.0.0.0")
     }
 }
