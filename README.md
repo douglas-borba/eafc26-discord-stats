@@ -168,6 +168,28 @@ Se a inicialização falhar, o erro permanece visível no terminal e o navegador
 Esse fluxo é independente do `.app`; as tasks de empacotamento abaixo continuam
 reservadas para distribuição e validação do bundle.
 
+### Chromium interno da EA
+
+O gateway da EA mantém uma instância interna do Chromium durante a execução para
+estabelecer a sessão Akamai e realizar as consultas. Esse Chromium inicia em modo
+headless por padrão (`app.ea.playwright.headless=true`): não cria janela, não
+aparece no Dock e não abre `proclubs.ea.com` para o usuário. Page, contexto,
+browser e Playwright são encerrados em caso de falha e no desligamento da
+aplicação. O Chromium completo usa o modo headless moderno; o modo legado do
+Playwright 1.47 não preserva a sessão de rede aceita pela EA.
+
+Esse processo é independente do navegador padrão aberto pelo fluxo de
+desenvolvimento ou pelo `.app` para apresentar o Dashboard. Somente o
+`DashboardAutoLauncher` chama o mecanismo `open` do macOS.
+
+Para um diagnóstico local explícito, o Chromium pode ser exibido temporariamente:
+
+```bash
+./gradlew bootRun --args='--app.ea.playwright.headless=false'
+```
+
+Esse override não deve ser utilizado em produção ou na distribuição normal.
+
 ### Aplicativo nativo para macOS
 
 O projeto usa `org.beryx.runtime`, a variante Beryx apropriada para aplicações

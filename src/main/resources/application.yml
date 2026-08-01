@@ -17,12 +17,11 @@ app:
       AppleWebKit/537.36 (KHTML, like Gecko)
       Chrome/124.0.0.0 Safari/537.36
     # Gateway implementation: "playwright" (default) or "webclient"
-    # Playwright uses a real headed Chromium browser to bypass Akamai's TLS
-    # fingerprinting and JavaScript sensor. On Linux servers, launch with:
-    #   xvfb-run -a java -jar app.jar
+    # Playwright uses an internal headless Chromium browser to establish the
+    # Akamai session without displaying or focusing a browser window.
     client: playwright
     playwright:
-      headless: false
+      headless: true
       nav-timeout-ms: 30000
       fetch-timeout-ms: 30000
       startup-retries: 1
