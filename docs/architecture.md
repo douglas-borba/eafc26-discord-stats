@@ -72,6 +72,13 @@ when a request invalidates the session or Spring shuts down. This lifecycle is
 independent from `DashboardAutoLauncher`, the only component allowed to ask
 macOS to open the user's default browser.
 
+The Linux container packages the same application and Playwright 1.47 browser
+runtime without introducing another gateway. It binds the web server externally
+through `app.web.network-enabled`, persists the existing application-support
+directory in a volume and keeps canonical acquisition, interpretation and
+rendering unchanged. The macOS bundle and container are distribution adapters
+over the same runtime pipeline.
+
 `ea.mapping` is the Anti-Corruption Layer and the only translator from
 `MatchResponse` to `FootballMatch`. `EaMatchMapper`:
 
