@@ -207,6 +207,11 @@ body.app-shell-ready {
   border-top: 1px solid rgba(48, 54, 61, 0.72);
 }
 
+.app-shell-logout { width: 100%; background: transparent; cursor: pointer; text-align: left; }
+.app-shell-role { display: block; padding: 4px 11px 8px; color: var(--shell-accent); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+[data-admin-only] { display: none !important; }
+body[data-access-role="ADMIN"] [data-admin-only]:not([data-admin-hidden]) { display: revert !important; }
+
 .app-shell-story {
   margin: 0 20px 15px;
   color: #6e7681;

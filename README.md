@@ -66,6 +66,22 @@ externalized in `application.yml` so it can be updated without code changes.
 
 ## Configuration
 
+### Shared application access
+
+The web application requires two different shared passwords supplied only by
+environment variables:
+
+```bash
+export EAFC_VIEWER_PASSWORD='replace-with-a-long-viewer-password'
+export EAFC_ADMIN_PASSWORD='replace-with-a-different-long-admin-password'
+```
+
+VIEWER can explore the sports pages. ADMIN can additionally access settings,
+setup, monitoring and state-changing operations. Authentication uses an
+HttpOnly, SameSite=Lax server session; no JWT or browser storage is used. See
+[`docs/security.md`](docs/security.md) for the permission matrix, session/CSRF
+behavior and password rotation procedure.
+
 Edit `src/main/resources/application.yml`:
 
 ```yaml
@@ -263,6 +279,8 @@ headless e os browsers já estão presentes em `/ms-playwright`.
 Pré-requisito: Docker com Compose disponível. Construa e inicie com:
 
 ```bash
+cp .env.example .env
+# Replace both documented placeholder passwords in the ignored .env file.
 docker compose up --build -d
 ```
 

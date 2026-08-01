@@ -667,7 +667,7 @@
       <!-- Left Column -->
       <div class="left-column">
         <!-- Actions Panel -->
-        <div class="panel actions-panel">
+        <div class="panel actions-panel" data-admin-only>
           <div class="panel-title">Ações</div>
           <div class="panel-body">
             <button class="btn btn-primary" id="btn-refresh" onclick="notify()">
@@ -718,7 +718,7 @@
         </div>
 
         <!-- Developer Panel -->
-        <div class="panel dev-panel" id="dev-panel" style="display: none;">
+        <div class="panel dev-panel" id="dev-panel" data-admin-only data-admin-hidden style="display: none;">
           <div class="panel-title">🧪 Simulador</div>
           <div class="panel-body">
             <div class="dev-info">
@@ -795,13 +795,15 @@
     let isMatchSimulated = false;
 
     // ===== Initialize =====
-    (function init() {
-      loadNetworkInfo();
+    document.addEventListener('eafc:auth-ready', function init(event) {
       loadLatestMatch();
-      refreshPollingStatus();
-      setInterval(refreshPollingStatus, 10000);
       setInterval(loadLatestMatch, 30000);
-    })();
+      if (event.detail.role === 'ADMIN') {
+        loadNetworkInfo();
+        refreshPollingStatus();
+        setInterval(refreshPollingStatus, 10000);
+      }
+    }, { once: true });
 
     function loadNetworkInfo() {
       fetch('/api/settings/info')
@@ -813,6 +815,7 @@
             document.getElementById('network-panel').style.display = 'block';
           }
           if (info.devMode) {
+            document.getElementById('dev-panel').removeAttribute('data-admin-hidden');
             document.getElementById('dev-panel').style.display = 'block';
           }
         })

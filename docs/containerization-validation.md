@@ -62,3 +62,11 @@ The Linux-specific runtime uses the official Playwright ARM64 image and enables
 external web binding through container configuration. It does not replace the
 validated macOS launcher or application bundle flow. The complete JVM suite and
 a native macOS startup/health smoke test must remain green before merge.
+
+## Authenticated runtime
+
+Compose requires `EAFC_VIEWER_PASSWORD` and `EAFC_ADMIN_PASSWORD` from the host
+environment or an ignored `.env` file. Use `.env.example` only as a template.
+`/api/health` remains public and minimal so the existing Docker healthcheck does
+not depend on a user session. For a future HTTPS proxy, set
+`EAFC_COOKIE_SECURE=true`; Spring processes forwarded headers.

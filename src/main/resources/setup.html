@@ -228,7 +228,7 @@
       try {
         const res = await fetch('/api/setup/webhook', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1]) },
           body: JSON.stringify({ webhookUrl: statsUrl, historyWebhookUrl: historyUrl }),
           redirect: 'manual'
         });

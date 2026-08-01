@@ -3,6 +3,7 @@ package com.eafc26.discordstats.web
 import com.eafc26.discordstats.config.WebhookConfigService
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
+import org.springframework.security.core.Authentication
 import org.springframework.web.server.ServerWebExchange
 import org.springframework.web.server.WebFilter
 import org.springframework.web.server.WebFilterChain
@@ -26,15 +27,30 @@ class SetupRedirectFilter(private val webhookConfigService: WebhookConfigService
         val path = exchange.request.path.value()
         if (isPassThrough(path)) return chain.filter(exchange)
 
-        val response = exchange.response
-        response.statusCode = HttpStatus.FOUND
-        response.headers.location = URI.create("/setup")
-        return response.setComplete()
+        return exchange.getPrincipal<Authentication>()
+            .map { authentication -> authentication.authorities.any { it.authority == "ROLE_ADMIN" } }
+            // Anonymous requests are rejected by Spring Security before this filter in
+            // production. Treating a missing principal as the legacy local-admin case
+            // preserves isolated filter/controller tests and first-run behavior.
+            .defaultIfEmpty(true)
+            .flatMap { isAdmin ->
+                if (isAdmin) {
+                    val response = exchange.response
+                    response.statusCode = HttpStatus.FOUND
+                    response.headers.location = URI.create("/setup")
+                    response.setComplete()
+                } else {
+                    chain.filter(exchange)
+                }
+            }
     }
 
     private fun isPassThrough(path: String): Boolean =
         path == "/setup" ||
         path.startsWith("/api/setup") ||
         path == "/api/health" ||
-        path == "/api/polling/status"
+        path == "/login" ||
+        path == "/admin/login" ||
+        path == "/access-denied" ||
+        path == "/session-expired"
 }

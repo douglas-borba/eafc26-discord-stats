@@ -6,10 +6,13 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest
+import org.springframework.boot.autoconfigure.security.reactive.ReactiveSecurityAutoConfiguration
+import org.springframework.boot.autoconfigure.security.reactive.ReactiveUserDetailsServiceAutoConfiguration
+import org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockUser
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.test.web.reactive.server.WebTestClient
 
-@WebFluxTest(MatchController::class)
+@WebFluxTest(MatchController::class, excludeAutoConfiguration = [ReactiveSecurityAutoConfiguration::class, ReactiveUserDetailsServiceAutoConfiguration::class])
 class SetupRedirectFilterTest {
 
     @Autowired
@@ -26,7 +29,7 @@ class SetupRedirectFilterTest {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
         whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
 
-        webClient.get().uri("/")
+        webClient.mutateWith(mockUser("admin").roles("ADMIN")).get().uri("/")
             .exchange()
             .expectStatus().is3xxRedirection
             .expectHeader().location("/setup")
@@ -37,7 +40,7 @@ class SetupRedirectFilterTest {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
         whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
 
-        webClient.get().uri("/")
+        webClient.mutateWith(mockUser("admin").roles("ADMIN")).get().uri("/")
             .exchange()
             .expectStatus().is3xxRedirection
             .expectHeader().location("/setup")
@@ -48,7 +51,7 @@ class SetupRedirectFilterTest {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
         whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
 
-        webClient.get().uri("/")
+        webClient.mutateWith(mockUser("admin").roles("ADMIN")).get().uri("/")
             .exchange()
             .expectStatus().is3xxRedirection
             .expectHeader().location("/setup")
@@ -59,7 +62,7 @@ class SetupRedirectFilterTest {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
         whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
 
-        webClient.get().uri("/")
+        webClient.mutateWith(mockUser("admin").roles("ADMIN")).get().uri("/")
             .exchange()
             .expectStatus().isOk
     }

@@ -4,9 +4,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.runApplication
 import com.eafc26.discordstats.config.AppProperties
+import com.eafc26.discordstats.security.AccessSecurityProperties
 
 @SpringBootApplication
-@EnableConfigurationProperties(AppProperties::class)
+@EnableConfigurationProperties(AppProperties::class, AccessSecurityProperties::class)
 class Eafc26DiscordStatsApplication
 
 fun main(args: Array<String>) {

@@ -1,8 +1,19 @@
 server:
   address: 127.0.0.1   # overridden at runtime by LocalConfigPostProcessor
   port: 8080
+  forward-headers-strategy: framework
+  reactive:
+    session:
+      timeout: ${EAFC_SESSION_TIMEOUT:8h}
+      cookie:
+        http-only: true
+        same-site: lax
+        secure: ${EAFC_COOKIE_SECURE:false}
 
 app:
+  security:
+    viewer-password: ${EAFC_VIEWER_PASSWORD:}
+    admin-password: ${EAFC_ADMIN_PASSWORD:}
   ea:
     base-url: https://proclubs.ea.com/api/fc
     platform: common-gen5

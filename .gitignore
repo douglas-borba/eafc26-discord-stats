@@ -10,3 +10,8 @@ dist/
 
 # IntelliJ local caches
 .idea/caches/
+
+# Local deployment secrets
+.env
+.env.*
+!.env.example
