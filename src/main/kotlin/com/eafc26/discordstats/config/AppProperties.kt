@@ -64,5 +64,8 @@ data class PlaywrightProperties(
         "--no-default-browser-check",
         "--disable-extensions",
         "--disable-infobars",
+        "--disable-gpu",
+        "--disable-software-rasterizer",
+        "--renderer-process-limit=1",
     ),
 )

@@ -51,4 +51,3 @@ app:
 logging:
   level:
     com.eafc26: INFO
-    com.eafc26.discordstats.ea.EaResponseParser: DEBUG

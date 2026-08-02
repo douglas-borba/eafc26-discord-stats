@@ -47,6 +47,14 @@ class PlaywrightBrowserFetcher(
     // ---------------------------------------------------------------------------
 
     companion object {
+        private val NON_ESSENTIAL_SESSION_RESOURCES = setOf(
+            "font",
+            "image",
+            "media",
+            "script",
+            "stylesheet",
+        )
+
         // Use arrayBuffer + TextDecoder('utf-8') instead of r.text() to force
         // explicit UTF-8 decoding. r.text() honors the charset in Content-Type,
         // and if EA omits it or sends text/plain the browser defaults to
@@ -137,6 +145,18 @@ class PlaywrightBrowserFetcher(
         )
         page = context!!.newPage()
 
+        // This page exists only to establish the cookies and browser state that
+        // Akamai requires. Presentation assets do not participate in that flow and can
+        // consume hundreds of MiB during a cold Chromium start in a 1 GiB cgroup.
+        // Documents and fetch/XHR requests remain untouched.
+        page!!.route("**/*") { route ->
+            if (route.request().resourceType() in NON_ESSENTIAL_SESSION_RESOURCES) {
+                route.abort()
+            } else {
+                route.resume()
+            }
+        }
+
         log.info("Navigating to {} to establish Akamai session", pw.initialPageUrl)
         page!!.navigate(
             pw.initialPageUrl,
@@ -144,6 +164,7 @@ class PlaywrightBrowserFetcher(
                 .setWaitUntil(com.microsoft.playwright.options.WaitUntilState.DOMCONTENTLOADED)
                 .setTimeout(pw.navTimeoutMs.toDouble())
         )
+        page!!.unrouteAll()
         log.info("Browser ready")
     }
 

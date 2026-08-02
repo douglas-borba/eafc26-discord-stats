@@ -6,8 +6,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
-import java.nio.file.Files
-import java.nio.file.Paths
 
 @Component
 @Qualifier("production")
@@ -38,17 +36,7 @@ class PlaywrightEaClubsGateway(
 
         log.info(">>> Entered PlaywrightEaClubsGateway.getLatestMatches({})", clubId)
         log.debug("Playwright matches: {}", url)
-        return callEa(url) { body ->
-            // TEMP: log raw EA response before deserialization. Remove when done.
-            log.info("===== RAW EA MATCH PAYLOAD START =====")
-            val chunkSize = 4000
-            body.chunked(chunkSize).forEachIndexed { index, chunk ->
-                log.info("RAW PAYLOAD [{}]: {}", index, chunk)
-            }
-            log.info("===== RAW EA MATCH PAYLOAD END =====")
-
-            parser.parseMatches(body)
-        }
+        return callEa(url, parser::parseMatches)
     }
 
     override fun getMembersStats(clubId: String): EaApiResult<List<com.eafc26.discordstats.ea.model.MemberStats>> {
@@ -57,21 +45,6 @@ class PlaywrightEaClubsGateway(
                 "&clubId=${encode(clubId)}"
         log.info("Fetching members/stats for clubId={}", clubId)
         return callEa(url) { parser.parseMembersStats(it) }
-    }
-
-    private fun dumpRawMatchResponse(body: String) {
-        try {
-            val dir = Paths.get(System.getProperty("java.io.tmpdir"), "ea-fc-stats")
-            Files.createDirectories(dir)
-
-            val file = dir.resolve("latest-match-response.json")
-
-            log.info("About to dump raw match payload... (body.length={})", body.length)
-            Files.writeString(file, body)
-            log.info("Raw match payload written to: {}", file.toAbsolutePath())
-        } catch (ex: Exception) {
-            log.error("Failed to dump raw EA match response", ex)
-        }
     }
 
     private fun <T> callEa(url: String, parse: (String) -> EaApiResult<T>): EaApiResult<T> {
