@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.security
 
 import com.eafc26.discordstats.config.WebhookConfigService
+import com.eafc26.discordstats.config.WebhookConfigurationSource
 import com.eafc26.discordstats.dev.DevSimulatorService
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -34,6 +35,8 @@ class SecurityIntegrationTest {
     fun configuredApplication() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
         whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
+        whenever(webhookConfigService.getWebhookSource()).thenReturn(WebhookConfigurationSource.ENVIRONMENT)
+        whenever(webhookConfigService.getHistoryWebhookSource()).thenReturn(WebhookConfigurationSource.ENVIRONMENT)
     }
 
     @Test

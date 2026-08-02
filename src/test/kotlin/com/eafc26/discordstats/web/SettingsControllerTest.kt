@@ -2,6 +2,7 @@ package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.WebhookConfigService
+import com.eafc26.discordstats.config.WebhookConfigurationSource
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.verify
@@ -32,6 +33,8 @@ class SettingsControllerTest {
         whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
         whenever(webhookConfigService.isNetworkEnabled()).thenReturn(false)
         whenever(webhookConfigService.logFilePath()).thenReturn("/Users/user/Library/Logs/EAFC26DiscordStats/app.log")
+        whenever(webhookConfigService.getWebhookSource()).thenReturn(WebhookConfigurationSource.STORED)
+        whenever(webhookConfigService.getHistoryWebhookSource()).thenReturn(WebhookConfigurationSource.STORED)
     }
 
     @Test
@@ -60,6 +63,8 @@ class SettingsControllerTest {
             .expectStatus().isOk
             .expectBody()
             .jsonPath("$.webhookConfigured").isEqualTo(true)
+            .jsonPath("$.webhookSource").isEqualTo("STORED")
+            .jsonPath("$.historyWebhookSource").isEqualTo("STORED")
             .jsonPath("$.networkEnabled").isEqualTo(false)
     }
 
@@ -110,7 +115,7 @@ class SettingsControllerTest {
             .expectStatus().is3xxRedirection
             .expectHeader().location("/setup")
 
-        verify(webhookConfigService).reset()
+        verify(webhookConfigService).resetStoredWebhooks()
     }
 
     @Test
@@ -135,5 +140,17 @@ class SettingsControllerTest {
             .expectStatus().isOk
 
         verify(webhookConfigService).setNetworkEnabled(false)
+    }
+
+    @Test
+    fun `GET settings info reports environment origin without exposing URL`() {
+        whenever(webhookConfigService.getWebhookSource()).thenReturn(WebhookConfigurationSource.ENVIRONMENT)
+
+        webClient.get().uri("/api/settings/info")
+            .exchange()
+            .expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.webhookSource").isEqualTo("ENVIRONMENT")
+            .jsonPath("$.webhookUrl").doesNotExist()
     }
 }

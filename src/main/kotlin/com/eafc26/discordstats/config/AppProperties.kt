@@ -21,7 +21,8 @@ data class PollingProperties(
 )
 
 data class DiscordProperties(
-    val webhookUrl: String = "",
+    val matchWebhookUrl: String = "",
+    val historyWebhookUrl: String = "",
 )
 
 data class EaProperties(

@@ -29,6 +29,8 @@ class ContainerizationArchitectureTest {
             .contains("APP_WEB_NETWORK_ENABLED: \"true\"")
             .contains("EAFC_DASHBOARD_AUTO_OPEN: \"false\"")
             .contains("JAVA_TOOL_OPTIONS:")
+            .contains("EAFC_DISCORD_MATCH_WEBHOOK_URL:")
+            .contains("EAFC_DISCORD_HISTORY_WEBHOOK_URL:")
     }
 
     @Test

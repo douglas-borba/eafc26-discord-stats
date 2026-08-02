@@ -35,6 +35,9 @@ class SettingsController(
             ResponseEntity.ok(
                 buildMap {
                     put("webhookConfigured", webhookConfigService.isConfigured())
+                    put("webhookSource", webhookConfigService.getWebhookSource().name)
+                    put("historyWebhookConfigured", webhookConfigService.isHistoryConfigured())
+                    put("historyWebhookSource", webhookConfigService.getHistoryWebhookSource().name)
                     put("networkEnabled", networkEnabled)
                     put("devMode", devMode)
                     if (networkUrl != null) put("networkUrl", networkUrl)
@@ -43,11 +46,11 @@ class SettingsController(
             )
         }
 
-    /** Clears the saved webhook and redirects to /setup. */
+    /** Clears local fallbacks only; environment-managed secrets remain effective. */
     @PostMapping("/api/settings/reconfigure-webhook")
     fun reconfigureWebhook(): Mono<ResponseEntity<Map<String, String>>> =
         Mono.fromCallable {
-            webhookConfigService.reset()
+            webhookConfigService.resetStoredWebhooks()
             ResponseEntity.status(HttpStatus.FOUND)
                 .location(URI.create("/setup"))
                 .body<Map<String, String>>(mapOf("status" to "ok"))
@@ -83,7 +86,12 @@ class SettingsController(
     @GetMapping("/api/settings/history-webhook", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun getHistoryWebhookStatus(): Mono<ResponseEntity<Map<String, Any>>> =
         Mono.fromCallable {
-            ResponseEntity.ok(mapOf<String, Any>("configured" to webhookConfigService.isHistoryConfigured()))
+            ResponseEntity.ok(
+                mapOf<String, Any>(
+                    "configured" to webhookConfigService.isHistoryConfigured(),
+                    "source" to webhookConfigService.getHistoryWebhookSource().name,
+                )
+            )
         }
 
     /** Saves or clears the history webhook URL. Pass blank url to clear. */
@@ -92,6 +100,10 @@ class SettingsController(
         @RequestBody body: HistoryWebhookRequest,
     ): Mono<ResponseEntity<Map<String, String>>> =
         Mono.fromCallable {
+            if (webhookConfigService.getHistoryWebhookSource() == com.eafc26.discordstats.config.WebhookConfigurationSource.ENVIRONMENT) {
+                return@fromCallable ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(mapOf("error" to "Este webhook é controlado pelas variáveis de ambiente do servidor."))
+            }
             try {
                 webhookConfigService.configureHistory(body.url)
                 ResponseEntity.ok(mapOf("status" to if (body.url.isBlank()) "cleared" else "saved"))

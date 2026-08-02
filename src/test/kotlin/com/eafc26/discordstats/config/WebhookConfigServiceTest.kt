@@ -26,11 +26,27 @@ class WebhookConfigServiceTest {
         prefs.flush()
     }
 
-    private fun makeService(webhookUrl: String = ""): WebhookConfigService {
+    private fun makeService(
+        webhookUrl: String = "",
+        historyWebhookUrl: String = "",
+        environmentMatch: String = "",
+        environmentHistory: String = "",
+    ): WebhookConfigService {
         if (webhookUrl.isNotBlank()) {
             settingsService.setWebhookUrl(webhookUrl)
         }
-        return WebhookConfigService(settingsService)
+        if (historyWebhookUrl.isNotBlank()) {
+            settingsService.setHistoryWebhookUrl(historyWebhookUrl)
+        }
+        return WebhookConfigService(
+            settingsService,
+            AppProperties(
+                discord = DiscordProperties(
+                    matchWebhookUrl = environmentMatch,
+                    historyWebhookUrl = environmentHistory,
+                )
+            ),
+        )
     }
 
     // -- isConfigured --
@@ -53,11 +69,11 @@ class WebhookConfigServiceTest {
     }
 
     @Test
-    fun `getMaskedWebhookUrl masks middle of URL`() {
+    fun `getMaskedWebhookUrl identifies local configuration without revealing URL`() {
         val service = makeService("https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz1234567890")
         val masked = service.getMaskedWebhookUrl()
-        assertThat(masked).contains("****")
-        assertThat(masked).startsWith("https://discord.com/api/webhooks/")
+        assertThat(masked).isEqualTo("Configurado localmente")
+        assertThat(masked).doesNotContain("123456789012345678")
     }
 
     // -- validateUrl --
@@ -159,5 +175,73 @@ class WebhookConfigServiceTest {
         service.configureHistory("https://discord.com/api/webhooks/333/historytoken")
         service.configureHistory("")
         assertThat(service.isHistoryConfigured()).isFalse()
+    }
+
+    @Test
+    fun `environment match webhook takes precedence over stored value`() {
+        val stored = "https://discord.com/api/webhooks/111/storedtoken"
+        val environment = "https://discord.com/api/webhooks/222/environmenttoken"
+        val service = makeService(webhookUrl = stored, environmentMatch = environment)
+
+        assertThat(service.getWebhookUrl()).isEqualTo(environment)
+        assertThat(service.getWebhookSource()).isEqualTo(WebhookConfigurationSource.ENVIRONMENT)
+    }
+
+    @Test
+    fun `blank environment value falls back to stored value`() {
+        val stored = "https://discord.com/api/webhooks/111/storedtoken"
+        val service = makeService(webhookUrl = stored, environmentMatch = "   ")
+
+        assertThat(service.getWebhookUrl()).isEqualTo(stored)
+        assertThat(service.getWebhookSource()).isEqualTo(WebhookConfigurationSource.STORED)
+    }
+
+    @Test
+    fun `no environment or stored value is not configured`() {
+        val service = makeService()
+
+        assertThat(service.getWebhookSource()).isEqualTo(WebhookConfigurationSource.NOT_CONFIGURED)
+        assertThat(service.getHistoryWebhookSource()).isEqualTo(WebhookConfigurationSource.NOT_CONFIGURED)
+    }
+
+    @Test
+    fun `environment managed webhook cannot be overwritten locally`() {
+        val service = makeService(
+            environmentMatch = "https://discord.com/api/webhooks/222/environmenttoken",
+        )
+
+        assertThatThrownBy {
+            service.configure("https://discord.com/api/webhooks/111/storedtoken")
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessage(WebhookConfigService.ENV_MATCH + " is controlled by the environment.")
+    }
+
+    @Test
+    fun `invalid environment value fails without exposing secret`() {
+        val secret = "plain-http-secret-token"
+
+        assertThatThrownBy {
+            makeService(environmentMatch = "http://discord.com/api/webhooks/123/$secret")
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessage(WebhookConfigService.ENV_MATCH + " is invalid.")
+            .message().doesNotContain(secret)
+    }
+
+    @Test
+    fun `only HTTPS webhook URLs are accepted`() {
+        assertThatThrownBy {
+            makeService().validateUrl("http://discord.com/api/webhooks/123/token")
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("HTTPS")
+    }
+
+    @Test
+    fun `invalid stored webhook is cleared and never resolved`() {
+        settingsService.setWebhookUrl("http://discord.com/api/webhooks/123/legacy-token")
+
+        val service = WebhookConfigService(settingsService, AppProperties())
+
+        assertThat(service.getWebhookSource()).isEqualTo(WebhookConfigurationSource.NOT_CONFIGURED)
+        assertThat(settingsService.getWebhookUrl()).isBlank()
     }
 }

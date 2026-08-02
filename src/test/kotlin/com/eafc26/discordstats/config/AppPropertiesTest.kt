@@ -30,4 +30,21 @@ class AppPropertiesTest {
 
         assertThat(configured.ea.playwright.headless).isFalse()
     }
+
+    @Test
+    fun `Discord webhook properties bind independently`() {
+        val source = MapConfigurationPropertySource(
+            mapOf(
+                "app.discord.match-webhook-url" to "https://discord.com/api/webhooks/1/match-token",
+                "app.discord.history-webhook-url" to "https://discord.com/api/webhooks/2/history-token",
+            )
+        )
+
+        val configured = Binder(source)
+            .bind("app", Bindable.of(AppProperties::class.java))
+            .get()
+
+        assertThat(configured.discord.matchWebhookUrl).endsWith("/match-token")
+        assertThat(configured.discord.historyWebhookUrl).endsWith("/history-token")
+    }
 }

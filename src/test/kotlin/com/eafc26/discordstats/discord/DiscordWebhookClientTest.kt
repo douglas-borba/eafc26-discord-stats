@@ -1,6 +1,5 @@
 package com.eafc26.discordstats.discord
 
-import com.eafc26.discordstats.config.SettingsService
 import com.eafc26.discordstats.config.WebhookConfigService
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
@@ -11,29 +10,24 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
 import org.springframework.web.reactive.function.client.WebClient
-import java.util.prefs.Preferences
 
 class DiscordWebhookClientTest {
 
     private lateinit var server: MockWebServer
-    private lateinit var prefs: Preferences
     private val om = ObjectMapper().registerModule(KotlinModule.Builder().build())
 
     @BeforeEach
     fun setUp() {
         server = MockWebServer()
         server.start()
-        prefs = Preferences.userNodeForPackage(SettingsService::class.java)
-        prefs.clear()
-        prefs.flush()
     }
 
     @AfterEach
     fun tearDown() {
         server.shutdown()
-        prefs.clear()
-        prefs.flush()
     }
 
     @Test
@@ -81,11 +75,8 @@ class DiscordWebhookClientTest {
     }
 
     private fun makeClient(webhookUrl: String): DiscordWebhookClient {
-        val settingsService = SettingsService()
-        if (webhookUrl.isNotBlank()) {
-            settingsService.setWebhookUrl(webhookUrl)
-        }
-        val service = WebhookConfigService(settingsService)
+        val service = mock<WebhookConfigService>()
+        whenever(service.getWebhookUrl()).thenReturn(webhookUrl)
         return DiscordWebhookClient(service, om, WebClient.create())
     }
 

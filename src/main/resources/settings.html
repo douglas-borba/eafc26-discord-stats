@@ -46,6 +46,7 @@
 
     .row-label { font-size: 0.9rem; }
     .row-sub   { font-size: 0.78rem; color: #8b949e; margin-top: 0.15rem; }
+    .source-status { color: #58a6ff; }
 
     button.action {
       background: #21262d;
@@ -161,8 +162,8 @@
     <div class="section-title">Webhook do Discord</div>
     <div class="row">
       <div>
-        <div class="row-label">Reconfigurar Webhooks</div>
-        <div class="row-sub">Limpa os webhooks salvos e reabre a tela de configuração inicial.</div>
+        <div class="row-label">Configuração dos Webhooks</div>
+        <div class="row-sub" id="webhook-source-status">Carregando origem da configuração…</div>
       </div>
       <button class="action danger" onclick="reconfigure()">Reconfigurar</button>
     </div>
@@ -229,6 +230,15 @@
           document.getElementById('log-path').textContent = info.logFile || '—';
           document.getElementById('network-toggle').checked = !!info.networkEnabled;
           document.getElementById('devmode-toggle').checked = !!info.devMode;
+          const sources = [info.webhookSource, info.historyWebhookSource];
+          const sourceText = sources.every(s => s === 'ENVIRONMENT')
+            ? 'Configurados pelo ambiente. Os valores permanecem secretos e não podem ser alterados aqui.'
+            : sources.some(s => s === 'ENVIRONMENT')
+              ? 'Configuração mista: ambiente e armazenamento local. Secrets do ambiente não podem ser alterados aqui.'
+              : sources.some(s => s === 'STORED')
+                ? 'Configurados localmente neste dispositivo.'
+                : 'Ainda não configurados.';
+          document.getElementById('webhook-source-status').textContent = sourceText;
           if (info.networkUrl) {
             document.getElementById('network-url-val').textContent = info.networkUrl;
             document.getElementById('network-url-row').style.display = 'block';
@@ -238,7 +248,7 @@
     })();
 
     async function reconfigure() {
-      if (!confirm('Isso apagará os webhooks salvos e reabrirá a tela de configuração. Continuar?')) return;
+      if (!confirm('Isso apagará apenas os webhooks salvos localmente. Variáveis do servidor não serão alteradas. Continuar?')) return;
       try {
         await fetch('/api/settings/reconfigure-webhook', { method: 'POST', redirect: 'manual' });
         window.location.href = '/setup';

@@ -50,6 +50,7 @@ class SetupRedirectFilter(private val webhookConfigService: WebhookConfigService
         path == "/setup" ||
         PublicStaticResources.contains(path) ||
         path.startsWith("/api/setup") ||
+        path == "/api/auth/session" ||
         path == "/api/health" ||
         path == "/login" ||
         path == "/admin/login" ||

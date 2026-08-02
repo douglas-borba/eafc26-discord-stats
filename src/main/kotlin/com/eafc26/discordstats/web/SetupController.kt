@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.config.WebhookConfigService
+import com.eafc26.discordstats.config.WebhookConfigurationSource
 import org.springframework.core.io.ClassPathResource
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -21,7 +22,7 @@ class SetupController(private val webhookConfigService: WebhookConfigService) {
             .contentType(MediaType.TEXT_HTML)
             .body(ClassPathResource("setup.html"))
 
-    /** Returns current configuration status for both webhooks. */
+    /** Returns configuration status and origin without exposing either URL. */
     @GetMapping("/api/setup/webhook", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun getWebhookInfo(): Mono<ResponseEntity<Map<String, Any>>> =
         Mono.fromCallable {
@@ -29,10 +30,8 @@ class SetupController(private val webhookConfigService: WebhookConfigService) {
                 mapOf(
                     "configured"       to webhookConfigService.isConfigured(),
                     "historyConfigured" to webhookConfigService.isHistoryConfigured(),
-                    "url"              to webhookConfigService.getWebhookUrl(),
-                    "historyUrl"       to webhookConfigService.getHistoryWebhookUrl(),
-                    // kept for backward-compat with older JS that reads maskedUrl
-                    "maskedUrl"        to webhookConfigService.getMaskedWebhookUrl(),
+                    "source"           to webhookConfigService.getWebhookSource().name,
+                    "historySource"    to webhookConfigService.getHistoryWebhookSource().name,
                 )
             )
         }
@@ -43,16 +42,21 @@ class SetupController(private val webhookConfigService: WebhookConfigService) {
         Mono.fromCallable {
             val errors = mutableMapOf<String, String>()
 
-            if (body.webhookUrl.isBlank()) {
+            val matchEnvironmentManaged =
+                webhookConfigService.getWebhookSource() == WebhookConfigurationSource.ENVIRONMENT
+            val historyEnvironmentManaged =
+                webhookConfigService.getHistoryWebhookSource() == WebhookConfigurationSource.ENVIRONMENT
+
+            if (!matchEnvironmentManaged && body.webhookUrl.isBlank() && !webhookConfigService.isConfigured()) {
                 errors["statsError"] = "Informe a URL do webhook do canal de estatísticas."
-            } else {
+            } else if (!matchEnvironmentManaged && body.webhookUrl.isNotBlank()) {
                 try { webhookConfigService.validateUrl(body.webhookUrl.trim()) }
                 catch (ex: IllegalArgumentException) { errors["statsError"] = ex.message ?: "URL inválida." }
             }
 
-            if (body.historyWebhookUrl.isBlank()) {
+            if (!historyEnvironmentManaged && body.historyWebhookUrl.isBlank() && !webhookConfigService.isHistoryConfigured()) {
                 errors["historyError"] = "Informe a URL do webhook do canal de histórico."
-            } else {
+            } else if (!historyEnvironmentManaged && body.historyWebhookUrl.isNotBlank()) {
                 try { webhookConfigService.validateUrl(body.historyWebhookUrl.trim()) }
                 catch (ex: IllegalArgumentException) { errors["historyError"] = ex.message ?: "URL inválida." }
             }
@@ -61,8 +65,12 @@ class SetupController(private val webhookConfigService: WebhookConfigService) {
                 return@fromCallable ResponseEntity.badRequest().body(errors)
             }
 
-            webhookConfigService.configure(body.webhookUrl.trim())
-            webhookConfigService.configureHistory(body.historyWebhookUrl.trim())
+            if (!matchEnvironmentManaged && body.webhookUrl.isNotBlank()) {
+                webhookConfigService.configure(body.webhookUrl.trim())
+            }
+            if (!historyEnvironmentManaged && body.historyWebhookUrl.isNotBlank()) {
+                webhookConfigService.configureHistory(body.historyWebhookUrl.trim())
+            }
 
             ResponseEntity.status(HttpStatus.FOUND)
                 .location(URI.create("/"))

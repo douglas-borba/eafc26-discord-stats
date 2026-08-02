@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientResponseException
+import org.springframework.web.reactive.function.client.WebClientRequestException
 
 /**
  * Sends a Discord embed to the configured webhook URL.
@@ -50,9 +51,13 @@ class DiscordWebhookClient(
             log.debug("Discord webhook delivery succeeded")
         } catch (ex: WebClientResponseException) {
             throw DiscordDeliveryException(
-                "Discord rejected the webhook (HTTP ${ex.statusCode.value()}): ${ex.responseBodyAsString}",
+                "Discord rejected the match webhook (HTTP ${ex.statusCode.value()}).",
                 ex,
             )
+        } catch (ex: WebClientRequestException) {
+            throw DiscordDeliveryException("Discord match webhook request failed.", ex)
+        } catch (ex: Exception) {
+            throw DiscordDeliveryException("Discord match webhook delivery failed.", ex)
         }
     }
 
@@ -73,8 +78,10 @@ class DiscordWebhookClient(
                 .toBodilessEntity()
                 .block()
             log.debug("History webhook delivery succeeded")
-        } catch (ex: Exception) {
-            log.warn("History webhook delivery failed (non-fatal): {}", ex.message)
+        } catch (ex: WebClientResponseException) {
+            log.warn("History webhook delivery failed (non-fatal, HTTP {})", ex.statusCode.value())
+        } catch (_: Exception) {
+            log.warn("History webhook delivery failed (non-fatal)")
         }
     }
 }
