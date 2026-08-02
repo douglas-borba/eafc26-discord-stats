@@ -179,14 +179,19 @@ requests; the EA endpoint does not need to be reachable.
 
 ### Desenvolvimento local
 
-O macOS local via Gradle é o ambiente padrão de desenvolvimento. Exporte as duas
-credenciais locais obrigatórias e inicie a aplicação com:
+O macOS local via Gradle é o ambiente padrão de desenvolvimento. Inicie a
+aplicação com um único comando:
 
 ```bash
-export EAFC_VIEWER_PASSWORD='uma-senha-local-longa'
-export EAFC_ADMIN_PASSWORD='outra-senha-local-longa'
 ./gradlew bootRun
 ```
+
+Somente no `bootRun`, quando nenhuma credencial externa estiver definida, o
+ambiente local utiliza `viewer-local` para VIEWER e `admin-local` para ADMIN.
+Esses valores não entram no `application.yml`, no JAR, no Docker ou em uma futura
+implantação. Para substituir as credenciais durante o desenvolvimento, exporte
+`EAFC_VIEWER_PASSWORD` e `EAFC_ADMIN_PASSWORD` antes do comando; os valores
+externos têm precedência.
 
 A aplicação permanece em primeiro plano, com os logs visíveis no terminal. Quando
 o Spring Boot estiver iniciado, o launcher consulta repetidamente `/api/health` e

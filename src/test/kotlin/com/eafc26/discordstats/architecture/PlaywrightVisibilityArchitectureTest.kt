@@ -35,8 +35,15 @@ class PlaywrightVisibilityArchitectureTest {
         assertThat(build).contains(
             "tasks.named<BootRun>(\"bootRun\")",
             "systemProperty(\"eafc.dashboard.auto-open\", \"true\")",
+            "providers.environmentVariable(\"EAFC_VIEWER_PASSWORD\")",
+            "providers.environmentVariable(\"EAFC_ADMIN_PASSWORD\")",
+            "systemProperty(\"app.security.viewer-password\", \"viewer-local\")",
+            "systemProperty(\"app.security.admin-password\", \"admin-local\")",
         )
-        assertThat(Path.of("Dockerfile").readText()).contains("EAFC_DASHBOARD_AUTO_OPEN=false")
+        assertThat(Path.of("Dockerfile").readText())
+            .contains("EAFC_DASHBOARD_AUTO_OPEN=false")
+            .doesNotContain("viewer-local", "admin-local")
+        assertThat(application).doesNotContain("viewer-local", "admin-local")
     }
 
     @Test
