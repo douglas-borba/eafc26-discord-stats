@@ -26,7 +26,6 @@ class SettingsService {
     companion object {
         // Preference keys
         private const val KEY_WEBHOOK_URL = "discord.webhook.url"
-        private const val KEY_HISTORY_WEBHOOK_URL = "discord.history-webhook.url"
         private const val KEY_NETWORK_ENABLED = "web.network-enabled"
         private const val KEY_DEVELOPMENT_MODE = "app.development-mode"
         private const val KEY_CLUB_ID = "ea.club.id"
@@ -65,34 +64,6 @@ class SettingsService {
      * Returns true if a Discord webhook URL is configured.
      */
     fun isWebhookConfigured(): Boolean = getWebhookUrl().isNotBlank()
-
-    // ------------------------------------------------------------------
-    // History Webhook
-    // ------------------------------------------------------------------
-
-    /**
-     * Returns the saved history webhook URL, or empty string if not configured.
-     */
-    fun getHistoryWebhookUrl(): String = prefs.get(KEY_HISTORY_WEBHOOK_URL, "")
-
-    /**
-     * Saves the history webhook URL.
-     * @param url The webhook URL to save. Pass empty string to clear.
-     */
-    fun setHistoryWebhookUrl(url: String) {
-        if (url.isBlank()) {
-            prefs.remove(KEY_HISTORY_WEBHOOK_URL)
-        } else {
-            prefs.put(KEY_HISTORY_WEBHOOK_URL, url)
-        }
-        flushPrefs()
-        log.info("History webhook URL {}", if (url.isBlank()) "cleared" else "saved")
-    }
-
-    /**
-     * Returns true if a history webhook URL is configured.
-     */
-    fun isHistoryWebhookConfigured(): Boolean = getHistoryWebhookUrl().isNotBlank()
 
     // ------------------------------------------------------------------
     // Network Settings
@@ -211,4 +182,3 @@ class SettingsService {
         }
     }
 }
-

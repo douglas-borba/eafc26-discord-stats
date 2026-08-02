@@ -8,7 +8,6 @@ across production, tests, resources and documentation.
 | Component | Classification | Reason | Impact if removed directly |
 |---|---|---|---|
 | `DiscordEmbedBuilder` | Test-only characterization/shadow | Baseline for Discord structural parity; no production caller | Shadow comparison and historical Discord contract tests would be lost |
-| `HistoryEmbedBuilder` | Test-only characterization/shadow | Baseline for the history webhook, including DIV-003 | History parity and the known-defect proof would be lost |
 | `LegacyMatchSummaryBuilder` | Test-only characterization/shadow | Baseline for Dashboard parity | Dashboard shadow and Phase 0 cross-consumer proofs would be lost |
 | `MatchOutcomeResolver` | Test-only characterization/shadow | Old DTO-based outcome rule used only by legacy builders/tests | Old-result characterization would no longer compile |
 | `CraqueSelector` | Test-only characterization/shadow | Replaced by `CraqueEvaluator` | Legacy award and renderer tests would be lost |

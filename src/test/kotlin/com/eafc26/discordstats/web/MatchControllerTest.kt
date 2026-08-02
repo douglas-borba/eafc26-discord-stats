@@ -30,7 +30,6 @@ class MatchControllerTest {
     @BeforeEach
     fun setUp() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
-        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
     }
 
     // -- GET / --

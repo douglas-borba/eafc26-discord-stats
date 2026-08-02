@@ -36,8 +36,6 @@ class SettingsController(
                 buildMap {
                     put("webhookConfigured", webhookConfigService.isConfigured())
                     put("webhookSource", webhookConfigService.getWebhookSource().name)
-                    put("historyWebhookConfigured", webhookConfigService.isHistoryConfigured())
-                    put("historyWebhookSource", webhookConfigService.getHistoryWebhookSource().name)
                     put("networkEnabled", networkEnabled)
                     put("devMode", devMode)
                     if (networkUrl != null) put("networkUrl", networkUrl)
@@ -82,37 +80,6 @@ class SettingsController(
             )
         }
 
-    /** Returns whether the history webhook is configured — never the URL itself. */
-    @GetMapping("/api/settings/history-webhook", produces = [MediaType.APPLICATION_JSON_VALUE])
-    fun getHistoryWebhookStatus(): Mono<ResponseEntity<Map<String, Any>>> =
-        Mono.fromCallable {
-            ResponseEntity.ok(
-                mapOf<String, Any>(
-                    "configured" to webhookConfigService.isHistoryConfigured(),
-                    "source" to webhookConfigService.getHistoryWebhookSource().name,
-                )
-            )
-        }
-
-    /** Saves or clears the history webhook URL. Pass blank url to clear. */
-    @PostMapping("/api/settings/history-webhook", produces = [MediaType.APPLICATION_JSON_VALUE])
-    fun saveHistoryWebhook(
-        @RequestBody body: HistoryWebhookRequest,
-    ): Mono<ResponseEntity<Map<String, String>>> =
-        Mono.fromCallable {
-            if (webhookConfigService.getHistoryWebhookSource() == com.eafc26.discordstats.config.WebhookConfigurationSource.ENVIRONMENT) {
-                return@fromCallable ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(mapOf("error" to "Este webhook é controlado pelas variáveis de ambiente do servidor."))
-            }
-            try {
-                webhookConfigService.configureHistory(body.url)
-                ResponseEntity.ok(mapOf("status" to if (body.url.isBlank()) "cleared" else "saved"))
-            } catch (ex: IllegalArgumentException) {
-                ResponseEntity.badRequest()
-                    .body(mapOf("error" to (ex.message ?: "URL inválida")))
-            }
-        }
-
     @GetMapping("/api/settings/phrases", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun getPhrases(): Mono<ResponseEntity<Map<String, List<String>>>> =
         Mono.fromCallable { ResponseEntity.ok(phraseBank.getAll()) }
@@ -137,5 +104,4 @@ class SettingsController(
 }
 
 data class NetworkSettingRequest(val enabled: Boolean = false)
-data class HistoryWebhookRequest(val url: String = "")
 data class DevelopmentModeRequest(val enabled: Boolean = false)

@@ -31,7 +31,7 @@ import org.springframework.stereotype.Service
  * 3. Canonicalizes and persists the complete returned window
  * 4. Applies Discord publication deduplication
  * 5. Generates presentation and caches in [LatestMatchHolder]
- * 6. Delivers new matches to Discord webhooks (if applicable)
+ * 6. Delivers new matches to Discord (if applicable)
  * 7. Persists published match IDs
  *
  * The [AcquisitionLock] is an internal implementation detail.
@@ -223,6 +223,13 @@ class MatchAcquisitionService(
         val newVersion = latestMatchHolder.update(presentation)
         log.debug("Cached presentation for match {} (version={})", latest.matchId, newVersion)
 
+        // A new environment has no publication history. Establish the complete
+        // returned EA window as its baseline before any normal publication,
+        // regardless of whether the first trigger is manual, CLI or scheduled.
+        if (publishedIds.isEmpty()) {
+            return establishBaseline(matches)
+        }
+
         // Check deduplication AFTER caching
         if (latest.matchId in publishedIds) {
             log.info("Match {} already published, skipping Discord delivery", latest.matchId)
@@ -304,7 +311,7 @@ class MatchAcquisitionService(
 
     /**
      * Process all new matches (for scheduler triggers).
-     * Handles first-run logic with [publishExistingOnFirstRun].
+     * Establishes a safe baseline when the publication store is empty.
      */
     private fun processAllNew(
         matches: List<MatchResponse>,
@@ -361,9 +368,7 @@ class MatchAcquisitionService(
             stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Enviando partida ${index + 1}/${newMatches.size}...")
 
             try {
-                val payloads = buildDiscordPayloads(canonical)
-                webhookClient.send(payloads.match)
-                webhookClient.sendHistory(payloads.history)
+                webhookClient.send(buildDiscordPayload(canonical))
 
                 stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando partida ${index + 1}/${newMatches.size}...")
 
@@ -399,7 +404,7 @@ class MatchAcquisitionService(
     }
 
     /**
-     * Handle first run based on [publishExistingOnFirstRun] setting.
+     * Handles first use without publishing the existing EA window.
      */
     private fun handleFirstRun(
         matches: List<MatchResponse>,
@@ -414,74 +419,18 @@ class MatchAcquisitionService(
             log.debug("Cached presentation for match {} (version={})", latestMatch.matchId, newVersion)
         }
 
-        if (props.polling.publishExistingOnFirstRun) {
-            log.info("First run with publish-existing-on-first-run=true: will publish {} match(es)", matches.size)
-            return publishExistingMatches(matches, canonicalByMatchId)
-        } else {
-            log.info("Automatic polling baseline established with {} matches.", matches.size)
-            store.saveIds(matches.map { it.matchId }.toSet())
-            return AcquisitionResult.Processed(
-                published = emptyList(),
-                alreadyPublished = emptyList(),
-                failed = emptyList(),
-                baselineEstablished = true,
-            )
-        }
+        return establishBaseline(matches)
     }
 
-    /**
-     * Publish all existing matches on first run.
-     */
-    private fun publishExistingMatches(
-        matches: List<MatchResponse>,
-        canonicalByMatchId: Map<String, CanonicalMatch>,
-    ): AcquisitionResult {
-        val sortedMatches = matches.sortedBy { it.timestamp }
-        val published = mutableListOf<AcquisitionResult.MatchSummary>()
-        val failed = mutableListOf<AcquisitionResult.MatchFailure>()
-        val currentIds = mutableSetOf<String>()
-
-        // Initialize empty store
-        store.saveIds(currentIds)
-
-        for (match in sortedMatches) {
-            val canonical = canonicalByMatchId.getValue(match.matchId)
-            val summary = buildSummary(canonical)
-
-            try {
-                val payloads = buildDiscordPayloads(canonical)
-                webhookClient.send(payloads.match)
-                webhookClient.sendHistory(payloads.history)
-
-                currentIds += match.matchId
-                val persisted = try {
-                    store.saveIds(currentIds)
-                    log.info("Published match {}", match.matchId)
-                    true
-                } catch (ex: Exception) {
-                    log.error("Persistence failed after Discord delivery for match {}", match.matchId, ex)
-                    false
-                }
-
-                published += AcquisitionResult.MatchSummary(match.matchId, summary, persisted)
-
-            } catch (ex: IllegalStateException) {
-                log.error("Discord webhook not configured — aborting cycle: {}", ex.message)
-                return AcquisitionResult.WebhookNotConfigured
-            } catch (ex: DiscordDeliveryException) {
-                log.warn("Discord delivery failed for match {} — will retry next cycle: {}", match.matchId, ex.message)
-                failed += AcquisitionResult.MatchFailure(match.matchId, summary, ex.message ?: "Delivery failed")
-            } catch (ex: Exception) {
-                log.error("Unexpected error publishing match {}", match.matchId, ex)
-                failed += AcquisitionResult.MatchFailure(match.matchId, summary, ex.message ?: "Unexpected error")
-            }
-        }
-
+    private fun establishBaseline(matches: List<MatchResponse>): AcquisitionResult {
+        val baselineIds = matches.mapTo(linkedSetOf()) { it.matchId }
+        log.info("Publication baseline established with {} match(es); no Discord delivery", baselineIds.size)
+        store.saveIds(baselineIds)
         return AcquisitionResult.Processed(
-            published = published,
+            published = emptyList(),
             alreadyPublished = emptyList(),
-            failed = failed,
-            baselineEstablished = false, // Not a baseline — we published matches
+            failed = emptyList(),
+            baselineEstablished = true,
         )
     }
 
@@ -528,16 +477,14 @@ class MatchAcquisitionService(
     // -------------------------------------------------------------------------
 
     /**
-     * Delivers a match to Discord webhooks.
+     * Delivers a match to the configured Discord webhook.
      * @return An error result if delivery failed, or null if successful.
      */
     private fun deliverToDiscord(
         canonical: CanonicalMatch,
     ): AcquisitionResult? {
-        val payloads = buildDiscordPayloads(canonical)
-
         try {
-            webhookClient.send(payloads.match)
+            webhookClient.send(buildDiscordPayload(canonical))
         } catch (ex: IllegalStateException) {
             log.error("Discord webhook not configured: {}", ex.message)
             return AcquisitionResult.WebhookNotConfigured
@@ -555,9 +502,6 @@ class MatchAcquisitionService(
                 )),
             )
         }
-
-        // History webhook — optional, fire-and-forget
-        webhookClient.sendHistory(payloads.history)
 
         return null // Success
     }
@@ -588,27 +532,15 @@ class MatchAcquisitionService(
         )
     }
 
-    private fun buildDiscordPayloads(
+    private fun buildDiscordPayload(
         canonical: CanonicalMatch,
-    ): DiscordPayloads {
-        return DiscordPayloads(
-            match = discordRenderer.renderMatch(
-                canonical.footballMatch,
-                canonical.interpretation,
-                canonical.stories,
-            ),
-            history = discordRenderer.renderHistory(
-                canonical.footballMatch,
-                canonical.interpretation,
-                canonical.stories,
-            ),
+    ): DiscordPayload {
+        return discordRenderer.renderMatch(
+            canonical.footballMatch,
+            canonical.interpretation,
+            canonical.stories,
         )
     }
-
-    private data class DiscordPayloads(
-        val match: DiscordPayload,
-        val history: DiscordPayload,
-    )
 
     /**
      * Builds a human-readable summary of a match.

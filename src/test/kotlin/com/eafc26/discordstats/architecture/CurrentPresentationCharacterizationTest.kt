@@ -3,7 +3,6 @@ package com.eafc26.discordstats.architecture
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.discord.DiscordEmbed
 import com.eafc26.discordstats.discord.DiscordEmbedBuilder
-import com.eafc26.discordstats.discord.HistoryEmbedBuilder
 import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
@@ -555,31 +554,6 @@ class CurrentPresentationCharacterizationTest {
             assertThat(renderedNarratives).isEqualTo(2)
         }
 
-        @Test
-        fun `history currently reports goalkeeper EA MVP while card Craque remains outfield`() {
-            val match = match(
-                players = linkedMapOf(
-                    "outfield-star-id" to player(name = "OutfieldStar", rating = "8.8"),
-                    "bagre-id" to player(name = "Bagre", rating = "5.5"),
-                    "gk-mvp-id" to goalkeeper(
-                        name = "KeeperEaMvp",
-                        rating = "9.5",
-                        saves = "8",
-                        goalsConceded = "0",
-                        reflexSaves = "5",
-                    ).copy(manOfTheMatch = "1"),
-                ),
-            )
-
-            val card = summaryBuilder.build(match, ourClubId, zone)
-            val historyMvp = HistoryEmbedBuilder.build(match, ourClubId, zone)
-                .embeds.single()
-                .fieldValue("⭐ MVP")
-
-            assertThat(card.craque!!.name).isEqualTo("OutfieldStar")
-            assertThat(historyMvp).contains("KeeperEaMvp")
-            assertThat(historyMvp).doesNotContain(card.craque!!.name)
-        }
     }
 
     private fun discordEmbed(match: MatchResponse): DiscordEmbed =

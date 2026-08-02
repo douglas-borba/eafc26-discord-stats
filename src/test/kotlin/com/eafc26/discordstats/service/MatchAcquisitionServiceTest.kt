@@ -50,10 +50,10 @@ class MatchAcquisitionServiceTest {
 
     private val clubId = "12345"
 
-    private fun makeService(publishExistingOnFirstRun: Boolean = false): MatchAcquisitionService {
+    private fun makeService(): MatchAcquisitionService {
         val props = AppProperties(
             ea = EaProperties(clubId = clubId, clubName = "Test FC"),
-            polling = PollingProperties(publishExistingOnFirstRun = publishExistingOnFirstRun),
+            polling = PollingProperties(),
         )
         return MatchAcquisitionService(
             gateway,
@@ -161,6 +161,7 @@ class MatchAcquisitionServiceTest {
         fun `publishes latest match when not already published`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+            whenever(store.loadIds()).thenReturn(setOf("existing"))
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
 
@@ -170,7 +171,7 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.published[0].matchId).isEqualTo("m1")
             assertThat(processed.published[0].summary).contains("Test FC")
             verify(webhookClient).send(any())
-            verify(store).saveIds(setOf("m1"))
+            verify(store).saveIds(setOf("existing", "m1"))
             verify(canonicalMatchRepository, atLeastOnce()).save(any())
         }
 
@@ -194,6 +195,7 @@ class MatchAcquisitionServiceTest {
         fun `CLI trigger behaves same as MANUAL`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+            whenever(store.loadIds()).thenReturn(setOf("existing"))
 
             val result = service.acquire(AcquisitionTrigger.CLI)
 
@@ -207,6 +209,7 @@ class MatchAcquisitionServiceTest {
             val older = match("m1", ts = 1000)
             val newer = match("m2", ts = 2000)
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(older, newer)))
+            whenever(store.loadIds()).thenReturn(setOf("existing"))
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
 
@@ -284,7 +287,6 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.simulatedMatch?.matchId).isEqualTo("m1")
             // Discord should NEVER be called
             verify(webhookClient, never()).send(any())
-            verify(webhookClient, never()).sendHistory(any())
             // Persistence should NEVER happen
             verify(store, never()).saveIds(any())
         }
@@ -298,8 +300,7 @@ class MatchAcquisitionServiceTest {
     inner class FirstRun {
 
         @Test
-        fun `establishes baseline without publishing when publishExistingOnFirstRun is false`() {
-            service = makeService(publishExistingOnFirstRun = false)
+        fun `scheduler establishes baseline without publishing`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
             whenever(store.loadIds()).thenReturn(emptySet())
@@ -314,8 +315,7 @@ class MatchAcquisitionServiceTest {
         }
 
         @Test
-        fun `publishes all matches when publishExistingOnFirstRun is true`() {
-            service = makeService(publishExistingOnFirstRun = true)
+        fun `scheduler baseline includes the complete returned window`() {
             val older = match("m1", ts = 1000)
             val newer = match("m2", ts = 2000)
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(newer, older)))
@@ -324,25 +324,63 @@ class MatchAcquisitionServiceTest {
             val result = service.acquire(AcquisitionTrigger.SCHEDULER)
 
             val processed = result as AcquisitionResult.Processed
-            assertThat(processed.baselineEstablished).isFalse()
-            assertThat(processed.published).hasSize(2)
-            verify(webhookClient, times(2)).send(any())
+            assertThat(processed.baselineEstablished).isTrue()
+            assertThat(processed.published).isEmpty()
+            verify(webhookClient, never()).send(any())
+            verify(store).saveIds(setOf("m1", "m2"))
         }
 
         @Test
-        fun `first run only applies to SCHEDULER trigger`() {
-            service = makeService(publishExistingOnFirstRun = false)
+        fun `manual first use establishes baseline without publishing`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
             whenever(store.loadIds()).thenReturn(emptySet())
 
-            // MANUAL trigger doesn't do first-run baseline
             val result = service.acquire(AcquisitionTrigger.MANUAL)
 
             val processed = result as AcquisitionResult.Processed
-            assertThat(processed.baselineEstablished).isFalse()
-            assertThat(processed.published).hasSize(1)
-            verify(webhookClient).send(any())
+            assertThat(processed.baselineEstablished).isTrue()
+            assertThat(processed.published).isEmpty()
+            verify(webhookClient, never()).send(any())
+            verify(store).saveIds(setOf("m1"))
+        }
+
+        @Test
+        fun `cli first use establishes baseline without publishing`() {
+            val match = match("m1")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+            whenever(store.loadIds()).thenReturn(emptySet())
+
+            val result = service.acquire(AcquisitionTrigger.CLI)
+
+            val processed = result as AcquisitionResult.Processed
+            assertThat(processed.baselineEstablished).isTrue()
+            verify(webhookClient, never()).send(any())
+            verify(store).saveIds(setOf("m1"))
+        }
+
+        @Test
+        fun `only a match observed after baseline is published once`() {
+            var publishedIds = emptySet<String>()
+            whenever(store.loadIds()).thenAnswer { publishedIds }
+            whenever(store.saveIds(any())).thenAnswer { invocation ->
+                publishedIds = invocation.getArgument(0)
+                Unit
+            }
+            whenever(gateway.getLatestMatches(clubId))
+                .thenReturn(EaApiResult.Success(listOf(match("baseline", ts = 1000))))
+                .thenReturn(EaApiResult.Success(listOf(match("baseline", 1000), match("new", 2000))))
+                .thenReturn(EaApiResult.Success(listOf(match("baseline", 1000), match("new", 2000))))
+
+            val baseline = service.acquire(AcquisitionTrigger.MANUAL) as AcquisitionResult.Processed
+            val firstNewCycle = service.acquire(AcquisitionTrigger.SCHEDULER) as AcquisitionResult.Processed
+            val repeatedCycle = service.acquire(AcquisitionTrigger.SCHEDULER) as AcquisitionResult.Processed
+
+            assertThat(baseline.baselineEstablished).isTrue()
+            assertThat(firstNewCycle.published.map { it.matchId }).containsExactly("new")
+            assertThat(repeatedCycle.published).isEmpty()
+            assertThat(publishedIds).containsExactlyInAnyOrder("baseline", "new")
+            verify(webhookClient, times(1)).send(any())
         }
     }
 
@@ -402,6 +440,7 @@ class MatchAcquisitionServiceTest {
         fun `returns WebhookNotConfigured when webhook not set`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+            whenever(store.loadIds()).thenReturn(setOf("existing"))
             doThrow(IllegalStateException("Webhook not configured")).whenever(webhookClient).send(any())
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
@@ -414,6 +453,7 @@ class MatchAcquisitionServiceTest {
         fun `returns failed match on Discord delivery error for MANUAL`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+            whenever(store.loadIds()).thenReturn(setOf("existing"))
             doThrow(DiscordDeliveryException("Rate limited")).whenever(webhookClient).send(any())
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
@@ -473,6 +513,7 @@ class MatchAcquisitionServiceTest {
         fun `marks match as persistence error when store fails`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+            whenever(store.loadIds()).thenReturn(setOf("existing"))
             doThrow(RuntimeException("Disk full")).whenever(store).saveIds(any())
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
@@ -566,36 +607,6 @@ class MatchAcquisitionServiceTest {
     }
 
     // -------------------------------------------------------------------------
-    // History Webhook
-    // -------------------------------------------------------------------------
-
-    @Nested
-    inner class HistoryWebhook {
-
-        @Test
-        fun `sends to history webhook after main webhook`() {
-            val match = match("m1")
-            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-
-            service.acquire(AcquisitionTrigger.MANUAL)
-
-            verify(webhookClient).send(any())
-            verify(webhookClient).sendHistory(any())
-        }
-
-        @Test
-        fun `sends to history webhook on force resend`() {
-            val match = match("m1")
-            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(setOf("m1"))
-
-            service.acquire(AcquisitionTrigger.FORCE_RESEND)
-
-            verify(webhookClient).sendHistory(any())
-        }
-    }
-
-    // -------------------------------------------------------------------------
     // Custom Gateway (for DEV_SIMULATOR)
     // -------------------------------------------------------------------------
 
@@ -649,7 +660,6 @@ class MatchAcquisitionServiceTest {
             service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
 
             verify(webhookClient, never()).send(any())
-            verify(webhookClient, never()).sendHistory(any())
         }
 
         @Test
@@ -914,7 +924,6 @@ class MatchAcquisitionServiceTest {
 
         @Test
         fun `caches presentation on first run baseline establishment`() {
-            service = makeService(publishExistingOnFirstRun = false)
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
             whenever(store.loadIds()).thenReturn(emptySet())
@@ -1121,4 +1130,3 @@ class MatchAcquisitionServiceTest {
         }
     }
 }
-

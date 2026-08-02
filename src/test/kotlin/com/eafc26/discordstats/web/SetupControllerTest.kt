@@ -30,18 +30,15 @@ class SetupControllerTest {
         // SetupRedirectFilter is a @Component loaded by @WebFluxTest
         // We allow access to /setup unconditionally via isPassThrough path
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
-        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
         whenever(webhookConfigService.getWebhookUrl()).thenReturn("")
-        whenever(webhookConfigService.getHistoryWebhookUrl()).thenReturn("")
         whenever(webhookConfigService.getMaskedWebhookUrl()).thenReturn("")
         whenever(webhookConfigService.getWebhookSource()).thenReturn(WebhookConfigurationSource.NOT_CONFIGURED)
-        whenever(webhookConfigService.getHistoryWebhookSource()).thenReturn(WebhookConfigurationSource.NOT_CONFIGURED)
     }
 
     // ── GET /setup ──────────────────────────────────────────────────────────
 
     @Test
-    fun `GET setup returns HTML with both webhook fields`() {
+    fun `GET setup returns HTML with only the match webhook field`() {
         webClient.get().uri("/setup")
             .exchange()
             .expectStatus().isOk
@@ -49,8 +46,8 @@ class SetupControllerTest {
             .expectBody(String::class.java)
             .value { body ->
                 assert(body.contains("Configuração inicial")) { "Expected setup title" }
-                assert(body.contains("estatísticas do clube"))  { "Expected stats field label" }
-                assert(body.contains("histórico de partidas"))  { "Expected history field label" }
+                assert(body.contains("partidas do clube")) { "Expected match field label" }
+                assert(!body.contains("discord-history-webhook-url")) { "History webhook must be absent" }
             }
     }
 
@@ -75,8 +72,8 @@ class SetupControllerTest {
             "Setup must load the shared authenticated fetch before its inline actions"
         }
         assert(body.contains("name=\"discord-match-webhook-url\""))
-        assert(body.contains("name=\"discord-history-webhook-url\""))
-        assert(Regex("autocomplete=\"new-password\"").findAll(body).count() == 2)
+        assert(!body.contains("name=\"discord-history-webhook-url\""))
+        assert(Regex("autocomplete=\"new-password\"").findAll(body).count() == 1)
         assert(!body.contains("autocomplete=\"off\""))
     }
 
@@ -89,7 +86,7 @@ class SetupControllerTest {
             .returnResult()
             .responseBody ?: ""
 
-        val environmentGuard = body.indexOf("if (bothWebhooksManagedByEnvironment())")
+        val environmentGuard = body.indexOf("if (webhookState.stats.source === 'ENVIRONMENT')")
         val redirect = body.indexOf("window.location.href = '/';", environmentGuard)
         val mutation = body.indexOf("fetch('/api/setup/webhook', {", environmentGuard)
 
@@ -101,9 +98,8 @@ class SetupControllerTest {
     // ── GET /api/setup/webhook ───────────────────────────────────────────────
 
     @Test
-    fun `GET api setup webhook returns both configured flags`() {
+    fun `GET api setup webhook returns only match configuration status`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
-        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
         whenever(webhookConfigService.getWebhookSource()).thenReturn(WebhookConfigurationSource.ENVIRONMENT)
 
         webClient.get().uri("/api/setup/webhook")
@@ -111,73 +107,45 @@ class SetupControllerTest {
             .expectStatus().isOk
             .expectBody()
             .jsonPath("$.configured").isEqualTo(true)
-            .jsonPath("$.historyConfigured").isEqualTo(false)
             .jsonPath("$.source").isEqualTo("ENVIRONMENT")
-            .jsonPath("$.historySource").isEqualTo("NOT_CONFIGURED")
             .jsonPath("$.url").doesNotExist()
-            .jsonPath("$.historyUrl").doesNotExist()
+            .jsonPath("$.historyConfigured").doesNotExist()
     }
 
     // ── POST /api/setup/webhook ──────────────────────────────────────────────
 
     @Test
-    fun `POST setup with both valid URLs redirects to home and saves both`() {
-        val stats   = "https://discord.com/api/webhooks/111/statstoken"
-        val history = "https://discord.com/api/webhooks/222/historytoken"
+    fun `POST setup with valid URL redirects to home and saves it`() {
+        val stats = "https://discord.com/api/webhooks/111/statstoken"
 
         webClient.post().uri("/api/setup/webhook")
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(mapOf("webhookUrl" to stats, "historyWebhookUrl" to history))
+            .bodyValue(mapOf("webhookUrl" to stats))
             .exchange()
             .expectStatus().is3xxRedirection
             .expectHeader().location("/")
 
         verify(webhookConfigService).configure(stats)
-        verify(webhookConfigService).configureHistory(history)
     }
 
     @Test
     fun `POST setup without stats URL returns 400 with statsError`() {
         webClient.post().uri("/api/setup/webhook")
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(mapOf("webhookUrl" to "", "historyWebhookUrl" to "https://discord.com/api/webhooks/2/tok"))
+            .bodyValue(mapOf("webhookUrl" to ""))
             .exchange()
             .expectStatus().isBadRequest
             .expectBody()
             .jsonPath("$.statsError").isNotEmpty
-    }
-
-    @Test
-    fun `POST setup without history URL returns 400 with historyError`() {
-        webClient.post().uri("/api/setup/webhook")
-            .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(mapOf("webhookUrl" to "https://discord.com/api/webhooks/1/tok", "historyWebhookUrl" to ""))
-            .exchange()
-            .expectStatus().isBadRequest
-            .expectBody()
-            .jsonPath("$.historyError").isNotEmpty
-    }
-
-    @Test
-    fun `POST setup with both URLs missing returns 400 with both field errors`() {
-        webClient.post().uri("/api/setup/webhook")
-            .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(mapOf("webhookUrl" to "", "historyWebhookUrl" to ""))
-            .exchange()
-            .expectStatus().isBadRequest
-            .expectBody()
-            .jsonPath("$.statsError").isNotEmpty
-            .jsonPath("$.historyError").isNotEmpty
     }
 
     @Test
     fun `POST setup response never echoes back the webhook URL`() {
-        val stats   = "https://discord.com/api/webhooks/111/statstoken"
-        val history = "https://discord.com/api/webhooks/222/historytoken"
+        val stats = "https://discord.com/api/webhooks/111/statstoken"
 
         val body = webClient.post().uri("/api/setup/webhook")
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(mapOf("webhookUrl" to stats, "historyWebhookUrl" to history))
+            .bodyValue(mapOf("webhookUrl" to stats))
             .exchange()
             .expectBody(String::class.java).returnResult().responseBody ?: ""
 
@@ -190,15 +158,12 @@ class SetupControllerTest {
     fun `POST setup does not overwrite environment managed webhook`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
         whenever(webhookConfigService.getWebhookSource()).thenReturn(WebhookConfigurationSource.ENVIRONMENT)
-        val history = "https://discord.com/api/webhooks/222/historytoken"
-
         webClient.post().uri("/api/setup/webhook")
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(mapOf("webhookUrl" to "", "historyWebhookUrl" to history))
+            .bodyValue(mapOf("webhookUrl" to ""))
             .exchange()
             .expectStatus().is3xxRedirection
 
         verify(webhookConfigService, org.mockito.kotlin.never()).configure(any())
-        verify(webhookConfigService).configureHistory(history)
     }
 }

@@ -1,7 +1,6 @@
 package com.eafc26.discordstats.discord
 
 import com.eafc26.discordstats.domain.interpretation.MatchInterpretation
-import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.domain.match.FootballMatch
 import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
@@ -13,8 +12,6 @@ import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.presentation.MatchSummaryPresentation
 import org.springframework.stereotype.Component
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /**
  * Discord-only rendering of canonical match facts and decisions.
@@ -26,8 +23,6 @@ import java.util.Locale
 class DiscordRenderer(
     private val summaryBuilder: MatchSummaryBuilder,
 ) {
-    private val historyDateFormat = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", PT_BR)
-
     fun renderMatch(
         footballMatch: FootballMatch,
         interpretation: MatchInterpretation,
@@ -143,65 +138,6 @@ class DiscordRenderer(
         )
     }
 
-    fun renderHistory(
-        footballMatch: FootballMatch,
-        interpretation: MatchInterpretation,
-        stories: MatchStories,
-        zoneId: ZoneId = ZoneId.systemDefault(),
-    ): DiscordPayload {
-        validateInputs(footballMatch, interpretation, stories)
-        val result = interpretation.result
-        val resultEmoji = when (result.outcome) {
-            MatchOutcome.WIN -> "✅"
-            MatchOutcome.DRAW -> "🤝"
-            MatchOutcome.LOSS -> "❌"
-        }
-        val resultLabel = when (result.outcome) {
-            MatchOutcome.WIN -> "Vitória"
-            MatchOutcome.DRAW -> "Empate"
-            MatchOutcome.LOSS -> "Derrota"
-        }
-        val players = perspectivePlayers(footballMatch, interpretation)
-        val fields = mutableListOf(
-            EmbedField(
-                "📅 Data",
-                footballMatch.playedAt.atZone(zoneId).format(historyDateFormat),
-                inline = true,
-            ),
-            EmbedField(
-                "🏆 Resultado",
-                "$resultEmoji $resultLabel ${result.ourScore.goals} × ${result.opponentScore.goals}",
-                inline = true,
-            ),
-        )
-        val eaMvp = stories.stories
-            .singleOrNull { it.type == StoryType.EA_RECOGNIZED_MVP }
-            ?.content as? StoryContent.EaRecognizedMvp
-        if (eaMvp != null) {
-            val player = players.getValue(eaMvp.playerId)
-            fields += EmbedField(
-                "⭐ MVP",
-                "${displayName(player)} (${eaMvp.rating?.let { "%.1f".format(it) } ?: "N/D"})",
-                inline = true,
-            )
-        }
-
-        return DiscordPayload(
-            listOf(
-                DiscordEmbed(
-                    title = "📚 Histórico de Partidas",
-                    color = when (result.outcome) {
-                        MatchOutcome.WIN -> 0x2ECC71
-                        MatchOutcome.DRAW -> 0x95A5A6
-                        MatchOutcome.LOSS -> 0xE74C3C
-                    },
-                    fields = fields,
-                    timestamp = footballMatch.playedAt.toString(),
-                )
-            )
-        )
-    }
-
     private fun highlights(
         stories: MatchStories,
         players: Map<PlayerId, PlayerMatchPerformance>,
@@ -242,7 +178,6 @@ class DiscordRenderer(
         "%.2f".format(value).replace('.', ',')
 
     private companion object {
-        val PT_BR: Locale = Locale.forLanguageTag("pt-BR")
         val SEPARATOR = EmbedField("​", "──────────────────────────────")
         val MEDALS = listOf("🥇", "🥈", "🥉")
         const val BLANK = "\u200B"

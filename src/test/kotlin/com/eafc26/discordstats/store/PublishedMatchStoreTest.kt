@@ -80,6 +80,18 @@ class PublishedMatchStoreTest {
     }
 
     @Test
+    fun `published IDs survive a store restart at the same stable path`() {
+        store.saveIds(setOf("match-1", "match-2"))
+
+        val restartedStore = makeStore()
+
+        assertThat(restartedStore.loadIds()).containsExactlyInAnyOrder("match-1", "match-2")
+        assertThat(storePath).isEqualTo(
+            tempDir.resolve("Library/Application Support/EAFC26DiscordStats/published-matches.json")
+        )
+    }
+
+    @Test
     fun `saveIds does not store duplicates`() {
         store.saveIds(setOf("x", "x", "y"))
         assertThat(store.loadIds()).containsExactlyInAnyOrder("x", "y")

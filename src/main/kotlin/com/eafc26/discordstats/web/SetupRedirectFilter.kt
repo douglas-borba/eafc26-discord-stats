@@ -21,8 +21,8 @@ import java.net.URI
 class SetupRedirectFilter(private val webhookConfigService: WebhookConfigService) : WebFilter {
 
     override fun filter(exchange: ServerWebExchange, chain: WebFilterChain): Mono<Void> {
-        // Both webhooks must be configured before the app is usable
-        if (webhookConfigService.isConfigured() && webhookConfigService.isHistoryConfigured())
+        // The single match webhook must be configured before the app is usable.
+        if (webhookConfigService.isConfigured())
             return chain.filter(exchange)
 
         val path = exchange.request.path.value()

@@ -38,9 +38,7 @@ class SecurityIntegrationTest {
     @BeforeEach
     fun configuredApplication() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
-        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
         whenever(webhookConfigService.getWebhookSource()).thenReturn(WebhookConfigurationSource.ENVIRONMENT)
-        whenever(webhookConfigService.getHistoryWebhookSource()).thenReturn(WebhookConfigurationSource.ENVIRONMENT)
         whenever(matchAcquisitionService.acquire(AcquisitionTrigger.MANUAL)).thenReturn(AcquisitionResult.NoMatches)
     }
 

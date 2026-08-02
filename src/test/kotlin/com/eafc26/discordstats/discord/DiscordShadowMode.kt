@@ -21,19 +21,14 @@ class DiscordShadowMode(
         proNames: Map<String, String> = emptyMap(),
     ): DiscordShadowResult {
         val legacyMatch = DiscordEmbedBuilder.build(source, clubId, zoneId, proNames)
-        val legacyHistory = HistoryEmbedBuilder.build(source, clubId, zoneId, proNames)
         val normalized = (EaMatchMapper().map(source, proNames) as MatchNormalizationResult.Success).match
         val interpretation = MatchInterpreter().interpret(normalized, ClubId(clubId))
         val stories = MatchStoryExtractor().extract(interpretation)
         val canonicalMatch = canonical.renderMatch(normalized, interpretation, stories, zoneId)
-        val canonicalHistory = canonical.renderHistory(normalized, interpretation, stories, zoneId)
         return DiscordShadowResult(
             legacyMatch,
             canonicalMatch,
-            legacyHistory,
-            canonicalHistory,
-            comparePayload("match", legacyMatch, canonicalMatch) +
-                comparePayload("history", legacyHistory, canonicalHistory),
+            comparePayload("match", legacyMatch, canonicalMatch),
         )
     }
 
@@ -59,12 +54,9 @@ class DiscordShadowMode(
 data class DiscordShadowResult(
     val legacyMatch: DiscordPayload,
     val canonicalMatch: DiscordPayload,
-    val legacyHistory: DiscordPayload,
-    val canonicalHistory: DiscordPayload,
     val divergences: List<String>,
 ) {
     val hasParity: Boolean
         get() = divergences.isEmpty() &&
-            legacyMatch == canonicalMatch &&
-            legacyHistory == canonicalHistory
+            legacyMatch == canonicalMatch
 }

@@ -40,12 +40,10 @@ app:
 
   polling:
     enabled: true
-    publish-existing-on-first-run: false
 
   discord:
     # Environment values take precedence over the local /setup fallback.
     match-webhook-url: ${EAFC_DISCORD_MATCH_WEBHOOK_URL:}
-    history-webhook-url: ${EAFC_DISCORD_HISTORY_WEBHOOK_URL:}
 
   web:
     network-enabled: false   # overridden by local config file at startup

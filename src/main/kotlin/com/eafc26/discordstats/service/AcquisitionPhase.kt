@@ -22,7 +22,7 @@ enum class AcquisitionPhase {
     /** Caching presentation in LatestMatchHolder. */
     CACHING,
 
-    /** Delivering to Discord webhooks. */
+    /** Delivering to Discord. */
     DELIVERING,
 
     /** Persisting published match IDs to store. */
@@ -34,4 +34,3 @@ enum class AcquisitionPhase {
     /** Acquisition failed at some phase. */
     FAILED,
 }
-

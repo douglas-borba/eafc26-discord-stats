@@ -30,11 +30,9 @@ class SettingsControllerTest {
     @BeforeEach
     fun setUp() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
-        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
         whenever(webhookConfigService.isNetworkEnabled()).thenReturn(false)
         whenever(webhookConfigService.logFilePath()).thenReturn("/Users/user/Library/Logs/EAFC26DiscordStats/app.log")
         whenever(webhookConfigService.getWebhookSource()).thenReturn(WebhookConfigurationSource.STORED)
-        whenever(webhookConfigService.getHistoryWebhookSource()).thenReturn(WebhookConfigurationSource.STORED)
     }
 
     @Test
@@ -56,7 +54,6 @@ class SettingsControllerTest {
     @Test
     fun `GET api settings info returns configured status without webhook URL`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
-        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
 
         webClient.get().uri("/api/settings/info")
             .exchange()
@@ -64,7 +61,7 @@ class SettingsControllerTest {
             .expectBody()
             .jsonPath("$.webhookConfigured").isEqualTo(true)
             .jsonPath("$.webhookSource").isEqualTo("STORED")
-            .jsonPath("$.historyWebhookSource").isEqualTo("STORED")
+            .jsonPath("$.historyWebhookSource").doesNotExist()
             .jsonPath("$.networkEnabled").isEqualTo(false)
     }
 

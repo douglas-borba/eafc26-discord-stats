@@ -21,7 +21,7 @@ data class ResolvedWebhookConfiguration internal constructor(
 /**
  * Resolves Discord webhook configuration without exposing secrets to presentation code.
  *
- * Precedence is deterministic for each destination:
+ * Precedence is deterministic:
  * 1. non-blank environment-backed application property;
  * 2. Java Preferences value maintained by the local administrative interface;
  * 3. not configured.
@@ -38,35 +38,20 @@ class WebhookConfigService(
 
     private val log = LoggerFactory.getLogger(javaClass)
     private val environmentMatchWebhook = properties.discord.matchWebhookUrl.trim()
-    private val environmentHistoryWebhook = properties.discord.historyWebhookUrl.trim()
 
     @Volatile
     private var storedMatchWebhook: String = settingsService.getWebhookUrl().trim()
 
-    @Volatile
-    private var storedHistoryWebhook: String = settingsService.getHistoryWebhookUrl().trim()
-
     init {
         validateEnvironmentWebhook(ENV_MATCH, environmentMatchWebhook)
-        validateEnvironmentWebhook(ENV_HISTORY, environmentHistoryWebhook)
         storedMatchWebhook = validateStoredWebhook("match", storedMatchWebhook) {
             settingsService.setWebhookUrl("")
         }
-        storedHistoryWebhook = validateStoredWebhook("history", storedHistoryWebhook) {
-            settingsService.setHistoryWebhookUrl("")
-        }
-        log.info(
-            "Discord webhook configuration resolved: match={}, history={}",
-            matchConfiguration().source,
-            historyConfiguration().source,
-        )
+        log.info("Discord webhook configuration resolved: match={}", matchConfiguration().source)
     }
 
     fun matchConfiguration(): ResolvedWebhookConfiguration =
         resolve(environmentMatchWebhook, storedMatchWebhook)
-
-    fun historyConfiguration(): ResolvedWebhookConfiguration =
-        resolve(environmentHistoryWebhook, storedHistoryWebhook)
 
     fun isConfigured(): Boolean = matchConfiguration().configured
 
@@ -80,12 +65,6 @@ class WebhookConfigService(
         WebhookConfigurationSource.NOT_CONFIGURED -> ""
         WebhookConfigurationSource.STORED -> "Configurado localmente"
     }
-
-    fun isHistoryConfigured(): Boolean = historyConfiguration().configured
-
-    fun getHistoryWebhookUrl(): String = historyConfiguration().url
-
-    fun getHistoryWebhookSource(): WebhookConfigurationSource = historyConfiguration().source
 
     fun configure(url: String) {
         check(getWebhookSource() != WebhookConfigurationSource.ENVIRONMENT) {
@@ -104,22 +83,9 @@ class WebhookConfigService(
         log.info("Stored Discord match webhook cleared")
     }
 
-    fun configureHistory(url: String) {
-        check(getHistoryWebhookSource() != WebhookConfigurationSource.ENVIRONMENT) {
-            "$ENV_HISTORY is controlled by the environment."
-        }
-        if (url.isNotBlank()) validateUrl(url)
-        val normalized = url.trim()
-        settingsService.setHistoryWebhookUrl(normalized)
-        storedHistoryWebhook = normalized
-        log.info("Stored history webhook {}", if (normalized.isBlank()) "cleared" else "configured")
-    }
-
     fun resetStoredWebhooks() {
         reset()
-        settingsService.setHistoryWebhookUrl("")
-        storedHistoryWebhook = ""
-        log.info("Stored Discord webhook fallbacks cleared")
+        log.info("Stored Discord webhook fallback cleared")
     }
 
     fun isNetworkEnabled(): Boolean = settingsService.isNetworkEnabled()
@@ -189,6 +155,5 @@ class WebhookConfigService(
 
     companion object {
         const val ENV_MATCH = "EAFC_DISCORD_MATCH_WEBHOOK_URL"
-        const val ENV_HISTORY = "EAFC_DISCORD_HISTORY_WEBHOOK_URL"
     }
 }

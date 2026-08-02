@@ -62,39 +62,16 @@ class SettingsServiceTest {
         assertThat(settingsService.isWebhookConfigured()).isTrue()
     }
 
-    // -- History Webhook URL --------------------------------------------------
-
     @Test
-    fun `getHistoryWebhookUrl returns empty string when not configured`() {
-        assertThat(settingsService.getHistoryWebhookUrl()).isEmpty()
-    }
+    fun `legacy history webhook preference is left untouched but ignored`() {
+        val legacyKey = "discord.history-webhook.url"
+        val legacyValue = "https://discord.com/api/webhooks/456/legacy"
+        prefs.put(legacyKey, legacyValue)
+        prefs.flush()
 
-    @Test
-    fun `setHistoryWebhookUrl persists the URL`() {
-        val url = "https://discord.com/api/webhooks/456/def"
-        settingsService.setHistoryWebhookUrl(url)
-        
-        assertThat(settingsService.getHistoryWebhookUrl()).isEqualTo(url)
-    }
+        SettingsService()
 
-    @Test
-    fun `setHistoryWebhookUrl with blank clears the URL`() {
-        settingsService.setHistoryWebhookUrl("https://discord.com/api/webhooks/456/def")
-        settingsService.setHistoryWebhookUrl("")
-        
-        assertThat(settingsService.getHistoryWebhookUrl()).isEmpty()
-    }
-
-    @Test
-    fun `isHistoryWebhookConfigured returns false when not configured`() {
-        assertThat(settingsService.isHistoryWebhookConfigured()).isFalse()
-    }
-
-    @Test
-    fun `isHistoryWebhookConfigured returns true when configured`() {
-        settingsService.setHistoryWebhookUrl("https://discord.com/api/webhooks/456/def")
-        
-        assertThat(settingsService.isHistoryWebhookConfigured()).isTrue()
+        assertThat(prefs.get(legacyKey, "")).isEqualTo(legacyValue)
     }
 
     // -- Network Settings -----------------------------------------------------
@@ -209,7 +186,6 @@ class SettingsServiceTest {
     @Test
     fun `clearAll removes all saved settings`() {
         settingsService.setWebhookUrl("https://discord.com/api/webhooks/123/abc")
-        settingsService.setHistoryWebhookUrl("https://discord.com/api/webhooks/456/def")
         settingsService.setNetworkEnabled(true)
         settingsService.setClubId("12345")
         settingsService.setPlatform("common-gen5")
@@ -218,7 +194,6 @@ class SettingsServiceTest {
         settingsService.clearAll()
         
         assertThat(settingsService.getWebhookUrl()).isEmpty()
-        assertThat(settingsService.getHistoryWebhookUrl()).isEmpty()
         assertThat(settingsService.isNetworkEnabled()).isFalse()
         assertThat(settingsService.getClubId()).isEmpty()
         assertThat(settingsService.getPlatform()).isEmpty()
@@ -237,4 +212,3 @@ class SettingsServiceTest {
         assertThat(newInstance.getWebhookUrl()).isEqualTo("https://discord.com/api/webhooks/999/xyz")
     }
 }
-

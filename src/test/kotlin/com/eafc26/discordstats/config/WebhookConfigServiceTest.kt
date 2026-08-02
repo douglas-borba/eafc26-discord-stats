@@ -28,22 +28,16 @@ class WebhookConfigServiceTest {
 
     private fun makeService(
         webhookUrl: String = "",
-        historyWebhookUrl: String = "",
         environmentMatch: String = "",
-        environmentHistory: String = "",
     ): WebhookConfigService {
         if (webhookUrl.isNotBlank()) {
             settingsService.setWebhookUrl(webhookUrl)
-        }
-        if (historyWebhookUrl.isNotBlank()) {
-            settingsService.setHistoryWebhookUrl(historyWebhookUrl)
         }
         return WebhookConfigService(
             settingsService,
             AppProperties(
                 discord = DiscordProperties(
                     matchWebhookUrl = environmentMatch,
-                    historyWebhookUrl = environmentHistory,
                 )
             ),
         )
@@ -159,24 +153,6 @@ class WebhookConfigServiceTest {
         assertThat(service.isNetworkEnabled()).isFalse()
     }
 
-    // -- History webhook --
-
-    @Test
-    fun `configureHistory saves and retrieves history webhook`() {
-        val service = makeService()
-        service.configureHistory("https://discord.com/api/webhooks/333/historytoken")
-        assertThat(service.isHistoryConfigured()).isTrue()
-        assertThat(service.getHistoryWebhookUrl()).isEqualTo("https://discord.com/api/webhooks/333/historytoken")
-    }
-
-    @Test
-    fun `configureHistory with blank clears history webhook`() {
-        val service = makeService()
-        service.configureHistory("https://discord.com/api/webhooks/333/historytoken")
-        service.configureHistory("")
-        assertThat(service.isHistoryConfigured()).isFalse()
-    }
-
     @Test
     fun `environment match webhook takes precedence over stored value`() {
         val stored = "https://discord.com/api/webhooks/111/storedtoken"
@@ -201,7 +177,6 @@ class WebhookConfigServiceTest {
         val service = makeService()
 
         assertThat(service.getWebhookSource()).isEqualTo(WebhookConfigurationSource.NOT_CONFIGURED)
-        assertThat(service.getHistoryWebhookSource()).isEqualTo(WebhookConfigurationSource.NOT_CONFIGURED)
     }
 
     @Test

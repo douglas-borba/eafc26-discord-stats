@@ -32,12 +32,9 @@ class AppPropertiesTest {
     }
 
     @Test
-    fun `Discord webhook properties bind independently`() {
+    fun `Discord match webhook property binds`() {
         val source = MapConfigurationPropertySource(
-            mapOf(
-                "app.discord.match-webhook-url" to "https://discord.com/api/webhooks/1/match-token",
-                "app.discord.history-webhook-url" to "https://discord.com/api/webhooks/2/history-token",
-            )
+            mapOf("app.discord.match-webhook-url" to "https://discord.com/api/webhooks/1/match-token")
         )
 
         val configured = Binder(source)
@@ -45,6 +42,5 @@ class AppPropertiesTest {
             .get()
 
         assertThat(configured.discord.matchWebhookUrl).endsWith("/match-token")
-        assertThat(configured.discord.historyWebhookUrl).endsWith("/history-token")
     }
 }

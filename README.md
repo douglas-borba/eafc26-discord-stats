@@ -82,12 +82,11 @@ HttpOnly, SameSite=Lax server session; no JWT or browser storage is used. See
 [`docs/security.md`](docs/security.md) for the permission matrix, session/CSRF
 behavior and password rotation procedure.
 
-Discord delivery supports reproducible server configuration through two optional
-environment variables:
+Discord delivery supports reproducible server configuration through one optional
+environment variable:
 
 ```bash
 export EAFC_DISCORD_MATCH_WEBHOOK_URL='https://discord.com/api/webhooks/<id>/<token>'
-export EAFC_DISCORD_HISTORY_WEBHOOK_URL='https://discord.com/api/webhooks/<id>/<token>'
 ```
 
 When present, these values take precedence over the local configuration saved by
@@ -203,10 +202,10 @@ fluxo continua funcionando se `server.port` mudar ou for configurado dinamicamen
 Se a inicialização falhar, o erro permanece visível no terminal e o navegador não
 é aberto. Use `Ctrl+C` para encerrar o Gradle e a aplicação.
 
-No primeiro acesso como ADMIN, configure localmente os dois webhooks pela página
-`/setup`. Eles são mantidos pelas preferências do macOS; as variáveis
-`EAFC_DISCORD_MATCH_WEBHOOK_URL` e `EAFC_DISCORD_HISTORY_WEBHOOK_URL` continuam
-disponíveis como alternativa, mas não são necessárias para iniciar localmente.
+No primeiro acesso como ADMIN, configure localmente o webhook de partidas pela
+página `/setup`. Ele é mantido pelas preferências do macOS; a variável
+`EAFC_DISCORD_MATCH_WEBHOOK_URL` continua disponível como alternativa, mas não é
+necessária para iniciar localmente.
 Partidas canônicas, IDs publicados e frases são armazenados em
 `~/Library/Application Support/EAFC26DiscordStats/`.
 

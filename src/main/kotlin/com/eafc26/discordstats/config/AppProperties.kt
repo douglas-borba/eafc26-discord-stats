@@ -17,12 +17,10 @@ data class WebProperties(
 data class PollingProperties(
     val enabled: Boolean = true,
     val intervalMs: Long = 300_000,
-    val publishExistingOnFirstRun: Boolean = false,
 )
 
 data class DiscordProperties(
     val matchWebhookUrl: String = "",
-    val historyWebhookUrl: String = "",
 )
 
 data class EaProperties(

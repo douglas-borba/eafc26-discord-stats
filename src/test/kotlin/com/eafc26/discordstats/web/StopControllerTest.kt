@@ -28,7 +28,6 @@ class StopControllerTest {
     @BeforeEach
     fun setUp() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
-        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
     }
 
     @Test

@@ -24,7 +24,7 @@ class DiscordShadowModeTest {
     }
 
     @Test
-    fun `rich match and history payloads have exact structural parity`() {
+    fun `rich match payload has exact structural parity`() {
         val result = shadow.compare(
             match(
                 linkedMapOf(
@@ -52,7 +52,7 @@ class DiscordShadowModeTest {
     }
 
     @Test
-    fun `virtual pro names and history goalkeeper EA MVP retain legacy output`() {
+    fun `virtual pro names retain legacy match output`() {
         val result = shadow.compare(
             match(
                 linkedMapOf(
@@ -68,8 +68,6 @@ class DiscordShadowModeTest {
 
         assertThat(result.divergences).isEmpty()
         assertThat(result.hasParity).isTrue()
-        assertThat(result.canonicalHistory.embeds.single().fields.single { it.name == "⭐ MVP" }.value)
-            .contains("Pro Keeper")
     }
 
     @Test

@@ -56,7 +56,6 @@ class DevSimulatorServiceTest {
 
         val props = AppProperties(
             ea = EaProperties(clubId = clubId, clubName = "Associação BF"),
-            polling = PollingProperties(publishExistingOnFirstRun = false),
         )
 
         acquisitionService = MatchAcquisitionService(
@@ -132,7 +131,6 @@ class DevSimulatorServiceTest {
 
             // Verify Discord was NEVER called
             verify(webhookClient, never()).send(any())
-            verify(webhookClient, never()).sendHistory(any())
         }
 
         @Test

@@ -337,12 +337,14 @@ EA recent league window
   -> Discord delivery for unpublished matches only
 ```
 
-On the scheduler's first cycle with `publish-existing-on-first-run=false`, the
-entire returned window is stored canonically before all returned IDs become the
-Discord publication baseline. Manual and CLI acquisition still publish only the
-latest eligible match, but persist the complete returned window first. Repeated
-and overlapping windows replace existing records idempotently and add newly seen
-MatchIds, allowing the archive to grow without a functional local limit.
+On the first normal acquisition in an environment with an empty publication
+store, the entire returned window is stored canonically and all returned IDs
+become the Discord publication baseline. This applies equally to scheduler,
+manual and CLI triggers, so no existing match is published merely because a new
+filesystem or volume is being used. Repeated and overlapping windows replace
+existing canonical records idempotently and add newly seen MatchIds, allowing the
+archive to grow without a functional local limit. Force resend is the sole
+explicit operation that bypasses publication deduplication.
 
 `CanonicalBackfillService` provides the explicit
 `backfill-canonical-matches` operation. It uses the same gateway,
