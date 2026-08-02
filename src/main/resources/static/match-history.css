@@ -6,10 +6,7 @@
 }
 
 .matches-page {
-  width: min(1480px, 100%);
-  min-height: 100vh;
-  margin: 0 auto;
-  padding: 26px;
+  min-width: 0;
   color: var(--editorial-text);
   font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -307,14 +304,12 @@
 }
 
 @media (max-width: 900px) {
-  .matches-page { padding: 18px; }
   .matches-layout { grid-template-columns: minmax(250px, 310px) minmax(0, 1fr); }
   .story-grid,
   .protagonist-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {
-  .matches-page { padding: 14px; }
   .matches-page-header { margin-bottom: 16px; }
   .matches-page-header p { font-size: 12px; }
   .matches-layout { display: block; }
