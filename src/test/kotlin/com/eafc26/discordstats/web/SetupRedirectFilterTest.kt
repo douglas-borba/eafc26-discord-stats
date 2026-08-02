@@ -2,14 +2,18 @@ package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.config.WebhookConfigService
 import com.eafc26.discordstats.service.MatchAcquisitionService
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest
+import org.springframework.boot.autoconfigure.security.reactive.ReactiveSecurityAutoConfiguration
+import org.springframework.boot.autoconfigure.security.reactive.ReactiveUserDetailsServiceAutoConfiguration
+import org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockUser
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.test.web.reactive.server.WebTestClient
 
-@WebFluxTest(MatchController::class)
+@WebFluxTest(MatchController::class, excludeAutoConfiguration = [ReactiveSecurityAutoConfiguration::class, ReactiveUserDetailsServiceAutoConfiguration::class])
 class SetupRedirectFilterTest {
 
     @Autowired
@@ -26,7 +30,7 @@ class SetupRedirectFilterTest {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
         whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
 
-        webClient.get().uri("/")
+        webClient.mutateWith(mockUser("admin").roles("ADMIN")).get().uri("/")
             .exchange()
             .expectStatus().is3xxRedirection
             .expectHeader().location("/setup")
@@ -37,7 +41,7 @@ class SetupRedirectFilterTest {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
         whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
 
-        webClient.get().uri("/")
+        webClient.mutateWith(mockUser("admin").roles("ADMIN")).get().uri("/")
             .exchange()
             .expectStatus().is3xxRedirection
             .expectHeader().location("/setup")
@@ -48,7 +52,7 @@ class SetupRedirectFilterTest {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
         whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
 
-        webClient.get().uri("/")
+        webClient.mutateWith(mockUser("admin").roles("ADMIN")).get().uri("/")
             .exchange()
             .expectStatus().is3xxRedirection
             .expectHeader().location("/setup")
@@ -59,7 +63,7 @@ class SetupRedirectFilterTest {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
         whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
 
-        webClient.get().uri("/")
+        webClient.mutateWith(mockUser("admin").roles("ADMIN")).get().uri("/")
             .exchange()
             .expectStatus().isOk
     }
@@ -94,5 +98,17 @@ class SetupRedirectFilterTest {
         webClient.get().uri("/api/health")
             .exchange()
             .expectStatus().isOk
+    }
+
+    @Test
+    fun `static resources are never redirected to setup`() {
+        whenever(webhookConfigService.isConfigured()).thenReturn(false)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
+
+        listOf("/app-shell.css", "/app-shell.js", "/images/club.png", "/favicon.ico").forEach { path ->
+            webClient.get().uri(path).exchange().expectStatus().value { status ->
+                assertThat(status in 300..399).describedAs(path).isFalse()
+            }
+        }
     }
 }

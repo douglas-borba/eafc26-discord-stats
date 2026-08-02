@@ -12,6 +12,12 @@ recalculate a metric or reinterpret a statistic.
 
 ```mermaid
 flowchart TD
+    USER["Browser"] --> SEC["Spring Security<br/>session + VIEWER / ADMIN"]
+    SEC --> WEB
+    SEC --> HWEB
+    SEC --> PWEB
+    SEC --> CWEB
+    SEC --> OWEB
     EA["EA API payload"] --> GW["EA gateway and DTO parsing"]
     GW --> FACTORY["CanonicalMatchFactory<br/>shared import operation"]
     FACTORY --> ACL["Anti-Corruption Layer<br/>EaMatchMapper"]
@@ -50,6 +56,17 @@ flowchart TD
     DISC --> PAYLOAD["DiscordPayload"]
     PAYLOAD --> HOOK["DiscordWebhookClient"]
 ```
+
+### Access boundary
+
+Spring Security is the web boundary in front of every page, API and static
+resource. The only unauthenticated operational endpoint is the minimal
+`/api/health`. VIEWER can read canonical sports experiences; ADMIN inherits that
+access and can reach setup, settings and state-changing operations. Authorization
+is enforced before controllers. Server-side sessions, BCrypt credentials and
+CSRF protection remain presentation/application concerns and do not enter the
+football domain or canonical persistence. See `docs/security.md` for the route
+inventory and deployment configuration.
 
 `MatchAcquisitionService` orchestrates this flow. It may handle EA DTOs at the
 infrastructure boundary, but no DTO enters the domain, application rules or a

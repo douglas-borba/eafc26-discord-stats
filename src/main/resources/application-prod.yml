@@ -1,0 +1,5 @@
+server:
+  reactive:
+    session:
+      cookie:
+        secure: ${EAFC_COOKIE_SECURE:true}

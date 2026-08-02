@@ -27,7 +27,22 @@
     `;
   }
 
-  function createShell(currentPage, content) {
+  function csrfToken() {
+    const cookie = document.cookie.split("; ").find((entry) => entry.startsWith("XSRF-TOKEN="));
+    return cookie ? decodeURIComponent(cookie.substring("XSRF-TOKEN=".length)) : null;
+  }
+
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    const method = (init.method || "GET").toUpperCase();
+    if (!["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
+      const token = csrfToken();
+      if (token) init.headers = { ...(init.headers || {}), "X-XSRF-TOKEN": token };
+    }
+    return nativeFetch(input, init);
+  };
+
+  function createShell(currentPage, content, role) {
     const shell = document.createElement("div");
     shell.className = "app-shell";
     shell.dataset.menuOpen = "false";
@@ -57,11 +72,16 @@
         </nav>
         <p class="app-shell-story">Partidas viram histórias. Histórias revelam a trajetória do clube.</p>
         <div class="app-shell-utility">
+          ${role === "ADMIN" ? `
           <a class="app-shell-link" href="/settings"
              ${currentPage === "settings" ? 'aria-current="page"' : ""}>
             <span class="app-shell-icon" aria-hidden="true">${icons.settings}</span>
             <span>Configurações</span>
           </a>
+          <span class="app-shell-role">Administrador</span>` : ""}
+          <button class="app-shell-link app-shell-logout" type="button" data-logout>
+            <span class="app-shell-icon" aria-hidden="true">↪</span><span>Sair</span>
+          </button>
         </div>
       </aside>
       <button class="app-shell-overlay" type="button" aria-label="Fechar navegação"></button>
@@ -73,12 +93,20 @@
     return shell;
   }
 
-  function initialize() {
+  async function initialize() {
     const content = document.querySelector("[data-app-content]");
     const currentPage = document.body.dataset.appPage;
     if (!content || !currentPage) return;
 
-    const shell = createShell(currentPage, content);
+    let role = "VIEWER";
+    try {
+      const response = await nativeFetch("/api/auth/session");
+      if (response.ok) role = (await response.json()).role || role;
+    } catch (_) {}
+
+    document.body.dataset.accessRole = role;
+    document.dispatchEvent(new CustomEvent("eafc:auth-ready", { detail: { role } }));
+    const shell = createShell(currentPage, content, role);
     document.body.prepend(shell);
     document.body.classList.add("app-shell-ready");
 
@@ -95,6 +123,10 @@
       setMenuOpen(shell.dataset.menuOpen !== "true");
     });
     overlay.addEventListener("click", () => setMenuOpen(false));
+    shell.querySelector("[data-logout]").addEventListener("click", async () => {
+      await window.fetch("/logout", { method: "POST" });
+      window.location.assign("/login?logout");
+    });
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") setMenuOpen(false);
     });

@@ -9,6 +9,26 @@
   --shell-accent-soft: rgba(56, 139, 253, 0.14);
   --shell-sidebar-width: 248px;
   --shell-mobile-header-height: 64px;
+  --shell-content-max-width: 1480px;
+  --shell-content-padding-x: 26px;
+  --shell-content-padding-y: 26px;
+}
+
+html {
+  min-width: 0;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
+body {
+  min-width: 0;
+}
+
+.app-shell,
+.app-shell *,
+.app-shell *::before,
+.app-shell *::after {
+  box-sizing: border-box;
 }
 
 body.app-shell-ready {
@@ -23,6 +43,7 @@ body.app-shell-ready {
 
 .app-shell {
   display: grid;
+  width: 100%;
   grid-template-columns: var(--shell-sidebar-width) minmax(0, 1fr);
   min-height: 100vh;
 }
@@ -207,6 +228,11 @@ body.app-shell-ready {
   border-top: 1px solid rgba(48, 54, 61, 0.72);
 }
 
+.app-shell-logout { width: 100%; background: transparent; cursor: pointer; text-align: left; }
+.app-shell-role { display: block; padding: 4px 11px 8px; color: var(--shell-accent); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+[data-admin-only] { display: none !important; }
+body[data-access-role="ADMIN"] [data-admin-only]:not([data-admin-hidden]) { display: revert !important; }
+
 .app-shell-story {
   margin: 0 20px 15px;
   color: #6e7681;
@@ -215,27 +241,22 @@ body.app-shell-ready {
 }
 
 .app-shell-main {
+  width: 100%;
   min-width: 0;
 }
 
 .app-shell-content {
-  min-height: 100vh;
-}
-
-body[data-app-page="overview"] .app-shell-content > .app-container {
-  padding: 24px;
-}
-
-body[data-app-page="settings"] .app-shell-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 32px 24px;
-}
-
-body[data-app-page="settings"] .settings-content {
   width: 100%;
-  max-width: 560px;
+  min-height: 100vh;
+  padding: var(--shell-content-padding-y) var(--shell-content-padding-x);
+}
+
+.app-shell-content > [data-app-content] {
+  width: 100%;
+  max-width: var(--shell-content-max-width);
+  min-height: 0;
+  margin: 0 auto;
+  padding: 0;
 }
 
 .app-shell-mobile-header,
@@ -244,6 +265,11 @@ body[data-app-page="settings"] .settings-content {
 }
 
 @media (max-width: 840px) {
+  :root {
+    --shell-content-padding-x: 14px;
+    --shell-content-padding-y: 18px;
+  }
+
   .app-shell {
     display: block;
     padding-top: var(--shell-mobile-header-height);
@@ -325,13 +351,6 @@ body[data-app-page="settings"] .settings-content {
     display: block;
   }
 
-  body[data-app-page="overview"] .app-shell-content > .app-container {
-    padding: 14px;
-  }
-
-  body[data-app-page="settings"] .app-shell-content {
-    padding: 18px 14px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

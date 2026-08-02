@@ -6,7 +6,7 @@
   <style>
     :root{color-scheme:dark;--bg:#0d1117;--panel:#161b22;--soft:#1c2128;--border:#30363d;--text:#f0f6fc;--muted:#8b949e;--accent:#2f81f7;--win:#3fb950;--draw:#d29922;--loss:#f85149}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    button,select,a{font:inherit}.shell{width:min(1440px,100%);margin:auto;padding:24px}.topbar,.selectors{display:flex;align-items:center;justify-content:space-between;gap:16px}
+    button,select,a{font:inherit}.shell{min-width:0}.topbar,.selectors{display:flex;align-items:center;justify-content:space-between;gap:16px}
     .topbar{margin-bottom:20px}.eyebrow,.muted{color:var(--muted)}.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.08em}h1{margin:3px 0 0;font-size:clamp(22px,3vw,32px)}
     .nav{display:flex;gap:8px}.nav a{color:var(--text);text-decoration:none;border:1px solid var(--border);border-radius:8px;padding:8px 12px;background:var(--panel)}
     .panel{border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow:hidden}.selectors{padding:16px;margin-bottom:18px}.select-wrap{flex:1}.select-wrap label{display:block;margin-bottom:5px;color:var(--muted);font-size:12px}
@@ -17,7 +17,7 @@
     .section{margin-top:20px}.section h2{font-size:15px;margin:0 0 10px}.rows{border:1px solid var(--border);border-radius:9px;overflow:hidden}.row{display:flex;justify-content:space-between;gap:12px;padding:9px 11px;border-bottom:1px solid var(--border)}.row:last-child{border-bottom:0}.row span:first-child{color:var(--muted)}.unavailable{color:var(--muted);font-style:italic}
     .award,.story{padding:11px;border:1px solid var(--border);border-radius:9px;background:var(--soft);margin-top:8px}.story-key{font-size:11px;color:var(--muted);overflow-wrap:anywhere}.facts{list-style:none;padding:0;margin:7px 0 0;font-size:12px}.facts li{display:flex;justify-content:space-between;gap:10px}
     .differences{position:sticky;top:14px}.differences h2{margin:0 0 12px;font-size:16px}.delta{font-weight:800}.delta.positive{color:var(--win)}.delta.negative{color:var(--loss)}.same{color:var(--muted)}
-    @media(max-width:1050px){.comparison{grid-template-columns:1fr 1fr}.differences{grid-column:1/-1;grid-row:1;position:static}}@media(max-width:720px){.shell{padding:12px}.selectors,.topbar{align-items:stretch;flex-direction:column}.comparison{grid-template-columns:1fr}.differences{grid-column:auto}.nav{flex-wrap:wrap}}
+    @media(max-width:1050px){.comparison{grid-template-columns:1fr 1fr}.differences{grid-column:1/-1;grid-row:1;position:static}}@media(max-width:720px){.selectors,.topbar{align-items:stretch;flex-direction:column}.comparison{grid-template-columns:1fr}.differences{grid-column:auto}.nav{flex-wrap:wrap}}
   </style>
   <link rel="stylesheet" href="/app-shell.css">
   <script src="/app-shell.js" defer></script>
