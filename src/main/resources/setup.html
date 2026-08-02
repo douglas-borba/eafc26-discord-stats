@@ -196,7 +196,9 @@
         webhookState.history = { configured: !!data.historyConfigured, source: data.historySource || 'NOT_CONFIGURED' };
         applySourceState('stats', webhookState.stats);
         applySourceState('history', webhookState.history);
-        if (data.configured || data.historyConfigured) {
+        if (bothWebhooksManagedByEnvironment()) {
+          document.getElementById('save-btn').textContent = 'Continuar';
+        } else if (data.configured || data.historyConfigured) {
           document.getElementById('save-btn').textContent = 'Atualizar e continuar';
         }
       } catch (e) {
@@ -221,6 +223,11 @@
       }
     }
 
+    function bothWebhooksManagedByEnvironment() {
+      return webhookState.stats.source === 'ENVIRONMENT' &&
+        webhookState.history.source === 'ENVIRONMENT';
+    }
+
     function clearErrors() {
       ['stats-input', 'history-input'].forEach(id => {
         document.getElementById(id).classList.remove('field-error');
@@ -243,6 +250,13 @@
 
     async function save() {
       clearErrors();
+
+      // Environment-managed secrets are already active and immutable here.
+      // Continuing must not perform an unnecessary CSRF-protected mutation.
+      if (bothWebhooksManagedByEnvironment()) {
+        window.location.href = '/';
+        return;
+      }
 
       const statsUrl   = document.getElementById('stats-input').value.trim();
       const historyUrl = document.getElementById('history-input').value.trim();

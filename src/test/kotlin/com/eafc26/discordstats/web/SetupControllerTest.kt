@@ -62,6 +62,24 @@ class SetupControllerTest {
         assert(!body.contains("abctoken")) { "Must not contain any saved token value" }
     }
 
+    @Test
+    fun `environment managed setup continues without posting configuration`() {
+        val body = webClient.get().uri("/setup")
+            .exchange()
+            .expectStatus().isOk
+            .expectBody(String::class.java)
+            .returnResult()
+            .responseBody ?: ""
+
+        val environmentGuard = body.indexOf("if (bothWebhooksManagedByEnvironment())")
+        val redirect = body.indexOf("window.location.href = '/';", environmentGuard)
+        val mutation = body.indexOf("fetch('/api/setup/webhook', {", environmentGuard)
+
+        assert(environmentGuard >= 0) { "Expected environment-only continuation guard" }
+        assert(redirect > environmentGuard) { "Expected direct navigation for environment-managed webhooks" }
+        assert(mutation > redirect) { "Environment guard must run before the setup POST" }
+    }
+
     // ── GET /api/setup/webhook ───────────────────────────────────────────────
 
     @Test
