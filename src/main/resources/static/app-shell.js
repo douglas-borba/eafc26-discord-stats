@@ -33,14 +33,36 @@
   }
 
   const nativeFetch = window.fetch.bind(window);
-  window.fetch = (input, init = {}) => {
-    const method = (init.method || "GET").toUpperCase();
-    if (!["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
-      const token = csrfToken();
-      if (token) init.headers = { ...(init.headers || {}), "X-XSRF-TOKEN": token };
+  async function applicationFetch(input, init = {}) {
+    const request = input instanceof Request ? input : null;
+    const method = (init.method || request?.method || "GET").toUpperCase();
+    const target = new URL(request?.url || input, window.location.href);
+    const sameOrigin = target.origin === window.location.origin;
+    const options = { ...init };
+
+    if (sameOrigin) {
+      options.credentials = init.credentials || "same-origin";
     }
-    return nativeFetch(input, init);
-  };
+
+    if (sameOrigin && !["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
+      let token = csrfToken();
+      if (!token) {
+        const session = await nativeFetch("/api/auth/session", {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+        });
+        if (session.ok) token = csrfToken();
+      }
+      const headers = new Headers(request?.headers || undefined);
+      new Headers(init.headers || undefined).forEach((value, name) => headers.set(name, value));
+      if (token) headers.set("X-XSRF-TOKEN", token);
+      options.headers = headers;
+    }
+    return nativeFetch(input, options);
+  }
+
+  window.eafcFetch = applicationFetch;
+  window.fetch = applicationFetch;
 
   function createShell(currentPage, content, role) {
     const shell = document.createElement("div");
@@ -100,7 +122,7 @@
 
     let role = "VIEWER";
     try {
-      const response = await nativeFetch("/api/auth/session");
+      const response = await nativeFetch("/api/auth/session", { credentials: "same-origin" });
       if (response.ok) role = (await response.json()).role || role;
     } catch (_) {}
 

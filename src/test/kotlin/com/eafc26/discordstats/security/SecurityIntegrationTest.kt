@@ -3,6 +3,9 @@ package com.eafc26.discordstats.security
 import com.eafc26.discordstats.config.WebhookConfigService
 import com.eafc26.discordstats.config.WebhookConfigurationSource
 import com.eafc26.discordstats.dev.DevSimulatorService
+import com.eafc26.discordstats.service.AcquisitionResult
+import com.eafc26.discordstats.service.AcquisitionTrigger
+import com.eafc26.discordstats.service.MatchAcquisitionService
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.BeforeEach
@@ -30,6 +33,7 @@ class SecurityIntegrationTest {
     @Autowired lateinit var client: WebTestClient
     @MockBean lateinit var webhookConfigService: WebhookConfigService
     @MockBean lateinit var devSimulatorService: DevSimulatorService
+    @MockBean lateinit var matchAcquisitionService: MatchAcquisitionService
 
     @BeforeEach
     fun configuredApplication() {
@@ -37,6 +41,7 @@ class SecurityIntegrationTest {
         whenever(webhookConfigService.isHistoryConfigured()).thenReturn(true)
         whenever(webhookConfigService.getWebhookSource()).thenReturn(WebhookConfigurationSource.ENVIRONMENT)
         whenever(webhookConfigService.getHistoryWebhookSource()).thenReturn(WebhookConfigurationSource.ENVIRONMENT)
+        whenever(matchAcquisitionService.acquire(AcquisitionTrigger.MANUAL)).thenReturn(AcquisitionResult.NoMatches)
     }
 
     @Test
@@ -143,6 +148,27 @@ class SecurityIntegrationTest {
             .cookie("SESSION", admin.session).cookie("XSRF-TOKEN", admin.csrfCookie)
             .header("X-XSRF-TOKEN", admin.csrfCookie)
             .exchange().expectStatus().isOk
+    }
+
+    @Test
+    fun `notify latest remains admin only and requires valid csrf`() {
+        client.post().uri("/api/matches/notify-latest").exchange().expectStatus().isForbidden
+
+        val viewer = login("viewer", "viewer-test-secret", "/login")
+        client.post().uri("/api/matches/notify-latest")
+            .cookie("SESSION", viewer.session).cookie("XSRF-TOKEN", viewer.csrfCookie)
+            .header("X-XSRF-TOKEN", viewer.csrfCookie)
+            .exchange().expectStatus().isForbidden
+
+        val admin = login("admin", "admin-test-secret", "/admin/login")
+        client.post().uri("/api/matches/notify-latest")
+            .cookie("SESSION", admin.session)
+            .exchange().expectStatus().isForbidden
+        client.post().uri("/api/matches/notify-latest")
+            .cookie("SESSION", admin.session).cookie("XSRF-TOKEN", admin.csrfCookie)
+            .header("X-XSRF-TOKEN", admin.csrfCookie)
+            .exchange().expectStatus().isOk
+            .expectBody().jsonPath("$.status").isEqualTo("no_matches")
     }
 
     @Test
