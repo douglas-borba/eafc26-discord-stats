@@ -81,6 +81,16 @@
       display: none;
     }
 
+    .source-msg {
+      display: none;
+      margin-top: 0.45rem;
+      color: #8b949e;
+      font-size: 0.8rem;
+      line-height: 1.4;
+    }
+
+    input:disabled { opacity: 0.65; cursor: not-allowed; }
+
     .divider {
       border: none;
       border-top: 1px solid #21262d;
@@ -140,6 +150,7 @@
         spellcheck="false"
       />
       <div class="error-msg" id="stats-error"></div>
+      <div class="source-msg" id="stats-source"></div>
     </div>
 
     <!-- Campo 2: histórico -->
@@ -155,33 +166,60 @@
         spellcheck="false"
       />
       <div class="error-msg" id="history-error"></div>
+      <div class="source-msg" id="history-source"></div>
     </div>
 
-    <button id="save-btn" onclick="save()">Salvar e continuar</button>
+    <button id="save-btn" onclick="save()" disabled>Salvar e continuar</button>
 
     <div id="feedback"></div>
 
     <p class="hint">
-      Os URLs são salvos localmente no seu Mac e nunca são enviados para servidores externos.
+      Quando não são controlados pelo servidor, os URLs são salvos localmente neste dispositivo.
     </p>
   </div>
 
   <script>
-    // Pre-fill any already-saved values (migration: user may have stats but not history)
+    const webhookState = {
+      stats: { configured: false, source: 'NOT_CONFIGURED' },
+      history: { configured: false, source: 'NOT_CONFIGURED' }
+    };
+
+    // Load status only. Webhook secrets are never returned to or displayed by the browser.
     (async function loadSaved() {
       try {
+        // Materialize the post-login CSRF cookie before any administrative mutation.
+        await fetch('/api/auth/session');
         const res = await fetch('/api/setup/webhook');
         if (!res.ok) return;
         const data = await res.json();
-        if (data.url)        document.getElementById('stats-input').value   = data.url;
-        if (data.historyUrl) document.getElementById('history-input').value = data.historyUrl;
+        webhookState.stats = { configured: !!data.configured, source: data.source || 'NOT_CONFIGURED' };
+        webhookState.history = { configured: !!data.historyConfigured, source: data.historySource || 'NOT_CONFIGURED' };
+        applySourceState('stats', webhookState.stats);
+        applySourceState('history', webhookState.history);
         if (data.configured || data.historyConfigured) {
           document.getElementById('save-btn').textContent = 'Atualizar e continuar';
         }
       } catch (e) {
         console.error('Erro ao carregar webhooks salvos:', e);
+      } finally {
+        document.getElementById('save-btn').disabled = false;
       }
     })();
+
+    function applySourceState(prefix, state) {
+      const input = document.getElementById(prefix + '-input');
+      const message = document.getElementById(prefix + '-source');
+      if (state.source === 'ENVIRONMENT') {
+        input.disabled = true;
+        input.placeholder = 'Configurado pelo ambiente';
+        message.textContent = 'Este webhook é controlado pelas variáveis de ambiente do servidor.';
+        message.style.display = 'block';
+      } else if (state.source === 'STORED') {
+        input.placeholder = 'Digite apenas para substituir a configuração local';
+        message.textContent = 'Configurado localmente. O valor existente permanece oculto.';
+        message.style.display = 'block';
+      }
+    }
 
     function clearErrors() {
       ['stats-input', 'history-input'].forEach(id => {
@@ -212,11 +250,11 @@
 
       // Client-side presence check before sending to server
       let hasError = false;
-      if (!statsUrl) {
+      if (!statsUrl && !webhookState.stats.configured) {
         fieldError('stats-input', 'stats-error', 'Informe a URL do webhook do canal de estatísticas.');
         hasError = true;
       }
-      if (!historyUrl) {
+      if (!historyUrl && !webhookState.history.configured) {
         fieldError('history-input', 'history-error', 'Informe a URL do webhook do canal de histórico.');
         hasError = true;
       }

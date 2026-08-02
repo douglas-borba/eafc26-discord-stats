@@ -2,71 +2,124 @@ package com.eafc26.discordstats.config
 
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import java.net.URI
 import java.nio.file.Path
 
+enum class WebhookConfigurationSource {
+    ENVIRONMENT,
+    STORED,
+    NOT_CONFIGURED,
+}
+
+data class ResolvedWebhookConfiguration internal constructor(
+    val url: String,
+    val source: WebhookConfigurationSource,
+) {
+    val configured: Boolean get() = source != WebhookConfigurationSource.NOT_CONFIGURED
+}
+
 /**
- * Manages the Discord webhook URL at runtime.
+ * Resolves Discord webhook configuration without exposing secrets to presentation code.
  *
- * The URL is loaded from SettingsService (Java Preferences API) at startup.
- * A mutable holder allows it to be updated at runtime via the setup page
- * without restarting the application.
+ * Precedence is deterministic for each destination:
+ * 1. non-blank environment-backed application property;
+ * 2. Java Preferences value maintained by the local administrative interface;
+ * 3. not configured.
+ *
+ * Environment values are immutable for the lifetime of the process. Invalid values
+ * fail startup with the variable name only, preventing an unintended fallback to a
+ * different stored channel and preventing the secret from reaching logs.
  */
 @Service
 class WebhookConfigService(
     private val settingsService: SettingsService,
+    properties: AppProperties,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
+    private val environmentMatchWebhook = properties.discord.matchWebhookUrl.trim()
+    private val environmentHistoryWebhook = properties.discord.historyWebhookUrl.trim()
 
     @Volatile
-    private var webhookUrl: String = settingsService.getWebhookUrl()
+    private var storedMatchWebhook: String = settingsService.getWebhookUrl().trim()
 
     @Volatile
-    private var historyWebhookUrl: String = settingsService.getHistoryWebhookUrl()
+    private var storedHistoryWebhook: String = settingsService.getHistoryWebhookUrl().trim()
 
-    fun isConfigured(): Boolean = webhookUrl.isNotBlank()
-
-    fun getWebhookUrl(): String = webhookUrl
-
-    /**
-     * Returns the masked webhook URL for display purposes.
-     * Shows only the first and last few characters.
-     */
-    fun getMaskedWebhookUrl(): String {
-        val url = webhookUrl
-        if (url.isBlank()) return ""
-        if (url.length <= 50) return "****"
-        return url.take(35) + "****" + url.takeLast(10)
+    init {
+        validateEnvironmentWebhook(ENV_MATCH, environmentMatchWebhook)
+        validateEnvironmentWebhook(ENV_HISTORY, environmentHistoryWebhook)
+        storedMatchWebhook = validateStoredWebhook("match", storedMatchWebhook) {
+            settingsService.setWebhookUrl("")
+        }
+        storedHistoryWebhook = validateStoredWebhook("history", storedHistoryWebhook) {
+            settingsService.setHistoryWebhookUrl("")
+        }
+        log.info(
+            "Discord webhook configuration resolved: match={}, history={}",
+            matchConfiguration().source,
+            historyConfiguration().source,
+        )
     }
 
-    fun isHistoryConfigured(): Boolean = historyWebhookUrl.isNotBlank()
+    fun matchConfiguration(): ResolvedWebhookConfiguration =
+        resolve(environmentMatchWebhook, storedMatchWebhook)
 
-    fun getHistoryWebhookUrl(): String = historyWebhookUrl
+    fun historyConfiguration(): ResolvedWebhookConfiguration =
+        resolve(environmentHistoryWebhook, storedHistoryWebhook)
 
-    /**
-     * Validates, persists, and activates a new webhook URL.
-     * @throws IllegalArgumentException if the URL is invalid.
-     */
+    fun isConfigured(): Boolean = matchConfiguration().configured
+
+    fun getWebhookUrl(): String = matchConfiguration().url
+
+    fun getWebhookSource(): WebhookConfigurationSource = matchConfiguration().source
+
+    /** Kept for compatibility; environment secrets are never partially displayed. */
+    fun getMaskedWebhookUrl(): String = when (getWebhookSource()) {
+        WebhookConfigurationSource.ENVIRONMENT -> ""
+        WebhookConfigurationSource.NOT_CONFIGURED -> ""
+        WebhookConfigurationSource.STORED -> "Configurado localmente"
+    }
+
+    fun isHistoryConfigured(): Boolean = historyConfiguration().configured
+
+    fun getHistoryWebhookUrl(): String = historyConfiguration().url
+
+    fun getHistoryWebhookSource(): WebhookConfigurationSource = historyConfiguration().source
+
     fun configure(url: String) {
+        check(getWebhookSource() != WebhookConfigurationSource.ENVIRONMENT) {
+            "$ENV_MATCH is controlled by the environment."
+        }
         validateUrl(url)
-        settingsService.setWebhookUrl(url)
-        webhookUrl = url
-        log.info("Discord webhook configured and saved")
+        val normalized = url.trim()
+        settingsService.setWebhookUrl(normalized)
+        storedMatchWebhook = normalized
+        log.info("Discord match webhook configured and saved locally")
     }
 
-    /** Clears the webhook URL so the next request is redirected to /setup. */
     fun reset() {
         settingsService.setWebhookUrl("")
-        webhookUrl = ""
-        log.info("Discord webhook cleared — setup required")
+        storedMatchWebhook = ""
+        log.info("Stored Discord match webhook cleared")
     }
 
-    /** Saves and activates the history webhook URL. Blank URL clears it. */
     fun configureHistory(url: String) {
+        check(getHistoryWebhookSource() != WebhookConfigurationSource.ENVIRONMENT) {
+            "$ENV_HISTORY is controlled by the environment."
+        }
         if (url.isNotBlank()) validateUrl(url)
-        settingsService.setHistoryWebhookUrl(url)
-        historyWebhookUrl = url.trim()
-        log.info("History webhook {}", if (url.isBlank()) "cleared" else "configured and saved")
+        val normalized = url.trim()
+        settingsService.setHistoryWebhookUrl(normalized)
+        storedHistoryWebhook = normalized
+        log.info("Stored history webhook {}", if (normalized.isBlank()) "cleared" else "configured")
+    }
+
+    fun resetStoredWebhooks() {
+        reset()
+        settingsService.setHistoryWebhookUrl("")
+        storedHistoryWebhook = ""
+        log.info("Stored Discord webhook fallbacks cleared")
     }
 
     fun isNetworkEnabled(): Boolean = settingsService.isNetworkEnabled()
@@ -89,18 +142,53 @@ class WebhookConfigService(
             "Library", "Logs", "EAFC26DiscordStats", "app.log",
         ).toString()
 
-    // ------------------------------------------------------------------
-    // Validation
-    // ------------------------------------------------------------------
-
     fun validateUrl(url: String) {
         require(url.isNotBlank()) { "O URL do webhook não pode estar vazio." }
-        require(url.startsWith("https://discord.com/api/webhooks/")) {
-            "URL inválida. Deve começar com https://discord.com/api/webhooks/"
+        val uri = try {
+            URI(url.trim())
+        } catch (_: Exception) {
+            throw IllegalArgumentException("URL de webhook inválida.")
         }
-        val path = url.removePrefix("https://discord.com/api/webhooks/").split("/")
-        require(path.size >= 2 && path[0].isNotBlank() && path[1].isNotBlank()) {
+        require(uri.scheme == "https") { "O webhook deve utilizar HTTPS." }
+        require(uri.host.equals("discord.com", ignoreCase = true)) {
+            "URL inválida. Deve utilizar discord.com/api/webhooks."
+        }
+        val segments = uri.path.split('/').filter(String::isNotBlank)
+        require(segments.size >= 4 && segments[0] == "api" && segments[1] == "webhooks" &&
+            segments[2].isNotBlank() && segments[3].isNotBlank()) {
             "URL inválida. Deve conter o ID e o token do webhook."
         }
+    }
+
+    private fun resolve(environment: String, stored: String): ResolvedWebhookConfiguration = when {
+        environment.isNotBlank() -> ResolvedWebhookConfiguration(environment, WebhookConfigurationSource.ENVIRONMENT)
+        stored.isNotBlank() -> ResolvedWebhookConfiguration(stored, WebhookConfigurationSource.STORED)
+        else -> ResolvedWebhookConfiguration("", WebhookConfigurationSource.NOT_CONFIGURED)
+    }
+
+    private fun validateEnvironmentWebhook(variableName: String, value: String) {
+        if (value.isBlank()) return
+        try {
+            validateUrl(value)
+        } catch (_: IllegalArgumentException) {
+            throw IllegalStateException("$variableName is invalid.")
+        }
+    }
+
+    private fun validateStoredWebhook(destination: String, value: String, clear: () -> Unit): String {
+        if (value.isBlank()) return ""
+        return try {
+            validateUrl(value)
+            value
+        } catch (_: IllegalArgumentException) {
+            clear()
+            log.warn("Invalid stored Discord {} webhook was cleared", destination)
+            ""
+        }
+    }
+
+    companion object {
+        const val ENV_MATCH = "EAFC_DISCORD_MATCH_WEBHOOK_URL"
+        const val ENV_HISTORY = "EAFC_DISCORD_HISTORY_WEBHOOK_URL"
     }
 }

@@ -43,7 +43,9 @@ app:
     publish-existing-on-first-run: false
 
   discord:
-    webhook-url: ""   # configured at runtime via /setup — never commit a real URL here
+    # Environment values take precedence over the local /setup fallback.
+    match-webhook-url: ${EAFC_DISCORD_MATCH_WEBHOOK_URL:}
+    history-webhook-url: ${EAFC_DISCORD_HISTORY_WEBHOOK_URL:}
 
   web:
     network-enabled: false   # overridden by local config file at startup

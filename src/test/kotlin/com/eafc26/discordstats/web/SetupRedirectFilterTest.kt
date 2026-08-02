@@ -101,6 +101,16 @@ class SetupRedirectFilterTest {
     }
 
     @Test
+    fun `authenticated session endpoint is not redirected while setup is incomplete`() {
+        whenever(webhookConfigService.isConfigured()).thenReturn(false)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
+
+        webClient.get().uri("/api/auth/session")
+            .exchange()
+            .expectStatus().isNotFound
+    }
+
+    @Test
     fun `static resources are never redirected to setup`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
         whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)

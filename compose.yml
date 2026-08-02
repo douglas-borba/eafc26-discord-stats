@@ -16,6 +16,8 @@ services:
       EAFC_ADMIN_PASSWORD: ${EAFC_ADMIN_PASSWORD:-}
       EAFC_COOKIE_SECURE: ${EAFC_COOKIE_SECURE:-false}
       EAFC_SESSION_TIMEOUT: ${EAFC_SESSION_TIMEOUT:-8h}
+      EAFC_DISCORD_MATCH_WEBHOOK_URL: ${EAFC_DISCORD_MATCH_WEBHOOK_URL:-}
+      EAFC_DISCORD_HISTORY_WEBHOOK_URL: ${EAFC_DISCORD_HISTORY_WEBHOOK_URL:-}
     volumes:
       - eafc-data:/home/pwuser/Library/Application Support/EAFC26DiscordStats
     restart: unless-stopped

@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.config.WebhookConfigService
+import com.eafc26.discordstats.config.WebhookConfigurationSource
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
@@ -33,6 +34,8 @@ class SetupControllerTest {
         whenever(webhookConfigService.getWebhookUrl()).thenReturn("")
         whenever(webhookConfigService.getHistoryWebhookUrl()).thenReturn("")
         whenever(webhookConfigService.getMaskedWebhookUrl()).thenReturn("")
+        whenever(webhookConfigService.getWebhookSource()).thenReturn(WebhookConfigurationSource.NOT_CONFIGURED)
+        whenever(webhookConfigService.getHistoryWebhookSource()).thenReturn(WebhookConfigurationSource.NOT_CONFIGURED)
     }
 
     // ── GET /setup ──────────────────────────────────────────────────────────
@@ -65,8 +68,7 @@ class SetupControllerTest {
     fun `GET api setup webhook returns both configured flags`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
         whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
-        whenever(webhookConfigService.getWebhookUrl()).thenReturn("https://discord.com/api/webhooks/1/tok")
-        whenever(webhookConfigService.getHistoryWebhookUrl()).thenReturn("")
+        whenever(webhookConfigService.getWebhookSource()).thenReturn(WebhookConfigurationSource.ENVIRONMENT)
 
         webClient.get().uri("/api/setup/webhook")
             .exchange()
@@ -74,8 +76,10 @@ class SetupControllerTest {
             .expectBody()
             .jsonPath("$.configured").isEqualTo(true)
             .jsonPath("$.historyConfigured").isEqualTo(false)
-            .jsonPath("$.url").isEqualTo("https://discord.com/api/webhooks/1/tok")
-            .jsonPath("$.historyUrl").isEqualTo("")
+            .jsonPath("$.source").isEqualTo("ENVIRONMENT")
+            .jsonPath("$.historySource").isEqualTo("NOT_CONFIGURED")
+            .jsonPath("$.url").doesNotExist()
+            .jsonPath("$.historyUrl").doesNotExist()
     }
 
     // ── POST /api/setup/webhook ──────────────────────────────────────────────
@@ -144,5 +148,21 @@ class SetupControllerTest {
         assert(!body.contains("discord.com/api/webhooks")) {
             "Response must not echo back the webhook URL"
         }
+    }
+
+    @Test
+    fun `POST setup does not overwrite environment managed webhook`() {
+        whenever(webhookConfigService.isConfigured()).thenReturn(true)
+        whenever(webhookConfigService.getWebhookSource()).thenReturn(WebhookConfigurationSource.ENVIRONMENT)
+        val history = "https://discord.com/api/webhooks/222/historytoken"
+
+        webClient.post().uri("/api/setup/webhook")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(mapOf("webhookUrl" to "", "historyWebhookUrl" to history))
+            .exchange()
+            .expectStatus().is3xxRedirection
+
+        verify(webhookConfigService, org.mockito.kotlin.never()).configure(any())
+        verify(webhookConfigService).configureHistory(history)
     }
 }

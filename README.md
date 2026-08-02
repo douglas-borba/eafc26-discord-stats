@@ -82,6 +82,20 @@ HttpOnly, SameSite=Lax server session; no JWT or browser storage is used. See
 [`docs/security.md`](docs/security.md) for the permission matrix, session/CSRF
 behavior and password rotation procedure.
 
+Discord delivery supports reproducible server configuration through two optional
+environment variables:
+
+```bash
+export EAFC_DISCORD_MATCH_WEBHOOK_URL='https://discord.com/api/webhooks/<id>/<token>'
+export EAFC_DISCORD_HISTORY_WEBHOOK_URL='https://discord.com/api/webhooks/<id>/<token>'
+```
+
+When present, these values take precedence over the local configuration saved by
+the administrative interface. Empty values retain the Java Preferences fallback.
+Webhook values are never returned by the configuration APIs or written to logs.
+See [`docs/discord-webhooks.md`](docs/discord-webhooks.md) for Railway setup,
+validation, precedence and persistence responsibilities.
+
 Edit `src/main/resources/application.yml`:
 
 ```yaml
