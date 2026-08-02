@@ -63,6 +63,24 @@ class SetupControllerTest {
     }
 
     @Test
+    fun `setup uses central csrf fetch and prevents password autofill`() {
+        val body = webClient.get().uri("/setup")
+            .exchange()
+            .expectStatus().isOk
+            .expectBody(String::class.java)
+            .returnResult()
+            .responseBody ?: ""
+
+        assert(body.contains("<script src=\"/app-shell.js\"></script>")) {
+            "Setup must load the shared authenticated fetch before its inline actions"
+        }
+        assert(body.contains("name=\"discord-match-webhook-url\""))
+        assert(body.contains("name=\"discord-history-webhook-url\""))
+        assert(Regex("autocomplete=\"new-password\"").findAll(body).count() == 2)
+        assert(!body.contains("autocomplete=\"off\""))
+    }
+
+    @Test
     fun `environment managed setup continues without posting configuration`() {
         val body = webClient.get().uri("/setup")
             .exchange()

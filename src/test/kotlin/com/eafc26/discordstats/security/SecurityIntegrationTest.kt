@@ -129,6 +129,7 @@ class SecurityIntegrationTest {
         val auth = login("admin", "admin-test-secret", "/admin/login")
         client.get().uri("/api/auth/session").cookie("SESSION", auth.session).exchange().expectBody()
             .jsonPath("$.role").isEqualTo("ADMIN")
+            .jsonPath("$.csrfToken").isNotEmpty
         client.get().uri("/settings").cookie("SESSION", auth.session).exchange().expectStatus().isOk
         client.get().uri("/api/settings/info").cookie("SESSION", auth.session).exchange().expectStatus().isOk
     }

@@ -33,6 +33,7 @@ class SecurityArchitectureTest {
             "credentials: \"same-origin\"",
             "headers.set(\"X-XSRF-TOKEN\", token)",
             "nativeFetch(\"/api/auth/session\"",
+            "(await sessionInfo())?.csrfToken",
         )
         assertThat(dashboard).contains(
             "res.status === 401",

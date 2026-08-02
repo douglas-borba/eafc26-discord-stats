@@ -32,10 +32,11 @@ class AccessController {
 
     @GetMapping("/api/auth/session", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun session(authentication: Authentication, exchange: ServerWebExchange): Mono<Map<String, Any>> =
-        csrf(exchange).map {
+        csrf(exchange).map { token ->
             mapOf(
                 "authenticated" to true,
                 "role" to if (authentication.authorities.any { authority -> authority.authority == "ROLE_ADMIN" }) "ADMIN" else "VIEWER",
+                "csrfToken" to token.token,
             )
         }
 

@@ -27,12 +27,20 @@
     `;
   }
 
-  function csrfToken() {
+  function csrfCookie() {
     const cookie = document.cookie.split("; ").find((entry) => entry.startsWith("XSRF-TOKEN="));
     return cookie ? decodeURIComponent(cookie.substring("XSRF-TOKEN=".length)) : null;
   }
 
   const nativeFetch = window.fetch.bind(window);
+  async function sessionInfo() {
+    const response = await nativeFetch("/api/auth/session", {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    });
+    return response.ok ? response.json() : null;
+  }
+
   async function applicationFetch(input, init = {}) {
     const request = input instanceof Request ? input : null;
     const method = (init.method || request?.method || "GET").toUpperCase();
@@ -45,14 +53,7 @@
     }
 
     if (sameOrigin && !["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
-      let token = csrfToken();
-      if (!token) {
-        const session = await nativeFetch("/api/auth/session", {
-          credentials: "same-origin",
-          headers: { Accept: "application/json" },
-        });
-        if (session.ok) token = csrfToken();
-      }
+      const token = (await sessionInfo())?.csrfToken || csrfCookie();
       const headers = new Headers(request?.headers || undefined);
       new Headers(init.headers || undefined).forEach((value, name) => headers.set(name, value));
       if (token) headers.set("X-XSRF-TOKEN", token);
@@ -122,8 +123,7 @@
 
     let role = "VIEWER";
     try {
-      const response = await nativeFetch("/api/auth/session", { credentials: "same-origin" });
-      if (response.ok) role = (await response.json()).role || role;
+      role = (await sessionInfo())?.role || role;
     } catch (_) {}
 
     document.body.dataset.accessRole = role;
