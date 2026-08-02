@@ -1,5 +1,10 @@
 # Production memory budget
 
+> Historical deployment reference. Railway is not an active environment for the
+> project at this time. Keep these constraints as a validation gate if hosted
+> deployment is resumed; local macOS development via `./gradlew bootRun` is the
+> current default.
+
 ## Runtime limit
 
 The Railway Trial service runs one replica with 2 vCPU and 1 GiB of memory.

@@ -36,9 +36,11 @@ only the variable, for example `EAFC_DISCORD_MATCH_WEBHOOK_URL is invalid.`, and
 never includes the supplied value. Failing instead of silently using a stored
 fallback prevents delivery to an unintended channel.
 
-## Railway
+## Railway (future deployment)
 
-Create the two variables in the Railway service Variables area and redeploy. Do
+Railway is not the project's active environment. If deployment is resumed in the
+future, create the two variables in the Railway service Variables area and
+redeploy. Do
 not place their values in repository files. After deployment, an ADMIN can open
 Settings and confirm that both origins are `ENVIRONMENT`; the values remain hidden.
 
@@ -62,7 +64,8 @@ store establishes a baseline instead of retroactively publishing the returned EA
 window. An externally configured webhook does not itself trigger acquisition or
 publication.
 
-The production volume has a different responsibility from environment variables:
+In a future deployment, the persistent volume has a different responsibility
+from environment variables:
 
 | Data | Storage | Production persistence requirement |
 |---|---|---|
