@@ -11,6 +11,16 @@
   --shell-mobile-header-height: 64px;
 }
 
+html {
+  min-width: 0;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
+body {
+  min-width: 0;
+}
+
 body.app-shell-ready {
   display: block;
   align-items: initial;
@@ -23,6 +33,7 @@ body.app-shell-ready {
 
 .app-shell {
   display: grid;
+  width: 100%;
   grid-template-columns: var(--shell-sidebar-width) minmax(0, 1fr);
   min-height: 100vh;
 }

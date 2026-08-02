@@ -51,7 +51,10 @@ class SecurityConfig {
             setCookieCustomizer { cookie -> cookie.sameSite("Lax") }
         }
         val apiDenied = ServerAccessDeniedHandler { exchange, _ -> jsonError(exchange, HttpStatus.FORBIDDEN, "forbidden", objectMapper) }
-        val requestCache = WebSessionServerRequestCache()
+        val navigablePages = NavigablePageRequestMatcher()
+        val requestCache = WebSessionServerRequestCache().apply {
+            setSaveRequestMatcher(navigablePages)
+        }
         val loginEntryPoint = RedirectServerAuthenticationEntryPoint("/login")
 
         return http
@@ -62,6 +65,7 @@ class SecurityConfig {
             .requestCache { it.requestCache(requestCache) }
             .authorizeExchange {
                 it.pathMatchers("/login", "/admin/login", "/access-denied", "/session-expired", "/api/health", "/error").permitAll()
+                it.pathMatchers(*PublicStaticResources.pathPatterns).permitAll()
                 it.pathMatchers("/settings", "/setup").hasRole("ADMIN")
                 it.pathMatchers(
                     "/api/settings/**", "/api/setup/**", "/api/dev/**", "/api/matches/**",
@@ -73,7 +77,7 @@ class SecurityConfig {
                 it.loginPage("/login")
                     .authenticationSuccessHandler { webFilterExchange, _ ->
                         webFilterExchange.exchange.session.flatMap { session ->
-                            val target = session.attributes.remove(SAVED_REQUEST) as? String ?: "/"
+                            val target = navigablePages.safeRedirectTarget(session.attributes.remove(SAVED_REQUEST) as? String)
                             webFilterExchange.exchange.response.apply {
                                 statusCode = HttpStatus.SEE_OTHER
                                 headers.location = java.net.URI.create(target)
@@ -104,7 +108,9 @@ class SecurityConfig {
                     if (exchange.request.path.value().startsWith("/api/")) {
                         jsonError(exchange, HttpStatus.UNAUTHORIZED, "authentication_required", objectMapper)
                     } else {
-                        exchange.session.flatMap { session ->
+                        if (!navigablePages.isNavigablePageRequest(exchange)) {
+                            loginEntryPoint.commence(exchange, exception)
+                        } else exchange.session.flatMap { session ->
                             session.attributes[SAVED_REQUEST] = exchange.request.uri.rawPath +
                                 (exchange.request.uri.rawQuery?.let { query -> "?$query" } ?: "")
                             loginEntryPoint.commence(exchange, exception)

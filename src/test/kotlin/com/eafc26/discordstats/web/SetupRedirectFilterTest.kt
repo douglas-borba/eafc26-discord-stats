@@ -2,6 +2,7 @@ package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.config.WebhookConfigService
 import com.eafc26.discordstats.service.MatchAcquisitionService
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
@@ -97,5 +98,17 @@ class SetupRedirectFilterTest {
         webClient.get().uri("/api/health")
             .exchange()
             .expectStatus().isOk
+    }
+
+    @Test
+    fun `static resources are never redirected to setup`() {
+        whenever(webhookConfigService.isConfigured()).thenReturn(false)
+        whenever(webhookConfigService.isHistoryConfigured()).thenReturn(false)
+
+        listOf("/app-shell.css", "/app-shell.js", "/images/club.png", "/favicon.ico").forEach { path ->
+            webClient.get().uri(path).exchange().expectStatus().value { status ->
+                assertThat(status in 300..399).describedAs(path).isFalse()
+            }
+        }
     }
 }

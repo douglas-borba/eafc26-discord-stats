@@ -44,11 +44,57 @@ class SecurityIntegrationTest {
 
     @Test
     fun `anonymous page redirects while protected API returns JSON 401`() {
-        client.get().uri("/players?playerId=player-1").exchange().expectStatus().is3xxRedirection
+        client.get().uri("/players?playerId=player-1").accept(MediaType.TEXT_HTML).exchange().expectStatus().is3xxRedirection
             .expectHeader().valueEquals("Location", "/login")
         client.get().uri("/api/player-profiles").exchange().expectStatus().isUnauthorized
             .expectHeader().contentType(MediaType.APPLICATION_JSON)
             .expectBody().jsonPath("$.error").isEqualTo("authentication_required")
+    }
+
+    @Test
+    fun `static interface resources are public and keep their media types`() {
+        listOf(
+            "/app-shell.css", "/editorial-design-system.css", "/match-history.css",
+            "/match-summary-card.css", "/opponents.css",
+        ).forEach { path ->
+            client.get().uri(path).exchange().expectStatus().isOk
+                .expectHeader().contentTypeCompatibleWith(MediaType.parseMediaType("text/css"))
+        }
+        listOf(
+            "/app-shell.js", "/editorial-design-system.js", "/match-history.js", "/opponents.js",
+        ).forEach { path ->
+            client.get().uri(path).exchange().expectStatus().isOk
+                .expectHeader().contentTypeCompatibleWith(MediaType.parseMediaType("application/javascript"))
+        }
+    }
+
+    @Test
+    fun `root navigation survives public asset requests and login never redirects to an asset`() {
+        val requested = client.get().uri("/").accept(MediaType.TEXT_HTML).exchange()
+            .expectStatus().is3xxRedirection.returnResult(Void::class.java)
+        val session = requested.responseCookies.getFirst("SESSION")!!.value
+
+        client.get().uri("/app-shell.css").cookie("SESSION", session).exchange().expectStatus().isOk
+        client.get().uri("/app-shell.js").cookie("SESSION", session).exchange().expectStatus().isOk
+
+        assertThat(loginWithSession(session)).isEqualTo("/")
+    }
+
+    @Test
+    fun `anonymous API request is not restored after login`() {
+        val api = client.get().uri("/api/player-profiles").accept(MediaType.APPLICATION_JSON).exchange()
+            .expectStatus().isUnauthorized.returnResult(Void::class.java)
+        val session = api.responseCookies.getFirst("SESSION")?.value
+
+        assertThat(loginWithSession(session)).isEqualTo("/")
+    }
+
+    @Test
+    fun `sports pages remain protected while static resources are public`() {
+        listOf("/", "/history", "/players", "/opponents", "/opponents/club-1", "/compare", "/match-card").forEach { path ->
+            client.get().uri(path).accept(MediaType.TEXT_HTML).exchange().expectStatus().is3xxRedirection
+                .expectHeader().valueEquals("Location", "/login")
+        }
     }
 
     @Test
@@ -108,7 +154,7 @@ class SecurityIntegrationTest {
 
     @Test
     fun `saved deep link is restored after login`() {
-        val requested = client.get().uri("/players?playerId=player-1&from=history").exchange()
+        val requested = client.get().uri("/players?playerId=player-1&from=history").accept(MediaType.TEXT_HTML).exchange()
             .expectStatus().is3xxRedirection.returnResult(Void::class.java)
         val initialSession = requested.responseCookies.getFirst("SESSION")!!.value
         val page = client.get().uri("/login").cookie("SESSION", initialSession).exchange().expectStatus().isOk
@@ -119,6 +165,20 @@ class SecurityIntegrationTest {
             .contentType(MediaType.APPLICATION_FORM_URLENCODED)
             .body(form("viewer", "viewer-test-secret", token)).exchange().expectStatus().is3xxRedirection
             .expectHeader().valueMatches("Location", ".*/players\\?playerId=player-1&from=history")
+    }
+
+    @Test
+    fun `supported HTML deep links are restored after login`() {
+        listOf(
+            "/history?matchId=match-1",
+            "/opponents/club-1",
+            "/compare?left=match-1&right=match-2",
+        ).forEach { target ->
+            val requested = client.get().uri(target).accept(MediaType.TEXT_HTML).exchange()
+                .expectStatus().is3xxRedirection.returnResult(Void::class.java)
+            val session = requested.responseCookies.getFirst("SESSION")!!.value
+            assertThat(loginWithSession(session)).isEqualTo(target)
+        }
     }
 
     @Test
@@ -156,6 +216,20 @@ class SecurityIntegrationTest {
             .contentType(MediaType.APPLICATION_FORM_URLENCODED)
             .body(form(username, password, csrfFrom(page.responseBody!!))).exchange().expectStatus().is3xxRedirection
             .expectHeader().valueEquals("Location", expectedLocation)
+    }
+
+    private fun loginWithSession(initialSession: String?): String {
+        val pageRequest = client.get().uri("/login").run {
+            if (initialSession == null) this else cookie("SESSION", initialSession)
+        }
+        val page = pageRequest.exchange().expectStatus().isOk.expectBody(String::class.java).returnResult()
+        val xsrf = page.responseCookies.getFirst("XSRF-TOKEN")!!.value
+        val loginRequest = client.post().uri("/login").cookie("XSRF-TOKEN", xsrf).run {
+            if (initialSession == null) this else cookie("SESSION", initialSession)
+        }
+        return loginRequest.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+            .body(form("viewer", "viewer-test-secret", csrfFrom(page.responseBody!!))).exchange()
+            .expectStatus().is3xxRedirection.returnResult(Void::class.java).responseHeaders.location!!.toString()
     }
 
     private fun form(username: String, password: String, csrf: String) = BodyInserters.fromFormData("username", username)

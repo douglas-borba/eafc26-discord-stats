@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.config.WebhookConfigService
+import com.eafc26.discordstats.security.PublicStaticResources
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.security.core.Authentication
@@ -47,6 +48,7 @@ class SetupRedirectFilter(private val webhookConfigService: WebhookConfigService
 
     private fun isPassThrough(path: String): Boolean =
         path == "/setup" ||
+        PublicStaticResources.contains(path) ||
         path.startsWith("/api/setup") ||
         path == "/api/health" ||
         path == "/login" ||
