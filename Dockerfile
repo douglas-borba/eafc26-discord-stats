@@ -14,7 +14,8 @@ FROM mcr.microsoft.com/playwright/java:v1.47.0-noble
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     APP_WEB_NETWORK_ENABLED=true \
-    EAFC_DASHBOARD_AUTO_OPEN=false
+    EAFC_DASHBOARD_AUTO_OPEN=false \
+    JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=20.0 -XX:+ExitOnOutOfMemoryError"
 
 WORKDIR /app
 COPY --from=build /workspace/build/libs/*.jar /app/app.jar

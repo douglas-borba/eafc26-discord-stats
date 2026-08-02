@@ -9,12 +9,15 @@ import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
 import com.microsoft.playwright.PlaywrightException
+import com.microsoft.playwright.Request
+import com.microsoft.playwright.Route
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
@@ -27,6 +30,8 @@ class PlaywrightBrowserFetcherTest {
     private val context = mock<BrowserContext>()
     private val page = mock<Page>()
     private val factory = mock<PlaywrightFactory>()
+    private val route = mock<Route>()
+    private val request = mock<Request>()
 
     @BeforeEach
     fun setUp() {
@@ -37,6 +42,13 @@ class PlaywrightBrowserFetcherTest {
         whenever(context.newPage()).thenReturn(page)
         whenever(browser.isConnected).thenReturn(true)
         whenever(page.isClosed).thenReturn(false)
+        whenever(route.request()).thenReturn(request)
+        doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            val handler = invocation.arguments[1] as java.util.function.Consumer<Route>
+            handler.accept(route)
+            null
+        }.whenever(page).route(org.mockito.kotlin.eq("**/*"), any())
     }
 
     @Test
@@ -51,6 +63,11 @@ class PlaywrightBrowserFetcherTest {
         assertThat(options.firstValue.headless).isTrue()
         assertThat(options.firstValue.devtools).isFalse()
         assertThat(options.firstValue.args).contains("--headless=new")
+        assertThat(options.firstValue.args).contains(
+            "--disable-gpu",
+            "--disable-software-rasterizer",
+            "--renderer-process-limit=1",
+        )
         assertThat(options.firstValue.ignoreDefaultArgs).containsExactly("--headless=old")
         assertThat(options.firstValue.executablePath).isNull()
         assertThat(options.firstValue.channel).isNull()
@@ -86,6 +103,31 @@ class PlaywrightBrowserFetcherTest {
             verify(browser).close()
             verify(playwright).close()
         }
+    }
+
+    @Test
+    fun `blocks only visual assets while establishing the Akamai session`() {
+        whenever(request.resourceType()).thenReturn("script")
+        whenever(page.evaluate(any(), any())).thenReturn(successfulEvaluation())
+
+        val fetcher = fetcher()
+        fetcher.fetch("https://proclubs.ea.com/api/fc/clubs/matches")
+
+        verify(route).abort()
+        verify(page).unrouteAll()
+        fetcher.destroy()
+    }
+
+    @Test
+    fun `allows the initial document required to establish the Akamai session`() {
+        whenever(request.resourceType()).thenReturn("document")
+        whenever(page.evaluate(any(), any())).thenReturn(successfulEvaluation())
+
+        val fetcher = fetcher()
+        fetcher.fetch("https://proclubs.ea.com/api/fc/clubs/matches")
+
+        verify(route).resume()
+        fetcher.destroy()
     }
 
     @Test

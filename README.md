@@ -299,6 +299,13 @@ Playwright e persiste os dados canônicos no volume `eafc-data`. A variável
 interface publicada pelo container; no macOS, a preferência local existente
 continua definindo esse comportamento.
 
+Em produção, a imagem define `JAVA_TOOL_OPTIONS` para limitar o heap da JVM a
+20% da memória disponível no container. Esse orçamento é necessário porque
+Chromium e o driver Node do Playwright compartilham o mesmo limite do cgroup,
+mas não fazem parte do heap Java. O valor pode ser sobrescrito externamente;
+para o serviço completo em um container de 1 GiB, utilize o padrão documentado
+em `.env.example`.
+
 Encerre sem remover o volume persistente:
 
 ```bash

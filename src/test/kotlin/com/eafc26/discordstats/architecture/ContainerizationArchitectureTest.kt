@@ -28,6 +28,16 @@ class ContainerizationArchitectureTest {
         assertThat(compose)
             .contains("APP_WEB_NETWORK_ENABLED: \"true\"")
             .contains("EAFC_DASHBOARD_AUTO_OPEN: \"false\"")
+            .contains("JAVA_TOOL_OPTIONS:")
+    }
+
+    @Test
+    fun `container reserves a bounded JVM share for the Playwright process tree`() {
+        assertThat(dockerfile)
+            .contains("JAVA_TOOL_OPTIONS=")
+            .contains("-XX:MaxRAMPercentage=20.0")
+            .contains("-XX:+ExitOnOutOfMemoryError")
+            .doesNotContain("-Xmx", "MaxMetaspaceSize", "ReservedCodeCacheSize")
     }
 
     @Test
