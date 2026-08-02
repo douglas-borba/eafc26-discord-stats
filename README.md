@@ -93,8 +93,8 @@ export EAFC_DISCORD_HISTORY_WEBHOOK_URL='https://discord.com/api/webhooks/<id>/<
 When present, these values take precedence over the local configuration saved by
 the administrative interface. Empty values retain the Java Preferences fallback.
 Webhook values are never returned by the configuration APIs or written to logs.
-See [`docs/discord-webhooks.md`](docs/discord-webhooks.md) for Railway setup,
-validation, precedence and persistence responsibilities.
+See [`docs/discord-webhooks.md`](docs/discord-webhooks.md) for local setup,
+precedence, validation and the optional future deployment configuration.
 
 Edit `src/main/resources/application.yml`:
 
@@ -116,7 +116,7 @@ the `clubId` in the response.
 ### Canonical capture and backfill
 
 The EA endpoint is requested with `maxResultCount=20`, but currently returns at
-most ten recent league matches. Every successful production acquisition stores
+most ten recent league matches. Every successful acquisition stores
 the complete returned window in the canonical repository before Discord
 deduplication. The local history therefore grows by `MatchId` as windows overlap.
 
@@ -179,10 +179,13 @@ requests; the EA endpoint does not need to be reachable.
 
 ### Desenvolvimento local
 
-Inicie o ambiente de desenvolvimento com um único comando:
+O macOS local via Gradle é o ambiente padrão de desenvolvimento. Exporte as duas
+credenciais locais obrigatórias e inicie a aplicação com:
 
 ```bash
-./gradlew dev
+export EAFC_VIEWER_PASSWORD='uma-senha-local-longa'
+export EAFC_ADMIN_PASSWORD='outra-senha-local-longa'
+./gradlew bootRun
 ```
 
 A aplicação permanece em primeiro plano, com os logs visíveis no terminal. Quando
@@ -194,6 +197,16 @@ A URL é construída com a porta efetivamente utilizada pelo servidor, portanto 
 fluxo continua funcionando se `server.port` mudar ou for configurado dinamicamente.
 Se a inicialização falhar, o erro permanece visível no terminal e o navegador não
 é aberto. Use `Ctrl+C` para encerrar o Gradle e a aplicação.
+
+No primeiro acesso como ADMIN, configure localmente os dois webhooks pela página
+`/setup`. Eles são mantidos pelas preferências do macOS; as variáveis
+`EAFC_DISCORD_MATCH_WEBHOOK_URL` e `EAFC_DISCORD_HISTORY_WEBHOOK_URL` continuam
+disponíveis como alternativa, mas não são necessárias para iniciar localmente.
+Partidas canônicas, IDs publicados e frases são armazenados em
+`~/Library/Application Support/EAFC26DiscordStats/`.
+
+O task `./gradlew dev` permanece como alias compatível, mas `./gradlew bootRun` é
+o comando oficial para desenvolvimento.
 
 Esse fluxo é independente do `.app`; as tasks de empacotamento abaixo continuam
 reservadas para distribuição e validação do bundle.
@@ -284,11 +297,13 @@ O script legado `scripts/package-macos.sh` permanece como atalho compatível,
 mas agora apenas delega para `rebuildMacApp`, evitando dois processos de
 empacotamento diferentes.
 
-### Container Linux
+### Container Linux opcional
 
 A imagem Linux usa Java 21 e a imagem oficial do Playwright Java fixada na mesma
 versão da dependência da aplicação (`1.47.0-noble`). O Chromium permanece
-headless e os browsers já estão presentes em `/ms-playwright`.
+headless e os browsers já estão presentes em `/ms-playwright`. Este fluxo é
+mantido para validação de portabilidade e implantação futura; ele não substitui
+o desenvolvimento local via `bootRun`.
 
 Pré-requisito: Docker com Compose disponível. Construa e inicie com:
 
@@ -325,6 +340,16 @@ Encerre sem remover o volume persistente:
 ```bash
 docker compose down
 ```
+
+### Railway — implantação futura
+
+O Railway não é um ambiente ativo nem o fluxo principal do projeto neste momento.
+A containerização, as variáveis externas e os documentos de operação permanecem
+preservados para uma possível retomada. Antes de uma futura implantação, aplique
+novamente os gates de segurança, memória, persistência e aquisição real descritos
+em [`docs/production-memory.md`](docs/production-memory.md),
+[`docs/containerization-validation.md`](docs/containerization-validation.md) e
+[`docs/discord-webhooks.md`](docs/discord-webhooks.md).
 
 ---
 

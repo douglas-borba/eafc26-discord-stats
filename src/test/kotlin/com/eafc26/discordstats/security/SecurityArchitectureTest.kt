@@ -24,6 +24,24 @@ class SecurityArchitectureTest {
     }
 
     @Test
+    fun `administrative fetch materializes csrf and sends session credentials`() {
+        val shell = Files.readString(root.resolve("resources/static/app-shell.js"))
+        val dashboard = Files.readString(root.resolve("resources/index.html"))
+
+        assertThat(shell).contains(
+            "window.eafcFetch = applicationFetch",
+            "credentials: \"same-origin\"",
+            "headers.set(\"X-XSRF-TOKEN\", token)",
+            "nativeFetch(\"/api/auth/session\"",
+        )
+        assertThat(dashboard).contains(
+            "res.status === 401",
+            "res.status === 403",
+            "Esta ação exige acesso administrativo.",
+        ).doesNotContain("const data = await res.json();\n        showFeedback(data);")
+    }
+
+    @Test
     fun `real secrets are excluded and compose maps external variables`() {
         val compose = Files.readString(Path.of("compose.yml"))
         val gitignore = Files.readString(Path.of(".gitignore"))

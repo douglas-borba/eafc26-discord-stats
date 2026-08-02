@@ -50,9 +50,13 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
+tasks.named<BootRun>("bootRun") {
+    systemProperty("eafc.dashboard.auto-open", "true")
+}
+
 tasks.register<BootRun>("dev") {
     group = "application"
-    description = "Runs the application for development and opens the Dashboard when healthy."
+    description = "Compatibility alias for the local development flow provided by bootRun."
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set(application.mainClass)
     systemProperty("eafc.dashboard.auto-open", "true")

@@ -31,6 +31,15 @@ class PlaywrightVisibilityArchitectureTest {
     }
 
     @Test
+    fun `bootRun is the local flow that opens the dashboard while deployment stays headless`() {
+        assertThat(build).contains(
+            "tasks.named<BootRun>(\"bootRun\")",
+            "systemProperty(\"eafc.dashboard.auto-open\", \"true\")",
+        )
+        assertThat(Path.of("Dockerfile").readText()).contains("EAFC_DASHBOARD_AUTO_OPEN=false")
+    }
+
+    @Test
     fun `Playwright lifecycle closes every owned resource`() {
         assertThat(fetcher).contains(
             "page?.close()",
