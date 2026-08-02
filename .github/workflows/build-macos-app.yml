@@ -33,18 +33,18 @@ jobs:
       - name: Inspect generated files
         run: |
           echo "Generated files:"
-          find app-bundle -maxdepth 4 -print || true
-          find dist -maxdepth 4 -print || true
+          APP_PATH="build/macos/EA FC STATS.app"
+          echo "$APP_PATH"
+          ls -la "$APP_PATH/Contents"
 
       - name: Create distribution ZIP
         run: |
           mkdir -p release
 
-          APP_PATH="$(find app-bundle dist -type d -name "*.app" -maxdepth 4 2>/dev/null | head -n 1)"
+          APP_PATH="build/macos/EA FC STATS.app"
 
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: .app bundle was not found."
-            find . -type d -name "*.app" -print
+          if [ ! -d "$APP_PATH" ]; then
+            echo "ERROR: .app bundle was not found at $APP_PATH"
             exit 1
           fi
 
