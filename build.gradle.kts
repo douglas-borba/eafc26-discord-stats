@@ -28,15 +28,22 @@ repositories {
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webflux")
     implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("com.microsoft.playwright:playwright:1.47.0")
+    implementation("org.postgresql:postgresql")
+    implementation("org.flywaydb:flyway-core")
+    implementation("org.flywaydb:flyway-database-postgresql")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("io.projectreactor:reactor-test")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.3.1")
+    testImplementation("org.testcontainers:testcontainers:1.19.8")
+    testImplementation("org.testcontainers:postgresql:1.19.8")
+    testImplementation("org.testcontainers:junit-jupiter:1.19.8")
 }
 
 tasks.withType<KotlinCompile> {

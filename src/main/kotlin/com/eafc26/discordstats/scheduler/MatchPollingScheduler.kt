@@ -27,7 +27,7 @@ import java.time.Instant
  * First execution runs immediately after Spring startup (initialDelay = 0).
  */
 @Component
-@ConditionalOnProperty(name = ["app.polling.enabled"], havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = ["app.polling.enabled", "app.acquisition.enabled"], havingValue = "true", matchIfMissing = true)
 class MatchPollingScheduler(
     private val acquisitionService: MatchAcquisitionService,
     private val statusHolder: PollingStatusHolder,

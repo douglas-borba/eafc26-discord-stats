@@ -39,7 +39,13 @@ app:
       initial-page-url: https://proclubs.ea.com
 
   polling:
-    enabled: true
+    enabled: ${EAFC_POLLING_ENABLED:true}
+
+  acquisition:
+    enabled: ${EAFC_ACQUISITION_ENABLED:true}
+
+  postgres:
+    mirror-enabled: ${EAFC_POSTGRES_MIRROR_ENABLED:false}
 
   discord:
     # Environment values take precedence over the local /setup fallback.
@@ -47,6 +53,12 @@ app:
 
   web:
     network-enabled: false   # overridden by local config file at startup
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:}
+    username: ${SPRING_DATASOURCE_USERNAME:}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
 
 logging:
   level:

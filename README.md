@@ -345,6 +345,79 @@ Encerre sem remover o volume persistente:
 docker compose down
 ```
 
+### Persistência PostgreSQL (espelho)
+
+A aplicação suporta espelhamento paralelo das partidas canônicas para um
+PostgreSQL remoto. O JSON local continua como persistência primária; o
+PostgreSQL recebe uma cópia idempotente de cada `CanonicalMatch`.
+
+Para habilitar, configure as variáveis:
+
+```bash
+export EAFC_POSTGRES_MIRROR_ENABLED=true
+export SPRING_DATASOURCE_URL='jdbc:postgresql://host:5432/eafc_stats'
+export SPRING_DATASOURCE_USERNAME='eafc_collector'
+export SPRING_DATASOURCE_PASSWORD='replace-with-database-password'
+```
+
+Quando `EAFC_POSTGRES_MIRROR_ENABLED=false` (padrão), nenhum bean de banco é
+criado e a aplicação inicia normalmente sem PostgreSQL.
+
+Para copiar o acervo JSON existente para o PostgreSQL:
+
+```bash
+./gradlew bootRun --args='backfill-postgres'
+```
+
+O backfill não consulta a EA, não envia ao Discord e não altera o
+`PublishedMatchStore`. Pode ser repetido com segurança.
+
+#### Controle de aquisição
+
+Para desabilitar a aquisição (polling EA + publicação Discord) sem desligar
+a aplicação:
+
+```bash
+export EAFC_ACQUISITION_ENABLED=false
+```
+
+Isso permite iniciar o site e APIs locais sem executar o scheduler.
+
+#### Arquitetura atual (Fase A)
+
+```
+EA → Spring local → JSON + PostgreSQL remoto → Discord
+```
+
+#### Arquitetura futura
+
+```
+EA → Spring coletor → PostgreSQL remoto → Next.js/Vercel
+```
+
+- O site Spring atual continua existindo temporariamente
+- Vercel não faz aquisição da EA
+- Playwright permanece no coletor
+- O coletor pode futuramente sair do Mac e ir para Railway/VPS
+- Somente um coletor publica enquanto o estado de publicação não for centralizado
+
+Detalhes sobre o contrato futuro de leitura em
+[`docs/future-reading-contract.md`](docs/future-reading-contract.md).
+
+#### Segurança do banco
+
+- Credencial do coletor: escrita (usado pelo Spring)
+- Frontend/API pública futura: somente leitura controlada
+- Secrets somente no ambiente, nunca versionados
+- Nenhuma service-role key no navegador
+
+#### Estado de publicação
+
+O `PublishedMatchStore` permanece local (JSON em Application Support).
+Antes de executar mais de um coletor, o estado de publicação precisará ser
+centralizado. Somente uma instância deve ter polling/publicação habilitados
+enquanto o estado permanecer local.
+
 ### Railway — implantação futura
 
 O Railway não é um ambiente ativo nem o fluxo principal do projeto neste momento.

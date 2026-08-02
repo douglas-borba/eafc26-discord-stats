@@ -8,6 +8,16 @@ data class AppProperties(
     val polling: PollingProperties = PollingProperties(),
     val discord: DiscordProperties = DiscordProperties(),
     val web: WebProperties = WebProperties(),
+    val postgres: PostgresProperties = PostgresProperties(),
+    val acquisition: AcquisitionProperties = AcquisitionProperties(),
+)
+
+data class PostgresProperties(
+    val mirrorEnabled: Boolean = false,
+)
+
+data class AcquisitionProperties(
+    val enabled: Boolean = true,
 )
 
 data class WebProperties(
