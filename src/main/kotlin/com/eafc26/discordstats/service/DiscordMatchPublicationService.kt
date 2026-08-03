@@ -122,35 +122,40 @@ class DiscordMatchPublicationService(
 
     fun forcePublish(canonical: CanonicalMatch): DiscordPublicationResult {
         val matchId = canonical.matchId.value
-
+        val lock = matchLocks.computeIfAbsent(matchId) { ReentrantLock() }
+        lock.lock()
         try {
-            store.saveRecord(PublicationRecord(matchId, PublicationState.DELIVERING))
-        } catch (ex: Exception) {
-            log.error("Cannot persist DELIVERING for force-resend of match {}: {}", matchId, ex.message)
-            return DiscordPublicationResult(PublicationOutcome.FAILED_BEFORE_SEND, matchId,
-                errorMessage = "Pre-send persistence failed: ${ex.message}")
-        }
+            try {
+                store.saveRecord(PublicationRecord(matchId, PublicationState.DELIVERING))
+            } catch (ex: Exception) {
+                log.error("Cannot persist DELIVERING for force-resend of match {}: {}", matchId, ex.message)
+                return DiscordPublicationResult(PublicationOutcome.FAILED_BEFORE_SEND, matchId,
+                    errorMessage = "Pre-send persistence failed: ${ex.message}")
+            }
 
-        return when (val send = trySend(canonical, matchId)) {
-            is SendOutcome.Success -> persistDelivered(matchId)
-            is SendOutcome.FailedBeforeSend -> {
-                safeRemoveDelivering(matchId)
-                DiscordPublicationResult(PublicationOutcome.FAILED_BEFORE_SEND, matchId,
-                    errorMessage = send.message)
+            return when (val send = trySend(canonical, matchId)) {
+                is SendOutcome.Success -> persistDelivered(matchId)
+                is SendOutcome.FailedBeforeSend -> {
+                    safeRemoveDelivering(matchId)
+                    DiscordPublicationResult(PublicationOutcome.FAILED_BEFORE_SEND, matchId,
+                        errorMessage = send.message)
+                }
+                is SendOutcome.FailedHttpExplicit -> {
+                    log.warn("Force-resend HTTP {} for match {}: {}", send.statusCode, matchId, send.message)
+                    safeRemoveDelivering(matchId)
+                    DiscordPublicationResult(PublicationOutcome.FAILED_HTTP, matchId,
+                        errorMessage = "HTTP ${send.statusCode}: ${send.message}",
+                        httpStatusCode = send.statusCode)
+                }
+                is SendOutcome.Ambiguous -> {
+                    log.warn("Force-resend of match {} AMBIGUOUS: {}", matchId, send.message)
+                    safeUpgradeToUncertain(matchId)
+                    DiscordPublicationResult(PublicationOutcome.FAILED_AMBIGUOUS, matchId,
+                        errorMessage = send.message)
+                }
             }
-            is SendOutcome.FailedHttpExplicit -> {
-                log.warn("Force-resend HTTP {} for match {}: {}", send.statusCode, matchId, send.message)
-                safeRemoveDelivering(matchId)
-                DiscordPublicationResult(PublicationOutcome.FAILED_HTTP, matchId,
-                    errorMessage = "HTTP ${send.statusCode}: ${send.message}",
-                    httpStatusCode = send.statusCode)
-            }
-            is SendOutcome.Ambiguous -> {
-                log.warn("Force-resend of match {} AMBIGUOUS: {}", matchId, send.message)
-                safeUpgradeToUncertain(matchId)
-                DiscordPublicationResult(PublicationOutcome.FAILED_AMBIGUOUS, matchId,
-                    errorMessage = send.message)
-            }
+        } finally {
+            lock.unlock()
         }
     }
 

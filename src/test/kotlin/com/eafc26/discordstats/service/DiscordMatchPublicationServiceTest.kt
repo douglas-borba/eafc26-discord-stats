@@ -704,4 +704,169 @@ class DiscordMatchPublicationServiceTest {
             assertThat(tmpFiles ?: emptyArray()).isEmpty()
         }
     }
+
+    // =========================================================================
+    // forcePublish per-match lock (race condition fix)
+    // =========================================================================
+
+    @Nested
+    inner class ForcePublishLock {
+
+        @Test
+        fun `forcePublish and publishIfNeeded for same matchId serialize — exactly one HTTP call`() {
+            val executor = Executors.newFixedThreadPool(2)
+            val sendCount = AtomicInteger(0)
+            val bothReady = CountDownLatch(2)
+            val startGun = CountDownLatch(1)
+            val bothDone = CountDownLatch(2)
+
+            whenever(webhookClient.send(any())).thenAnswer {
+                Thread.sleep(50)
+                sendCount.incrementAndGet()
+                Unit
+            }
+
+            executor.submit {
+                bothReady.countDown()
+                startGun.await(5, TimeUnit.SECONDS)
+                service.forcePublish(canonical("race-fp"))
+                bothDone.countDown()
+            }
+            executor.submit {
+                bothReady.countDown()
+                startGun.await(5, TimeUnit.SECONDS)
+                service.publishIfNeeded(canonical("race-fp"))
+                bothDone.countDown()
+            }
+
+            bothReady.await(2, TimeUnit.SECONDS)
+            startGun.countDown()
+            bothDone.await(10, TimeUnit.SECONDS)
+            executor.shutdown()
+
+            assertThat(sendCount.get()).isEqualTo(1)
+            assertThat(store.loadRecords()["race-fp"]?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
+        fun `concurrent forcePublish for same matchId — only one HTTP call at a time`() {
+            val executor = Executors.newFixedThreadPool(5)
+            val sendCount = AtomicInteger(0)
+            val maxConcurrent = AtomicInteger(0)
+            val currentConcurrent = AtomicInteger(0)
+            val allReady = CountDownLatch(5)
+            val startGun = CountDownLatch(1)
+            val allDone = CountDownLatch(5)
+
+            whenever(webhookClient.send(any())).thenAnswer {
+                val c = currentConcurrent.incrementAndGet()
+                maxConcurrent.updateAndGet { max -> maxOf(max, c) }
+                Thread.sleep(30)
+                currentConcurrent.decrementAndGet()
+                sendCount.incrementAndGet()
+                Unit
+            }
+
+            repeat(5) {
+                executor.submit {
+                    allReady.countDown()
+                    startGun.await(5, TimeUnit.SECONDS)
+                    service.forcePublish(canonical("same"))
+                    allDone.countDown()
+                }
+            }
+
+            allReady.await(2, TimeUnit.SECONDS)
+            startGun.countDown()
+            allDone.await(10, TimeUnit.SECONDS)
+            executor.shutdown()
+
+            assertThat(maxConcurrent.get()).isEqualTo(1)
+            assertThat(store.loadRecords()["same"]?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
+        fun `store is consistent after concurrent forcePublish and publishIfNeeded`() {
+            val executor = Executors.newFixedThreadPool(4)
+            val allDone = CountDownLatch(4)
+
+            whenever(webhookClient.send(any())).thenAnswer { Thread.sleep(10); Unit }
+
+            repeat(2) {
+                executor.submit {
+                    service.forcePublish(canonical("consistent"))
+                    allDone.countDown()
+                }
+            }
+            repeat(2) {
+                executor.submit {
+                    service.publishIfNeeded(canonical("consistent"))
+                    allDone.countDown()
+                }
+            }
+
+            allDone.await(10, TimeUnit.SECONDS)
+            executor.shutdown()
+
+            val record = store.loadRecords()["consistent"]
+            assertThat(record).isNotNull
+            assertThat(record!!.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
+        fun `forcePublish for different matchIds can execute in parallel`() {
+            val executor = Executors.newFixedThreadPool(3)
+            val maxConcurrent = AtomicInteger(0)
+            val currentConcurrent = AtomicInteger(0)
+            val allReady = CountDownLatch(3)
+            val startGun = CountDownLatch(1)
+            val allDone = CountDownLatch(3)
+
+            whenever(webhookClient.send(any())).thenAnswer {
+                val c = currentConcurrent.incrementAndGet()
+                maxConcurrent.updateAndGet { max -> maxOf(max, c) }
+                Thread.sleep(80)
+                currentConcurrent.decrementAndGet()
+                Unit
+            }
+
+            repeat(3) { i ->
+                executor.submit {
+                    allReady.countDown()
+                    startGun.await(5, TimeUnit.SECONDS)
+                    service.forcePublish(canonical("par-$i"))
+                    allDone.countDown()
+                }
+            }
+
+            allReady.await(2, TimeUnit.SECONDS)
+            startGun.countDown()
+            allDone.await(10, TimeUnit.SECONDS)
+            executor.shutdown()
+
+            assertThat(maxConcurrent.get()).isGreaterThan(1)
+            assertThat(store.loadRecords()["par-0"]?.state).isEqualTo(PublicationState.DELIVERED)
+            assertThat(store.loadRecords()["par-1"]?.state).isEqualTo(PublicationState.DELIVERED)
+            assertThat(store.loadRecords()["par-2"]?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
+        fun `lock is released when forcePublish throws exception during send`() {
+            val networkError = DiscordDeliveryException("crash", java.io.IOException("boom"))
+            doThrow(networkError).whenever(webhookClient).send(any())
+
+            val result = service.forcePublish(canonical("ex"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_AMBIGUOUS)
+
+            // Lock must be released — a second call must not deadlock
+            org.mockito.Mockito.reset(webhookClient)
+            val second = service.forcePublish(canonical("ex"))
+            assertThat(second.outcome).isIn(
+                PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN,
+                PublicationOutcome.PUBLISHED,
+                PublicationOutcome.FAILED_AMBIGUOUS,
+            )
+        }
+    }
 }
