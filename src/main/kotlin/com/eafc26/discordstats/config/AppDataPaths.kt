@@ -10,6 +10,7 @@ object AppDataPaths {
         )
 
     val storeFile: Path get() = appSupportDir.resolve("published-matches.json")
+    val lockFile: Path get() = appSupportDir.resolve("collector.lock")
     val configFile: Path get() = appSupportDir.resolve("config.properties")
     val phrasesFile: Path get() = appSupportDir.resolve("phrases.json")
     val canonicalMatchesDir: Path get() = appSupportDir.resolve("canonical-matches")

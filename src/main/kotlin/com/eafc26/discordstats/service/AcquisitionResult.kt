@@ -53,7 +53,8 @@ sealed class AcquisitionResult {
      * Force resend completed successfully.
      *
      * This result is returned when a match is resent bypassing deduplication.
-     * The match ID is not persisted to the published store.
+     * After successful delivery, the match ID IS persisted to the published
+     * store so that the scheduler will NOT re-publish it on the next cycle.
      */
     data class ForceResent(
         val match: MatchSummary,

@@ -50,20 +50,25 @@ class MatchAcquisitionServiceTest {
 
     private val clubId = "12345"
 
+    /**
+     * Builds the service under test using a real [DiscordMatchPublicationService]
+     * wired with the shared [store] and [webhookClient] mocks.
+     * This allows tests to verify [webhookClient] interactions transparently.
+     */
     private fun makeService(): MatchAcquisitionService {
         val props = AppProperties(
             ea = EaProperties(clubId = clubId, clubName = "Test FC"),
             polling = PollingProperties(),
         )
+        val publicationService = DiscordMatchPublicationService(store, webhookClient, DiscordRenderer(matchSummaryBuilder))
         return MatchAcquisitionService(
             gateway,
             store,
-            webhookClient,
+            publicationService,
             props,
             stateHolder,
             latestMatchHolder,
             matchSummaryBuilder,
-            DiscordRenderer(matchSummaryBuilder),
             canonicalMatchRepository,
             CanonicalMatchFactory(),
         )
@@ -406,14 +411,15 @@ class MatchAcquisitionServiceTest {
         }
 
         @Test
-        fun `force resend does not persist match ID`() {
+        fun `force resend marks match as published to prevent scheduler re-send`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
             whenever(store.loadIds()).thenReturn(emptySet())
 
             service.acquire(AcquisitionTrigger.FORCE_RESEND)
 
-            verify(store, never()).saveIds(any())
+            // After force-resend, match ID must be persisted so the scheduler won't re-publish
+            verify(store).saveIds(setOf("m1"))
         }
 
         @Test
@@ -1077,10 +1083,10 @@ class MatchAcquisitionServiceTest {
 
             service.acquire(AcquisitionTrigger.SCHEDULER)
 
-            val order = inOrder(canonicalMatchRepository, store, webhookClient)
+            // Canonical saves happen before Discord publication
+            val order = inOrder(canonicalMatchRepository, webhookClient)
             order.verify(canonicalMatchRepository, times(2)).save(any())
-            order.verify(store).loadIds()
-            order.verify(webhookClient).send(any())
+            order.verify(webhookClient, times(2)).send(any())
         }
 
         @Test
