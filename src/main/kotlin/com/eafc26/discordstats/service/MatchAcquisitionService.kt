@@ -224,28 +224,45 @@ class MatchAcquisitionService(
         val pubResult = publicationService.publishIfNeeded(canonical)
 
         return when (pubResult.outcome) {
-            PublicationOutcome.SKIPPED_ALREADY_PUBLISHED -> {
+            PublicationOutcome.SKIPPED_ALREADY_DELIVERED -> {
                 AcquisitionResult.Processed(
                     published = emptyList(),
                     alreadyPublished = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary)),
                     failed = emptyList(),
                 )
             }
-            PublicationOutcome.PUBLISHED -> {
+            PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN -> {
+                log.warn("Match {} is DELIVERY_UNCERTAIN — blocked from automatic resend", latest.matchId)
+                AcquisitionResult.Processed(
+                    published = emptyList(),
+                    alreadyPublished = emptyList(),
+                    failed = emptyList(),
+                    deliveryUncertain = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary)),
+                )
+            }
+            PublicationOutcome.PUBLISHED, PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN -> {
                 stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando histórico...")
                 log.info("Published match {}", latest.matchId)
                 AcquisitionResult.Processed(
-                    published = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary, pubResult.persistedSuccessfully)),
+                    published = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary,
+                        pubResult.outcome == PublicationOutcome.PUBLISHED)),
                     alreadyPublished = emptyList(),
                     failed = emptyList(),
                 )
             }
-            PublicationOutcome.FAILED_NOT_CONFIGURED -> AcquisitionResult.WebhookNotConfigured
-            PublicationOutcome.FAILED_WEBHOOK -> AcquisitionResult.Processed(
-                published = emptyList(),
-                alreadyPublished = emptyList(),
-                failed = listOf(AcquisitionResult.MatchFailure(latest.matchId, summary, pubResult.errorMessage ?: "Delivery failed")),
-            )
+            PublicationOutcome.FAILED_BEFORE_SEND, PublicationOutcome.FAILED_HTTP -> {
+                val reason = pubResult.errorMessage ?: pubResult.outcome.name
+                if (reason.contains("not configured", ignoreCase = true) ||
+                    reason.contains("Webhook", ignoreCase = true)) {
+                    AcquisitionResult.WebhookNotConfigured
+                } else {
+                    AcquisitionResult.Processed(
+                        published = emptyList(),
+                        alreadyPublished = emptyList(),
+                        failed = listOf(AcquisitionResult.MatchFailure(latest.matchId, summary, reason)),
+                    )
+                }
+            }
         }
     }
 
@@ -354,15 +371,25 @@ class MatchAcquisitionService(
             when (pubResult.outcome) {
                 PublicationOutcome.PUBLISHED -> {
                     stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando partida ${index + 1}/${newMatches.size}...")
-                    published += AcquisitionResult.MatchSummary(match.matchId, summary, pubResult.persistedSuccessfully)
+                    published += AcquisitionResult.MatchSummary(match.matchId, summary, true)
                 }
-                PublicationOutcome.SKIPPED_ALREADY_PUBLISHED -> {
-                    // Concurrent publication (e.g., two JVMs) — guard caught it; safe to skip
-                    log.info("Match {} was concurrently published by another path, skipping", match.matchId)
+                PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN -> {
+                    stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando partida ${index + 1}/${newMatches.size}...")
+                    published += AcquisitionResult.MatchSummary(match.matchId, summary, false)
                 }
-                PublicationOutcome.FAILED_NOT_CONFIGURED -> return AcquisitionResult.WebhookNotConfigured
-                PublicationOutcome.FAILED_WEBHOOK -> {
-                    failed += AcquisitionResult.MatchFailure(match.matchId, summary, pubResult.errorMessage ?: "Delivery failed")
+                PublicationOutcome.SKIPPED_ALREADY_DELIVERED -> {
+                    log.info("Match {} concurrently delivered — skipping", match.matchId)
+                }
+                PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN -> {
+                    log.warn("Match {} is DELIVERY_UNCERTAIN — blocked from automatic resend", match.matchId)
+                }
+                PublicationOutcome.FAILED_BEFORE_SEND, PublicationOutcome.FAILED_HTTP -> {
+                    val reason = pubResult.errorMessage ?: pubResult.outcome.name
+                    if (reason.contains("not configured", ignoreCase = true) ||
+                        reason.contains("Webhook", ignoreCase = true)) {
+                        return AcquisitionResult.WebhookNotConfigured
+                    }
+                    failed += AcquisitionResult.MatchFailure(match.matchId, summary, reason)
                 }
             }
         }
@@ -433,19 +460,27 @@ class MatchAcquisitionService(
         val pubResult = publicationService.forcePublish(canonical)
 
         return when (pubResult.outcome) {
-            PublicationOutcome.PUBLISHED -> {
+            PublicationOutcome.PUBLISHED, PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN -> {
                 log.info("Force-resent match {}", latest.matchId)
                 AcquisitionResult.ForceResent(
                     match = AcquisitionResult.MatchSummary(latest.matchId, summary)
                 )
             }
-            PublicationOutcome.FAILED_NOT_CONFIGURED -> AcquisitionResult.WebhookNotConfigured
-            PublicationOutcome.FAILED_WEBHOOK -> AcquisitionResult.Processed(
-                published = emptyList(),
-                alreadyPublished = emptyList(),
-                failed = listOf(AcquisitionResult.MatchFailure(latest.matchId, summary, pubResult.errorMessage ?: "Delivery failed")),
-            )
-            PublicationOutcome.SKIPPED_ALREADY_PUBLISHED -> error("forcePublish never returns SKIPPED")
+            PublicationOutcome.FAILED_BEFORE_SEND, PublicationOutcome.FAILED_HTTP -> {
+                val reason = pubResult.errorMessage ?: pubResult.outcome.name
+                if (reason.contains("not configured", ignoreCase = true) ||
+                    reason.contains("Webhook", ignoreCase = true)) {
+                    AcquisitionResult.WebhookNotConfigured
+                } else {
+                    AcquisitionResult.Processed(
+                        published = emptyList(),
+                        alreadyPublished = emptyList(),
+                        failed = listOf(AcquisitionResult.MatchFailure(latest.matchId, summary, reason)),
+                    )
+                }
+            }
+            PublicationOutcome.SKIPPED_ALREADY_DELIVERED,
+            PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN -> error("forcePublish never returns SKIPPED")
         }
     }
 

@@ -9,6 +9,8 @@ import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
+import com.eafc26.discordstats.store.PublicationRecord
+import com.eafc26.discordstats.store.PublicationState
 import com.eafc26.discordstats.store.PublishedMatchStore
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argThat
 import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -33,12 +36,10 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Covers all deduplication, concurrency, persistence, and error scenarios for
- * [DiscordMatchPublicationService].
+ * Comprehensive tests for [DiscordMatchPublicationService] WAL semantics.
  *
- * Tests use:
- * - A real [PublishedMatchStore] backed by a [TempDir] for persistence scenarios.
- * - A mocked [DiscordWebhookClient] to assert zero or one HTTP calls.
+ * Uses a real [PublishedMatchStore] backed by a [TempDir] to exercise
+ * actual persistence, migration, and restart behavior.
  */
 class DiscordMatchPublicationServiceTest {
 
@@ -56,12 +57,9 @@ class DiscordMatchPublicationServiceTest {
     fun setUp() {
         originalUserHome = System.getProperty("user.home")
         System.setProperty("user.home", tempDir.toString())
-
         webhookClient = mock()
-        val om = ObjectMapper().registerModule(KotlinModule.Builder().build())
-        store = PublishedMatchStore(om)
-        val matchSummaryBuilder = MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))
-        service = DiscordMatchPublicationService(store, webhookClient, DiscordRenderer(matchSummaryBuilder))
+        store = makeStore()
+        service = makeService(store)
     }
 
     @AfterEach
@@ -69,9 +67,10 @@ class DiscordMatchPublicationServiceTest {
         if (originalUserHome != null) System.setProperty("user.home", originalUserHome!!)
     }
 
-    // -------------------------------------------------------------------------
-    // Helper builders
-    // -------------------------------------------------------------------------
+    private fun makeStore() = PublishedMatchStore(ObjectMapper().registerModule(KotlinModule.Builder().build()))
+    private fun makeService(s: PublishedMatchStore) = DiscordMatchPublicationService(
+        s, webhookClient, DiscordRenderer(MatchSummaryBuilder(PhraseBank(jacksonObjectMapper())))
+    )
 
     private fun canonical(id: String, ourScore: String = "2", oppScore: String = "1") =
         CanonicalMatchFactory().create(
@@ -88,165 +87,295 @@ class DiscordMatchPublicationServiceTest {
         )
 
     // =========================================================================
-    // publishIfNeeded — deduplication
+    // WAL pre-send write
     // =========================================================================
 
     @Nested
-    inner class PublishIfNeeded {
+    inner class WalPreSendWrite {
 
         @Test
-        fun `published match is skipped - zero HTTP calls`() {
-            store.saveIds(setOf("m1"))
+        fun `DELIVERING is written to store before HTTP call`() {
+            // Intercept: capture state at the moment HTTP is called
+            var stateAtHttpCall: PublicationState? = null
+            whenever(webhookClient.send(any())).thenAnswer {
+                stateAtHttpCall = store.loadRecords()["m1"]?.state
+                Unit
+            }
 
-            val result = service.publishIfNeeded(canonical("m1"))
+            service.publishIfNeeded(canonical("m1"))
 
-            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_PUBLISHED)
-            assertThat(result.matchId).isEqualTo("m1")
+            assertThat(stateAtHttpCall).isEqualTo(PublicationState.DELIVERING)
+        }
+
+        @Test
+        fun `DELIVERED is written after HTTP 2xx`() {
+            service.publishIfNeeded(canonical("m1"))
+
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
+        fun `failure to persist DELIVERING → zero HTTP calls (FAILED_BEFORE_SEND)`() {
+            val failingStore: PublishedMatchStore = mock()
+            whenever(failingStore.loadRecords()).thenReturn(emptyMap())
+            doThrow(RuntimeException("disk full")).whenever(failingStore).saveRecord(any())
+            val svc = makeService(failingStore)
+
+            val result = svc.publishIfNeeded(canonical("m1"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_BEFORE_SEND)
             verify(webhookClient, never()).send(any())
         }
 
         @Test
-        fun `new match is published and persisted`() {
-            store.saveIds(setOf("old"))
+        fun `DELIVERING marker removed when HTTP call fails (safe to retry)`() {
+            doThrow(DiscordDeliveryException("rate limited")).whenever(webhookClient).send(any())
 
-            val result = service.publishIfNeeded(canonical("new"))
+            service.publishIfNeeded(canonical("m1"))
 
-            assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
-            assertThat(result.persistedSuccessfully).isTrue()
-            verify(webhookClient).send(any())
-            assertThat(store.loadIds()).contains("new")
+            // DELIVERING marker removed → match not in store → retry allowed
+            assertThat(store.loadRecords()).doesNotContainKey("m1")
         }
 
         @Test
-        fun `empty store publishes the match`() {
-            // No prior saves — store file does not exist
+        fun `DELIVERING marker removed when webhook not configured`() {
+            doThrow(IllegalStateException("no url")).whenever(webhookClient).send(any())
 
-            val result = service.publishIfNeeded(canonical("m1"))
+            service.publishIfNeeded(canonical("m1"))
 
-            assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
-            verify(webhookClient).send(any())
-            assertThat(store.loadIds()).containsExactly("m1")
-        }
-
-        @Test
-        fun `match id normalization is stable - same id checked twice is skipped`() {
-            service.publishIfNeeded(canonical("abc-123"))
-            val second = service.publishIfNeeded(canonical("abc-123"))
-
-            assertThat(second.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_PUBLISHED)
-            verify(webhookClient, times(1)).send(any())
+            assertThat(store.loadRecords()).doesNotContainKey("m1")
         }
     }
 
     // =========================================================================
-    // publishIfNeeded — store persistence survives restart
+    // Crash simulation: DELIVERING → DELIVERY_UNCERTAIN on restart
     // =========================================================================
 
     @Nested
-    inner class PersistenceAfterRestart {
+    inner class CrashSimulation {
 
+        /**
+         * Simulates: process wrote DELIVERING, then died before HTTP call.
+         * On restart, DELIVERING → DELIVERY_UNCERTAIN. No auto-resend.
+         */
         @Test
-        fun `published match is skipped after store is reloaded (restart simulation)`() {
-            service.publishIfNeeded(canonical("m1"))
-            verify(webhookClient, times(1)).send(any())
+        fun `DELIVERING left in store after crash → DELIVERY_UNCERTAIN after restart → zero resends`() {
+            // Simulate crash: write DELIVERING manually (as if pre-send write completed but process died)
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERING))
 
-            // Simulate restart: create a fresh service reading from the same temp dir
-            val restartedStore = PublishedMatchStore(ObjectMapper().registerModule(KotlinModule.Builder().build()))
-            val restartedService = DiscordMatchPublicationService(
-                restartedStore, webhookClient,
-                DiscordRenderer(MatchSummaryBuilder(PhraseBank(jacksonObjectMapper())))
-            )
+            // Simulate restart: new store instance reads the file
+            val restartedStore = makeStore()
+            assertThat(restartedStore.loadRecords()["m1"]?.state)
+                .isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+
+            // New service on restarted store
+            val restartedService = makeService(restartedStore)
+            val result = restartedService.publishIfNeeded(canonical("m1"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
+            verify(webhookClient, never()).send(any())
+        }
+
+        /**
+         * Simulates: process sent HTTP successfully, then died before writing DELIVERED.
+         * The DELIVERING marker remains on disk → DELIVERY_UNCERTAIN after restart → no auto-resend.
+         */
+        @Test
+        fun `crash after HTTP success but before DELIVERED write → DELIVERY_UNCERTAIN → no resend`() {
+            // Simulate: DELIVERING is in store, HTTP was sent (message delivered to Discord),
+            // but process died before saving DELIVERED.
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERING))
+
+            // Restart: DELIVERING → DELIVERY_UNCERTAIN
+            val restartedStore = makeStore()
+            val restartedService = makeService(restartedStore)
 
             val result = restartedService.publishIfNeeded(canonical("m1"))
 
-            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_PUBLISHED)
-            // Total invocations: still 1 — no second HTTP call
-            verify(webhookClient, times(1)).send(any())
-        }
-
-        @Test
-        fun `published match is skipped by scheduler after restart`() {
-            store.saveIds(setOf("m1"))
-
-            val result = service.publishIfNeeded(canonical("m1"))
-
-            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_PUBLISHED)
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
             verify(webhookClient, never()).send(any())
         }
 
         @Test
-        fun `store persisted correctly - ids survive stop-start`() {
-            service.publishIfNeeded(canonical("m1"))
-            service.publishIfNeeded(canonical("m2"))
+        fun `DELIVERY_UNCERTAIN blocks scheduler (zero HTTP calls)`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERY_UNCERTAIN))
 
-            val reloaded = PublishedMatchStore(ObjectMapper().registerModule(KotlinModule.Builder().build()))
-            assertThat(reloaded.loadIds()).containsExactlyInAnyOrder("m1", "m2")
+            val result = service.publishIfNeeded(canonical("m1"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
+            verify(webhookClient, never()).send(any())
+        }
+
+        @Test
+        fun `DELIVERY_UNCERTAIN blocks notify-latest (zero HTTP calls)`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERY_UNCERTAIN))
+
+            val result = service.publishIfNeeded(canonical("m1"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
+            verify(webhookClient, never()).send(any())
         }
     }
 
     // =========================================================================
-    // publishIfNeeded — Discord error handling
+    // Administrative resolution
     // =========================================================================
 
     @Nested
-    inner class DiscordErrors {
+    inner class AdministrativeResolution {
 
         @Test
-        fun `failed send does not mark match as published`() {
-            doThrow(DiscordDeliveryException("rate limited")).whenever(webhookClient).send(any())
+        fun `resolveAsDelivered allows scheduler to skip without HTTP call`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERY_UNCERTAIN))
+            store.resolveAsDelivered("m1")
 
             val result = service.publishIfNeeded(canonical("m1"))
 
-            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_WEBHOOK)
-            assertThat(store.loadIds()).isEmpty()
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
+            verify(webhookClient, never()).send(any())
         }
 
         @Test
-        fun `webhook not configured does not mark match as published`() {
-            doThrow(IllegalStateException("no webhook url")).whenever(webhookClient).send(any())
+        fun `resolveAsUndelivered removes record allowing resend`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERY_UNCERTAIN))
+            store.resolveAsUndelivered("m1")
 
-            val result = service.publishIfNeeded(canonical("m1"))
-
-            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_NOT_CONFIGURED)
-            assertThat(store.loadIds()).isEmpty()
-        }
-
-        @Test
-        fun `successful send marks match as published`() {
             val result = service.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
-            assertThat(store.loadIds()).contains("m1")
+            verify(webhookClient).send(any())
         }
 
         @Test
-        fun `failed delivery allows retry on next call`() {
-            doThrow(DiscordDeliveryException("transient")).whenever(webhookClient).send(any())
-            service.publishIfNeeded(canonical("m1")) // first attempt fails
+        fun `forcePublish sends even if DELIVERY_UNCERTAIN (explicit admin action)`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERY_UNCERTAIN))
 
-            // Fix the webhook mock
-            whenever(webhookClient.send(any())).then { /* no-op, success */ }
-            val retry = service.publishIfNeeded(canonical("m1"))
+            val result = service.forcePublish(canonical("m1"))
 
-            assertThat(retry.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
-            verify(webhookClient, times(2)).send(any())
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            verify(webhookClient).send(any())
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERED)
         }
     }
 
     // =========================================================================
-    // publishIfNeeded — malformed store
+    // Normal deduplication
+    // =========================================================================
+
+    @Nested
+    inner class Deduplication {
+
+        @Test
+        fun `DELIVERED match is skipped with zero HTTP calls`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERED))
+
+            val result = service.publishIfNeeded(canonical("m1"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
+            verify(webhookClient, never()).send(any())
+        }
+
+        @Test
+        fun `published match is skipped after store reload (restart simulation)`() {
+            service.publishIfNeeded(canonical("m1"))
+            verify(webhookClient, times(1)).send(any())
+
+            val restartedStore = makeStore()
+            val restartedService = makeService(restartedStore)
+
+            val result = restartedService.publishIfNeeded(canonical("m1"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
+            verify(webhookClient, times(1)).send(any()) // still 1, no extra call
+        }
+
+        @Test
+        fun `second call same session is skipped`() {
+            service.publishIfNeeded(canonical("m1"))
+            val second = service.publishIfNeeded(canonical("m1"))
+
+            assertThat(second.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
+            verify(webhookClient, times(1)).send(any())
+        }
+    }
+
+    // =========================================================================
+    // Store migration: v1 → v2
+    // =========================================================================
+
+    @Nested
+    inner class StoreMigration {
+
+        @Test
+        fun `v1 string-array format is migrated to DELIVERED records`() {
+            val storeFile = AppDataPaths.storeFile
+            storeFile.parent.toFile().mkdirs()
+            storeFile.toFile().writeText("""["id1","id2","id3"]""")
+
+            val migratedStore = makeStore()
+            val records = migratedStore.loadRecords()
+
+            assertThat(records).hasSize(3)
+            assertThat(records.values.map { it.state }.distinct()).containsExactly(PublicationState.DELIVERED)
+            assertThat(records.keys).containsExactlyInAnyOrder("id1", "id2", "id3")
+        }
+
+        @Test
+        fun `migration creates v1 backup file`() {
+            val storeFile = AppDataPaths.storeFile
+            storeFile.parent.toFile().mkdirs()
+            storeFile.toFile().writeText("""["old-id"]""")
+
+            makeStore() // triggers migration
+
+            val backup = storeFile.resolveSibling("published-matches.json.v1.bak")
+            assertThat(backup).exists()
+            assertThat(backup.toFile().readText()).contains("old-id")
+        }
+
+        @Test
+        fun `v1 IDs are considered DELIVERED - scheduler does not republish`() {
+            val storeFile = AppDataPaths.storeFile
+            storeFile.parent.toFile().mkdirs()
+            storeFile.toFile().writeText("""["m1","m2"]""")
+
+            val migratedStore = makeStore()
+            val migratedService = makeService(migratedStore)
+
+            val r1 = migratedService.publishIfNeeded(canonical("m1"))
+            val r2 = migratedService.publishIfNeeded(canonical("m2"))
+
+            assertThat(r1.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
+            assertThat(r2.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
+            verify(webhookClient, never()).send(any())
+        }
+
+        @Test
+        fun `v2 format is read correctly`() {
+            val storeFile = AppDataPaths.storeFile
+            storeFile.parent.toFile().mkdirs()
+            storeFile.toFile().writeText(
+                """[{"matchId":"m1","state":"DELIVERED","updatedAt":1722700000}]"""
+            )
+
+            val s = makeStore()
+            assertThat(s.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+    }
+
+    // =========================================================================
+    // Malformed store
     // =========================================================================
 
     @Nested
     inner class MalformedStore {
 
         @Test
-        fun `malformed store file propagates error - does not silently publish`() {
+        fun `malformed store does not silently publish - throws exception`() {
             val storeFile = AppDataPaths.storeFile
             storeFile.parent.toFile().mkdirs()
-            storeFile.toFile().writeText("{corrupted json!}")
+            storeFile.toFile().writeText("{corrupted!}")
 
-            // Should throw, not silently treat as empty and publish
             val thrown = runCatching { service.publishIfNeeded(canonical("m1")) }
             assertThat(thrown.isFailure).isTrue()
             verify(webhookClient, never()).send(any())
@@ -254,30 +383,27 @@ class DiscordMatchPublicationServiceTest {
     }
 
     // =========================================================================
-    // publishIfNeeded — concurrency (TOCTOU)
+    // Concurrency
     // =========================================================================
 
     @Nested
     inner class Concurrency {
 
         @Test
-        fun `concurrent publication of same match sends only one HTTP request`() {
+        fun `concurrent publication sends exactly one HTTP request (TOCTOU safe)`() {
             val executor = Executors.newFixedThreadPool(10)
             val sendCount = AtomicInteger(0)
             val allReady = CountDownLatch(10)
             val startGun = CountDownLatch(1)
             val allDone = CountDownLatch(10)
 
-            whenever(webhookClient.send(any())).thenAnswer {
-                sendCount.incrementAndGet()
-                Unit
-            }
+            whenever(webhookClient.send(any())).thenAnswer { sendCount.incrementAndGet(); Unit }
 
             repeat(10) {
                 executor.submit {
                     allReady.countDown()
                     startGun.await(5, TimeUnit.SECONDS)
-                    service.publishIfNeeded(canonical("race-match"))
+                    service.publishIfNeeded(canonical("race"))
                     allDone.countDown()
                 }
             }
@@ -285,35 +411,10 @@ class DiscordMatchPublicationServiceTest {
             allReady.await(2, TimeUnit.SECONDS)
             startGun.countDown()
             allDone.await(10, TimeUnit.SECONDS)
+            executor.shutdown()
 
             assertThat(sendCount.get()).isEqualTo(1)
-            assertThat(store.loadIds()).containsExactly("race-match")
-
-            executor.shutdown()
-        }
-
-        @Test
-        fun `concurrent publication - both threads return consistent result`() {
-            val executor = Executors.newFixedThreadPool(2)
-            val results = mutableListOf<PublicationOutcome>()
-
-            val t1 = executor.submit<PublicationOutcome> { service.publishIfNeeded(canonical("m1")).outcome }
-            val t2 = executor.submit<PublicationOutcome> { service.publishIfNeeded(canonical("m1")).outcome }
-
-            val r1 = t1.get(5, TimeUnit.SECONDS)
-            val r2 = t2.get(5, TimeUnit.SECONDS)
-            results.addAll(listOf(r1, r2))
-
-            // Exactly one PUBLISHED and one SKIPPED_ALREADY_PUBLISHED
-            assertThat(results).containsExactlyInAnyOrder(
-                PublicationOutcome.PUBLISHED,
-                PublicationOutcome.SKIPPED_ALREADY_PUBLISHED,
-            )
-            // Store contains the match ID exactly once
-            assertThat(store.loadIds()).containsExactly("m1")
-            verify(webhookClient, times(1)).send(any())
-
-            executor.shutdown()
+            assertThat(store.loadRecords()["race"]?.state).isEqualTo(PublicationState.DELIVERED)
         }
     }
 
@@ -325,8 +426,8 @@ class DiscordMatchPublicationServiceTest {
     inner class ForcePublish {
 
         @Test
-        fun `force publish sends even if already published`() {
-            store.saveIds(setOf("m1"))
+        fun `forcePublish sends even if already DELIVERED`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERED))
 
             val result = service.forcePublish(canonical("m1"))
 
@@ -335,96 +436,100 @@ class DiscordMatchPublicationServiceTest {
         }
 
         @Test
-        fun `force publish marks match as published in store`() {
-            // Store is empty - force publish should add the match
+        fun `forcePublish persists DELIVERED after success`() {
             service.forcePublish(canonical("m1"))
 
-            assertThat(store.loadIds()).contains("m1")
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERED)
         }
 
         @Test
-        fun `force publish on already-published match does not duplicate in store`() {
-            store.saveIds(setOf("m1"))
+        fun `forcePublish WAL - DELIVERING written before HTTP`() {
+            var stateAtHttp: PublicationState? = null
+            whenever(webhookClient.send(any())).thenAnswer {
+                stateAtHttp = store.loadRecords()["m1"]?.state
+                Unit
+            }
 
             service.forcePublish(canonical("m1"))
 
-            // m1 appears exactly once
-            assertThat(store.loadIds()).containsExactly("m1")
+            assertThat(stateAtHttp).isEqualTo(PublicationState.DELIVERING)
         }
 
         @Test
-        fun `scheduler does not re-publish after force publish`() {
-            service.forcePublish(canonical("m1"))
-            // Simulate scheduler cycle: m1 is now in store
-            val schedulerResult = service.publishIfNeeded(canonical("m1"))
-
-            assertThat(schedulerResult.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_PUBLISHED)
-            // Only 1 HTTP call total (from forcePublish)
-            verify(webhookClient, times(1)).send(any())
-        }
-
-        @Test
-        fun `force publish failure does not mark match as published`() {
+        fun `forcePublish failure cleans DELIVERING marker`() {
             doThrow(DiscordDeliveryException("down")).whenever(webhookClient).send(any())
 
-            val result = service.forcePublish(canonical("m1"))
+            service.forcePublish(canonical("m1"))
 
-            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_WEBHOOK)
-            assertThat(store.loadIds()).isEmpty()
+            assertThat(store.loadRecords()).doesNotContainKey("m1")
+        }
+
+        @Test
+        fun `scheduler does not re-publish after forcePublish`() {
+            service.forcePublish(canonical("m1"))
+
+            val schedulerResult = service.publishIfNeeded(canonical("m1"))
+
+            assertThat(schedulerResult.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
+            verify(webhookClient, times(1)).send(any())
         }
     }
 
     // =========================================================================
-    // Missing store (fresh installation)
+    // DELIVERED_BUT_STATE_UNCERTAIN (HTTP success + DELIVERED write failure)
+    // =========================================================================
+
+    @Nested
+    inner class DeliveredButUncertain {
+
+        @Test
+        fun `HTTP success + DELIVERED write failure → DELIVERED_BUT_STATE_UNCERTAIN`() {
+            val failingStore: PublishedMatchStore = mock()
+            whenever(failingStore.loadRecords()).thenReturn(emptyMap())
+            // Allow DELIVERING write, fail only DELIVERED write
+            whenever(failingStore.saveRecord(argThat { state == PublicationState.DELIVERING })).then { }
+            doThrow(RuntimeException("disk full")).whenever(failingStore)
+                .saveRecord(argThat { state == PublicationState.DELIVERED })
+            val svc = makeService(failingStore)
+
+            val result = svc.publishIfNeeded(canonical("m1"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN)
+            assertThat(result.delivered).isTrue()
+            verify(webhookClient).send(any())
+        }
+    }
+
+    // =========================================================================
+    // Fresh installation
     // =========================================================================
 
     @Nested
     inner class FreshInstallation {
 
         @Test
-        fun `missing store file treated as empty - publish succeeds`() {
-            // No store file created — first installation scenario
-
+        fun `missing store file is treated as empty - publish succeeds`() {
             val result = service.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
             verify(webhookClient).send(any())
         }
-
-        @Test
-        fun `second call after first publish is skipped`() {
-            service.publishIfNeeded(canonical("m1"))
-            val second = service.publishIfNeeded(canonical("m1"))
-
-            assertThat(second.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_PUBLISHED)
-            verify(webhookClient, times(1)).send(any())
-        }
     }
 
     // =========================================================================
-    // Persistence failure (disk full, I/O error)
+    // Atomic write
     // =========================================================================
 
     @Nested
-    inner class PersistenceFailure {
+    inner class AtomicWrite {
 
         @Test
-        fun `delivery succeeds but persistence failure is reported`() {
-            val failingStore: PublishedMatchStore = mock()
-            whenever(failingStore.loadIds()).thenReturn(emptySet())
-            doThrow(RuntimeException("disk full")).whenever(failingStore).saveIds(any())
-            val svc = DiscordMatchPublicationService(
-                failingStore, webhookClient,
-                DiscordRenderer(MatchSummaryBuilder(PhraseBank(jacksonObjectMapper())))
-            )
+        fun `no tmp file left after save`() {
+            service.publishIfNeeded(canonical("m1"))
 
-            val result = svc.publishIfNeeded(canonical("m1"))
-
-            assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
-            assertThat(result.persistedSuccessfully).isFalse()
-            verify(webhookClient).send(any())
+            val storeFile = AppDataPaths.storeFile
+            val tmpFiles = storeFile.parent.toFile().listFiles { f -> f.name.endsWith(".tmp") }
+            assertThat(tmpFiles ?: emptyArray()).isEmpty()
         }
     }
 }
-
-

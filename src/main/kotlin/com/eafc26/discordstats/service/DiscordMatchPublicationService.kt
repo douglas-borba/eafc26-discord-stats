@@ -4,6 +4,8 @@ import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.discord.DiscordDeliveryException
 import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.discord.DiscordWebhookClient
+import com.eafc26.discordstats.store.PublicationRecord
+import com.eafc26.discordstats.store.PublicationState
 import com.eafc26.discordstats.store.PublishedMatchStore
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -13,26 +15,31 @@ import java.util.concurrent.locks.ReentrantLock
 /**
  * Single authoritative boundary for all Discord match publication.
  *
- * This is the ONLY component allowed to call [DiscordWebhookClient] for
- * automatic publication. No controller, scheduler, or CLI may call the
- * webhook directly.
+ * ## Write-Ahead Log (WAL) guarantee
+ * Before every HTTP call to Discord, this service persists a [PublicationState.DELIVERING]
+ * record to disk. This means:
  *
- * Deduplication contract:
- * - [publishIfNeeded] checks [PublishedMatchStore] under a per-MatchId
- *   [ReentrantLock] before sending. If the match is already published,
- *   it returns [PublicationOutcome.SKIPPED_ALREADY_PUBLISHED] with zero
- *   HTTP calls to Discord.
- * - markPublished (via [PublishedMatchStore.saveIds]) occurs ONLY after
- *   a confirmed HTTP success from the webhook. A failed send does NOT
- *   mark the match as published.
- * - [forcePublish] bypasses the deduplication check but still marks the
- *   match as published afterward, preventing the scheduler from
- *   re-publishing it.
+ * - If the process dies BEFORE the HTTP call: DELIVERING → DELIVERY_UNCERTAIN on restart.
+ *   No automatic resend. Administrative resolution required.
+ * - If the process dies AFTER HTTP 2xx but BEFORE [PublicationState.DELIVERED] is persisted:
+ *   Same as above — DELIVERING → DELIVERY_UNCERTAIN on restart. No automatic resend.
+ * - If [PublicationState.DELIVERED] is successfully persisted: deduplication is permanent.
  *
- * Thread safety:
- * - Per-MatchId [ReentrantLock] prevents TOCTOU races between two
- *   threads attempting to publish the same match simultaneously.
- * - Cross-process safety is provided by [SingleInstanceGuard].
+ * ## Delivered-but-uncertain edge case
+ * If the Discord HTTP call succeeds but the subsequent [PublicationState.DELIVERED] write
+ * fails (e.g., disk full), the record stays in [PublicationState.DELIVERING] on disk.
+ * On restart it will become [PublicationState.DELIVERY_UNCERTAIN]. This is intentionally
+ * conservative: the message WAS delivered, but we cannot prove it automatically. The
+ * caller receives [PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN] so the operator
+ * is informed.
+ *
+ * ## Guarantee achieved
+ * **At-most-once automatic delivery with administrable ambiguity window.**
+ * Exactly-once is not achievable because Discord webhooks offer no idempotency key.
+ *
+ * ## Thread safety
+ * Per-MatchId [ReentrantLock] prevents TOCTOU races within this JVM.
+ * Cross-process safety is provided by [SingleInstanceGuard].
  */
 @Service
 class DiscordMatchPublicationService(
@@ -41,43 +48,88 @@ class DiscordMatchPublicationService(
     private val discordRenderer: DiscordRenderer,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-
-    /** Per-MatchId locks to prevent TOCTOU races within this JVM. */
     private val matchLocks = ConcurrentHashMap<String, ReentrantLock>()
 
     /**
-     * Publishes a match to Discord if and only if it has not been published before.
+     * Publishes a match to Discord using the WAL pattern.
      *
      * Flow (under per-MatchId lock):
-     * 1. Load [PublishedMatchStore]
-     * 2. If already published → return [PublicationOutcome.SKIPPED_ALREADY_PUBLISHED] (zero HTTP calls)
-     * 3. Send to Discord webhook
-     * 4. On HTTP success → persist MatchId to store → return [PublicationOutcome.PUBLISHED]
-     * 5. On HTTP failure → do NOT persist → return [PublicationOutcome.FAILED_WEBHOOK] or [PublicationOutcome.FAILED_NOT_CONFIGURED]
-     *
-     * @return [DiscordPublicationResult] describing the outcome
+     * 1. Load [PublishedMatchStore] records
+     * 2. DELIVERED → [PublicationOutcome.SKIPPED_ALREADY_DELIVERED] (zero HTTP calls)
+     * 3. DELIVERY_UNCERTAIN → [PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN] (zero HTTP calls)
+     * 4. Persist [PublicationState.DELIVERING] → if fails → [PublicationOutcome.FAILED_BEFORE_SEND] (zero HTTP calls)
+     * 5. Call Discord webhook
+     * 6. On HTTP failure: remove DELIVERING marker → [PublicationOutcome.FAILED_HTTP]
+     * 7. On HTTP success: persist [PublicationState.DELIVERED] → [PublicationOutcome.PUBLISHED]
+     * 8. If DELIVERED write fails: state remains DELIVERING on disk (→ DELIVERY_UNCERTAIN on restart)
+     *    → [PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN]
      */
     fun publishIfNeeded(canonical: CanonicalMatch): DiscordPublicationResult {
         val matchId = canonical.matchId.value
         val lock = matchLocks.computeIfAbsent(matchId) { ReentrantLock() }
         lock.lock()
         try {
-            // Authoritative deduplication check (inside lock)
-            val publishedIds = store.loadIds()
-            if (matchId in publishedIds) {
-                log.info("Match {} already published, skipping Discord delivery", matchId)
-                return DiscordPublicationResult(PublicationOutcome.SKIPPED_ALREADY_PUBLISHED, matchId)
+            // 1. Check existing state
+            val existing = store.loadRecords()[matchId]
+            when (existing?.state) {
+                PublicationState.DELIVERED -> {
+                    log.info("Match {} already DELIVERED — skipping", matchId)
+                    return DiscordPublicationResult(PublicationOutcome.SKIPPED_ALREADY_DELIVERED, matchId)
+                }
+                PublicationState.DELIVERY_UNCERTAIN -> {
+                    log.warn(
+                        "Match {} is DELIVERY_UNCERTAIN — blocking automatic resend. " +
+                            "Administrative resolution required (resolveAsDelivered / resolveAsUndelivered).",
+                        matchId,
+                    )
+                    return DiscordPublicationResult(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN, matchId)
+                }
+                PublicationState.DELIVERING -> {
+                    // Should not happen within a live session (we hold the lock).
+                    // Treat defensively as uncertain to prevent duplicate.
+                    log.warn("Match {} found in DELIVERING state within session — treating as DELIVERY_UNCERTAIN", matchId)
+                    return DiscordPublicationResult(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN, matchId)
+                }
+                null -> { /* not in store → proceed */ }
             }
 
-            // Send to Discord
-            val sendFailure = trySend(canonical, matchId)
-            if (sendFailure != null) {
-                return DiscordPublicationResult(sendFailure.first, matchId, errorMessage = sendFailure.second)
+            // 2. WAL: persist DELIVERING BEFORE HTTP
+            try {
+                store.saveRecord(PublicationRecord(matchId, PublicationState.DELIVERING))
+            } catch (ex: Exception) {
+                log.error(
+                    "Cannot persist DELIVERING state for match {} — aborting to prevent ambiguous delivery. Error: {}",
+                    matchId, ex.message,
+                )
+                return DiscordPublicationResult(PublicationOutcome.FAILED_BEFORE_SEND, matchId,
+                    errorMessage = "Pre-send persistence failed: ${ex.message}")
             }
 
-            // Persist AFTER confirmed delivery
-            val persisted = tryPersist(matchId, publishedIds)
-            return DiscordPublicationResult(PublicationOutcome.PUBLISHED, matchId, persisted)
+            // 3. Call Discord
+            val sendError = trySend(canonical, matchId)
+            if (sendError != null) {
+                // HTTP definitively failed (exception thrown) → remove DELIVERING marker
+                safeRemoveDelivering(matchId)
+                return DiscordPublicationResult(sendError.first, matchId, errorMessage = sendError.second)
+            }
+
+            // 4. HTTP 2xx — persist DELIVERED
+            return try {
+                store.saveRecord(PublicationRecord(matchId, PublicationState.DELIVERED))
+                log.info("Published and DELIVERED match {}", matchId)
+                DiscordPublicationResult(PublicationOutcome.PUBLISHED, matchId)
+            } catch (ex: Exception) {
+                log.error(
+                    "Match {} was delivered to Discord (HTTP 2xx) but DELIVERED write failed. " +
+                        "State remains DELIVERING on disk → will become DELIVERY_UNCERTAIN after restart. " +
+                        "Error: {}",
+                    matchId, ex.message,
+                )
+                DiscordPublicationResult(
+                    PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN, matchId,
+                    errorMessage = "HTTP succeeded but DELIVERED write failed: ${ex.message}",
+                )
+            }
         } finally {
             lock.unlock()
         }
@@ -86,35 +138,38 @@ class DiscordMatchPublicationService(
     /**
      * Force-publishes a match, bypassing the deduplication check.
      *
-     * Unlike [publishIfNeeded], this sends to Discord even if the match was
-     * already published. After successful delivery it still marks the match
-     * as published in the store, so the scheduler will not re-publish it.
-     *
-     * @return [DiscordPublicationResult] describing the outcome
+     * Intended for administrative use only. Persists DELIVERING before HTTP and
+     * DELIVERED after HTTP 2xx, so the scheduler will not re-publish it automatically.
      */
     fun forcePublish(canonical: CanonicalMatch): DiscordPublicationResult {
         val matchId = canonical.matchId.value
 
-        // Send unconditionally (no dedup check)
-        val sendFailure = trySend(canonical, matchId)
-        if (sendFailure != null) {
-            return DiscordPublicationResult(sendFailure.first, matchId, errorMessage = sendFailure.second)
-        }
-
-        // Mark as published to prevent scheduler re-send
-        val persisted = try {
-            val existing = store.loadIds()
-            if (matchId !in existing) {
-                store.saveIds(existing + matchId)
-            }
-            true
+        // WAL: persist DELIVERING before HTTP (even for force-resend)
+        try {
+            store.saveRecord(PublicationRecord(matchId, PublicationState.DELIVERING))
         } catch (ex: Exception) {
-            log.warn("Could not update store after force-resend for match {}: {}", matchId, ex.message)
-            false
+            log.error("Cannot persist DELIVERING for force-resend of match {}: {}", matchId, ex.message)
+            return DiscordPublicationResult(PublicationOutcome.FAILED_BEFORE_SEND, matchId,
+                errorMessage = "Pre-send persistence failed: ${ex.message}")
         }
 
-        log.info("Force-published match {}", matchId)
-        return DiscordPublicationResult(PublicationOutcome.PUBLISHED, matchId, persisted)
+        val sendError = trySend(canonical, matchId)
+        if (sendError != null) {
+            safeRemoveDelivering(matchId)
+            return DiscordPublicationResult(sendError.first, matchId, errorMessage = sendError.second)
+        }
+
+        return try {
+            store.saveRecord(PublicationRecord(matchId, PublicationState.DELIVERED))
+            log.info("Force-published and DELIVERED match {}", matchId)
+            DiscordPublicationResult(PublicationOutcome.PUBLISHED, matchId)
+        } catch (ex: Exception) {
+            log.error("Force-resend of match {} succeeded but DELIVERED write failed: {}", matchId, ex.message)
+            DiscordPublicationResult(
+                PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN, matchId,
+                errorMessage = "HTTP succeeded but DELIVERED write failed: ${ex.message}",
+            )
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -123,7 +178,7 @@ class DiscordMatchPublicationService(
 
     /**
      * Attempts to send the match to Discord.
-     * @return null on success, or a pair of (failure outcome, message) on error.
+     * @return null on success, or Pair(failure outcome, message) on error.
      */
     private fun trySend(canonical: CanonicalMatch, matchId: String): Pair<PublicationOutcome, String>? {
         return try {
@@ -133,47 +188,64 @@ class DiscordMatchPublicationService(
                 canonical.stories,
             )
             webhookClient.send(payload)
-            null // success
+            null
         } catch (ex: IllegalStateException) {
             log.error("Discord webhook not configured: {}", ex.message)
-            Pair(PublicationOutcome.FAILED_NOT_CONFIGURED, ex.message ?: "Webhook not configured")
+            Pair(PublicationOutcome.FAILED_HTTP, ex.message ?: "Webhook not configured")
         } catch (ex: DiscordDeliveryException) {
             log.warn("Discord delivery failed for match {}: {}", matchId, ex.message)
-            Pair(PublicationOutcome.FAILED_WEBHOOK, ex.message ?: "Delivery failed")
+            Pair(PublicationOutcome.FAILED_HTTP, ex.message ?: "Delivery failed")
         }
     }
 
-    /**
-     * Persists a match ID to the store after successful Discord delivery.
-     * @return true if persistence succeeded, false on I/O error.
-     */
-    private fun tryPersist(matchId: String, previousIds: Set<String>): Boolean {
-        return try {
-            store.saveIds(previousIds + matchId)
-            log.info("Published and persisted match {}", matchId)
-            true
+    private fun safeRemoveDelivering(matchId: String) {
+        try {
+            store.removeRecord(matchId)
         } catch (ex: Exception) {
-            log.error("Discord delivery succeeded but persistence failed for match {}", matchId, ex)
-            false
+            log.warn("Could not remove DELIVERING marker for match {} after HTTP failure: {}", matchId, ex.message)
         }
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Result model
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Outcome of a Discord publication attempt.
+ * Outcome of a [DiscordMatchPublicationService] call.
  */
 enum class PublicationOutcome {
-    /** Match was sent to Discord and its ID was persisted. */
+    /** HTTP 2xx confirmed and DELIVERED state persisted. */
     PUBLISHED,
 
-    /** Match was already in [PublishedMatchStore]; no HTTP call was made. */
-    SKIPPED_ALREADY_PUBLISHED,
+    /** Match already has a DELIVERED record in the store — zero HTTP calls made. */
+    SKIPPED_ALREADY_DELIVERED,
 
-    /** Discord webhook URL is not configured. */
-    FAILED_NOT_CONFIGURED,
+    /**
+     * Match is in DELIVERY_UNCERTAIN state (post-restart upgrade from DELIVERING).
+     * Automatic resend is blocked. Zero HTTP calls made.
+     */
+    SKIPPED_DELIVERY_UNCERTAIN,
 
-    /** Discord HTTP call failed (rate limit, network error, etc.). */
-    FAILED_WEBHOOK,
+    /**
+     * Persisting the DELIVERING write-ahead marker failed before the HTTP call.
+     * Zero HTTP calls made. Safe to retry.
+     */
+    FAILED_BEFORE_SEND,
+
+    /**
+     * Discord HTTP call failed or webhook is not configured.
+     * DELIVERING marker was removed. Safe to retry.
+     */
+    FAILED_HTTP,
+
+    /**
+     * HTTP 2xx was received but the subsequent DELIVERED write failed.
+     * The message WAS delivered to Discord. The record on disk may remain DELIVERING,
+     * which will become DELIVERY_UNCERTAIN after restart.
+     * Automatic resend is blocked on next startup.
+     */
+    DELIVERED_BUT_STATE_UNCERTAIN,
 }
 
 /**
@@ -182,13 +254,9 @@ enum class PublicationOutcome {
 data class DiscordPublicationResult(
     val outcome: PublicationOutcome,
     val matchId: String,
-    /** True if the match ID was successfully persisted to [PublishedMatchStore]. */
-    val persistedSuccessfully: Boolean = true,
-    /** Error message when outcome is a failure variant. */
     val errorMessage: String? = null,
-)
-
-
-
-
-
+) {
+    /** True if the match was actually sent to Discord (PUBLISHED or DELIVERED_BUT_STATE_UNCERTAIN). */
+    val delivered: Boolean
+        get() = outcome == PublicationOutcome.PUBLISHED || outcome == PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN
+}
