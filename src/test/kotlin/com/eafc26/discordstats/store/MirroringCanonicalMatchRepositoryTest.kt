@@ -1,0 +1,109 @@
+package com.eafc26.discordstats.store
+
+import com.eafc26.discordstats.application.interpretation.MatchInterpreter
+import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
+import com.eafc26.discordstats.application.story.MatchStoryExtractor
+import com.eafc26.discordstats.canonical.CanonicalMatch
+import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.ea.mapping.EaMatchMapper
+import com.eafc26.discordstats.ea.mapping.MatchNormalizationResult
+import com.eafc26.discordstats.ea.model.ClubDetails
+import com.eafc26.discordstats.ea.model.ClubMatchEntry
+import com.eafc26.discordstats.ea.model.MatchResponse
+import com.eafc26.discordstats.ea.model.PlayerEntry
+import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.Test
+import java.time.Instant
+
+class MirroringCanonicalMatchRepositoryTest {
+
+    private val primary = RecordingRepository()
+    private val mirror = RecordingRepository()
+    private val repo = MirroringCanonicalMatchRepository(primary, mirror)
+
+    @Test
+    fun `save writes to both primary and mirror`() {
+        val match = testMatch("m1")
+        repo.save(match)
+        assertThat(primary.saved).containsExactly("m1")
+        assertThat(mirror.saved).containsExactly("m1")
+    }
+
+    @Test
+    fun `mirror failure does not prevent primary save`() {
+        mirror.failOnSave = true
+        val match = testMatch("m1")
+        repo.save(match)
+        assertThat(primary.saved).containsExactly("m1")
+    }
+
+    @Test
+    fun `primary failure propagates without calling mirror`() {
+        primary.failOnSave = true
+        assertThatThrownBy { repo.save(testMatch("m1")) }
+            .isInstanceOf(RuntimeException::class.java)
+        assertThat(mirror.saved).isEmpty()
+    }
+
+    @Test
+    fun `findById delegates to primary only`() {
+        val match = testMatch("m1")
+        primary.store[match.matchId] = match
+        mirror.store[match.matchId] = match
+
+        assertThat(repo.findById(MatchId("m1"))).isEqualTo(match)
+        assertThat(repo.findById(MatchId("missing"))).isNull()
+    }
+
+    @Test
+    fun `findAll delegates to primary only`() {
+        primary.store[MatchId("m1")] = testMatch("m1")
+        assertThat(repo.findAll()).hasSize(1)
+    }
+
+    @Test
+    fun `metadata delegates to primary only`() {
+        assertThat(repo.metadata().matchCount).isZero()
+    }
+
+    private fun testMatch(id: String): CanonicalMatch {
+        val source = MatchResponse(
+            matchId = id, timestamp = 1_718_500_000L, matchType = "leagueMatch",
+            clubs = linkedMapOf(
+                "club" to ClubMatchEntry(details = ClubDetails("FC", "club"), score = "1", result = "1"),
+                "opp" to ClubMatchEntry(details = ClubDetails("Opp", "opp"), score = "0", result = "0"),
+            ),
+            players = mapOf("club" to linkedMapOf("p1" to PlayerEntry(
+                playerName = "P", position = "14", rating = "7.0", goals = "0",
+                assists = "0", shots = "1", manOfTheMatch = "0", passesMade = "10",
+                passAttempts = "12", tacklesMade = "2", tackleAttempts = "3",
+                redCards = "0", secondsPlayed = "5400",
+            ))),
+        )
+        val fm = (EaMatchMapper().map(source) as MatchNormalizationResult.Success).match
+        val interp = MatchInterpreter().interpret(fm, ClubId("club"))
+        val stories = MatchStoryExtractor().extract(interp)
+        return CanonicalMatch.current(fm, interp, stories, Instant.parse("2026-07-30T10:00:00Z"))
+    }
+
+    private class RecordingRepository : CanonicalMatchRepository {
+        val store = linkedMapOf<MatchId, CanonicalMatch>()
+        val saved = mutableListOf<String>()
+        var failOnSave = false
+
+        override fun save(match: CanonicalMatch) {
+            if (failOnSave) throw RuntimeException("simulated failure")
+            saved += match.matchId.value
+            store[match.matchId] = match
+        }
+
+        override fun findById(matchId: MatchId) = store[matchId]
+        override fun findAll() = store.values.toList()
+        override fun metadata() = CanonicalRepositoryMetadata(
+            store.size, null, null, null, emptySet(), emptySet(),
+        )
+    }
+}

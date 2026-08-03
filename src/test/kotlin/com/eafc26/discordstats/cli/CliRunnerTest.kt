@@ -46,7 +46,7 @@ class CliRunnerTest {
 
     private fun runner(clubName: String = "Test FC", clubId: String = "12345"): CliRunner {
         val props = AppProperties(ea = EaProperties(clubName = clubName, clubId = clubId))
-        return CliRunner(client, props, acquisitionService, canonicalBackfillService, out, exit = { exitCodes.add(it) })
+        return CliRunner(client, props, acquisitionService, canonicalBackfillService, null, out, exit = { exitCodes.add(it) })
     }
 
     private fun printed(): String = output.toString(Charsets.UTF_8)
