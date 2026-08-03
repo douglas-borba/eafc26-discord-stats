@@ -263,6 +263,22 @@ class MatchAcquisitionService(
                     )
                 }
             }
+            PublicationOutcome.FAILED_AMBIGUOUS -> {
+                log.warn(
+                    "Match {} delivery AMBIGUOUS — DELIVERY_UNCERTAIN saved. " +
+                        "Manual resolution required via admin endpoint. Error: {}",
+                    latest.matchId, pubResult.errorMessage,
+                )
+                AcquisitionResult.Processed(
+                    published = emptyList(),
+                    alreadyPublished = emptyList(),
+                    failed = listOf(AcquisitionResult.MatchFailure(
+                        latest.matchId, summary,
+                        "DELIVERY_UNCERTAIN: ${pubResult.errorMessage ?: "network error after potential send"}"
+                    )),
+                    deliveryUncertain = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary)),
+                )
+            }
         }
     }
 
@@ -391,6 +407,17 @@ class MatchAcquisitionService(
                     }
                     failed += AcquisitionResult.MatchFailure(match.matchId, summary, reason)
                 }
+                PublicationOutcome.FAILED_AMBIGUOUS -> {
+                    log.warn(
+                        "Match {} delivery AMBIGUOUS — DELIVERY_UNCERTAIN saved. " +
+                            "Manual resolution required. Error: {}",
+                        match.matchId, pubResult.errorMessage,
+                    )
+                    failed += AcquisitionResult.MatchFailure(
+                        match.matchId, summary,
+                        "DELIVERY_UNCERTAIN: ${pubResult.errorMessage ?: "network error after potential send"}"
+                    )
+                }
             }
         }
 
@@ -478,6 +505,22 @@ class MatchAcquisitionService(
                         failed = listOf(AcquisitionResult.MatchFailure(latest.matchId, summary, reason)),
                     )
                 }
+            }
+            PublicationOutcome.FAILED_AMBIGUOUS -> {
+                log.warn(
+                    "Force-resend of match {} delivery AMBIGUOUS — DELIVERY_UNCERTAIN saved. " +
+                        "Manual resolution required. Error: {}",
+                    latest.matchId, pubResult.errorMessage,
+                )
+                AcquisitionResult.Processed(
+                    published = emptyList(),
+                    alreadyPublished = emptyList(),
+                    failed = listOf(AcquisitionResult.MatchFailure(
+                        latest.matchId, summary,
+                        "DELIVERY_UNCERTAIN: ${pubResult.errorMessage ?: "network error after potential send"}"
+                    )),
+                    deliveryUncertain = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary)),
+                )
             }
             PublicationOutcome.SKIPPED_ALREADY_DELIVERED,
             PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN -> error("forcePublish never returns SKIPPED")

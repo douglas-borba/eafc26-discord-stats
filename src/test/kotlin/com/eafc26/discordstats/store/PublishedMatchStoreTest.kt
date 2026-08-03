@@ -195,6 +195,19 @@ class PublishedMatchStoreTest {
         }
 
         @Test
+        fun `v1 migration never overwrites an existing backup`() {
+            storePath.parent.toFile().mkdirs()
+            storePath.writeText("""["id1","id2"]""")
+            val backupPath = storePath.resolveSibling("published-matches.json.v1.bak")
+            backupPath.toFile().writeText("ORIGINAL BACKUP CONTENT — must not be overwritten")
+
+            // Second migration attempt (simulate accidental re-run)
+            makeStore()
+
+            assertThat(backupPath.toFile().readText()).isEqualTo("ORIGINAL BACKUP CONTENT — must not be overwritten")
+        }
+
+        @Test
         fun `empty store file treated as first run`() {
             assertThat(makeStore().loadIds()).isEmpty()
         }

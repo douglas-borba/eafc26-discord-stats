@@ -190,10 +190,14 @@ class PublishedMatchStore(private val objectMapper: ObjectMapper) {
             val ids = objectMapper.readValue<List<String>>(json)
             log.info("Detected legacy store format (v1) with {} IDs — migrating to v2", ids.size)
 
-            // Backup before migration
+            // Backup before migration — never overwrite an existing backup
             val backupPath = storePath.resolveSibling(storePath.fileName.toString() + ".v1.bak")
-            Files.copy(storePath, backupPath, StandardCopyOption.REPLACE_EXISTING)
-            log.info("Legacy store backed up to {}", backupPath.toAbsolutePath())
+            if (!backupPath.exists()) {
+                Files.copy(storePath, backupPath)
+                log.info("Legacy store backed up to {}", backupPath.toAbsolutePath())
+            } else {
+                log.debug("Legacy backup already exists at {} — not overwriting original", backupPath.toAbsolutePath())
+            }
 
             val records = ids.map { PublicationRecord(it, PublicationState.DELIVERED) }
             saveAllRecordsAtomic(records)

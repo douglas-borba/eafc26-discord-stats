@@ -29,6 +29,9 @@ import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import org.springframework.http.HttpHeaders
+import org.springframework.web.reactive.function.client.WebClientResponseException
+import java.net.SocketTimeoutException
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -128,13 +131,27 @@ class DiscordMatchPublicationServiceTest {
         }
 
         @Test
-        fun `DELIVERING marker removed when HTTP call fails (safe to retry)`() {
-            doThrow(DiscordDeliveryException("rate limited")).whenever(webhookClient).send(any())
+        fun `DELIVERING marker removed when Discord returns explicit HTTP error (safe to retry)`() {
+            val httpError = WebClientResponseException.create(429, "Too Many Requests", HttpHeaders.EMPTY, ByteArray(0), null)
+            doThrow(DiscordDeliveryException("rate limited", httpError)).whenever(webhookClient).send(any())
 
-            service.publishIfNeeded(canonical("m1"))
+            val result = service.publishIfNeeded(canonical("m1"))
 
-            // DELIVERING marker removed → match not in store → retry allowed
+            // Explicit HTTP response: Discord confirmed non-delivery → DELIVERING removed → retry allowed
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
             assertThat(store.loadRecords()).doesNotContainKey("m1")
+        }
+
+        @Test
+        fun `DELIVERING upgraded to DELIVERY_UNCERTAIN when network error is ambiguous`() {
+            val networkError = DiscordDeliveryException("connection reset", java.io.IOException("Connection reset by peer"))
+            doThrow(networkError).whenever(webhookClient).send(any())
+
+            val result = service.publishIfNeeded(canonical("m1"))
+
+            // Ambiguous: request may have reached Discord → DELIVERY_UNCERTAIN, NOT removed
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_AMBIGUOUS)
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
         }
 
         @Test
@@ -456,11 +473,24 @@ class DiscordMatchPublicationServiceTest {
         }
 
         @Test
-        fun `forcePublish failure cleans DELIVERING marker`() {
-            doThrow(DiscordDeliveryException("down")).whenever(webhookClient).send(any())
+        fun `forcePublish ambiguous network error upgrades DELIVERING to DELIVERY_UNCERTAIN`() {
+            val networkError = DiscordDeliveryException("down", java.net.SocketException("Connection reset"))
+            doThrow(networkError).whenever(webhookClient).send(any())
 
-            service.forcePublish(canonical("m1"))
+            val result = service.forcePublish(canonical("m1"))
 
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_AMBIGUOUS)
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+        }
+
+        @Test
+        fun `forcePublish HTTP error cleans DELIVERING marker (safe to retry)`() {
+            val httpError = WebClientResponseException.create(503, "Service Unavailable", HttpHeaders.EMPTY, ByteArray(0), null)
+            doThrow(DiscordDeliveryException("down", httpError)).whenever(webhookClient).send(any())
+
+            val result = service.forcePublish(canonical("m1"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
             assertThat(store.loadRecords()).doesNotContainKey("m1")
         }
 
@@ -512,6 +542,148 @@ class DiscordMatchPublicationServiceTest {
             val result = service.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            verify(webhookClient).send(any())
+        }
+    }
+
+    // =========================================================================
+    // Exception classification: WAL correctness under different failure modes
+    // =========================================================================
+
+    @Nested
+    inner class ExceptionClassification {
+
+        @Test
+        fun `timeout (SocketTimeoutException) → FAILED_AMBIGUOUS, DELIVERY_UNCERTAIN`() {
+            val timeout = DiscordDeliveryException("Read timed out", SocketTimeoutException("Read timed out"))
+            doThrow(timeout).whenever(webhookClient).send(any())
+
+            val result = service.publishIfNeeded(canonical("m1"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_AMBIGUOUS)
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+            verify(webhookClient).send(any()) // HTTP was attempted
+        }
+
+        @Test
+        fun `connection reset (IOException) → FAILED_AMBIGUOUS, DELIVERY_UNCERTAIN`() {
+            val reset = DiscordDeliveryException("Connection reset", java.io.IOException("Connection reset by peer"))
+            doThrow(reset).whenever(webhookClient).send(any())
+
+            val result = service.publishIfNeeded(canonical("m1"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_AMBIGUOUS)
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+        }
+
+        @Test
+        fun `HTTP 400 from Discord → FAILED_HTTP, DELIVERING removed (retry allowed)`() {
+            val http400 = WebClientResponseException.create(400, "Bad Request", HttpHeaders.EMPTY, ByteArray(0), null)
+            doThrow(DiscordDeliveryException("Bad Request", http400)).whenever(webhookClient).send(any())
+
+            val result = service.publishIfNeeded(canonical("m1"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
+            assertThat(result.httpStatusCode).isEqualTo(400)
+            assertThat(store.loadRecords()).doesNotContainKey("m1") // marker removed → retry safe
+        }
+
+        @Test
+        fun `HTTP 500 from Discord → FAILED_HTTP, DELIVERING removed (retry allowed)`() {
+            val http500 = WebClientResponseException.create(500, "Internal Server Error", HttpHeaders.EMPTY, ByteArray(0), null)
+            doThrow(DiscordDeliveryException("Server Error", http500)).whenever(webhookClient).send(any())
+
+            val result = service.publishIfNeeded(canonical("m1"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
+            assertThat(result.httpStatusCode).isEqualTo(500)
+            assertThat(store.loadRecords()).doesNotContainKey("m1")
+        }
+
+        @Test
+        fun `failure before connection (webhook not configured) → FAILED_BEFORE_SEND, DELIVERING removed`() {
+            doThrow(IllegalStateException("no url")).whenever(webhookClient).send(any())
+
+            val result = service.publishIfNeeded(canonical("m1"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_BEFORE_SEND)
+            assertThat(store.loadRecords()).doesNotContainKey("m1")
+        }
+
+        @Test
+        fun `DELIVERY_UNCERTAIN is not auto-resent even after new match polling`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERY_UNCERTAIN))
+
+            // Simulate scheduler calling publishIfNeeded multiple times
+            val r1 = service.publishIfNeeded(canonical("m1"))
+            val r2 = service.publishIfNeeded(canonical("m1"))
+            val r3 = service.publishIfNeeded(canonical("m1"))
+
+            assertThat(r1.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
+            assertThat(r2.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
+            assertThat(r3.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
+            verify(webhookClient, never()).send(any())
+        }
+
+        @Test
+        fun `httpStatusCode is populated for FAILED_HTTP but null for other outcomes`() {
+            // PUBLISHED → no httpStatusCode
+            val published = service.publishIfNeeded(canonical("pub"))
+            assertThat(published.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            assertThat(published.httpStatusCode).isNull()
+
+            // FAILED_HTTP → httpStatusCode present
+            val http422 = WebClientResponseException.create(422, "Unprocessable Entity", HttpHeaders.EMPTY, ByteArray(0), null)
+            doThrow(DiscordDeliveryException("Unprocessable", http422)).whenever(webhookClient).send(any())
+            val failed = service.publishIfNeeded(canonical("fail"))
+            assertThat(failed.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
+            assertThat(failed.httpStatusCode).isEqualTo(422)
+        }
+    }
+
+    // =========================================================================
+    // Repeated restart: DELIVERY_UNCERTAIN survives multiple restarts
+    // =========================================================================
+
+    @Nested
+    inner class RepeatedRestart {
+
+        @Test
+        fun `DELIVERY_UNCERTAIN remains DELIVERY_UNCERTAIN after repeated restarts`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERING))
+
+            // Restart 1
+            val restart1 = makeStore()
+            assertThat(restart1.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+
+            // Restart 2
+            val restart2 = makeStore()
+            assertThat(restart2.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+
+            // Restart 3
+            val restart3 = makeStore()
+            assertThat(restart3.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+
+            // Service on latest restart still blocks auto-resend
+            val svc = makeService(restart3)
+            val result = svc.publishIfNeeded(canonical("m1"))
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
+            verify(webhookClient, never()).send(any())
+        }
+
+        @Test
+        fun `DELIVERY_UNCERTAIN can only be cleared by admin (resolveAsDelivered or resolveAsUndelivered)`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERING))
+            val restarted = makeStore()
+
+            // Normal scheduler cannot clear it
+            val schedulerResult = makeService(restarted).publishIfNeeded(canonical("m1"))
+            assertThat(schedulerResult.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
+
+            // Admin resolves it
+            restarted.resolveAsUndelivered("m1")
+            val afterResolve = makeService(restarted).publishIfNeeded(canonical("m1"))
+            assertThat(afterResolve.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
             verify(webhookClient).send(any())
         }
     }
