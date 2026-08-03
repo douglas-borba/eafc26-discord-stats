@@ -2,6 +2,7 @@ package com.eafc26.discordstats.config.postgres
 
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.store.JsonCanonicalMatchRepository
+import com.eafc26.discordstats.service.PostgresSyncService
 import com.eafc26.discordstats.store.MirroringCanonicalMatchRepository
 import com.eafc26.discordstats.store.PostgresCanonicalMatchRepository
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -45,5 +46,13 @@ class PostgresMirrorConfig {
         postgresRepository: PostgresCanonicalMatchRepository,
     ): CanonicalMatchRepository {
         return MirroringCanonicalMatchRepository(jsonRepository, postgresRepository)
+    }
+
+    @Bean
+    fun postgresSyncService(
+        jsonRepository: JsonCanonicalMatchRepository,
+        postgresRepository: PostgresCanonicalMatchRepository,
+    ): PostgresSyncService {
+        return PostgresSyncService(jsonRepository, postgresRepository)
     }
 }

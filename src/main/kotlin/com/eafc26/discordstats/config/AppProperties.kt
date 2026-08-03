@@ -14,6 +14,8 @@ data class AppProperties(
 
 data class PostgresProperties(
     val mirrorEnabled: Boolean = false,
+    val syncEnabled: Boolean = false,
+    val syncIntervalMs: Long = 300_000,
 )
 
 data class AcquisitionProperties(

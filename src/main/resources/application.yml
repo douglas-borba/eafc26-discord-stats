@@ -46,6 +46,8 @@ app:
 
   postgres:
     mirror-enabled: ${EAFC_POSTGRES_MIRROR_ENABLED:false}
+    sync-enabled: ${EAFC_POSTGRES_SYNC_ENABLED:false}
+    sync-interval-ms: ${EAFC_POSTGRES_SYNC_INTERVAL_MS:300000}
 
   discord:
     # Environment values take precedence over the local /setup fallback.
