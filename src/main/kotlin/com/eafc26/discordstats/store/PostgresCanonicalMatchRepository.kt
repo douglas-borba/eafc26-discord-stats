@@ -25,13 +25,18 @@ class PostgresCanonicalMatchRepository(
         val opponentClubId = match.interpretation.result.opponentClub.value
         val matchType = match.footballMatch.competition?.name
         val now = Instant.now()
+        val result = match.interpretation.result
+
+        val ourParticipant = match.footballMatch.participants.find { it.club.id.value == perspectiveClubId }
+        val opponentParticipant = match.footballMatch.participants.find { it.club.id.value == opponentClubId }
 
         jdbcTemplate.update(
             """
             INSERT INTO canonical_matches
                 (match_id, club_id, opponent_club_id, played_at, match_type,
-                 canonical_schema_version, payload, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)
+                 canonical_schema_version, payload, created_at, updated_at,
+                 outcome, our_score, opponent_score, our_club_name, opponent_club_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (match_id) DO UPDATE SET
                 club_id = EXCLUDED.club_id,
                 opponent_club_id = EXCLUDED.opponent_club_id,
@@ -39,7 +44,12 @@ class PostgresCanonicalMatchRepository(
                 match_type = EXCLUDED.match_type,
                 canonical_schema_version = EXCLUDED.canonical_schema_version,
                 payload = EXCLUDED.payload,
-                updated_at = EXCLUDED.updated_at
+                updated_at = EXCLUDED.updated_at,
+                outcome = EXCLUDED.outcome,
+                our_score = EXCLUDED.our_score,
+                opponent_score = EXCLUDED.opponent_score,
+                our_club_name = EXCLUDED.our_club_name,
+                opponent_club_name = EXCLUDED.opponent_club_name
             """.trimIndent(),
             match.matchId.value,
             perspectiveClubId,
@@ -50,7 +60,48 @@ class PostgresCanonicalMatchRepository(
             payload,
             Timestamp.from(now),
             Timestamp.from(now),
+            result.outcome.name,
+            result.ourScore.goals,
+            result.opponentScore.goals,
+            ourParticipant?.club?.name?.value,
+            opponentParticipant?.club?.name?.value,
         )
+
+        savePlayerStats(match, perspectiveClubId)
+    }
+
+    private fun savePlayerStats(match: CanonicalMatch, perspectiveClubId: String) {
+        val ourParticipant = match.footballMatch.participants.find { it.club.id.value == perspectiveClubId }
+            ?: return
+
+        jdbcTemplate.update("DELETE FROM player_match_stats WHERE match_id = ?", match.matchId.value)
+
+        ourParticipant.players.forEach { playerPerf ->
+            jdbcTemplate.update(
+                """
+                INSERT INTO player_match_stats
+                    (match_id, player_id, platform_name, pro_name, rating,
+                     goals, assists, shots, passes_completed, passes_attempted,
+                     tackles_completed, tackles_attempted, red_cards, man_of_the_match, played_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent(),
+                match.matchId.value,
+                playerPerf.player.id.value,
+                playerPerf.player.platformName?.value,
+                playerPerf.player.proName?.value,
+                playerPerf.rating?.value,
+                playerPerf.attacking.goals ?: 0,
+                playerPerf.attacking.assists ?: 0,
+                playerPerf.attacking.shots ?: 0,
+                playerPerf.passing.completed ?: 0,
+                playerPerf.passing.attempted ?: 0,
+                playerPerf.defending.tacklesCompleted ?: 0,
+                playerPerf.defending.tacklesAttempted ?: 0,
+                playerPerf.discipline.redCards ?: 0,
+                playerPerf.eaRecognition.manOfTheMatch ?: false,
+                Timestamp.from(match.footballMatch.playedAt),
+            )
+        }
     }
 
     override fun findById(matchId: MatchId): CanonicalMatch? {
