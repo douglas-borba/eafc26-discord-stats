@@ -1,94 +1,264 @@
 import { Panel } from "@/components/ui/panel";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
-import { formatDateTime, ratingColor } from "@/lib/utils";
+import { formatDateTime, ratingColor, outcomeColor } from "@/lib/utils";
 import type { MatchDetail } from "@/lib/domain/types";
 
-const awardMeta: Record<string, { emoji: string; label: string; accent: string }> = {
-  craque: { emoji: "⭐", label: "Craque", accent: "border-l-highlight" },
-  bagre: { emoji: "📉", label: "Bagre", accent: "border-l-development" },
-  xerife: { emoji: "🛡️", label: "Xerife", accent: "border-l-defense" },
+const characterMeta: Record<string, { emoji: string; label: string; accent: string; tone: string; message: string }> = {
+  craque: {
+    emoji: "⭐",
+    label: "Craque da Partida",
+    accent: "border-l-highlight",
+    tone: "bg-highlight/5",
+    message: "Uma atuação que fez a diferença nesta partida.",
+  },
+  bagre: {
+    emoji: "📉",
+    label: "Menor Desempenho",
+    accent: "border-l-development",
+    tone: "bg-development/5",
+    message: "Nem toda partida sai como esperado. A próxima é uma nova oportunidade para responder em campo.",
+  },
+  xerife: {
+    emoji: "🛡️",
+    label: "Xerife",
+    accent: "border-l-defense",
+    tone: "bg-defense/5",
+    message: "Consistência e segurança para proteger o time.",
+  },
 };
 
-const storyMeta: Record<string, { emoji: string; accent: string }> = {
-  DECISIVE: { emoji: "🎯", accent: "border-l-win" },
-  CONSTANT_THREAT: { emoji: "⚡", accent: "border-l-pressure" },
-  NEAR_MISS: { emoji: "🍍", accent: "border-l-near-miss" },
-  RED_CARD: { emoji: "🟥", accent: "border-l-discipline" },
-  PASS_PRECISION: { emoji: "🎯", accent: "border-l-precision" },
-  LOST_MAIL: { emoji: "📮", accent: "border-l-loss" },
-  GOALKEEPER: { emoji: "🧤", accent: "border-l-defense" },
+const storyMeta: Record<string, { emoji: string; title: string; accent: string; tone: string; message: string }> = {
+  DECISIVE: {
+    emoji: "⚡",
+    title: "Fez a Diferença",
+    accent: "border-l-win",
+    tone: "bg-win/5",
+    message: "Uma atuação que mudou o rumo da partida, sustentada pelos fatos do jogo.",
+  },
+  CONSTANT_THREAT: {
+    emoji: "🎯",
+    title: "Perigo Constante",
+    accent: "border-l-pressure",
+    tone: "bg-pressure/5",
+    message: "Participação ofensiva frequente, pressionando e criando oportunidades.",
+  },
+  NEAR_MISS: {
+    emoji: "⏳",
+    title: "Ficou no Quase",
+    accent: "border-l-near-miss",
+    tone: "bg-near-miss/5",
+    message: "A presença ofensiva apareceu; faltou transformar mais oportunidades em resultado.",
+  },
+  RED_CARD: {
+    emoji: "🟥",
+    title: "Cartão Vermelho",
+    accent: "border-l-discipline",
+    tone: "bg-discipline/5",
+    message: "Um momento difícil que também faz parte da história deste jogo.",
+  },
+  PASS_PRECISION: {
+    emoji: "🎯",
+    title: "Passe de Precisão",
+    accent: "border-l-precision",
+    tone: "bg-precision/5",
+    message: "Consistência com a bola para dar continuidade ao jogo do time.",
+  },
+  LOST_MAIL: {
+    emoji: "📨",
+    title: "Correio Extraviado",
+    accent: "border-l-development",
+    tone: "bg-development/5",
+    message: "Um aspecto desta atuação que pode encontrar uma resposta diferente no próximo jogo.",
+  },
+  GOALKEEPER: {
+    emoji: "🧤",
+    title: "Muralha",
+    accent: "border-l-defense",
+    tone: "bg-defense/5",
+    message: "A presença do goleiro também escreveu parte desta partida.",
+  },
 };
 
-export function MatchDetailView({ match }: { match: MatchDetail }) {
+export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId: string }) {
+  const totalGoals = match.players.reduce((s, p) => s + p.goals, 0);
+  const totalAssists = match.players.reduce((s, p) => s + p.assists, 0);
+  const avgRating = match.players.length > 0
+    ? match.players.reduce((s, p) => s + (p.rating ?? 0), 0) / match.players.length
+    : 0;
+
   return (
-    <div className="space-y-6">
-      {/* Hero */}
-      <Panel className="text-center py-8">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-4">
-          {match.matchType ?? "Partida"} · {formatDateTime(match.playedAt)}
-        </p>
-        <div className="flex items-center justify-center gap-6">
-          <div className="text-right">
-            <p className="text-sm text-text-soft mb-1">{match.ourClubName ?? "Nós"}</p>
-            <p className="text-5xl font-black">{match.ourScore}</p>
+    <article className="space-y-8">
+      {/* Section 1: Hero */}
+      <section>
+        <Panel className="text-center py-8">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <OutcomeBadge outcome={match.outcome} className="w-7 h-7 text-xs" />
+            <span className={`text-sm font-semibold ${outcomeColor(match.outcome)}`}>
+              {match.outcome === "WIN" ? "Vitória" : match.outcome === "DRAW" ? "Empate" : "Derrota"}
+            </span>
           </div>
-          <div className="flex flex-col items-center gap-1">
-            <OutcomeBadge outcome={match.outcome} className="w-8 h-8 text-sm" />
-            <span className="text-xs text-muted">×</span>
+          <p className="text-xs text-muted mb-5">
+            {match.matchType ?? "Partida"} &middot; {formatDateTime(match.playedAt)}
+          </p>
+          <div className="flex items-center justify-center gap-6 sm:gap-10">
+            <div className="text-right flex-1">
+              <p className="text-sm text-text-soft mb-1">{match.ourClubName ?? "Nós"}</p>
+              <p className="text-5xl font-black">{match.ourScore}</p>
+            </div>
+            <span className="text-2xl text-muted font-light">&times;</span>
+            <div className="text-left flex-1">
+              <p className="text-sm text-text-soft mb-1">{match.opponentClubName ?? "Adversário"}</p>
+              <p className="text-5xl font-black">{match.opponentScore}</p>
+            </div>
           </div>
-          <div className="text-left">
-            <p className="text-sm text-text-soft mb-1">{match.opponentClubName ?? "Adversário"}</p>
-            <p className="text-5xl font-black">{match.opponentScore}</p>
-          </div>
-        </div>
-      </Panel>
+          {match.opponentClubId && (
+            <a
+              href={`/clubs/${clubId}/opponents?opponent=${match.opponentClubId}`}
+              className="inline-block mt-4 text-xs text-accent hover:underline"
+            >
+              Ver retrospecto contra {match.opponentClubName ?? "este adversário"}
+            </a>
+          )}
+        </Panel>
+      </section>
 
-      {/* Awards */}
+      {/* Section 2: Personagens da Partida */}
       {(match.awards.craque || match.awards.bagre || match.awards.xerife) && (
-        <div>
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-3">Personagens</h3>
+        <section>
+          <SectionHeading
+            kicker="Personagens"
+            title="Personagens da Partida"
+            subtitle="Quem se destacou nesta história?"
+          />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {(["craque", "bagre", "xerife"] as const).map((key) => {
               const award = match.awards[key];
-              if (!award) return null;
-              const meta = awardMeta[key];
+              const meta = characterMeta[key];
+              const awarded = !!award;
               return (
-                <Panel key={key} className={`border-l-[3px] ${meta.accent}`}>
-                  <p className="text-lg mb-1">{meta.emoji}</p>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">{meta.label}</p>
-                  <p className="text-base font-bold text-text-primary mt-1">{award.winnerName ?? "—"}</p>
-                  {award.reason && <p className="text-xs text-muted mt-1">{award.reason}</p>}
+                <Panel
+                  key={key}
+                  className={`border-l-[3px] ${meta.accent} ${awarded ? meta.tone : "opacity-50 border-dashed"} min-h-[180px]`}
+                >
+                  <p className="text-2xl mb-2">{meta.emoji}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                    {meta.label}
+                  </p>
+                  {awarded ? (
+                    <>
+                      <p className="text-base font-bold text-text-primary mt-2">
+                        {award.winnerName ?? "—"}
+                      </p>
+                      {award.reason && (
+                        <p className="text-xs text-text-soft mt-1">{award.reason}</p>
+                      )}
+                      <p className="text-xs text-muted mt-2 italic">{meta.message}</p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted mt-2 italic">Não concedido nesta partida.</p>
+                  )}
                 </Panel>
               );
             })}
           </div>
-        </div>
+
+          {/* Goals and assists contribution */}
+          {(totalGoals > 0 || totalAssists > 0) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+              {totalGoals > 0 && (
+                <Panel>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">Gols</p>
+                  <div className="space-y-1">
+                    {match.players.filter((p) => p.goals > 0).map((p) => (
+                      <div key={p.playerId} className="flex justify-between text-sm">
+                        <span className="text-text-soft">{p.displayName ?? p.platformName ?? p.playerId}</span>
+                        <span className="font-semibold">{p.goals}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
+              )}
+              {totalAssists > 0 && (
+                <Panel>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">Assistências</p>
+                  <div className="space-y-1">
+                    {match.players.filter((p) => p.assists > 0).map((p) => (
+                      <div key={p.playerId} className="flex justify-between text-sm">
+                        <span className="text-text-soft">{p.displayName ?? p.platformName ?? p.playerId}</span>
+                        <span className="font-semibold">{p.assists}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
+              )}
+            </div>
+          )}
+        </section>
       )}
 
-      {/* Stories */}
+      {/* Section 3: A História do Jogo */}
       {match.stories.length > 0 && (
-        <div>
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-3">História</h3>
+        <section>
+          <SectionHeading
+            kicker="Narrativas"
+            title="A História do Jogo"
+            subtitle="O que a engine identificou nesta partida?"
+          />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {match.stories.map((s, i) => {
-              const meta = storyMeta[s.type] ?? { emoji: "📝", accent: "border-l-border" };
+              const meta = storyMeta[s.type] ?? {
+                emoji: "•",
+                title: s.type,
+                accent: "border-l-border",
+                tone: "",
+                message: "Mais um fato que ajuda a compreender como o jogo aconteceu.",
+              };
               return (
-                <Panel key={i} className={`border-l-[3px] ${meta.accent}`}>
-                  <p className="text-lg mb-1">{meta.emoji}</p>
-                  <p className="text-sm text-text-soft">{s.narrativeKey}</p>
+                <Panel key={i} className={`border-l-[3px] ${meta.accent} ${meta.tone} min-h-[180px]`}>
+                  <p className="text-2xl mb-2">{meta.emoji}</p>
+                  <p className="text-sm font-semibold text-text-primary">{meta.title}</p>
+                  <p className="text-xs text-text-soft mt-1">{s.narrativeKey}</p>
+                  <p className="text-xs text-muted mt-2 italic">{meta.message}</p>
                 </Panel>
               );
             })}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Player table */}
-      <div>
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-3">Jogador por Jogador</h3>
+      {/* Section 4: O Time em Números */}
+      <section>
+        <SectionHeading
+          kicker="Estatísticas"
+          title="O Time em Números"
+          subtitle="Os números coletivos desta partida."
+        />
+        <div className="grid grid-cols-3 gap-3">
+          <Panel className="text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Gols marcados</p>
+            <p className="text-3xl font-black">{match.ourScore}</p>
+          </Panel>
+          <Panel className="text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Gols sofridos</p>
+            <p className="text-3xl font-black">{match.opponentScore}</p>
+          </Panel>
+          <Panel className="text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Média do time</p>
+            <p className={`text-3xl font-black ${ratingColor(avgRating)}`}>{avgRating.toFixed(1)}</p>
+          </Panel>
+        </div>
+      </section>
+
+      {/* Section 5: Jogador por Jogador */}
+      <section>
+        <SectionHeading
+          kicker="Desempenho individual"
+          title="Jogador por Jogador"
+          subtitle="As estatísticas individuais registradas nesta partida."
+        />
         <Panel className="overflow-x-auto p-0">
           {/* Desktop table */}
-          <table className="w-full text-sm hidden sm:table">
+          <table className="w-full text-sm hidden sm:table min-w-[760px]">
             <thead>
               <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-muted">
                 <th className="px-4 py-3">Jogador</th>
@@ -105,8 +275,15 @@ export function MatchDetailView({ match }: { match: MatchDetail }) {
               {match.players.map((p) => (
                 <tr key={p.playerId} className="border-b border-border/50 hover:bg-surface-raised/50">
                   <td className="px-4 py-2.5 font-medium">
-                    {p.displayName ?? p.platformName ?? p.playerId}
-                    {p.manOfTheMatch && <span className="ml-1.5 text-highlight" title="Man of the Match">⭐</span>}
+                    <a
+                      href={`/clubs/${clubId}/players?player=${p.playerId}`}
+                      className="hover:text-accent transition-colors"
+                    >
+                      {p.displayName ?? p.platformName ?? p.playerId}
+                    </a>
+                    {p.manOfTheMatch && (
+                      <span className="ml-1.5 text-highlight" title="Man of the Match">⭐</span>
+                    )}
                   </td>
                   <td className={`px-3 py-2.5 text-center font-semibold ${p.rating ? ratingColor(p.rating) : "text-muted"}`}>
                     {p.rating?.toFixed(1) ?? "—"}
@@ -145,7 +322,17 @@ export function MatchDetailView({ match }: { match: MatchDetail }) {
             ))}
           </div>
         </Panel>
-      </div>
+      </section>
+    </article>
+  );
+}
+
+function SectionHeading({ kicker, title, subtitle }: { kicker: string; title: string; subtitle: string }) {
+  return (
+    <div className="mb-4 pb-4 border-b border-border/50">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-1">{kicker}</p>
+      <h3 className="text-lg font-bold text-text-primary">{title}</h3>
+      <p className="text-xs text-muted mt-0.5">{subtitle}</p>
     </div>
   );
 }

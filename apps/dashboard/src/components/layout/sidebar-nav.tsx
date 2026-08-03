@@ -58,7 +58,9 @@ export function SidebarNav({ clubId }: { clubId: string }) {
         <div className="flex items-center justify-between px-5 h-16 border-b border-border">
           <div className="flex items-center gap-2.5">
             <BrandMark />
-            <span className="font-semibold text-text-primary text-[15px]">EA FC STATS</span>
+            <div>
+              <span className="font-semibold text-text-primary text-[15px] block leading-tight">EA FC STATS</span>
+            </div>
           </div>
           <button onClick={() => setMobileOpen(false)} className="p-1 text-muted hover:text-text-primary lg:hidden" aria-label="Fechar menu">
             <X className="w-4 h-4" />
@@ -78,7 +80,7 @@ export function SidebarNav({ clubId }: { clubId: string }) {
                     className={cn(
                       "flex items-center gap-3 px-3 py-2 rounded-md text-[13px] font-medium transition-colors",
                       isActive
-                        ? "bg-accent/10 text-accent"
+                        ? "shadow-[inset_3px_0_var(--color-accent)] bg-accent/10 text-accent"
                         : "text-text-soft hover:text-text-primary hover:bg-surface-raised"
                     )}
                   >
@@ -90,6 +92,12 @@ export function SidebarNav({ clubId }: { clubId: string }) {
             })}
           </ul>
         </nav>
+
+        <div className="px-5 py-4 border-t border-border">
+          <p className="text-xs text-muted leading-relaxed">
+            Partidas viram histórias. Histórias revelam a trajetória do clube.
+          </p>
+        </div>
       </aside>
     </>
   );
@@ -98,7 +106,7 @@ export function SidebarNav({ clubId }: { clubId: string }) {
 function BrandMark() {
   return (
     <div
-      className="w-[38px] h-[38px] rounded-lg flex items-center justify-center text-white font-bold text-sm"
+      className="w-[38px] h-[38px] rounded-lg flex items-center justify-center text-white font-bold text-sm shrink-0"
       style={{ background: "linear-gradient(135deg, #2f81f7, #3fb950)" }}
     >
       FC

@@ -1,26 +1,28 @@
 export const dynamic = "force-dynamic";
 
-import { getMatches } from "@/lib/services/match-service";
-import { MatchList } from "@/components/matches/match-list";
+import { getMatches, getMatch } from "@/lib/services/match-service";
+import { MatchesShell } from "@/components/matches/matches-shell";
 
-export default async function MatchesPage({ params }: { params: Promise<{ clubId: string }> }) {
+export default async function MatchesPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ clubId: string }>;
+  searchParams: Promise<{ match?: string }>;
+}) {
   const { clubId } = await params;
+  const { match: selectedMatchId } = await searchParams;
   const result = await getMatches(clubId, 0, 50);
 
+  const effectiveMatchId = selectedMatchId ?? result.content[0]?.matchId ?? null;
+  const detail = effectiveMatchId ? await getMatch(clubId, effectiveMatchId) : null;
+
   return (
-    <div className="lg:grid lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] lg:gap-6">
-      <div>
-        <h1 className="text-xl font-bold text-text-primary mb-4">Arquivo de Partidas</h1>
-        <div className="lg:sticky lg:top-[26px] lg:max-h-[calc(100vh-52px)] lg:overflow-y-auto">
-          <MatchList matches={result.content} />
-          {result.content.length === 0 && (
-            <p className="text-sm text-muted mt-4 text-center">Nenhuma partida encontrada.</p>
-          )}
-        </div>
-      </div>
-      <div className="hidden lg:flex items-center justify-center">
-        <p className="text-muted text-sm">Selecione uma partida para ver os detalhes.</p>
-      </div>
-    </div>
+    <MatchesShell
+      matches={result.content}
+      selectedMatchId={effectiveMatchId}
+      detail={detail}
+      clubId={clubId}
+    />
   );
 }
