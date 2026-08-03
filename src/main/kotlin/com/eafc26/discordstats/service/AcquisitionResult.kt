@@ -33,19 +33,23 @@ sealed class AcquisitionResult {
         val baselineEstablished: Boolean = false,
         val simulated: Boolean = false,
         val simulatedMatch: MatchSummary? = null,
+        /**
+         * Matches blocked because they are in [PublicationState.DELIVERY_UNCERTAIN].
+         * The delivery outcome is unknown. Administrative resolution required.
+         */
+        val deliveryUncertain: List<MatchSummary> = emptyList(),
     ) : AcquisitionResult() {
 
-        /** True if at least one match was published. */
         fun hasPublished(): Boolean = published.isNotEmpty()
 
-        /** True if all matches were skipped (already published). */
         fun allSkipped(): Boolean =
-            published.isEmpty() && failed.isEmpty() && alreadyPublished.isNotEmpty() && !simulated
+            published.isEmpty() && failed.isEmpty() &&
+                (alreadyPublished.isNotEmpty() || deliveryUncertain.isNotEmpty()) && !simulated
 
-        /** Returns the latest match summary, preferring published over skipped over simulated. */
         fun latestSummary(): String? =
-            published.lastOrNull()?.summary 
-                ?: alreadyPublished.lastOrNull()?.summary 
+            published.lastOrNull()?.summary
+                ?: alreadyPublished.lastOrNull()?.summary
+                ?: deliveryUncertain.lastOrNull()?.summary
                 ?: simulatedMatch?.summary
     }
 
@@ -53,7 +57,8 @@ sealed class AcquisitionResult {
      * Force resend completed successfully.
      *
      * This result is returned when a match is resent bypassing deduplication.
-     * The match ID is not persisted to the published store.
+     * After successful delivery, the match ID IS persisted to the published
+     * store so that the scheduler will NOT re-publish it on the next cycle.
      */
     data class ForceResent(
         val match: MatchSummary,

@@ -16,6 +16,8 @@ import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.MemberStats
 import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
+import com.eafc26.discordstats.store.PublicationRecord
+import com.eafc26.discordstats.store.PublicationState
 import com.eafc26.discordstats.store.PublishedMatchStore
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
@@ -23,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argThat
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.doThrow
@@ -50,20 +53,25 @@ class MatchAcquisitionServiceTest {
 
     private val clubId = "12345"
 
+    /**
+     * Builds the service under test using a real [DiscordMatchPublicationService]
+     * wired with the shared [store] and [webhookClient] mocks.
+     * This allows tests to verify [webhookClient] interactions transparently.
+     */
     private fun makeService(): MatchAcquisitionService {
         val props = AppProperties(
             ea = EaProperties(clubId = clubId, clubName = "Test FC"),
             polling = PollingProperties(),
         )
+        val publicationService = DiscordMatchPublicationService(store, webhookClient, DiscordRenderer(matchSummaryBuilder))
         return MatchAcquisitionService(
             gateway,
             store,
-            webhookClient,
+            publicationService,
             props,
             stateHolder,
             latestMatchHolder,
             matchSummaryBuilder,
-            DiscordRenderer(matchSummaryBuilder),
             canonicalMatchRepository,
             CanonicalMatchFactory(),
         )
@@ -79,7 +87,19 @@ class MatchAcquisitionServiceTest {
         matchSummaryBuilder = MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))  // Use real instance
         canonicalMatchRepository = mock()
         service = makeService()
-        whenever(store.loadIds()).thenReturn(emptySet())
+        stubStore()  // default: empty store = first run
+    }
+
+    /**
+     * Stubs both [store.loadIds] and [store.loadRecords] consistently for the given [ids].
+     * All IDs are treated as DELIVERED records.
+     * Must be called AFTER [service] is constructed (it wires into mocks).
+     */
+    private fun stubStore(vararg ids: String) {
+        val set = ids.toSet()
+        val records = set.associateWith { PublicationRecord(it, PublicationState.DELIVERED) }
+        whenever(store.loadIds()).thenReturn(set)
+        whenever(store.loadRecords()).thenReturn(records)
     }
 
     // -------------------------------------------------------------------------
@@ -161,7 +181,7 @@ class MatchAcquisitionServiceTest {
         fun `publishes latest match when not already published`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
 
@@ -171,7 +191,7 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.published[0].matchId).isEqualTo("m1")
             assertThat(processed.published[0].summary).contains("Test FC")
             verify(webhookClient).send(any())
-            verify(store).saveIds(setOf("existing", "m1"))
+            verify(store).saveRecord(argThat { matchId == "m1" && state == PublicationState.DELIVERED })
             verify(canonicalMatchRepository, atLeastOnce()).save(any())
         }
 
@@ -179,7 +199,7 @@ class MatchAcquisitionServiceTest {
         fun `skips already published match`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(setOf("m1"))
+            stubStore("m1")
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
 
@@ -195,7 +215,7 @@ class MatchAcquisitionServiceTest {
         fun `CLI trigger behaves same as MANUAL`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
 
             val result = service.acquire(AcquisitionTrigger.CLI)
 
@@ -209,7 +229,7 @@ class MatchAcquisitionServiceTest {
             val older = match("m1", ts = 1000)
             val newer = match("m2", ts = 2000)
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(older, newer)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
 
@@ -231,7 +251,7 @@ class MatchAcquisitionServiceTest {
             val older = match("m1", ts = 1000)
             val newer = match("m2", ts = 2000)
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(newer, older)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
 
             val result = service.acquire(AcquisitionTrigger.SCHEDULER)
 
@@ -247,7 +267,7 @@ class MatchAcquisitionServiceTest {
             val published = match("m1", ts = 1000)
             val newMatch = match("m2", ts = 2000)
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(published, newMatch)))
-            whenever(store.loadIds()).thenReturn(setOf("m1"))
+            stubStore("m1")
 
             val result = service.acquire(AcquisitionTrigger.SCHEDULER)
 
@@ -261,7 +281,7 @@ class MatchAcquisitionServiceTest {
         fun `returns nothing new when all matches already published`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(setOf("m1"))
+            stubStore("m1")
 
             val result = service.acquire(AcquisitionTrigger.SCHEDULER)
 
@@ -275,7 +295,7 @@ class MatchAcquisitionServiceTest {
         fun `DEV_SIMULATOR is web-only and never delivers to Discord`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
 
             val result = service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
 
@@ -287,8 +307,8 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.simulatedMatch?.matchId).isEqualTo("m1")
             // Discord should NEVER be called
             verify(webhookClient, never()).send(any())
-            // Persistence should NEVER happen
-            verify(store, never()).saveIds(any())
+            // Persistence (DELIVERING or DELIVERED) should NEVER happen for simulation
+            verify(store, never()).saveRecord(any())
         }
     }
 
@@ -303,7 +323,7 @@ class MatchAcquisitionServiceTest {
         fun `scheduler establishes baseline without publishing`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(emptySet())
+            stubStore()
 
             val result = service.acquire(AcquisitionTrigger.SCHEDULER)
 
@@ -319,7 +339,7 @@ class MatchAcquisitionServiceTest {
             val older = match("m1", ts = 1000)
             val newer = match("m2", ts = 2000)
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(newer, older)))
-            whenever(store.loadIds()).thenReturn(emptySet())
+            stubStore()
 
             val result = service.acquire(AcquisitionTrigger.SCHEDULER)
 
@@ -334,7 +354,7 @@ class MatchAcquisitionServiceTest {
         fun `manual first use establishes baseline without publishing`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(emptySet())
+            stubStore()
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
 
@@ -349,7 +369,7 @@ class MatchAcquisitionServiceTest {
         fun `cli first use establishes baseline without publishing`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(emptySet())
+            stubStore()
 
             val result = service.acquire(AcquisitionTrigger.CLI)
 
@@ -361,10 +381,21 @@ class MatchAcquisitionServiceTest {
 
         @Test
         fun `only a match observed after baseline is published once`() {
-            var publishedIds = emptySet<String>()
-            whenever(store.loadIds()).thenAnswer { publishedIds }
+            var records = mutableMapOf<String, PublicationRecord>()
+            whenever(store.loadIds()).thenAnswer { records.keys.toSet() }
+            whenever(store.loadRecords()).thenAnswer { records.toMap() }
             whenever(store.saveIds(any())).thenAnswer { invocation ->
-                publishedIds = invocation.getArgument(0)
+                val ids = invocation.getArgument<Set<String>>(0)
+                records = ids.associateWith { PublicationRecord(it, PublicationState.DELIVERED) }.toMutableMap()
+                Unit
+            }
+            whenever(store.saveRecord(any())).thenAnswer { invocation ->
+                val r = invocation.getArgument<PublicationRecord>(0)
+                records[r.matchId] = r
+                Unit
+            }
+            whenever(store.removeRecord(any())).thenAnswer { invocation ->
+                records.remove(invocation.getArgument<String>(0))
                 Unit
             }
             whenever(gateway.getLatestMatches(clubId))
@@ -379,7 +410,9 @@ class MatchAcquisitionServiceTest {
             assertThat(baseline.baselineEstablished).isTrue()
             assertThat(firstNewCycle.published.map { it.matchId }).containsExactly("new")
             assertThat(repeatedCycle.published).isEmpty()
-            assertThat(publishedIds).containsExactlyInAnyOrder("baseline", "new")
+            assertThat(records.keys).containsExactlyInAnyOrder("baseline", "new")
+            assertThat(records.values.filter { it.state == PublicationState.DELIVERED }.map { it.matchId })
+                .containsExactlyInAnyOrder("baseline", "new")
             verify(webhookClient, times(1)).send(any())
         }
     }
@@ -395,7 +428,7 @@ class MatchAcquisitionServiceTest {
         fun `force resends even if already published`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(setOf("m1"))
+            stubStore("m1")
 
             val result = service.acquire(AcquisitionTrigger.FORCE_RESEND)
 
@@ -406,14 +439,15 @@ class MatchAcquisitionServiceTest {
         }
 
         @Test
-        fun `force resend does not persist match ID`() {
+        fun `force resend marks match as published to prevent scheduler re-send`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(emptySet())
+            stubStore()
 
             service.acquire(AcquisitionTrigger.FORCE_RESEND)
 
-            verify(store, never()).saveIds(any())
+            // After force-resend, match ID must be persisted as DELIVERED so the scheduler won't re-publish
+            verify(store).saveRecord(argThat { matchId == "m1" && state == PublicationState.DELIVERED })
         }
 
         @Test
@@ -440,20 +474,20 @@ class MatchAcquisitionServiceTest {
         fun `returns WebhookNotConfigured when webhook not set`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
             doThrow(IllegalStateException("Webhook not configured")).whenever(webhookClient).send(any())
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
 
             assertThat(result).isEqualTo(AcquisitionResult.WebhookNotConfigured)
-            verify(store, never()).saveIds(any())
+            verify(store, never()).saveRecord(argThat { state == PublicationState.DELIVERED })
         }
 
         @Test
         fun `returns failed match on Discord delivery error for MANUAL`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
             doThrow(DiscordDeliveryException("Rate limited")).whenever(webhookClient).send(any())
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
@@ -462,7 +496,7 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.published).isEmpty()
             assertThat(processed.failed).hasSize(1)
             assertThat(processed.failed[0].reason).contains("Rate limited")
-            verify(store, never()).saveIds(any())
+            verify(store, never()).saveRecord(argThat { state == PublicationState.DELIVERED })
         }
 
         @Test
@@ -470,7 +504,7 @@ class MatchAcquisitionServiceTest {
             val m1 = match("m1", ts = 1000)
             val m2 = match("m2", ts = 2000)
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(m1, m2)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
 
             // First call fails, second succeeds
             var callCount = 0
@@ -493,7 +527,7 @@ class MatchAcquisitionServiceTest {
             val m1 = match("m1", ts = 1000)
             val m2 = match("m2", ts = 2000)
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(m1, m2)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
             doThrow(IllegalStateException("Webhook not configured")).whenever(webhookClient).send(any())
 
             val result = service.acquire(AcquisitionTrigger.SCHEDULER)
@@ -513,8 +547,9 @@ class MatchAcquisitionServiceTest {
         fun `marks match as persistence error when store fails`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
-            doThrow(RuntimeException("Disk full")).whenever(store).saveIds(any())
+            stubStore("existing")
+            // Fail only on DELIVERED writes (not on DELIVERING writes)
+            doThrow(RuntimeException("Disk full")).whenever(store).saveRecord(argThat { state == PublicationState.DELIVERED })
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
 
@@ -528,12 +563,12 @@ class MatchAcquisitionServiceTest {
             val m1 = match("m1", ts = 1000)
             val m2 = match("m2", ts = 2000)
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(m1, m2)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
 
             service.acquire(AcquisitionTrigger.SCHEDULER)
 
-            // Should save twice (once per match)
-            verify(store, times(2)).saveIds(any())
+            // Each match: DELIVERING + DELIVERED = 2 saveRecord calls per match, 4 total
+            verify(store, times(2)).saveRecord(argThat { state == PublicationState.DELIVERED })
         }
     }
 
@@ -618,7 +653,7 @@ class MatchAcquisitionServiceTest {
             val customGateway: EaClubsGateway = mock()
             val customMatch = match("custom-m1")
             whenever(customGateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(customMatch)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
 
             val result = service.acquire(AcquisitionTrigger.DEV_SIMULATOR, customGateway)
 
@@ -669,7 +704,7 @@ class MatchAcquisitionServiceTest {
 
             service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
 
-            verify(store, never()).saveIds(any())
+            verify(store, never()).saveRecord(any())
         }
 
         @Test
@@ -702,7 +737,7 @@ class MatchAcquisitionServiceTest {
             val match = match("sim-6")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
             // Even if match was already published in production, simulation still runs
-            whenever(store.loadIds()).thenReturn(setOf("sim-6"))
+            stubStore("sim-6")
 
             val result = service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
 
@@ -727,7 +762,7 @@ class MatchAcquisitionServiceTest {
         fun `does not affect baselineEstablished flag`() {
             val match = match("sim-7")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(emptySet())
+            stubStore()
 
             val result = service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
 
@@ -851,7 +886,7 @@ class MatchAcquisitionServiceTest {
         fun `caches presentation BEFORE checking deduplication`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(setOf("m1")) // Already published
+            stubStore("m1") // Already published
 
             service.acquire(AcquisitionTrigger.MANUAL)
 
@@ -914,7 +949,7 @@ class MatchAcquisitionServiceTest {
             val older = match("m1", ts = 1000)
             val newer = match("m2", ts = 2000)
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(older, newer)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
 
             service.acquire(AcquisitionTrigger.SCHEDULER)
 
@@ -926,7 +961,7 @@ class MatchAcquisitionServiceTest {
         fun `caches presentation on first run baseline establishment`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(emptySet())
+            stubStore()
 
             service.acquire(AcquisitionTrigger.SCHEDULER)
 
@@ -939,7 +974,7 @@ class MatchAcquisitionServiceTest {
         fun `caches presentation on force resend`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            whenever(store.loadIds()).thenReturn(setOf("m1"))
+            stubStore("m1")
 
             service.acquire(AcquisitionTrigger.FORCE_RESEND)
 
@@ -1073,27 +1108,27 @@ class MatchAcquisitionServiceTest {
             val older = match("m1", ts = 1000)
             val newer = match("m2", ts = 2000)
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(newer, older)))
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
 
             service.acquire(AcquisitionTrigger.SCHEDULER)
 
-            val order = inOrder(canonicalMatchRepository, store, webhookClient)
+            // Canonical saves happen before Discord publication
+            val order = inOrder(canonicalMatchRepository, webhookClient)
             order.verify(canonicalMatchRepository, times(2)).save(any())
-            order.verify(store).loadIds()
-            order.verify(webhookClient).send(any())
+            order.verify(webhookClient, times(2)).send(any())
         }
 
         @Test
         fun `already published match is still persisted canonically`() {
             val published = match("published")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(published)))
-            whenever(store.loadIds()).thenReturn(setOf("published"))
+            stubStore("published")
 
             service.acquire(AcquisitionTrigger.MANUAL)
 
             verify(canonicalMatchRepository).save(any())
             verify(webhookClient, never()).send(any())
-            verify(store, never()).saveIds(any())
+            verify(store, never()).saveRecord(argThat { state == PublicationState.DELIVERED })
         }
 
         @Test
@@ -1101,7 +1136,7 @@ class MatchAcquisitionServiceTest {
             val older = match("m1", ts = 1000)
             val newer = match("m2", ts = 2000)
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(newer, older)))
-            whenever(store.loadIds()).thenReturn(emptySet())
+            stubStore()
 
             val result = service.acquire(AcquisitionTrigger.SCHEDULER) as AcquisitionResult.Processed
 
@@ -1113,7 +1148,7 @@ class MatchAcquisitionServiceTest {
 
         @Test
         fun `repeated sliding windows persist every observation and expose continuous unique MatchIds`() {
-            whenever(store.loadIds()).thenReturn(setOf("existing"))
+            stubStore("existing")
             whenever(gateway.getLatestMatches(clubId))
                 .thenReturn(EaApiResult.Success(listOf(match("m1", 1), match("m2", 2))))
                 .thenReturn(EaApiResult.Success(listOf(match("m2", 2), match("m3", 3))))

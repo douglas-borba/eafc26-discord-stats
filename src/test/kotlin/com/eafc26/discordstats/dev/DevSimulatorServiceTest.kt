@@ -58,15 +58,20 @@ class DevSimulatorServiceTest {
             ea = EaProperties(clubId = clubId, clubName = "Associação BF"),
         )
 
+        val publicationService = com.eafc26.discordstats.service.DiscordMatchPublicationService(
+            publishedMatchStore,
+            webhookClient,
+            DiscordRenderer(matchSummaryBuilder),
+        )
+
         acquisitionService = MatchAcquisitionService(
             fixtureGateway,
             publishedMatchStore,
-            webhookClient,
+            publicationService,
             props,
             stateHolder,
             latestMatchHolder,
             matchSummaryBuilder,
-            DiscordRenderer(matchSummaryBuilder),
             canonicalMatchRepository,
             CanonicalMatchFactory(),
         )

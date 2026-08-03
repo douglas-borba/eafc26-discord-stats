@@ -6,6 +6,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -22,25 +23,25 @@ class PublishedMatchStoreTest {
 
     @BeforeEach
     fun setUp() {
-        // Override user.home so AppDataPaths.storeFile resolves to temp directory
         originalUserHome = System.getProperty("user.home")
         System.setProperty("user.home", tempDir.toString())
-
-        // After setting user.home, storeFile will resolve to:
-        // tempDir/Library/Application Support/EAFC26DiscordStats/published-matches.json
         storePath = tempDir.resolve("Library/Application Support/EAFC26DiscordStats/published-matches.json")
         store = makeStore()
     }
 
     @AfterEach
     fun tearDown() {
-        // Restore original user.home
-        if (originalUserHome != null) {
-            System.setProperty("user.home", originalUserHome!!)
-        }
+        if (originalUserHome != null) System.setProperty("user.home", originalUserHome!!)
     }
 
-    // -- loadIds --
+    private fun makeStore(): PublishedMatchStore {
+        val om = ObjectMapper().registerModule(KotlinModule.Builder().build())
+        return PublishedMatchStore(om)
+    }
+
+    // =========================================================================
+    // loadIds (backward compat)
+    // =========================================================================
 
     @Test
     fun `loadIds returns empty set when file does not exist`() {
@@ -48,10 +49,10 @@ class PublishedMatchStoreTest {
     }
 
     @Test
-    fun `loadIds returns stored IDs`() {
-        storePath.parent.toFile().mkdirs()
-        storePath.writeText("""["id1","id2","id3"]""")
-        assertThat(store.loadIds()).containsExactlyInAnyOrder("id1", "id2", "id3")
+    fun `loadIds returns IDs for DELIVERED and DELIVERY_UNCERTAIN records`() {
+        store.saveRecord(PublicationRecord("id1", PublicationState.DELIVERED))
+        store.saveRecord(PublicationRecord("id2", PublicationState.DELIVERY_UNCERTAIN))
+        assertThat(store.loadIds()).containsExactlyInAnyOrder("id1", "id2")
     }
 
     @Test
@@ -63,38 +64,28 @@ class PublishedMatchStoreTest {
             .hasMessageContaining("malformed JSON")
     }
 
-    // -- saveIds --
+    // =========================================================================
+    // saveIds (backward compat — baseline)
+    // =========================================================================
 
     @Test
-    fun `saveIds creates file and parent directories`() {
-        store.saveIds(setOf("aaa", "bbb"))
-        val loaded = store.loadIds()
-        assertThat(loaded).containsExactlyInAnyOrder("aaa", "bbb")
+    fun `saveIds saves all IDs as DELIVERED`() {
+        store.saveIds(setOf("a", "b", "c"))
+        val records = store.loadRecords()
+        assertThat(records.keys).containsExactlyInAnyOrder("a", "b", "c")
+        assertThat(records.values.map { it.state }.distinct()).containsExactly(PublicationState.DELIVERED)
     }
 
     @Test
-    fun `saveIds roundtrip preserves all IDs`() {
-        val ids = setOf("match-1", "match-2", "match-3")
-        store.saveIds(ids)
-        assertThat(store.loadIds()).isEqualTo(ids)
+    fun `saveIds roundtrip persists all IDs`() {
+        store.saveIds(setOf("match-1", "match-2", "match-3"))
+        assertThat(store.loadIds()).containsExactlyInAnyOrder("match-1", "match-2", "match-3")
     }
 
     @Test
-    fun `published IDs survive a store restart at the same stable path`() {
+    fun `saveIds published IDs survive store restart`() {
         store.saveIds(setOf("match-1", "match-2"))
-
-        val restartedStore = makeStore()
-
-        assertThat(restartedStore.loadIds()).containsExactlyInAnyOrder("match-1", "match-2")
-        assertThat(storePath).isEqualTo(
-            tempDir.resolve("Library/Application Support/EAFC26DiscordStats/published-matches.json")
-        )
-    }
-
-    @Test
-    fun `saveIds does not store duplicates`() {
-        store.saveIds(setOf("x", "x", "y"))
-        assertThat(store.loadIds()).containsExactlyInAnyOrder("x", "y")
+        assertThat(makeStore().loadIds()).containsExactlyInAnyOrder("match-1", "match-2")
     }
 
     @Test
@@ -105,17 +96,160 @@ class PublishedMatchStoreTest {
         assertThat(store.loadIds()).doesNotContain("old")
     }
 
-    @Test
-    fun `no temp file left after save`() {
-        store.saveIds(setOf("abc"))
-        val tmpFiles = storePath.parent.toFile().listFiles { f -> f.name.endsWith(".tmp") }
-        assertThat(tmpFiles ?: emptyArray()).isEmpty()
+    // =========================================================================
+    // saveRecord / loadRecords
+    // =========================================================================
+
+    @Nested
+    inner class RecordApi {
+
+        @Test
+        fun `saveRecord persists a DELIVERING record`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERING))
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERING)
+        }
+
+        @Test
+        fun `saveRecord updates existing record for same matchId`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERING))
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERED))
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
+        fun `saveRecord preserves other records`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERED))
+            store.saveRecord(PublicationRecord("m2", PublicationState.DELIVERING))
+            assertThat(store.loadRecords()).hasSize(2)
+        }
+
+        @Test
+        fun `removeRecord deletes a specific record`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERING))
+            store.saveRecord(PublicationRecord("m2", PublicationState.DELIVERED))
+            store.removeRecord("m1")
+            assertThat(store.loadRecords().keys).containsExactly("m2")
+        }
+
+        @Test
+        fun `removeRecord is no-op when matchId absent`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERED))
+            store.removeRecord("nonexistent")
+            assertThat(store.loadRecords()).hasSize(1)
+        }
     }
 
-    // -- helpers --
+    // =========================================================================
+    // Startup upgrade: DELIVERING → DELIVERY_UNCERTAIN
+    // =========================================================================
 
-    private fun makeStore(): PublishedMatchStore {
-        val om = ObjectMapper().registerModule(KotlinModule.Builder().build())
-        return PublishedMatchStore(om)
+    @Nested
+    inner class StartupUpgrade {
+
+        @Test
+        fun `DELIVERING records are upgraded to DELIVERY_UNCERTAIN on store init`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERING))
+            // Restart
+            val restarted = makeStore()
+            assertThat(restarted.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+        }
+
+        @Test
+        fun `DELIVERED records are unchanged on restart`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERED))
+            val restarted = makeStore()
+            assertThat(restarted.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
+        fun `DELIVERY_UNCERTAIN records are unchanged on restart`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERY_UNCERTAIN))
+            val restarted = makeStore()
+            assertThat(restarted.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+        }
+    }
+
+    // =========================================================================
+    // v1 → v2 migration
+    // =========================================================================
+
+    @Nested
+    inner class LegacyMigration {
+
+        @Test
+        fun `v1 string-array is migrated to DELIVERED records on first load`() {
+            storePath.parent.toFile().mkdirs()
+            storePath.writeText("""["id1","id2"]""")
+            val migrated = makeStore()
+            assertThat(migrated.loadRecords().values.map { it.state }.distinct())
+                .containsExactly(PublicationState.DELIVERED)
+            assertThat(migrated.loadIds()).containsExactlyInAnyOrder("id1", "id2")
+        }
+
+        @Test
+        fun `v1 migration creates backup`() {
+            storePath.parent.toFile().mkdirs()
+            storePath.writeText("""["id1"]""")
+            makeStore()
+            assertThat(storePath.resolveSibling("published-matches.json.v1.bak")).exists()
+        }
+
+        @Test
+        fun `v1 migration never overwrites an existing backup`() {
+            storePath.parent.toFile().mkdirs()
+            storePath.writeText("""["id1","id2"]""")
+            val backupPath = storePath.resolveSibling("published-matches.json.v1.bak")
+            backupPath.toFile().writeText("ORIGINAL BACKUP CONTENT — must not be overwritten")
+
+            // Second migration attempt (simulate accidental re-run)
+            makeStore()
+
+            assertThat(backupPath.toFile().readText()).isEqualTo("ORIGINAL BACKUP CONTENT — must not be overwritten")
+        }
+
+        @Test
+        fun `empty store file treated as first run`() {
+            assertThat(makeStore().loadIds()).isEmpty()
+        }
+    }
+
+    // =========================================================================
+    // Administrative resolution
+    // =========================================================================
+
+    @Nested
+    inner class AdminResolution {
+
+        @Test
+        fun `resolveAsDelivered changes DELIVERY_UNCERTAIN to DELIVERED`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERY_UNCERTAIN))
+            store.resolveAsDelivered("m1")
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
+        fun `resolveAsDelivered is no-op if already DELIVERED`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERED))
+            store.resolveAsDelivered("m1")
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
+        fun `resolveAsUndelivered removes the record`() {
+            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERY_UNCERTAIN))
+            store.resolveAsUndelivered("m1")
+            assertThat(store.loadRecords()).doesNotContainKey("m1")
+        }
+    }
+
+    // =========================================================================
+    // Atomicity
+    // =========================================================================
+
+    @Test
+    fun `no temp file left after save`() {
+        store.saveRecord(PublicationRecord("abc", PublicationState.DELIVERED))
+        val tmpFiles = storePath.parent.toFile().listFiles { f -> f.name.endsWith(".tmp") }
+        assertThat(tmpFiles ?: emptyArray()).isEmpty()
     }
 }

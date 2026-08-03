@@ -1,10 +1,6 @@
 package com.eafc26.discordstats.service
 
 import com.eafc26.discordstats.config.AppProperties
-import com.eafc26.discordstats.discord.DiscordDeliveryException
-import com.eafc26.discordstats.discord.DiscordPayload
-import com.eafc26.discordstats.discord.DiscordRenderer
-import com.eafc26.discordstats.discord.DiscordWebhookClient
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.MatchResponse
@@ -29,31 +25,27 @@ import org.springframework.stereotype.Service
  * 1. Acquires the shared lock (via [AcquisitionLock])
  * 2. Fetches matches from EA API
  * 3. Canonicalizes and persists the complete returned window
- * 4. Applies Discord publication deduplication
+ * 4. Applies Discord publication deduplication via [DiscordMatchPublicationService]
  * 5. Generates presentation and caches in [LatestMatchHolder]
  * 6. Delivers new matches to Discord (if applicable)
- * 7. Persists published match IDs
+ * 7. Persists published match IDs (inside [DiscordMatchPublicationService])
+ *
+ * Discord publication is fully delegated to [DiscordMatchPublicationService],
+ * which is the single authoritative component for deduplication, mutex, and
+ * webhook interaction. This service never calls [com.eafc26.discordstats.discord.DiscordWebhookClient] directly.
  *
  * The [AcquisitionLock] is an internal implementation detail.
  * Callers never interact with it directly.
- *
- * Acquisition state is reported through [AcquisitionStateHolder], which is
- * updated at each phase transition. This is the single source of truth for
- * acquisition status.
- *
- * The [LatestMatchHolder] caches the most recent presentation, allowing
- * MatchCardService to display data without querying EA on every request.
  */
 @Service
 class MatchAcquisitionService(
     @Qualifier("production") private val defaultGateway: EaClubsGateway,
     private val store: PublishedMatchStore,
-    private val webhookClient: DiscordWebhookClient,
+    private val publicationService: DiscordMatchPublicationService,
     private val props: AppProperties,
     private val stateHolder: AcquisitionStateHolder,
     private val latestMatchHolder: LatestMatchHolder,
     private val matchSummaryBuilder: MatchSummaryBuilder,
-    private val discordRenderer: DiscordRenderer,
     private val canonicalMatchRepository: CanonicalMatchRepository,
     private val canonicalMatchFactory: CanonicalMatchFactory,
 ) {
@@ -213,53 +205,81 @@ class MatchAcquisitionService(
         val latest = matches.maxByOrNull { it.timestamp }
             ?: return AcquisitionResult.NoMatches
         val canonical = canonicalByMatchId.getValue(latest.matchId)
-
         val summary = buildSummary(canonical)
-        val publishedIds = store.loadIds()
 
-        // Phase: CACHING - Generate and cache presentation BEFORE deduplication check
+        // Cache presentation BEFORE deduplication check
         stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
         val presentation = buildDashboardPresentation(canonical)
         val newVersion = latestMatchHolder.update(presentation)
         log.debug("Cached presentation for match {} (version={})", latest.matchId, newVersion)
 
-        // A new environment has no publication history. Establish the complete
-        // returned EA window as its baseline before any normal publication,
-        // regardless of whether the first trigger is manual, CLI or scheduled.
+        // First-run: establish baseline without publishing
+        val publishedIds = store.loadIds()
         if (publishedIds.isEmpty()) {
             return establishBaseline(matches)
         }
 
-        // Check deduplication AFTER caching
-        if (latest.matchId in publishedIds) {
-            log.info("Match {} already published, skipping Discord delivery", latest.matchId)
-            return AcquisitionResult.Processed(
-                published = emptyList(),
-                alreadyPublished = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary)),
-                failed = emptyList(),
-            )
+        // Delegate to centralized publication service (handles dedup + mutex + persistence)
+        stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Verificando e enviando para Discord...")
+        val pubResult = publicationService.publishIfNeeded(canonical)
+
+        return when (pubResult.outcome) {
+            PublicationOutcome.SKIPPED_ALREADY_DELIVERED -> {
+                AcquisitionResult.Processed(
+                    published = emptyList(),
+                    alreadyPublished = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary)),
+                    failed = emptyList(),
+                )
+            }
+            PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN -> {
+                log.warn("Match {} is DELIVERY_UNCERTAIN — blocked from automatic resend", latest.matchId)
+                AcquisitionResult.Processed(
+                    published = emptyList(),
+                    alreadyPublished = emptyList(),
+                    failed = emptyList(),
+                    deliveryUncertain = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary)),
+                )
+            }
+            PublicationOutcome.PUBLISHED, PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN -> {
+                stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando histórico...")
+                log.info("Published match {}", latest.matchId)
+                AcquisitionResult.Processed(
+                    published = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary,
+                        pubResult.outcome == PublicationOutcome.PUBLISHED)),
+                    alreadyPublished = emptyList(),
+                    failed = emptyList(),
+                )
+            }
+            PublicationOutcome.FAILED_BEFORE_SEND, PublicationOutcome.FAILED_HTTP -> {
+                val reason = pubResult.errorMessage ?: pubResult.outcome.name
+                if (reason.contains("not configured", ignoreCase = true) ||
+                    reason.contains("Webhook", ignoreCase = true)) {
+                    AcquisitionResult.WebhookNotConfigured
+                } else {
+                    AcquisitionResult.Processed(
+                        published = emptyList(),
+                        alreadyPublished = emptyList(),
+                        failed = listOf(AcquisitionResult.MatchFailure(latest.matchId, summary, reason)),
+                    )
+                }
+            }
+            PublicationOutcome.FAILED_AMBIGUOUS -> {
+                log.warn(
+                    "Match {} delivery AMBIGUOUS — DELIVERY_UNCERTAIN saved. " +
+                        "Manual resolution required via admin endpoint. Error: {}",
+                    latest.matchId, pubResult.errorMessage,
+                )
+                AcquisitionResult.Processed(
+                    published = emptyList(),
+                    alreadyPublished = emptyList(),
+                    failed = listOf(AcquisitionResult.MatchFailure(
+                        latest.matchId, summary,
+                        "DELIVERY_UNCERTAIN: ${pubResult.errorMessage ?: "network error after potential send"}"
+                    )),
+                    deliveryUncertain = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary)),
+                )
+            }
         }
-
-        // Phase: DELIVERING
-        stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Enviando para Discord...")
-
-        // Deliver to Discord
-        val deliveryResult = deliverToDiscord(canonical)
-        if (deliveryResult != null) {
-            return deliveryResult
-        }
-
-        // Phase: PERSISTING
-        stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando histórico...")
-
-        val persisted = persistMatch(latest.matchId, publishedIds)
-
-        log.info("Published match {}", latest.matchId)
-        return AcquisitionResult.Processed(
-            published = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary, persisted)),
-            alreadyPublished = emptyList(),
-            failed = emptyList(),
-        )
     }
 
     /**
@@ -284,7 +304,6 @@ class MatchAcquisitionService(
         val latestMatch = matches.maxByOrNull { it.timestamp }
             ?: return AcquisitionResult.NoMatches
         val canonical = canonicalByMatchId.getValue(latestMatch.matchId)
-
         val summary = buildSummary(canonical)
 
         // Phase: CACHING - Generate and cache presentation (marked as simulated)
@@ -353,46 +372,52 @@ class MatchAcquisitionService(
         }
 
         log.info("Found {} new match(es) to publish", newMatches.size)
-
-        // Phase: DELIVERING (for multiple matches)
         stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Enviando ${newMatches.size} partida(s)...")
 
-        // Process each match
         val published = mutableListOf<AcquisitionResult.MatchSummary>()
         val failed = mutableListOf<AcquisitionResult.MatchFailure>()
-        val currentIds = publishedIds.toMutableSet()
 
         for ((index, match) in newMatches.withIndex()) {
             val canonical = canonicalByMatchId.getValue(match.matchId)
             val summary = buildSummary(canonical)
             stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Enviando partida ${index + 1}/${newMatches.size}...")
 
-            try {
-                webhookClient.send(buildDiscordPayload(canonical))
+            val pubResult = publicationService.publishIfNeeded(canonical)
 
-                stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando partida ${index + 1}/${newMatches.size}...")
-
-                currentIds += match.matchId
-                val persisted = try {
-                    store.saveIds(currentIds)
-                    log.info("Published match {}", match.matchId)
-                    true
-                } catch (ex: Exception) {
-                    log.error("Persistence failed after Discord delivery for match {}", match.matchId, ex)
-                    false
+            when (pubResult.outcome) {
+                PublicationOutcome.PUBLISHED -> {
+                    stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando partida ${index + 1}/${newMatches.size}...")
+                    published += AcquisitionResult.MatchSummary(match.matchId, summary, true)
                 }
-
-                published += AcquisitionResult.MatchSummary(match.matchId, summary, persisted)
-
-            } catch (ex: IllegalStateException) {
-                log.error("Discord webhook not configured — aborting cycle: {}", ex.message)
-                return AcquisitionResult.WebhookNotConfigured
-            } catch (ex: DiscordDeliveryException) {
-                log.warn("Discord delivery failed for match {} — will retry next cycle: {}", match.matchId, ex.message)
-                failed += AcquisitionResult.MatchFailure(match.matchId, summary, ex.message ?: "Delivery failed")
-            } catch (ex: Exception) {
-                log.error("Unexpected error publishing match {}", match.matchId, ex)
-                failed += AcquisitionResult.MatchFailure(match.matchId, summary, ex.message ?: "Unexpected error")
+                PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN -> {
+                    stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando partida ${index + 1}/${newMatches.size}...")
+                    published += AcquisitionResult.MatchSummary(match.matchId, summary, false)
+                }
+                PublicationOutcome.SKIPPED_ALREADY_DELIVERED -> {
+                    log.info("Match {} concurrently delivered — skipping", match.matchId)
+                }
+                PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN -> {
+                    log.warn("Match {} is DELIVERY_UNCERTAIN — blocked from automatic resend", match.matchId)
+                }
+                PublicationOutcome.FAILED_BEFORE_SEND, PublicationOutcome.FAILED_HTTP -> {
+                    val reason = pubResult.errorMessage ?: pubResult.outcome.name
+                    if (reason.contains("not configured", ignoreCase = true) ||
+                        reason.contains("Webhook", ignoreCase = true)) {
+                        return AcquisitionResult.WebhookNotConfigured
+                    }
+                    failed += AcquisitionResult.MatchFailure(match.matchId, summary, reason)
+                }
+                PublicationOutcome.FAILED_AMBIGUOUS -> {
+                    log.warn(
+                        "Match {} delivery AMBIGUOUS — DELIVERY_UNCERTAIN saved. " +
+                            "Manual resolution required. Error: {}",
+                        match.matchId, pubResult.errorMessage,
+                    )
+                    failed += AcquisitionResult.MatchFailure(
+                        match.matchId, summary,
+                        "DELIVERY_UNCERTAIN: ${pubResult.errorMessage ?: "network error after potential send"}"
+                    )
+                }
             }
         }
 
@@ -435,8 +460,11 @@ class MatchAcquisitionService(
     }
 
     /**
-     * Force resend the latest match, bypassing deduplication.
-     * Does not modify the published IDs store.
+     * Force-resend the latest match, bypassing deduplication.
+     *
+     * After successful delivery, [DiscordMatchPublicationService.forcePublish]
+     * marks the match as published in the store so the scheduler will NOT
+     * re-publish it on the next cycle.
      */
     private fun processForceResend(
         matches: List<MatchResponse>,
@@ -445,9 +473,7 @@ class MatchAcquisitionService(
         val latest = matches.maxByOrNull { it.timestamp }
             ?: return AcquisitionResult.NoMatches
         val canonical = canonicalByMatchId.getValue(latest.matchId)
-
         val summary = buildSummary(canonical)
-        val alreadyPublished = store.loadIds().contains(latest.matchId)
 
         // Phase: CACHING - Generate and cache presentation
         stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
@@ -458,67 +484,52 @@ class MatchAcquisitionService(
         // Phase: DELIVERING
         stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Reenviando para Discord...")
 
-        // Deliver to Discord (no dedup check)
-        val deliveryResult = deliverToDiscord(canonical)
-        if (deliveryResult != null) {
-            return deliveryResult
+        val pubResult = publicationService.forcePublish(canonical)
+
+        return when (pubResult.outcome) {
+            PublicationOutcome.PUBLISHED, PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN -> {
+                log.info("Force-resent match {}", latest.matchId)
+                AcquisitionResult.ForceResent(
+                    match = AcquisitionResult.MatchSummary(latest.matchId, summary)
+                )
+            }
+            PublicationOutcome.FAILED_BEFORE_SEND, PublicationOutcome.FAILED_HTTP -> {
+                val reason = pubResult.errorMessage ?: pubResult.outcome.name
+                if (reason.contains("not configured", ignoreCase = true) ||
+                    reason.contains("Webhook", ignoreCase = true)) {
+                    AcquisitionResult.WebhookNotConfigured
+                } else {
+                    AcquisitionResult.Processed(
+                        published = emptyList(),
+                        alreadyPublished = emptyList(),
+                        failed = listOf(AcquisitionResult.MatchFailure(latest.matchId, summary, reason)),
+                    )
+                }
+            }
+            PublicationOutcome.FAILED_AMBIGUOUS -> {
+                log.warn(
+                    "Force-resend of match {} delivery AMBIGUOUS — DELIVERY_UNCERTAIN saved. " +
+                        "Manual resolution required. Error: {}",
+                    latest.matchId, pubResult.errorMessage,
+                )
+                AcquisitionResult.Processed(
+                    published = emptyList(),
+                    alreadyPublished = emptyList(),
+                    failed = listOf(AcquisitionResult.MatchFailure(
+                        latest.matchId, summary,
+                        "DELIVERY_UNCERTAIN: ${pubResult.errorMessage ?: "network error after potential send"}"
+                    )),
+                    deliveryUncertain = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary)),
+                )
+            }
+            PublicationOutcome.SKIPPED_ALREADY_DELIVERED,
+            PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN -> error("forcePublish never returns SKIPPED")
         }
-
-        // Do NOT persist — force resend doesn't affect the store
-        log.info("Force-resent match {} (already published: {})", latest.matchId, alreadyPublished)
-
-        return AcquisitionResult.ForceResent(
-            match = AcquisitionResult.MatchSummary(latest.matchId, summary)
-        )
     }
 
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
-
-    /**
-     * Delivers a match to the configured Discord webhook.
-     * @return An error result if delivery failed, or null if successful.
-     */
-    private fun deliverToDiscord(
-        canonical: CanonicalMatch,
-    ): AcquisitionResult? {
-        try {
-            webhookClient.send(buildDiscordPayload(canonical))
-        } catch (ex: IllegalStateException) {
-            log.error("Discord webhook not configured: {}", ex.message)
-            return AcquisitionResult.WebhookNotConfigured
-        } catch (ex: DiscordDeliveryException) {
-            log.warn("Discord delivery failed for match {}: {}", canonical.matchId.value, ex.message)
-            // For single-match operations, return as a Processed with failure
-            val summary = buildSummary(canonical)
-            return AcquisitionResult.Processed(
-                published = emptyList(),
-                alreadyPublished = emptyList(),
-                failed = listOf(AcquisitionResult.MatchFailure(
-                    canonical.matchId.value,
-                    summary,
-                    ex.message ?: "Delivery failed"
-                )),
-            )
-        }
-
-        return null // Success
-    }
-
-    /**
-     * Persists a match ID to the published store.
-     * @return true if persistence succeeded, false otherwise.
-     */
-    private fun persistMatch(matchId: String, existingIds: Set<String>): Boolean {
-        return try {
-            store.saveIds(existingIds + matchId)
-            true
-        } catch (ex: Exception) {
-            log.error("Discord delivery succeeded but persistence failed for match {}", matchId, ex)
-            false
-        }
-    }
 
     private fun buildDashboardPresentation(
         canonical: CanonicalMatch,
@@ -532,16 +543,6 @@ class MatchAcquisitionService(
         )
     }
 
-    private fun buildDiscordPayload(
-        canonical: CanonicalMatch,
-    ): DiscordPayload {
-        return discordRenderer.renderMatch(
-            canonical.footballMatch,
-            canonical.interpretation,
-            canonical.stories,
-        )
-    }
-
     /**
      * Builds a human-readable summary of a match.
      */
@@ -551,7 +552,7 @@ class MatchAcquisitionService(
         val ourClub = normalized.participants.first { it.club.id == interpretation.perspectiveClubId }
         val opponent = normalized.participants.first { it.club.id == interpretation.result.opponentClub }
         return "${ourClub.club.name?.value ?: props.ea.clubName} " +
-            "${interpretation.result.ourScore.goals} × ${interpretation.result.opponentScore.goals} " +
+            "${interpretation.result.ourScore.goals}  ${interpretation.result.opponentScore.goals} " +
             (opponent.club.name?.value ?: "Adversário")
     }
 }
