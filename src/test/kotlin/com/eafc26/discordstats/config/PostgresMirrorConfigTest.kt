@@ -18,4 +18,16 @@ class PostgresMirrorConfigTest {
         val props = AppProperties()
         assertThat(props.acquisition.enabled).isTrue()
     }
+
+    @Test
+    fun `sync-enabled defaults to false in AppProperties`() {
+        val props = AppProperties()
+        assertThat(props.postgres.syncEnabled).isFalse()
+    }
+
+    @Test
+    fun `sync-interval defaults to 5 minutes in AppProperties`() {
+        val props = AppProperties()
+        assertThat(props.postgres.syncIntervalMs).isEqualTo(300_000L)
+    }
 }

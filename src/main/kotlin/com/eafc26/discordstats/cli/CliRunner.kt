@@ -8,7 +8,7 @@ import com.eafc26.discordstats.service.AcquisitionTrigger
 import com.eafc26.discordstats.service.CanonicalBackfillResult
 import com.eafc26.discordstats.service.CanonicalBackfillService
 import com.eafc26.discordstats.service.MatchAcquisitionService
-import com.eafc26.discordstats.service.PostgresBackfillService
+import com.eafc26.discordstats.service.PostgresSyncService
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
@@ -32,7 +32,7 @@ class CliRunner(
     private val props: AppProperties,
     private val acquisitionService: MatchAcquisitionService,
     private val canonicalBackfillService: CanonicalBackfillService,
-    private val postgresBackfillService: PostgresBackfillService?,
+    private val postgresSyncService: PostgresSyncService?,
     private val out: PrintStream = PrintStream(System.out, true, StandardCharsets.UTF_8),
     private val exit: (Int) -> Unit = { code -> exitProcess(code) },
 ) : ApplicationRunner {
@@ -45,10 +45,11 @@ class CliRunner(
             CMD_MATCHES       -> runLatestMatches()
             CMD_NOTIFY_LATEST -> runNotifyLatest()
             CMD_BACKFILL      -> runCanonicalBackfill()
-            CMD_BACKFILL_PG   -> runPostgresBackfill()
+            CMD_BACKFILL_PG   -> runPostgresSync()
+            CMD_SYNC_PG       -> runPostgresSync()
             else -> {
                 out.println("Unknown command: '$command'")
-                out.println("Available commands: $CMD_SEARCH, $CMD_MATCHES, $CMD_NOTIFY_LATEST, $CMD_BACKFILL, $CMD_BACKFILL_PG")
+                out.println("Available commands: $CMD_SEARCH, $CMD_MATCHES, $CMD_NOTIFY_LATEST, $CMD_BACKFILL, $CMD_SYNC_PG")
                 exit(1)
             }
         }
@@ -246,21 +247,22 @@ class CliRunner(
         }
     }
 
-    private fun runPostgresBackfill() {
-        if (postgresBackfillService == null) {
+    private fun runPostgresSync() {
+        if (postgresSyncService == null) {
             out.println("ERROR: PostgreSQL mirror is not enabled. Set EAFC_POSTGRES_MIRROR_ENABLED=true")
             exit(1)
             return
         }
-        out.println("Backfilling PostgreSQL from local JSON canonical matches...")
-        val result = postgresBackfillService.backfill()
+        out.println("Syncing local JSON canonical matches to PostgreSQL...")
+        val result = postgresSyncService.sync()
         out.println("Found: ${result.found}")
-        out.println("Created: ${result.created}")
-        out.println("Updated: ${result.updated}")
+        out.println("Synced: ${result.synced}")
         out.println("Failures: ${result.failures.size}")
         result.failures.forEach { failure ->
             out.println("  ${failure.matchId}: ${failure.message}")
         }
+        out.println("Local: ${result.localCount}  Remote: ${result.remoteCount ?: "unavailable"}")
+        out.println("Duration: ${result.durationMs}ms")
         exit(if (result.failures.isEmpty()) 0 else 1)
     }
 
@@ -269,6 +271,7 @@ class CliRunner(
         const val CMD_MATCHES       = "latest-matches"
         const val CMD_NOTIFY_LATEST = "notify-latest"
         const val CMD_BACKFILL      = "backfill-canonical-matches"
+        const val CMD_SYNC_PG       = "sync-postgres"
         const val CMD_BACKFILL_PG   = "backfill-postgres"
     }
 }
