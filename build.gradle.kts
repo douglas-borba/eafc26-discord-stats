@@ -41,9 +41,9 @@ dependencies {
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("io.projectreactor:reactor-test")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.3.1")
-    testImplementation("org.testcontainers:testcontainers:1.19.8")
-    testImplementation("org.testcontainers:postgresql:1.19.8")
-    testImplementation("org.testcontainers:junit-jupiter:1.19.8")
+    testImplementation("org.testcontainers:testcontainers:1.21.0")
+    testImplementation("org.testcontainers:postgresql:1.21.0")
+    testImplementation("org.testcontainers:junit-jupiter:1.21.0")
 }
 
 tasks.withType<KotlinCompile> {
@@ -55,6 +55,8 @@ tasks.withType<KotlinCompile> {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    systemProperty("api.version", "1.43")
+    environment("DOCKER_API_VERSION", "1.43")
 }
 
 tasks.named<BootRun>("bootRun") {
