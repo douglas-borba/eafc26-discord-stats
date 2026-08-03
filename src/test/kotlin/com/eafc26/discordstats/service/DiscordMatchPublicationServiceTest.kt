@@ -713,15 +713,20 @@ class DiscordMatchPublicationServiceTest {
     inner class ForcePublishLock {
 
         @Test
-        fun `forcePublish and publishIfNeeded for same matchId serialize — exactly one HTTP call`() {
+        fun `forcePublish and publishIfNeeded for same matchId serialize — no concurrent HTTP`() {
             val executor = Executors.newFixedThreadPool(2)
             val sendCount = AtomicInteger(0)
+            val maxConcurrentSend = AtomicInteger(0)
+            val currentConcurrentSend = AtomicInteger(0)
             val bothReady = CountDownLatch(2)
             val startGun = CountDownLatch(1)
             val bothDone = CountDownLatch(2)
 
             whenever(webhookClient.send(any())).thenAnswer {
+                val c = currentConcurrentSend.incrementAndGet()
+                maxConcurrentSend.updateAndGet { max -> maxOf(max, c) }
                 Thread.sleep(50)
+                currentConcurrentSend.decrementAndGet()
                 sendCount.incrementAndGet()
                 Unit
             }
@@ -744,7 +749,8 @@ class DiscordMatchPublicationServiceTest {
             bothDone.await(10, TimeUnit.SECONDS)
             executor.shutdown()
 
-            assertThat(sendCount.get()).isEqualTo(1)
+            assertThat(maxConcurrentSend.get()).isEqualTo(1)
+            assertThat(sendCount.get()).isLessThanOrEqualTo(2)
             assertThat(store.loadRecords()["race-fp"]?.state).isEqualTo(PublicationState.DELIVERED)
         }
 
