@@ -46,6 +46,7 @@ class PostgresCanonicalMatchRepositoryTest {
         @JvmStatic
         fun initSchema() {
             val ds = DriverManagerDataSource(postgres.jdbcUrl, postgres.username, postgres.password)
+            JdbcTemplate(ds).execute("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF; END $$")
             Flyway.configure().dataSource(ds).locations("classpath:db/migration").load().migrate()
             jdbcTemplate = JdbcTemplate(ds)
         }
@@ -159,6 +160,55 @@ class PostgresCanonicalMatchRepositoryTest {
         assertThat(repository.findAll()).hasSize(2)
         assertThat(repository.findById(MatchId("match-1"))).isEqualTo(match1)
         assertThat(repository.findById(MatchId("match-2"))).isEqualTo(match2)
+    }
+
+    @Test
+    fun `save populates denormalized read model columns`() {
+        val match = canonicalMatch("denorm-test", 1_718_500_000L)
+        repository.save(match)
+        val row = jdbcTemplate.queryForMap(
+            "SELECT outcome, our_score, opponent_score, our_club_name, opponent_club_name FROM canonical_matches WHERE match_id = ?",
+            "denorm-test",
+        )
+        assertThat(row["outcome"]).isEqualTo("WIN")
+        assertThat(row["our_score"]).isEqualTo(3)
+        assertThat(row["opponent_score"]).isEqualTo(1)
+        assertThat(row["our_club_name"]).isEqualTo("Our FC")
+        assertThat(row["opponent_club_name"]).isEqualTo("Opponent FC")
+    }
+
+    @Test
+    fun `save populates player_match_stats table`() {
+        val match = canonicalMatch("player-stats-test", 1_718_500_000L)
+        repository.save(match)
+        val count = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM player_match_stats WHERE match_id = ?",
+            Int::class.java,
+            "player-stats-test",
+        )
+        assertThat(count).isEqualTo(3)
+
+        val mvp = jdbcTemplate.queryForMap(
+            "SELECT * FROM player_match_stats WHERE match_id = ? AND player_id = ?",
+            "player-stats-test", "mvp",
+        )
+        assertThat(mvp["platform_name"]).isEqualTo("MVP")
+        assertThat(mvp["goals"]).isEqualTo(2)
+        assertThat(mvp["man_of_the_match"]).isEqualTo(true)
+        assertThat(mvp["rating"]).isNotNull
+    }
+
+    @Test
+    fun `upsert replaces player_match_stats without duplicates`() {
+        val match = canonicalMatch("upsert-players", 1_718_500_000L)
+        repository.save(match)
+        repository.save(match)
+        val count = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM player_match_stats WHERE match_id = ?",
+            Int::class.java,
+            "upsert-players",
+        )
+        assertThat(count).isEqualTo(3)
     }
 
     @Test

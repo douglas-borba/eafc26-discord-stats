@@ -56,6 +56,7 @@ class PostgresSyncIntegrationTest {
         @JvmStatic
         fun initSchema() {
             val ds = DriverManagerDataSource(postgres.jdbcUrl, postgres.username, postgres.password)
+            JdbcTemplate(ds).execute("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF; END $$")
             Flyway.configure().dataSource(ds).locations("classpath:db/migration").load().migrate()
             jdbcTemplate = JdbcTemplate(ds)
         }
