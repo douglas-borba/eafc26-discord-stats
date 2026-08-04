@@ -1,73 +1,185 @@
-import { Panel } from "@/components/ui/panel";
-import { OutcomeBadge } from "@/components/ui/outcome-badge";
-import { formatDate, ratingColor } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import type { PlayerProfile } from "@/lib/domain/types";
 
-export function PlayerProfileView({ profile }: { profile: PlayerProfile }) {
-  const passRate = profile.totalPassesAttempted > 0
-    ? Math.round((profile.totalPassesCompleted / profile.totalPassesAttempted) * 100)
-    : 0;
-  const tackleRate = profile.totalTacklesAttempted > 0
-    ? Math.round((profile.totalTacklesCompleted / profile.totalTacklesAttempted) * 100)
-    : 0;
+const OUTCOME_PILL: Record<"WIN" | "DRAW" | "LOSS", { color: string; bg: string; label: string }> = {
+  WIN:  { color: "#3fb950", bg: "rgba(63,185,80,.12)",  label: "Vitória" },
+  DRAW: { color: "#d29922", bg: "rgba(210,153,34,.12)", label: "Empate" },
+  LOSS: { color: "#f85149", bg: "rgba(248,81,73,.12)",  label: "Derrota" },
+};
+
+export function PlayerProfileView({ profile, clubId }: { profile: PlayerProfile; clubId: string }) {
+  const wins = profile.recentMatches.filter((m) => m.outcome === "WIN").length;
+  const draws = profile.recentMatches.filter((m) => m.outcome === "DRAW").length;
+  const losses = profile.recentMatches.filter((m) => m.outcome === "LOSS").length;
+
+  const ratedCount = profile.recentMatches.filter((m) => m.rating != null).length;
+
+  const stats: { label: string; value: string | number; emoji?: string }[] = [
+    { label: "Partidas", value: profile.matchesPlayed },
+    { label: "Média", value: profile.averageRating?.toFixed(2) ?? "—" },
+    { label: "Gols", value: profile.totalGoals },
+    { label: "Assistências", value: profile.totalAssists },
+    { label: "Craques", value: profile.manOfTheMatchCount, emoji: "⭐" },
+    { label: "Menor Desempenho", value: "—", emoji: "📉" },
+    { label: "Xerifes", value: "—", emoji: "🛡️" },
+    { label: "Vermelhos", value: profile.redCardCount, emoji: "🟥" },
+  ];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-text-primary">
-          {profile.displayName ?? profile.platformName ?? profile.playerId}
-        </h2>
-        {profile.proName && profile.platformName && profile.proName !== profile.platformName && (
-          <p className="text-sm text-muted mt-0.5">{profile.platformName}</p>
-        )}
-      </div>
+    <div>
+      <style>{`
+        .profile-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; }
+        .profile-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 28px; }
+        .match-row { display: grid; grid-template-columns: 130px minmax(0,1fr) auto; align-items: center; gap: 14px; padding: 12px 14px; }
+        @media (max-width: 850px) {
+          .profile-header { flex-direction: column; align-items: flex-start; }
+          .profile-stats { grid-template-columns: repeat(2, 1fr); }
+          .match-row { grid-template-columns: 1fr auto; }
+          .match-date-col { grid-column: 1 / -1; }
+        }
+      `}</style>
 
-      {/* Record badges */}
-      <div className="flex gap-2">
-        <RecordBadge label="V" value={0} color="bg-win" />
-        <RecordBadge label="E" value={0} color="bg-draw" />
-        <RecordBadge label="D" value={0} color="bg-loss" />
-        <span className="text-sm text-muted self-center ml-2">{profile.matchesPlayed} partidas</span>
+      {/* Profile header */}
+      <div className="profile-header">
+        <div>
+          <p
+            style={{
+              fontSize: 12,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "var(--color-text-muted)",
+              marginBottom: 4,
+            }}
+          >
+            Perfil histórico
+          </p>
+          <h2
+            style={{
+              fontSize: 28,
+              fontWeight: 700,
+              color: "var(--color-text-primary)",
+              margin: 0,
+              lineHeight: 1.2,
+            }}
+          >
+            {profile.displayName ?? profile.platformName ?? profile.playerId}
+          </h2>
+          <p style={{ fontSize: 13, color: "var(--color-text-muted)", marginTop: 4 }}>
+            {ratedCount} partidas com nota
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <RecordBadge outcome="WIN" value={wins} suffix="V" />
+          <RecordBadge outcome="DRAW" value={draws} suffix="E" />
+          <RecordBadge outcome="LOSS" value={losses} suffix="D" />
+        </div>
       </div>
 
       {/* Stat grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatItem label="Partidas" value={profile.matchesPlayed} />
-        <StatItem label="Média" value={profile.averageRating?.toFixed(2) ?? "—"} />
-        <StatItem label="Gols" value={profile.totalGoals} />
-        <StatItem label="Assistências" value={profile.totalAssists} />
-        <StatItem label="Craques" value={profile.manOfTheMatchCount} emoji="⭐" />
-        <StatItem label="Finalizações" value={profile.totalShots} />
-        <StatItem label="Passes" value={`${passRate}%`} subtitle={`${profile.totalPassesCompleted}/${profile.totalPassesAttempted}`} />
-        <StatItem label="Desarmes" value={`${tackleRate}%`} subtitle={`${profile.totalTacklesCompleted}/${profile.totalTacklesAttempted}`} />
+      <div className="profile-stats">
+        {stats.map((s) => (
+          <div
+            key={s.label}
+            style={{
+              padding: 14,
+              border: "1px solid var(--color-border)",
+              borderRadius: 9,
+              background: "var(--color-surface-raised)",
+            }}
+          >
+            <p style={{ fontSize: 24, fontWeight: 700, color: "var(--color-text-primary)", margin: 0 }}>
+              {s.value}
+            </p>
+            <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
+              {s.emoji ? `${s.emoji} ` : ""}{s.label}
+            </p>
+          </div>
+        ))}
       </div>
 
       {/* Recent matches */}
       {profile.recentMatches.length > 0 && (
         <div>
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-3">Últimas Partidas</h3>
-          <div className="space-y-1">
-            {profile.recentMatches.map((m) => (
-              <Panel key={m.matchId} className="flex items-center gap-3 py-3 px-4">
-                <OutcomeBadge outcome={m.outcome} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-text-primary truncate">
-                    vs {m.opponentClubName ?? "Adversário"}
-                  </p>
-                  <p className="text-xs text-muted">{formatDate(m.playedAt)}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-sm font-bold">{m.goals}G {m.assists}A</p>
-                  {m.rating != null && (
-                    <p className={`text-xs font-semibold ${ratingColor(m.rating)}`}>{m.rating.toFixed(1)}</p>
-                  )}
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-lg font-black">{(m as { ourScore: number }).ourScore}×{(m as { opponentScore: number }).opponentScore}</p>
-                </div>
-              </Panel>
-            ))}
+          <h3
+            style={{
+              fontSize: 16,
+              fontWeight: 700,
+              color: "var(--color-text-primary)",
+              marginBottom: 12,
+            }}
+          >
+            Últimas partidas
+          </h3>
+          <div style={{ display: "grid", gap: 4 }}>
+            {profile.recentMatches.map((m) => {
+              const pill = OUTCOME_PILL[m.outcome];
+              const ourClub = "Associação BF";
+              const opponent = m.opponentClubName ?? "Adversário";
+
+              return (
+                <a
+                  key={m.matchId}
+                  href={`/clubs/${clubId}/matches?match=${m.matchId}`}
+                  style={{ textDecoration: "none", color: "inherit" }}
+                >
+                  <div
+                    className="match-row"
+                    style={{
+                      border: "1px solid var(--color-border)",
+                      borderRadius: 8,
+                      background: "var(--color-surface-panel)",
+                      transition: "background 0.15s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "var(--color-surface-raised)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "var(--color-surface-panel)";
+                    }}
+                  >
+                    {/* Date column */}
+                    <div className="match-date-col">
+                      <span
+                        style={{
+                          color: pill.color,
+                          fontWeight: 700,
+                          fontSize: 13,
+                        }}
+                      >
+                        {pill.label}
+                      </span>
+                      <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 2 }}>
+                        {formatDate(m.playedAt)}
+                      </p>
+                    </div>
+
+                    {/* Middle: clubs + awards */}
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ fontWeight: 700, fontSize: 14, color: "var(--color-text-primary)", margin: 0 }}>
+                        {ourClub} &times; {opponent}
+                      </p>
+                      <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 2 }}>
+                        {m.rating != null ? `Nota ${m.rating.toFixed(1)}` : "Sem nota"}
+                        {" · "}{m.goals} G · {m.assists} A
+                      </p>
+                    </div>
+
+                    {/* Score */}
+                    <div
+                      style={{
+                        fontSize: 17,
+                        fontWeight: 800,
+                        color: "var(--color-text-primary)",
+                        textAlign: "right",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {m.ourScore}&times;{m.opponentScore}
+                    </div>
+                  </div>
+                </a>
+              );
+            })}
           </div>
         </div>
       )}
@@ -75,20 +187,20 @@ export function PlayerProfileView({ profile }: { profile: PlayerProfile }) {
   );
 }
 
-function RecordBadge({ label, color }: { label: string; value: number; color: string }) {
+function RecordBadge({ outcome, value, suffix }: { outcome: "WIN" | "DRAW" | "LOSS"; value: number; suffix: string }) {
   return (
-    <span className={`inline-flex items-center justify-center w-7 h-7 rounded text-xs font-bold text-white ${color}`}>
-      {label}
+    <span
+      style={{
+        color: OUTCOME_PILL[outcome].color,
+        background: OUTCOME_PILL[outcome].bg,
+        padding: "5px 9px",
+        borderRadius: 999,
+        fontWeight: 700,
+        fontSize: 13,
+      }}
+    >
+      {value}{suffix}
     </span>
   );
 }
 
-function StatItem({ label, value, emoji, subtitle }: { label: string; value: string | number; emoji?: string; subtitle?: string }) {
-  return (
-    <Panel>
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-1">{label} {emoji}</p>
-      <p className="text-xl font-bold text-text-primary">{value}</p>
-      {subtitle && <p className="text-xs text-muted mt-0.5">{subtitle}</p>}
-    </Panel>
-  );
-}
