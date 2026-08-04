@@ -144,7 +144,6 @@ export interface MuralhaSection {
 export async function getLatestMatchCard(clubId: string): Promise<MatchCardResponse> {
   const supabase = createServerSupabase();
 
-  // Get latest editorial presentation from read-only view
   const { data, error } = await supabase
     .from("dashboard_editorial_presentations")
     .select("presentation")
@@ -164,4 +163,26 @@ export async function getLatestMatchCard(clubId: string): Promise<MatchCardRespo
     status: "success",
     presentation: data.presentation as MatchSummaryPresentation,
   };
+}
+
+export async function getRecentMatchCards(
+  clubId: string,
+  limit: number = 3,
+): Promise<MatchSummaryPresentation[]> {
+  const supabase = createServerSupabase();
+
+  const { data, error } = await supabase
+    .from("dashboard_editorial_presentations")
+    .select("presentation")
+    .eq("club_id", clubId)
+    .order("played_at", { ascending: false })
+    .limit(limit);
+
+  if (error || !data) {
+    return [];
+  }
+
+  return data
+    .map((row) => row.presentation as MatchSummaryPresentation | null)
+    .filter((p): p is MatchSummaryPresentation => p != null);
 }

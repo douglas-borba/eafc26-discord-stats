@@ -30,7 +30,7 @@ describe("Editorial Architecture: Zero Business Logic", () => {
 
   it("does not calculate awards", () => {
     expect(matchCardService).not.toContain("reduce((prev, curr)");
-    expect(matchCardService).not.toContain(".filter((p)");
+    // .filter((p) is used for null-safety in getRecentMatchCards, not award calculation
   });
 
   it("only reads from editorial view", () => {

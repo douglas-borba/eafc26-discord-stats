@@ -10,21 +10,21 @@ function readFile(relativePath: string): string {
 
 describe("UX: Split-pane pages use searchParams", () => {
   it("matches page accepts ?match= searchParam and auto-selects first", () => {
-    const page = readFile("app/clubs/[clubId]/matches/page.tsx");
+    const page = readFile("app/clubs/[clubId]/(sidebar)/matches/page.tsx");
     expect(page).toContain("searchParams");
     expect(page).toContain("match:");
     expect(page).toContain("result.content[0]?.matchId");
   });
 
   it("players page accepts ?player= searchParam and auto-selects first", () => {
-    const page = readFile("app/clubs/[clubId]/players/page.tsx");
+    const page = readFile("app/clubs/[clubId]/(sidebar)/players/page.tsx");
     expect(page).toContain("searchParams");
     expect(page).toContain("player:");
     expect(page).toContain("result.content[0]?.playerId");
   });
 
   it("opponents page accepts ?opponent= searchParam and auto-selects first", () => {
-    const page = readFile("app/clubs/[clubId]/opponents/page.tsx");
+    const page = readFile("app/clubs/[clubId]/(sidebar)/opponents/page.tsx");
     expect(page).toContain("searchParams");
     expect(page).toContain("opponent:");
     expect(page).toContain("result.content[0]?.clubId");
@@ -33,19 +33,19 @@ describe("UX: Split-pane pages use searchParams", () => {
 
 describe("UX: Detail routes redirect to searchParam versions", () => {
   it("matches/[matchId] redirects to ?match=", () => {
-    const page = readFile("app/clubs/[clubId]/matches/[matchId]/page.tsx");
+    const page = readFile("app/clubs/[clubId]/(sidebar)/matches/[matchId]/page.tsx");
     expect(page).toContain("redirect");
     expect(page).toContain("?match=");
   });
 
   it("players/[playerId] redirects to ?player=", () => {
-    const page = readFile("app/clubs/[clubId]/players/[playerId]/page.tsx");
+    const page = readFile("app/clubs/[clubId]/(sidebar)/players/[playerId]/page.tsx");
     expect(page).toContain("redirect");
     expect(page).toContain("?player=");
   });
 
   it("opponents/[opponentClubId] redirects to ?opponent=", () => {
-    const page = readFile("app/clubs/[clubId]/opponents/[opponentClubId]/page.tsx");
+    const page = readFile("app/clubs/[clubId]/(sidebar)/opponents/[opponentClubId]/page.tsx");
     expect(page).toContain("redirect");
     expect(page).toContain("?opponent=");
   });
@@ -210,13 +210,12 @@ describe("UX: Opponent history completeness", () => {
 });
 
 describe("UX: Overview completeness", () => {
-  const page = readFile("app/clubs/[clubId]/overview/page.tsx");
+  const page = readFile("app/clubs/[clubId]/(fullwidth)/overview/page.tsx");
 
-  it("fetches last match detail", () => {
-    // Uses getLatestMatchCard with clubId - independent from Spring Boot
-    expect(page).toContain("getLatestMatchCard");
+  it("fetches recent match cards", () => {
+    expect(page).toContain("getRecentMatchCards");
     expect(page).toContain("clubId");
-    expect(page).toContain("presentation");
+    expect(page).toContain("presentations");
   });
 
   it("fetches top players", () => {
@@ -230,8 +229,8 @@ describe("UX: Overview completeness", () => {
     expect(page).not.toContain("getMatches");
   });
 
-  it("has two-column layout", () => {
-    expect(page).toContain("lg:grid-cols-[340px_minmax(0,1fr)]");
+  it("has editorial-cards layout", () => {
+    expect(page).toContain("lg:grid-cols-[300px_minmax(0,1fr)]");
   });
 
   it("does not call Spring Boot local API", () => {
@@ -243,29 +242,29 @@ describe("UX: Overview completeness", () => {
 });
 
 describe("UX: Overview sub-components exist", () => {
-  it("overview-latest-match.tsx is the active component", () => {
-    // Uses overview-latest-match.tsx (overview-last-match.tsx was removed as obsolete)
-    expect(existsSync(join(SRC, "components/overview/overview-latest-match.tsx"))).toBe(true);
+  it("overview-sequence-editorial.tsx is the active editorial component", () => {
+    expect(existsSync(join(SRC, "components/overview/overview-sequence-editorial.tsx"))).toBe(true);
   });
 
-  it("overview-recent-form.tsx removed (not in original Thymeleaf)", () => {
-    // Component removed - not in original Thymeleaf layout
-    // Thymeleaf only has Actions and Latest Match panels
+  it("overview-latest-match.tsx removed (replaced by sequence editorial)", () => {
+    expect(existsSync(join(SRC, "components/overview/overview-latest-match.tsx"))).toBe(false);
+  });
+
+  it("overview-recent-form.tsx removed", () => {
     expect(existsSync(join(SRC, "components/overview/overview-recent-form.tsx"))).toBe(false);
   });
 
-  it("overview-top-players.tsx removed (not in original Thymeleaf)", () => {
-    // Component removed - not in original Thymeleaf layout
+  it("overview-top-players.tsx removed", () => {
     expect(existsSync(join(SRC, "components/overview/overview-top-players.tsx"))).toBe(false);
   });
 
-  it("overview uses editorial presentation components", () => {
-    // OverviewActions removed - requires backend API not available in standalone Next.js
+  it("overview uses editorial sequence and match card components", () => {
     expect(existsSync(join(SRC, "components/overview/overview-actions.tsx"))).toBe(false);
     expect(existsSync(join(SRC, "components/overview/overview-last-match.tsx"))).toBe(false);
-    const page = readFile("app/clubs/[clubId]/overview/page.tsx");
+    const page = readFile("app/clubs/[clubId]/(fullwidth)/overview/page.tsx");
     expect(page).not.toContain("OverviewActions");
-    expect(page).toContain("OverviewLatestMatch");
+    expect(page).not.toContain("OverviewLatestMatch");
+    expect(page).toContain("OverviewClubPanel");
     expect(page).toContain("OverviewMatchCard");
   });
 });
@@ -333,10 +332,10 @@ describe("Security: preserved constraints", () => {
 
   it("all data-fetching pages have force-dynamic", () => {
     const pages = [
-      "app/clubs/[clubId]/matches/page.tsx",
-      "app/clubs/[clubId]/players/page.tsx",
-      "app/clubs/[clubId]/opponents/page.tsx",
-      "app/clubs/[clubId]/overview/page.tsx",
+      "app/clubs/[clubId]/(sidebar)/matches/page.tsx",
+      "app/clubs/[clubId]/(sidebar)/players/page.tsx",
+      "app/clubs/[clubId]/(sidebar)/opponents/page.tsx",
+      "app/clubs/[clubId]/(fullwidth)/overview/page.tsx",
     ];
     for (const path of pages) {
       const content = readFile(path);
@@ -346,9 +345,9 @@ describe("Security: preserved constraints", () => {
 
   it("redirect pages do not fetch data", () => {
     const redirects = [
-      "app/clubs/[clubId]/matches/[matchId]/page.tsx",
-      "app/clubs/[clubId]/players/[playerId]/page.tsx",
-      "app/clubs/[clubId]/opponents/[opponentClubId]/page.tsx",
+      "app/clubs/[clubId]/(sidebar)/matches/[matchId]/page.tsx",
+      "app/clubs/[clubId]/(sidebar)/players/[playerId]/page.tsx",
+      "app/clubs/[clubId]/(sidebar)/opponents/[opponentClubId]/page.tsx",
     ];
     for (const path of redirects) {
       const content = readFile(path);
@@ -359,10 +358,10 @@ describe("Security: preserved constraints", () => {
 
   it("all pages pass clubId to data queries", () => {
     const pages = [
-      readFile("app/clubs/[clubId]/matches/page.tsx"),
-      readFile("app/clubs/[clubId]/players/page.tsx"),
-      readFile("app/clubs/[clubId]/opponents/page.tsx"),
-      readFile("app/clubs/[clubId]/overview/page.tsx"),
+      readFile("app/clubs/[clubId]/(sidebar)/matches/page.tsx"),
+      readFile("app/clubs/[clubId]/(sidebar)/players/page.tsx"),
+      readFile("app/clubs/[clubId]/(sidebar)/opponents/page.tsx"),
+      readFile("app/clubs/[clubId]/(fullwidth)/overview/page.tsx"),
     ];
     for (const content of pages) {
       expect(content).toContain("clubId");
