@@ -148,6 +148,37 @@ export interface OpponentHistory {
   goalsFor: number;
   goalsAgainst: number;
   matches: MatchSummary[];
+  currentRun: OpponentRun | null;
+  runRecords: OpponentRunRecord[];
+  playerLeaders: OpponentPlayerLeaders[];
+}
+
+export interface OpponentRun {
+  type: string;
+  label: string;
+  count: number;
+  matchIds: string[];
+  tiedRuns: number;
+}
+
+export interface OpponentRunRecord {
+  type: string;
+  label: string;
+  count: number;
+  matchIds: string[];
+  tiedRuns: number;
+}
+
+export interface OpponentPlayerLeaders {
+  type: string;
+  label: string;
+  value: number;
+  players: OpponentPlayer[];
+}
+
+export interface OpponentPlayer {
+  playerId: string;
+  name: string;
 }
 
 export interface PagedResult<T> {

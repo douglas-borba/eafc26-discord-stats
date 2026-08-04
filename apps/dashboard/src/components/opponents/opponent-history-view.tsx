@@ -154,7 +154,7 @@ export function OpponentHistoryView({ history, clubId }: { history: OpponentHist
         </section>
       )}
 
-      {/* Section 2: Sequences (data unavailable) */}
+      {/* Section 2: Sequences */}
       <section style={{ marginBottom: 28 }}>
         <div style={{ marginBottom: 12 }}>
           <span className="text-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 700 }}>
@@ -164,12 +164,55 @@ export function OpponentHistoryView({ history, clubId }: { history: OpponentHist
             Sequências
           </h3>
         </div>
-        <p className="text-muted" style={{ fontSize: 13, padding: "12px 0" }}>
-          Dados de sequência indisponíveis nesta versão.
-        </p>
+        {history.currentRun || history.runRecords.length > 0 ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
+            {history.currentRun && (
+              <div
+                style={{
+                  padding: 17,
+                  border: "1px solid var(--color-border)",
+                  borderRadius: 10,
+                  background: "var(--color-surface-raised)",
+                }}
+              >
+                <span className="text-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 700, display: "block", marginBottom: 6 }}>
+                  Situação atual
+                </span>
+                <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{history.currentRun.label}</h4>
+                <p className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  {history.currentRun.count} {history.currentRun.count === 1 ? "partida" : "partidas"}
+                </p>
+              </div>
+            )}
+            {history.runRecords.map((run, i) => (
+              <div
+                key={i}
+                style={{
+                  padding: 17,
+                  border: "1px solid var(--color-border)",
+                  borderRadius: 10,
+                  background: "var(--color-surface-raised)",
+                }}
+              >
+                <span className="text-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 700, display: "block", marginBottom: 6 }}>
+                  Marca registrada
+                </span>
+                <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{run.label}</h4>
+                <p className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  {run.count} {run.count === 1 ? "partida" : "partidas"}
+                  {run.tiedRuns > 1 && <> · {run.tiedRuns} sequências compartilham esta marca</>}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-muted" style={{ fontSize: 13, padding: "12px 0" }}>
+            Cálculo de sequências será implementado em versão futura.
+          </p>
+        )}
       </section>
 
-      {/* Section 3: Individual production (data unavailable) */}
+      {/* Section 3: Individual production */}
       <section style={{ marginBottom: 28 }}>
         <div style={{ marginBottom: 12 }}>
           <span className="text-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 700 }}>
@@ -179,9 +222,42 @@ export function OpponentHistoryView({ history, clubId }: { history: OpponentHist
             Jogadores contra este clube
           </h3>
         </div>
-        <p className="text-muted" style={{ fontSize: 13, padding: "12px 0" }}>
-          Indisponível nesta versão.
-        </p>
+        {history.playerLeaders.length > 0 ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
+            {history.playerLeaders.map((leader, i) => (
+              <div
+                key={i}
+                style={{
+                  padding: 17,
+                  border: "1px solid var(--color-border)",
+                  borderRadius: 10,
+                  background: "var(--color-surface-raised)",
+                }}
+              >
+                <span className="text-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 700, display: "block", marginBottom: 6 }}>
+                  {leader.label}
+                </span>
+                <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
+                  {leader.players.map((p, pi) => (
+                    <span key={p.playerId}>
+                      {pi > 0 && " · "}
+                      <a href={`/clubs/${clubId}/players?player=${p.playerId}`} style={{ color: "inherit", fontWeight: 750, textDecoration: "none" }}>
+                        {p.name}
+                      </a>
+                    </span>
+                  ))}
+                </h4>
+                <p className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  {leader.value} {leader.value === 1 ? "registro" : "registros"}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-muted" style={{ fontSize: 13, padding: "12px 0" }}>
+            Nenhum jogador com estatísticas registradas contra este adversário.
+          </p>
+        )}
       </section>
 
       {/* Section 4: Full history */}

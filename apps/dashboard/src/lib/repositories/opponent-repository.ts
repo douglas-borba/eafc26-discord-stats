@@ -1,5 +1,11 @@
 import { createServerSupabase } from "@/lib/supabase/server";
 import type { OpponentSummary, OpponentHistory, MatchSummary, PagedResult } from "@/lib/domain/types";
+import {
+  calculateCurrentRun,
+  calculateRunRecords,
+  calculatePlayerLeaders,
+  extractAwards,
+} from "@/lib/domain/opponent-history-calculator";
 
 export async function listOpponents(
   clubId: string,
@@ -98,6 +104,43 @@ export async function getOpponentHistory(
     };
   });
 
+  // Calculate runs from match sequence
+  const currentRun = calculateCurrentRun(matches);
+  const runRecords = calculateRunRecords(matches);
+
+  // Fetch player statistics for this opponent
+  const matchIds = matches.map((m) => m.matchId);
+  const { data: playerData, error: playerError } = await supabase
+    .from("dashboard_player_stats")
+    .select("player_id, platform_name, pro_name, goals, assists")
+    .in("match_id", matchIds);
+
+  if (playerError) throw playerError;
+
+  // Aggregate player stats
+  const playerStats = (playerData ?? []).map((row) => ({
+    playerId: row.player_id as string,
+    displayName: (row.pro_name || row.platform_name || row.player_id) as string,
+    goals: row.goals as number,
+    assists: row.assists as number,
+  }));
+
+  // Fetch match details to extract awards (Craque, Xerife)
+  const { data: matchDetails, error: detailsError } = await supabase
+    .from("dashboard_match_detail")
+    .select("payload")
+    .in("match_id", matchIds);
+
+  if (detailsError) throw detailsError;
+
+  // Extract awards from all matches
+  const allAwards = (matchDetails ?? []).flatMap((row) =>
+    extractAwards(row.payload as Record<string, unknown>)
+  );
+
+  // Calculate player leaders
+  const playerLeaders = calculatePlayerLeaders(playerStats, allAwards);
+
   return {
     clubId: opponentClubId,
     clubName,
@@ -108,5 +151,8 @@ export async function getOpponentHistory(
     goalsFor,
     goalsAgainst,
     matches,
+    currentRun,
+    runRecords,
+    playerLeaders,
   };
 }
