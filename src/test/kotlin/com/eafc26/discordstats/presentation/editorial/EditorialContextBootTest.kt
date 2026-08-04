@@ -17,8 +17,6 @@ import java.time.Clock
         "app.postgres.mirror-enabled=true",
         "app.polling.enabled=false",
         "eafc.dashboard.auto-open=false",
-        "app.security.viewer-password=test-viewer",
-        "app.security.admin-password=test-admin",
     ],
 )
 @Testcontainers

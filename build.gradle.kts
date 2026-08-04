@@ -61,12 +61,6 @@ tasks.withType<Test> {
 
 tasks.named<BootRun>("bootRun") {
     systemProperty("eafc.dashboard.auto-open", "true")
-    if (providers.environmentVariable("EAFC_VIEWER_PASSWORD").orNull.isNullOrBlank()) {
-        systemProperty("app.security.viewer-password", "viewer-local")
-    }
-    if (providers.environmentVariable("EAFC_ADMIN_PASSWORD").orNull.isNullOrBlank()) {
-        systemProperty("app.security.admin-password", "admin-local")
-    }
 }
 
 tasks.register<BootRun>("dev") {
@@ -75,12 +69,6 @@ tasks.register<BootRun>("dev") {
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set(application.mainClass)
     systemProperty("eafc.dashboard.auto-open", "true")
-    if (providers.environmentVariable("EAFC_VIEWER_PASSWORD").orNull.isNullOrBlank()) {
-        systemProperty("app.security.viewer-password", "viewer-local")
-    }
-    if (providers.environmentVariable("EAFC_ADMIN_PASSWORD").orNull.isNullOrBlank()) {
-        systemProperty("app.security.admin-password", "admin-local")
-    }
 }
 
 runtime {

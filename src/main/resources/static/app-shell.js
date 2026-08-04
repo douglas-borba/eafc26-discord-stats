@@ -32,15 +32,6 @@
     return cookie ? decodeURIComponent(cookie.substring("XSRF-TOKEN=".length)) : null;
   }
 
-  const nativeFetch = window.fetch.bind(window);
-  async function sessionInfo() {
-    const response = await nativeFetch("/api/auth/session", {
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-    });
-    return response.ok ? response.json() : null;
-  }
-
   async function applicationFetch(input, init = {}) {
     const request = input instanceof Request ? input : null;
     const method = (init.method || request?.method || "GET").toUpperCase();
@@ -53,19 +44,22 @@
     }
 
     if (sameOrigin && !["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
-      const token = (await sessionInfo())?.csrfToken || csrfCookie();
-      const headers = new Headers(request?.headers || undefined);
-      new Headers(init.headers || undefined).forEach((value, name) => headers.set(name, value));
-      if (token) headers.set("X-XSRF-TOKEN", token);
-      options.headers = headers;
+      const token = csrfCookie();
+      if (token) {
+        const headers = new Headers(request?.headers || undefined);
+        new Headers(init.headers || undefined).forEach((value, name) => headers.set(name, value));
+        headers.set("X-XSRF-TOKEN", token);
+        options.headers = headers;
+      }
     }
-    return nativeFetch(input, options);
+    return window.__nativeFetch(input, options);
   }
 
+  window.__nativeFetch = window.fetch.bind(window);
   window.eafcFetch = applicationFetch;
   window.fetch = applicationFetch;
 
-  function createShell(currentPage, content, role) {
+  function createShell(currentPage, content) {
     const shell = document.createElement("div");
     shell.className = "app-shell";
     shell.dataset.menuOpen = "false";
@@ -95,16 +89,11 @@
         </nav>
         <p class="app-shell-story">Partidas viram histórias. Histórias revelam a trajetória do clube.</p>
         <div class="app-shell-utility">
-          ${role === "ADMIN" ? `
           <a class="app-shell-link" href="/settings"
              ${currentPage === "settings" ? 'aria-current="page"' : ""}>
             <span class="app-shell-icon" aria-hidden="true">${icons.settings}</span>
             <span>Configurações</span>
           </a>
-          <span class="app-shell-role">Administrador</span>` : ""}
-          <button class="app-shell-link app-shell-logout" type="button" data-logout>
-            <span class="app-shell-icon" aria-hidden="true">↪</span><span>Sair</span>
-          </button>
         </div>
       </aside>
       <button class="app-shell-overlay" type="button" aria-label="Fechar navegação"></button>
@@ -116,19 +105,13 @@
     return shell;
   }
 
-  async function initialize() {
+  function initialize() {
     const content = document.querySelector("[data-app-content]");
     const currentPage = document.body.dataset.appPage;
     if (!content || !currentPage) return;
 
-    let role = "VIEWER";
-    try {
-      role = (await sessionInfo())?.role || role;
-    } catch (_) {}
-
-    document.body.dataset.accessRole = role;
-    document.dispatchEvent(new CustomEvent("eafc:auth-ready", { detail: { role } }));
-    const shell = createShell(currentPage, content, role);
+    document.dispatchEvent(new CustomEvent("eafc:auth-ready", { detail: {} }));
+    const shell = createShell(currentPage, content);
     document.body.prepend(shell);
     document.body.classList.add("app-shell-ready");
 
@@ -145,10 +128,6 @@
       setMenuOpen(shell.dataset.menuOpen !== "true");
     });
     overlay.addEventListener("click", () => setMenuOpen(false));
-    shell.querySelector("[data-logout]").addEventListener("click", async () => {
-      await window.fetch("/logout", { method: "POST" });
-      window.location.assign("/login?logout");
-    });
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") setMenuOpen(false);
     });

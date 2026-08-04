@@ -60,7 +60,7 @@
       line-height: 1.5;
     }
 
-    input[type="password"] {
+    input[type="url"] {
       width: 100%;
       background: #0d1117;
       border: 1px solid #30363d;
@@ -72,8 +72,8 @@
       transition: border-color 0.15s;
     }
 
-    input[type="password"]:focus { border-color: #58a6ff; }
-    input[type="password"].field-error { border-color: #f85149; }
+    input[type="url"]:focus { border-color: #58a6ff; }
+    input[type="url"].field-error { border-color: #f85149; }
 
     .error-msg {
       font-size: 0.8rem;
@@ -144,9 +144,9 @@
       <input
         id="stats-input"
         name="discord-match-webhook-url"
-        type="password"
+        type="url"
         placeholder="https://discord.com/api/webhooks/..."
-        autocomplete="new-password"
+        autocomplete="off"
         data-1p-ignore
         data-lpignore="true"
         autocorrect="off"
@@ -171,8 +171,8 @@
     // Load status only. Webhook secrets are never returned to or displayed by the browser.
     (async function loadSaved() {
       try {
-        // Materialize the post-login CSRF cookie before any administrative mutation.
-        await fetch('/api/auth/session');
+        // Materialize the CSRF cookie before any mutation.
+        await fetch('/api/health');
         const res = await fetch('/api/setup/webhook');
         if (!res.ok) return;
         const data = await res.json();

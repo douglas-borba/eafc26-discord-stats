@@ -9,7 +9,6 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest
 import org.springframework.boot.autoconfigure.security.reactive.ReactiveSecurityAutoConfiguration
 import org.springframework.boot.autoconfigure.security.reactive.ReactiveUserDetailsServiceAutoConfiguration
-import org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockUser
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.test.web.reactive.server.WebTestClient
 
@@ -29,7 +28,7 @@ class SetupRedirectFilterTest {
     fun `webhook not configured redirects to setup`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
 
-        webClient.mutateWith(mockUser("admin").roles("ADMIN")).get().uri("/")
+        webClient.get().uri("/")
             .exchange()
             .expectStatus().is3xxRedirection
             .expectHeader().location("/setup")
@@ -39,7 +38,7 @@ class SetupRedirectFilterTest {
     fun `match webhook configured allows through to home`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
 
-        webClient.mutateWith(mockUser("admin").roles("ADMIN")).get().uri("/")
+        webClient.get().uri("/")
             .exchange()
             .expectStatus().isOk
     }
@@ -48,7 +47,6 @@ class SetupRedirectFilterTest {
     fun `setup path is always allowed regardless of config state`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
 
-        // SetupController is not in this @WebFluxTest context so we get 404 rather than redirect
         webClient.get().uri("/setup")
             .exchange()
             .expectStatus().isNotFound
@@ -67,19 +65,9 @@ class SetupRedirectFilterTest {
     fun `api health path is always allowed regardless of config state`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
 
-        // /api/health is handled by MatchController (loaded in this context) — returns 200, not redirected
         webClient.get().uri("/api/health")
             .exchange()
             .expectStatus().isOk
-    }
-
-    @Test
-    fun `authenticated session endpoint is not redirected while setup is incomplete`() {
-        whenever(webhookConfigService.isConfigured()).thenReturn(false)
-
-        webClient.get().uri("/api/auth/session")
-            .exchange()
-            .expectStatus().isNotFound
     }
 
     @Test

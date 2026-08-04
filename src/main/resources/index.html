@@ -662,7 +662,7 @@
       <!-- Left Column -->
       <div class="left-column">
         <!-- Actions Panel -->
-        <div class="panel actions-panel" data-admin-only>
+        <div class="panel actions-panel">
           <div class="panel-title">Ações</div>
           <div class="panel-body">
             <button class="btn btn-primary" id="btn-refresh" onclick="notify()">
@@ -713,7 +713,7 @@
         </div>
 
         <!-- Developer Panel -->
-        <div class="panel dev-panel" id="dev-panel" data-admin-only data-admin-hidden style="display: none;">
+        <div class="panel dev-panel" id="dev-panel" style="display: none;">
           <div class="panel-title">🧪 Simulador</div>
           <div class="panel-body">
             <div class="dev-info">
@@ -790,14 +790,12 @@
     let isMatchSimulated = false;
 
     // ===== Initialize =====
-    document.addEventListener('eafc:auth-ready', function init(event) {
+    document.addEventListener('eafc:auth-ready', function init() {
       loadLatestMatch();
       setInterval(loadLatestMatch, 30000);
-      if (event.detail.role === 'ADMIN') {
-        loadNetworkInfo();
-        refreshPollingStatus();
-        setInterval(refreshPollingStatus, 10000);
-      }
+      loadNetworkInfo();
+      refreshPollingStatus();
+      setInterval(refreshPollingStatus, 10000);
     }, { once: true });
 
     function loadNetworkInfo() {
@@ -810,7 +808,6 @@
             document.getElementById('network-panel').style.display = 'block';
           }
           if (info.devMode) {
-            document.getElementById('dev-panel').removeAttribute('data-admin-hidden');
             document.getElementById('dev-panel').style.display = 'block';
           }
         })
@@ -1152,14 +1149,6 @@
       try {
         const res = await fetch('/api/matches/notify-latest', { method: 'POST' });
         const data = await res.json().catch(() => ({}));
-        if (res.status === 401) {
-          showFeedback({ status: 'error', message: 'Sua sessão terminou. Entre novamente para atualizar.' });
-          return;
-        }
-        if (res.status === 403) {
-          showFeedback({ status: 'error', message: 'Esta ação exige acesso administrativo.' });
-          return;
-        }
         if (!res.ok) {
           showFeedback({ status: 'error', message: data.message || 'Não foi possível atualizar a partida.' });
           return;

@@ -60,7 +60,7 @@ class SetupControllerTest {
     }
 
     @Test
-    fun `setup uses central csrf fetch and prevents password autofill`() {
+    fun `setup uses central csrf fetch and webhook URL input`() {
         val body = webClient.get().uri("/setup")
             .exchange()
             .expectStatus().isOk
@@ -69,12 +69,12 @@ class SetupControllerTest {
             .responseBody ?: ""
 
         assert(body.contains("<script src=\"/app-shell.js\"></script>")) {
-            "Setup must load the shared authenticated fetch before its inline actions"
+            "Setup must load the shared fetch before its inline actions"
         }
         assert(body.contains("name=\"discord-match-webhook-url\""))
         assert(!body.contains("name=\"discord-history-webhook-url\""))
-        assert(Regex("autocomplete=\"new-password\"").findAll(body).count() == 1)
-        assert(!body.contains("autocomplete=\"off\""))
+        assert(body.contains("type=\"url\"")) { "Webhook field must be a URL input" }
+        assert(!body.contains("type=\"password\"")) { "No password inputs should exist" }
     }
 
     @Test
