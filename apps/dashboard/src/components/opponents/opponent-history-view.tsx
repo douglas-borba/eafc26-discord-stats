@@ -207,7 +207,7 @@ export function OpponentHistoryView({ history, clubId }: { history: OpponentHist
           </div>
         ) : (
           <p className="text-muted" style={{ fontSize: 13, padding: "12px 0" }}>
-            Cálculo de sequências será implementado em versão futura.
+            Nenhuma sequência significativa registrada neste confronto.
           </p>
         )}
       </section>
