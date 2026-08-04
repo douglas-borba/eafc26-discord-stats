@@ -30,6 +30,7 @@ class CliRunnerTest {
     private lateinit var client: EaClubsGateway
     private lateinit var acquisitionService: MatchAcquisitionService
     private lateinit var canonicalBackfillService: CanonicalBackfillService
+    private lateinit var editorialBackfillService: com.eafc26.discordstats.presentation.editorial.MatchEditorialBackfillService
     private lateinit var output: ByteArrayOutputStream
     private lateinit var out: PrintStream
     private val exitCodes = mutableListOf<Int>()
@@ -39,6 +40,7 @@ class CliRunnerTest {
         client = mock()
         acquisitionService = mock()
         canonicalBackfillService = mock()
+        editorialBackfillService = mock()
         output = ByteArrayOutputStream()
         out = PrintStream(output)
         exitCodes.clear()
@@ -46,7 +48,7 @@ class CliRunnerTest {
 
     private fun runner(clubName: String = "Test FC", clubId: String = "12345"): CliRunner {
         val props = AppProperties(ea = EaProperties(clubName = clubName, clubId = clubId))
-        return CliRunner(client, props, acquisitionService, canonicalBackfillService, null, out, exit = { exitCodes.add(it) })
+        return CliRunner(client, props, acquisitionService, canonicalBackfillService, null, editorialBackfillService, out, exit = { exitCodes.add(it) })
     }
 
     private fun printed(): String = output.toString(Charsets.UTF_8)

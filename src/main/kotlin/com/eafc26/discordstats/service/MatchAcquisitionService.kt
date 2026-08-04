@@ -7,6 +7,7 @@ import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
+import com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationService
 import com.eafc26.discordstats.store.PublishedMatchStore
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
@@ -48,6 +49,7 @@ class MatchAcquisitionService(
     private val matchSummaryBuilder: MatchSummaryBuilder,
     private val canonicalMatchRepository: CanonicalMatchRepository,
     private val canonicalMatchFactory: CanonicalMatchFactory,
+    private val editorialPresentationService: MatchEditorialPresentationService?,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
@@ -153,7 +155,16 @@ class MatchAcquisitionService(
             }
         if (trigger != AcquisitionTrigger.DEV_SIMULATOR) {
             stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando acervo canônico...")
-            canonicalByMatchId.values.forEach(canonicalMatchRepository::save)
+            canonicalByMatchId.values.forEach { canonical ->
+                // Step 1: Save canonical match (always first)
+                canonicalMatchRepository.save(canonical)
+
+                try {
+                    editorialPresentationService?.generateAndPersist(canonical)
+                } catch (ex: Exception) {
+                    log.error("Editorial presentation failed for match {}: {}", canonical.matchId.value, ex.message)
+                }
+            }
         }
 
         // Step 3: Route to appropriate processing mode

@@ -213,36 +213,60 @@ describe("UX: Overview completeness", () => {
   const page = readFile("app/clubs/[clubId]/overview/page.tsx");
 
   it("fetches last match detail", () => {
-    expect(page).toContain("getMatch");
-    expect(page).toContain("latestDetail");
+    // Uses getLatestMatchCard with clubId - independent from Spring Boot
+    expect(page).toContain("getLatestMatchCard");
+    expect(page).toContain("clubId");
+    expect(page).toContain("presentation");
   });
 
   it("fetches top players", () => {
-    expect(page).toContain("getPlayers");
-    expect(page).toContain("topPlayers");
+    // Overview now focuses on match card only (Thymeleaf fidelity)
+    // Top players were removed to match original Thymeleaf layout
+    expect(page).not.toContain("getPlayers");
   });
 
   it("fetches recent matches for form", () => {
-    expect(page).toContain("getMatches");
-    expect(page).toContain("recentMatches");
+    // Recent form was removed to match original Thymeleaf layout
+    expect(page).not.toContain("getMatches");
   });
 
   it("has two-column layout", () => {
-    expect(page).toContain("lg:grid lg:grid-cols-[340px_minmax(0,1fr)]");
+    expect(page).toContain("lg:grid-cols-[340px_minmax(0,1fr)]");
+  });
+
+  it("does not call Spring Boot local API", () => {
+    // Must not depend on /api/match-card/latest from Spring Boot
+    expect(page).not.toContain("/api/match-card/latest");
+    expect(page).not.toContain("localhost");
+    expect(page).not.toContain("BACKEND_API_URL");
   });
 });
 
 describe("UX: Overview sub-components exist", () => {
-  it("overview-last-match.tsx exists", () => {
-    expect(existsSync(join(SRC, "components/overview/overview-last-match.tsx"))).toBe(true);
+  it("overview-latest-match.tsx is the active component", () => {
+    // Uses overview-latest-match.tsx (overview-last-match.tsx was removed as obsolete)
+    expect(existsSync(join(SRC, "components/overview/overview-latest-match.tsx"))).toBe(true);
   });
 
-  it("overview-recent-form.tsx exists", () => {
-    expect(existsSync(join(SRC, "components/overview/overview-recent-form.tsx"))).toBe(true);
+  it("overview-recent-form.tsx removed (not in original Thymeleaf)", () => {
+    // Component removed - not in original Thymeleaf layout
+    // Thymeleaf only has Actions and Latest Match panels
+    expect(existsSync(join(SRC, "components/overview/overview-recent-form.tsx"))).toBe(false);
   });
 
-  it("overview-top-players.tsx exists", () => {
-    expect(existsSync(join(SRC, "components/overview/overview-top-players.tsx"))).toBe(true);
+  it("overview-top-players.tsx removed (not in original Thymeleaf)", () => {
+    // Component removed - not in original Thymeleaf layout
+    expect(existsSync(join(SRC, "components/overview/overview-top-players.tsx"))).toBe(false);
+  });
+
+  it("overview uses editorial presentation components", () => {
+    // OverviewActions removed - requires backend API not available in standalone Next.js
+    expect(existsSync(join(SRC, "components/overview/overview-actions.tsx"))).toBe(false);
+    expect(existsSync(join(SRC, "components/overview/overview-last-match.tsx"))).toBe(false);
+    const page = readFile("app/clubs/[clubId]/overview/page.tsx");
+    expect(page).not.toContain("OverviewActions");
+    expect(page).toContain("OverviewLatestMatch");
+    expect(page).toContain("OverviewMatchCard");
   });
 });
 

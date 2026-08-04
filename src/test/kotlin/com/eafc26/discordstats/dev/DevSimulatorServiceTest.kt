@@ -64,6 +64,8 @@ class DevSimulatorServiceTest {
             DiscordRenderer(matchSummaryBuilder),
         )
 
+        val editorialPresentationService = mock<com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationService>()
+
         acquisitionService = MatchAcquisitionService(
             fixtureGateway,
             publishedMatchStore,
@@ -74,6 +76,7 @@ class DevSimulatorServiceTest {
             matchSummaryBuilder,
             canonicalMatchRepository,
             CanonicalMatchFactory(),
+            editorialPresentationService,
         )
 
         simulatorService = DevSimulatorService(

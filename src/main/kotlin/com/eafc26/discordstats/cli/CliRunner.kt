@@ -33,6 +33,7 @@ class CliRunner(
     private val acquisitionService: MatchAcquisitionService,
     private val canonicalBackfillService: CanonicalBackfillService,
     private val postgresSyncService: PostgresSyncService?,
+    private val editorialBackfillService: com.eafc26.discordstats.presentation.editorial.MatchEditorialBackfillService?,
     private val out: PrintStream = PrintStream(System.out, true, StandardCharsets.UTF_8),
     private val exit: (Int) -> Unit = { code -> exitProcess(code) },
 ) : ApplicationRunner {
@@ -41,15 +42,16 @@ class CliRunner(
         val command = args.nonOptionArgs.firstOrNull() ?: return
 
         when (command) {
-            CMD_SEARCH        -> runSearchClub()
-            CMD_MATCHES       -> runLatestMatches()
-            CMD_NOTIFY_LATEST -> runNotifyLatest()
-            CMD_BACKFILL      -> runCanonicalBackfill()
-            CMD_BACKFILL_PG   -> runPostgresSync()
-            CMD_SYNC_PG       -> runPostgresSync()
+            CMD_SEARCH             -> runSearchClub()
+            CMD_MATCHES            -> runLatestMatches()
+            CMD_NOTIFY_LATEST      -> runNotifyLatest()
+            CMD_BACKFILL           -> runCanonicalBackfill()
+            CMD_BACKFILL_PG        -> runPostgresSync()
+            CMD_SYNC_PG            -> runPostgresSync()
+            CMD_BACKFILL_EDITORIAL -> runEditorialBackfill(args)
             else -> {
                 out.println("Unknown command: '$command'")
-                out.println("Available commands: $CMD_SEARCH, $CMD_MATCHES, $CMD_NOTIFY_LATEST, $CMD_BACKFILL, $CMD_SYNC_PG")
+                out.println("Available commands: $CMD_SEARCH, $CMD_MATCHES, $CMD_NOTIFY_LATEST, $CMD_BACKFILL, $CMD_SYNC_PG, $CMD_BACKFILL_EDITORIAL")
                 exit(1)
             }
         }
@@ -247,6 +249,43 @@ class CliRunner(
         }
     }
 
+    private fun runEditorialBackfill(args: ApplicationArguments) {
+        if (editorialBackfillService == null) {
+            out.println("ERROR: Editorial backfill requires PostgreSQL mirror. Set EAFC_POSTGRES_MIRROR_ENABLED=true")
+            exit(1)
+            return
+        }
+        if (props.ea.clubId.isBlank()) {
+            out.println("ERROR: app.ea.club-id is not set in application.yml")
+            exit(1)
+            return
+        }
+
+        val dryRun = args.containsOption("dry-run")
+        val clubId = com.eafc26.discordstats.domain.match.ClubId(props.ea.clubId)
+
+        if (dryRun) {
+            out.println("DRY RUN: Editorial backfill for club-id=${props.ea.clubId}")
+        } else {
+            out.println("Backfilling editorial presentations for club-id=${props.ea.clubId} ...")
+        }
+
+        val result = editorialBackfillService.backfillForClub(clubId, dryRun)
+
+        out.println("Total canonical matches: ${result.total}")
+        out.println("Processed: ${result.processed}")
+        out.println("Skipped (already exists): ${result.skipped}")
+        out.println("Errors: ${result.errors}")
+
+        if (dryRun) {
+            out.println("")
+            out.println("DRY RUN: No changes were made")
+            out.println("Run without --dry-run to actually persist presentations")
+        }
+
+        exit(if (result.errors == 0) 0 else 1)
+    }
+
     private fun runPostgresSync() {
         if (postgresSyncService == null) {
             out.println("ERROR: PostgreSQL mirror is not enabled. Set EAFC_POSTGRES_MIRROR_ENABLED=true")
@@ -273,5 +312,6 @@ class CliRunner(
         const val CMD_BACKFILL      = "backfill-canonical-matches"
         const val CMD_SYNC_PG       = "sync-postgres"
         const val CMD_BACKFILL_PG   = "backfill-postgres"
+        const val CMD_BACKFILL_EDITORIAL = "backfill-editorial"
     }
 }

@@ -50,6 +50,7 @@ class MatchAcquisitionServiceTest {
     private lateinit var matchSummaryBuilder: MatchSummaryBuilder
     private lateinit var service: MatchAcquisitionService
     private lateinit var canonicalMatchRepository: CanonicalMatchRepository
+    private lateinit var editorialPresentationService: com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationService
 
     private val clubId = "12345"
 
@@ -74,6 +75,7 @@ class MatchAcquisitionServiceTest {
             matchSummaryBuilder,
             canonicalMatchRepository,
             CanonicalMatchFactory(),
+            editorialPresentationService,
         )
     }
 
@@ -86,6 +88,7 @@ class MatchAcquisitionServiceTest {
         latestMatchHolder = LatestMatchHolder()  // Use real instance
         matchSummaryBuilder = MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))  // Use real instance
         canonicalMatchRepository = mock()
+        editorialPresentationService = mock()
         service = makeService()
         stubStore()  // default: empty store = first run
     }
@@ -1162,6 +1165,96 @@ class MatchAcquisitionServiceTest {
                 .containsExactly("m1", "m2", "m2", "m3")
             assertThat(captor.allValues.map { it.matchId.value }.distinct())
                 .containsExactly("m1", "m2", "m3")
+        }
+    }
+
+    @Nested
+    inner class EditorialPresentationGeneration {
+
+        @Test
+        fun `generates editorial presentation after canonical save`() {
+            val m = match("m1")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(m)))
+            stubStore()
+
+            service.acquire(AcquisitionTrigger.MANUAL)
+
+            val order = inOrder(canonicalMatchRepository, editorialPresentationService)
+            order.verify(canonicalMatchRepository).save(any())
+            order.verify(editorialPresentationService).generateAndPersist(any())
+        }
+
+        @Test
+        fun `generates editorial for each canonical match persisted`() {
+            val m1 = match("m1", ts = 1000)
+            val m2 = match("m2", ts = 2000)
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(m1, m2)))
+            stubStore()
+
+            service.acquire(AcquisitionTrigger.SCHEDULER)
+
+            verify(canonicalMatchRepository, times(2)).save(any())
+            verify(editorialPresentationService, times(2)).generateAndPersist(any())
+        }
+
+        @Test
+        fun `does not generate editorial for DEV_SIMULATOR`() {
+            val m = match("sim-match")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(m)))
+
+            service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
+
+            verify(canonicalMatchRepository, never()).save(any())
+            verify(editorialPresentationService, never()).generateAndPersist(any())
+        }
+
+        @Test
+        fun `editorial failure does not corrupt canonical save`() {
+            val m = match("m1")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(m)))
+            whenever(editorialPresentationService.generateAndPersist(any()))
+                .thenThrow(RuntimeException("Editorial DB failure"))
+            stubStore()
+
+            // Should complete without throwing
+            val result = service.acquire(AcquisitionTrigger.MANUAL) as AcquisitionResult.Processed
+
+            // Canonical was saved
+            verify(canonicalMatchRepository).save(any())
+            // Editorial was attempted
+            verify(editorialPresentationService).generateAndPersist(any())
+            // Acquisition completed (not thrown)
+            assertThat(result).isNotNull
+        }
+
+        @Test
+        fun `editorial failure does not block Discord publication`() {
+            val m = match("m1")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(m)))
+            whenever(editorialPresentationService.generateAndPersist(any()))
+                .thenThrow(RuntimeException("Editorial failure"))
+            stubStore("existing")
+
+            service.acquire(AcquisitionTrigger.MANUAL)
+
+            // Discord delivery still happened
+            verify(webhookClient).send(any())
+            verify(store).saveRecord(argThat { state == PublicationState.DELIVERED })
+        }
+
+        @Test
+        fun `repeated acquisition for same match calls editorial once per cycle`() {
+            val m = match("m1")
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(m)))
+            stubStore()
+
+            service.acquire(AcquisitionTrigger.SCHEDULER)
+            service.acquire(AcquisitionTrigger.SCHEDULER)
+
+            // Canonical saved twice (repeated window)
+            verify(canonicalMatchRepository, times(2)).save(any())
+            // Editorial called twice (one per cycle, service is idempotent via upsert)
+            verify(editorialPresentationService, times(2)).generateAndPersist(any())
         }
     }
 }
