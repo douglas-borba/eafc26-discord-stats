@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository
 import com.fasterxml.jackson.databind.ObjectMapper
 import java.sql.ResultSet
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import java.sql.Timestamp
 import java.time.Instant
 
 @Repository
@@ -36,12 +37,12 @@ class MatchEditorialPresentationRepository(
             """.trimIndent(),
             editorial.clubId.value,
             editorial.matchId.value,
-            editorial.playedAt,
+            Timestamp.from(editorial.playedAt),
             editorial.schemaVersion,
             editorial.phraseBankVersion,
             presentationJson,
-            editorial.generatedAt,
-            editorial.updatedAt,
+            Timestamp.from(editorial.generatedAt),
+            Timestamp.from(editorial.updatedAt),
         )
     }
 
@@ -63,12 +64,12 @@ class MatchEditorialPresentationRepository(
             """.trimIndent(),
             editorial.clubId.value,
             editorial.matchId.value,
-            editorial.playedAt,
+            Timestamp.from(editorial.playedAt),
             editorial.schemaVersion,
             editorial.phraseBankVersion,
             presentationJson,
-            editorial.generatedAt,
-            editorial.updatedAt,
+            Timestamp.from(editorial.generatedAt),
+            Timestamp.from(editorial.updatedAt),
         )
     }
 
