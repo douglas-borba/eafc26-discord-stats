@@ -1,106 +1,291 @@
-import { Panel } from "@/components/ui/panel";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { formatDate, outcomeColor } from "@/lib/utils";
 import type { OpponentHistory } from "@/lib/domain/types";
 
+function outcomeLabel(outcome: "WIN" | "DRAW" | "LOSS") {
+  return outcome === "WIN" ? "Vitória" : outcome === "DRAW" ? "Empate" : "Derrota";
+}
+
 export function OpponentHistoryView({ history, clubId }: { history: OpponentHistory; clubId: string }) {
   const goalDiff = history.goalsFor - history.goalsAgainst;
-  const total = history.matchesPlayed || 1;
-  const winRate = Math.round((history.wins / total) * 100);
   const lastMatch = history.matches[0] ?? null;
+  const winRate = history.matchesPlayed > 0
+    ? Math.round((history.wins / history.matchesPlayed) * 100)
+    : 0;
 
   return (
-    <div className="space-y-6">
+    <div>
       {/* Versus header */}
-      <Panel className="text-center py-6">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-2">Histórico do confronto</p>
-        <h2 className="text-2xl font-bold text-text-primary">
-          {history.clubName ?? history.clubId}
-        </h2>
-        <p className="text-sm text-muted mt-1">{history.matchesPlayed} confrontos</p>
-        <div className="flex justify-center gap-4 mt-3">
-          <span className="text-2xl font-black text-win">{history.wins}</span>
-          <span className="text-2xl font-black text-draw">{history.draws}</span>
-          <span className="text-2xl font-black text-loss">{history.losses}</span>
+      <header
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 16,
+          flexWrap: "wrap",
+          marginBottom: 24,
+        }}
+      >
+        <div>
+          <span
+            style={{
+              color: "#79c0ff",
+              fontSize: ".72rem",
+              fontWeight: 800,
+              letterSpacing: ".1em",
+              textTransform: "uppercase",
+              display: "block",
+              marginBottom: 4,
+            }}
+          >
+            Histórico do confronto
+          </span>
+          <h2
+            style={{
+              fontSize: "clamp(1.7rem, 4vw, 3rem)",
+              lineHeight: 1.06,
+              letterSpacing: "-.035em",
+              fontWeight: 800,
+              margin: 0,
+            }}
+          >
+            Associação BF &times; {history.clubName ?? history.clubId}
+          </h2>
+          <div className="text-muted" style={{ fontSize: 13, marginTop: 6 }}>
+            {history.matchesPlayed} confrontos
+          </div>
         </div>
-        <div className="flex justify-center gap-4 text-xs text-muted">
-          <span>Vitórias</span>
-          <span>Empates</span>
-          <span>Derrotas</span>
+        <div style={{ display: "flex", gap: 16, alignItems: "baseline" }}>
+          <strong className="text-2xl font-black text-win">
+            {history.wins}V
+          </strong>
+          <strong className="text-2xl font-black text-draw">
+            {history.draws}E
+          </strong>
+          <strong className="text-2xl font-black text-loss">
+            {history.losses}D
+          </strong>
+          <span className="text-muted" style={{ fontSize: 13 }}>
+            Aproveitamento: <strong>{winRate}%</strong>
+          </span>
         </div>
-      </Panel>
+      </header>
 
       {/* Summary strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Panel>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-1">Gols Pró</p>
-          <p className="text-2xl font-bold">{history.goalsFor}</p>
-        </Panel>
-        <Panel>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-1">Gols Contra</p>
-          <p className="text-2xl font-bold">{history.goalsAgainst}</p>
-        </Panel>
-        <Panel>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-1">Saldo</p>
-          <p className={`text-2xl font-bold ${goalDiff > 0 ? "text-win" : goalDiff < 0 ? "text-loss" : "text-draw"}`}>
-            {goalDiff > 0 ? "+" : ""}{goalDiff}
-          </p>
-        </Panel>
-        <Panel>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-1">Aproveitamento</p>
-          <p className="text-2xl font-bold">{winRate}%</p>
-        </Panel>
+      <div
+        className="summary-strip"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          borderTop: "1px solid var(--color-border)",
+          borderBottom: "1px solid var(--color-border)",
+          marginBottom: 28,
+        }}
+      >
+        {[
+          { label: "gols marcados", value: history.goalsFor },
+          { label: "gols sofridos", value: history.goalsAgainst },
+          {
+            label: "saldo",
+            value: `${goalDiff > 0 ? "+" : ""}${goalDiff}`,
+            color: goalDiff > 0 ? "var(--color-win)" : goalDiff < 0 ? "var(--color-loss)" : "var(--color-draw)",
+          },
+          { label: "confrontos", value: history.matchesPlayed },
+        ].map((item) => (
+          <div
+            key={item.label}
+            style={{
+              padding: "18px 12px",
+              textAlign: "center",
+              borderLeft: "1px solid var(--color-border)",
+            }}
+          >
+            <div className="text-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 700, marginBottom: 4 }}>
+              {item.label}
+            </div>
+            <div style={{ fontSize: "1.45rem", fontWeight: 800, color: item.color }}>
+              {item.value}
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Last match */}
+      {/* Section 1: Last match */}
       {lastMatch && (
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-1">Último confronto</p>
-          <h3 className="text-lg font-bold text-text-primary mb-3">Último Confronto Registrado</h3>
-          <a href={`/clubs/${clubId}/matches?match=${lastMatch.matchId}`} className="block">
-            <Panel className="hover:bg-surface-raised/50 transition-colors">
-              <div className="flex items-center gap-4">
-                <OutcomeBadge outcome={lastMatch.outcome} className="w-8 h-8 text-sm" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-text-primary">
-                    {lastMatch.ourClubName ?? "Nós"} vs {lastMatch.opponentClubName ?? "Adversário"}
-                  </p>
-                  <p className="text-xs text-muted">{formatDate(lastMatch.playedAt)} &middot; {lastMatch.matchType ?? "Partida"}</p>
-                </div>
-                <p className={`text-2xl font-black ${outcomeColor(lastMatch.outcome)}`}>
-                  {lastMatch.ourScore} &times; {lastMatch.opponentScore}
+        <section style={{ marginBottom: 28 }}>
+          <div style={{ marginBottom: 12 }}>
+            <span className="text-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 700 }}>
+              O encontro mais recente
+            </span>
+            <h3 style={{ fontSize: "1.1rem", fontWeight: 700, margin: "4px 0 0" }}>
+              Último Confronto Registrado
+            </h3>
+          </div>
+          <a
+            href={`/clubs/${clubId}/matches?match=${lastMatch.matchId}`}
+            style={{
+              display: "block",
+              padding: "16px 18px",
+              background: "var(--color-surface-raised)",
+              borderRadius: 10,
+              textDecoration: "none",
+              color: "inherit",
+              transition: "background .15s",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <OutcomeBadge outcome={lastMatch.outcome} className="w-9 h-9 text-sm" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 14, margin: 0, fontWeight: 600 }}>
+                  {lastMatch.ourClubName ?? "Nós"} vs {lastMatch.opponentClubName ?? "Adversário"}
+                </p>
+                <p className="text-muted" style={{ fontSize: 12, margin: "2px 0 0" }}>
+                  {formatDate(lastMatch.playedAt)} &middot; {lastMatch.matchType ?? "Partida"}
                 </p>
               </div>
-            </Panel>
+              <span
+                style={{ fontSize: "1.6rem", fontWeight: 900, whiteSpace: "nowrap" }}
+                className={outcomeColor(lastMatch.outcome)}
+              >
+                {lastMatch.ourScore} &times; {lastMatch.opponentScore}
+              </span>
+            </div>
           </a>
-        </div>
+        </section>
       )}
 
-      {/* Full history */}
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-1">Confrontos</p>
-        <h3 className="text-lg font-bold text-text-primary mb-3">Histórico Completo</h3>
-        <div className="space-y-1">
+      {/* Section 2: Sequences (data unavailable) */}
+      <section style={{ marginBottom: 28 }}>
+        <div style={{ marginBottom: 12 }}>
+          <span className="text-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 700 }}>
+            Confronto em sequência
+          </span>
+          <h3 style={{ fontSize: "1.1rem", fontWeight: 700, margin: "4px 0 0" }}>
+            Sequências
+          </h3>
+        </div>
+        <p className="text-muted" style={{ fontSize: 13, padding: "12px 0" }}>
+          Dados de sequência indisponíveis nesta versão.
+        </p>
+      </section>
+
+      {/* Section 3: Individual production (data unavailable) */}
+      <section style={{ marginBottom: 28 }}>
+        <div style={{ marginBottom: 12 }}>
+          <span className="text-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 700 }}>
+            Produção individual
+          </span>
+          <h3 style={{ fontSize: "1.1rem", fontWeight: 700, margin: "4px 0 0" }}>
+            Jogadores contra este clube
+          </h3>
+        </div>
+        <p className="text-muted" style={{ fontSize: 13, padding: "12px 0" }}>
+          Indisponível nesta versão.
+        </p>
+      </section>
+
+      {/* Section 4: Full history */}
+      <section style={{ marginBottom: 28 }}>
+        <div style={{ marginBottom: 12 }}>
+          <span className="text-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 700 }}>
+            Partida por partida
+          </span>
+          <h3 style={{ fontSize: "1.1rem", fontWeight: 700, margin: "4px 0 0" }}>
+            Histórico completo
+          </h3>
+        </div>
+        <div>
           {history.matches.map((m) => (
             <a
               key={m.matchId}
               href={`/clubs/${clubId}/matches?match=${m.matchId}`}
-              className="block"
+              className="history-row"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "auto 1fr auto auto",
+                gap: "0 14px",
+                alignItems: "center",
+                padding: "12px 14px",
+                borderBottom: "1px solid var(--color-border)",
+                textDecoration: "none",
+                color: "inherit",
+                transition: "background .12s",
+              }}
             >
-              <Panel className="flex items-center gap-3 py-3 px-4 hover:bg-surface-raised/50 transition-colors">
+              <span className="text-muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                {formatDate(m.playedAt)}
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <OutcomeBadge outcome={m.outcome} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-text-primary">{formatDate(m.playedAt)}</p>
-                  {m.matchType && <p className="text-xs text-muted">{m.matchType}</p>}
-                </div>
-                <p className={`text-lg font-black shrink-0 ${outcomeColor(m.outcome)}`}>
-                  {m.ourScore} &times; {m.opponentScore}
-                </p>
-              </Panel>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{outcomeLabel(m.outcome)}</span>
+              </span>
+              <span className="text-muted history-match-type" style={{ fontSize: 12 }}>
+                {m.matchType ?? ""}
+              </span>
+              <span
+                style={{ fontSize: "1.05rem", fontWeight: 800, whiteSpace: "nowrap", textAlign: "right" }}
+                className={outcomeColor(m.outcome)}
+              >
+                {m.ourScore} &times; {m.opponentScore}
+              </span>
             </a>
           ))}
         </div>
-      </div>
+      </section>
+
+      {/* Audit disclosure */}
+      <details
+        style={{
+          marginTop: 24,
+          borderTop: "1px solid var(--color-border)",
+          paddingTop: 16,
+        }}
+      >
+        <summary
+          className="text-muted"
+          style={{ fontSize: 12, cursor: "pointer", userSelect: "none" }}
+        >
+          Ver comprovação do retrospecto
+        </summary>
+        <pre
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            marginTop: 10,
+            padding: 12,
+            background: "var(--color-bg)",
+            borderRadius: 8,
+            overflowX: "auto",
+            whiteSpace: "pre-wrap",
+          }}
+          className="text-muted"
+        >
+{`clubId: ${history.clubId}
+confrontos: ${history.matchesPlayed}
+critério: partidas registradas na base da Associação BF`}
+        </pre>
+      </details>
+
+      {/* Responsive styles */}
+      <style>{`
+        .history-row:hover {
+          background: var(--color-surface-raised);
+        }
+        .summary-strip > div:first-child {
+          border-left: none;
+        }
+        @media (max-width: 700px) {
+          .summary-strip {
+            grid-template-columns: repeat(2, 1fr) !important;
+          }
+          .history-row {
+            grid-template-columns: 1fr auto !important;
+          }
+          .history-match-type {
+            display: none !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

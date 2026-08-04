@@ -2,11 +2,35 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useCallback } from "react";
-import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { MatchDetailView } from "@/components/matches/match-detail-view";
 import { formatDate } from "@/lib/utils";
 import { ArrowLeft } from "lucide-react";
 import type { MatchSummary, MatchDetail } from "@/lib/domain/types";
+
+/* ------------------------------------------------------------------ */
+/*  ListOutcomeBadge – pill-shaped badge for the match list            */
+/* ------------------------------------------------------------------ */
+
+const outcomeConfig = {
+  WIN:  { label: "Vitória", className: "text-outcome-win border-outcome-win" },
+  DRAW: { label: "Empate",  className: "text-outcome-draw border-outcome-draw" },
+  LOSS: { label: "Derrota", className: "text-outcome-loss border-outcome-loss" },
+} as const;
+
+function ListOutcomeBadge({ outcome }: { outcome: "WIN" | "DRAW" | "LOSS" }) {
+  const cfg = outcomeConfig[outcome];
+  return (
+    <span
+      className={`inline-flex items-center gap-[5px] px-[9px] py-[5px] border rounded-full text-[11px] font-[800] tracking-[0.04em] uppercase leading-none ${cfg.className}`}
+    >
+      {cfg.label}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  MatchesShell                                                       */
+/* ------------------------------------------------------------------ */
 
 export function MatchesShell({
   matches,
@@ -36,59 +60,103 @@ export function MatchesShell({
   }, []);
 
   return (
-    <div className="lg:grid lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] lg:gap-6">
-      {/* Left: match archive */}
-      <div className={`${mobileShowDetail ? "hidden" : "block"} lg:block`}>
-        <div className="flex items-baseline justify-between mb-4">
-          <h1 className="text-xl font-bold text-text-primary">Arquivo de Partidas</h1>
-          <span className="text-xs text-muted">{matches.length} partidas</span>
+    <div>
+      {/* Page header */}
+      <header className="mb-6">
+        <div className="text-[11px] uppercase tracking-[0.09em] text-muted">
+          A trajetória do clube, jogo a jogo
         </div>
-        <div className="lg:sticky lg:top-[18px] lg:max-h-[calc(100vh-100px)] lg:overflow-y-auto space-y-0.5 pr-1">
-          {matches.map((m) => {
-            const isActive = m.matchId === selectedMatchId;
-            return (
-              <button
-                key={m.matchId}
-                onClick={() => handleSelect(m.matchId)}
-                className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                  isActive
-                    ? "shadow-[inset_3px_0_var(--color-accent)] bg-accent/8"
-                    : "hover:bg-surface-raised"
-                }`}
-              >
-                <OutcomeBadge outcome={m.outcome} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-text-primary font-medium truncate">
-                    {m.ourClubName ?? "Nós"} {m.ourScore} × {m.opponentScore}{" "}
-                    {m.opponentClubName ?? "Adversário"}
-                  </p>
-                  <p className="text-xs text-muted">{formatDate(m.playedAt)}</p>
-                </div>
-              </button>
-            );
-          })}
-          {matches.length === 0 && (
-            <p className="text-sm text-muted text-center py-8">Nenhuma partida encontrada.</p>
-          )}
-        </div>
-      </div>
+        <h1 className="text-[clamp(26px,3vw,36px)] font-bold text-text-primary leading-tight">
+          Partidas
+        </h1>
+        <p className="text-muted mt-[7px]">
+          Cada resultado guarda personagens, histórias e evidências.
+        </p>
+      </header>
 
-      {/* Right: detail */}
-      <div className={`${!mobileShowDetail ? "hidden" : "block"} lg:block`}>
-        {mobileShowDetail && (
-          <button
-            onClick={handleBack}
-            className="flex items-center gap-1.5 text-sm text-accent mb-4 lg:hidden"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Todas as partidas
-          </button>
-        )}
-        {detail ? (
-          <MatchDetailView match={detail} clubId={clubId} />
-        ) : (
-          <p className="text-muted text-sm text-center py-12">Nenhuma partida disponível.</p>
-        )}
+      {/* Two-column layout */}
+      <div className="lg:grid lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] gap-[18px]">
+        {/* Left: match archive panel */}
+        <aside className={`${mobileShowDetail ? "hidden" : "block"} lg:block`}>
+          <div className="border border-border rounded-[13px] bg-surface overflow-hidden lg:sticky lg:top-[18px]">
+            {/* Panel header */}
+            <div className="px-[16px] py-[15px] border-b border-border">
+              <h2 className="text-[15px] font-semibold text-text-primary">Arquivo de partidas</h2>
+              <div className="text-[12px] text-muted">{matches.length} partidas registradas</div>
+            </div>
+
+            {/* Match list */}
+            <div className="max-h-[calc(100vh-174px)] overflow-y-auto">
+              {matches.map((m) => {
+                const isActive = m.matchId === selectedMatchId;
+                return (
+                  <button
+                    key={m.matchId}
+                    onClick={() => handleSelect(m.matchId)}
+                    className={`match-list-item w-full text-left px-[16px] py-[10px] transition-colors ${
+                      isActive
+                        ? "bg-surface-raised shadow-[inset_3px_0_var(--color-accent)]"
+                        : "hover:bg-surface-raised"
+                    }`}
+                  >
+                    {/* Row 1: date + outcome badge */}
+                    <div className="flex items-center justify-between mb-[4px]">
+                      <span className="text-[12px] text-muted">{formatDate(m.playedAt)}</span>
+                      <ListOutcomeBadge outcome={m.outcome} />
+                    </div>
+
+                    {/* Row 2: clubs + score */}
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] text-text-primary font-medium truncate">
+                          {m.ourClubName ?? "Nós"}
+                        </p>
+                        <p className="text-[13px] text-text-primary truncate">
+                          {m.opponentClubName ?? "Adversário"}
+                        </p>
+                      </div>
+                      <span className="text-[19px] font-[850] text-text-primary tabular-nums ml-3">
+                        {m.ourScore} - {m.opponentScore}
+                      </span>
+                    </div>
+
+                    {/* Row 3: competition (optional) */}
+                    {m.matchType && (
+                      <p className="text-[12px] text-muted mt-[2px]">{m.matchType}</p>
+                    )}
+                  </button>
+                );
+              })}
+              {matches.length === 0 && (
+                <p className="text-sm text-muted text-center py-8">Nenhuma partida encontrada.</p>
+              )}
+            </div>
+          </div>
+        </aside>
+
+        {/* Right: detail panel */}
+        <section className={`${!mobileShowDetail ? "hidden" : "block"} lg:block`}>
+          {/* Mobile back button */}
+          {mobileShowDetail && (
+            <button
+              onClick={handleBack}
+              className="flex items-center gap-1.5 text-sm text-accent mb-4 lg:hidden"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Todas as partidas
+            </button>
+          )}
+
+          <div className="border border-border rounded-[13px] bg-surface overflow-hidden min-h-[620px]">
+            {detail ? (
+              <div className="p-[clamp(18px,3vw,30px)]">
+                <MatchDetailView match={detail} clubId={clubId} />
+              </div>
+            ) : (
+              <p className="text-muted text-sm text-center py-12">Nenhuma partida disponível.</p>
+            )}
+          </div>
+        </section>
       </div>
     </div>
   );
