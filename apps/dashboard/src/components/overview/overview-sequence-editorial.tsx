@@ -24,7 +24,7 @@ export function OverviewSequenceEditorial({ editorial }: Props) {
 
       {/* Narrative */}
       <p className="text-[0.8rem] text-[#9da5b0] leading-[1.6]">
-        {editorial.narrative}
+        {editorial.aiNarrative ?? editorial.narrative}
       </p>
 
       {stats.matchCount > 0 && (

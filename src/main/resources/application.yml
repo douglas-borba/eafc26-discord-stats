@@ -43,6 +43,16 @@ app:
     # Environment values take precedence over the local /setup fallback.
     match-webhook-url: ${EAFC_DISCORD_MATCH_WEBHOOK_URL:}
 
+  llm:
+    enabled: ${EAFC_LLM_ENABLED:false}
+    provider: openrouter
+    model: ${EAFC_LLM_MODEL:anthropic/claude-sonnet-4}
+    api-key: ${EAFC_LLM_API_KEY:}
+    base-url: ${EAFC_LLM_BASE_URL:https://openrouter.ai/api}
+    timeout-seconds: 15
+    temperature: 0.7
+    max-tokens: 256
+
   web:
     network-enabled: false   # overridden by local config file at startup
 

@@ -4,6 +4,7 @@ import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.discord.DiscordDeliveryException
 import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.discord.DiscordWebhookClient
+import com.eafc26.discordstats.llm.LlmEditorialService
 import com.eafc26.discordstats.store.PublicationRecord
 import com.eafc26.discordstats.store.PublicationState
 import com.eafc26.discordstats.store.PublishedMatchStore
@@ -45,6 +46,7 @@ class DiscordMatchPublicationService(
     private val store: PublishedMatchStore,
     private val webhookClient: DiscordWebhookClient,
     private val discordRenderer: DiscordRenderer,
+    private val llmEditorialService: LlmEditorialService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val matchLocks = ConcurrentHashMap<String, ReentrantLock>()
@@ -192,10 +194,17 @@ class DiscordMatchPublicationService(
      */
     private fun trySend(canonical: CanonicalMatch, matchId: String): SendOutcome {
         return try {
+            val narrative = try {
+                llmEditorialService.generateMatchNarrative(canonical)
+            } catch (ex: Exception) {
+                log.warn("LLM narrative generation failed for match {}, proceeding without: {}", matchId, ex.message)
+                null
+            }
             val payload = discordRenderer.renderMatch(
                 canonical.footballMatch,
                 canonical.interpretation,
                 canonical.stories,
+                editorialNarrative = narrative,
             )
             webhookClient.send(payload)
             SendOutcome.Success

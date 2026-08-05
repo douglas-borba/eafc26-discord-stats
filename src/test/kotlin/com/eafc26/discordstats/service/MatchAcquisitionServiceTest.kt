@@ -8,6 +8,9 @@ import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.discord.DiscordDeliveryException
 import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.discord.DiscordWebhookClient
+import com.eafc26.discordstats.llm.EditorialContextBuilder
+import com.eafc26.discordstats.llm.LlmEditorialService
+import com.eafc26.discordstats.llm.LlmProperties
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.ClubDetails
@@ -64,7 +67,10 @@ class MatchAcquisitionServiceTest {
             ea = EaProperties(clubId = clubId, clubName = "Test FC"),
             polling = PollingProperties(),
         )
-        val publicationService = DiscordMatchPublicationService(store, webhookClient, DiscordRenderer(matchSummaryBuilder))
+        val llmEditorialService = LlmEditorialService(
+            EditorialContextBuilder(), null, mock(), LlmProperties(enabled = false),
+        )
+        val publicationService = DiscordMatchPublicationService(store, webhookClient, DiscordRenderer(matchSummaryBuilder), llmEditorialService)
         return MatchAcquisitionService(
             gateway,
             store,
@@ -76,6 +82,7 @@ class MatchAcquisitionServiceTest {
             canonicalMatchRepository,
             CanonicalMatchFactory(),
             editorialPresentationService,
+            LlmEditorialService(EditorialContextBuilder(), null, mock(), LlmProperties(enabled = false)),
         )
     }
 

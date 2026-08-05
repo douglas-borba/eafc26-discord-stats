@@ -8,6 +8,9 @@ import com.eafc26.discordstats.config.WebhookConfigService
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.discord.DiscordWebhookClient
 import com.eafc26.discordstats.discord.DiscordRenderer
+import com.eafc26.discordstats.llm.EditorialContextBuilder
+import com.eafc26.discordstats.llm.LlmEditorialService
+import com.eafc26.discordstats.llm.LlmProperties
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.service.AcquisitionResult
 import com.eafc26.discordstats.service.AcquisitionStateHolder
@@ -58,10 +61,14 @@ class DevSimulatorServiceTest {
             ea = EaProperties(clubId = clubId, clubName = "Associação BF"),
         )
 
+        val llmEditorialService = LlmEditorialService(
+            EditorialContextBuilder(), null, mock(), LlmProperties(enabled = false),
+        )
         val publicationService = com.eafc26.discordstats.service.DiscordMatchPublicationService(
             publishedMatchStore,
             webhookClient,
             DiscordRenderer(matchSummaryBuilder),
+            llmEditorialService,
         )
 
         val editorialPresentationService = mock<com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationService>()
@@ -77,6 +84,7 @@ class DevSimulatorServiceTest {
             canonicalMatchRepository,
             CanonicalMatchFactory(),
             editorialPresentationService,
+            LlmEditorialService(EditorialContextBuilder(), null, mock(), LlmProperties(enabled = false)),
         )
 
         simulatorService = DevSimulatorService(

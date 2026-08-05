@@ -6,6 +6,7 @@ import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.canonical.CanonicalMatch
+import com.eafc26.discordstats.llm.LlmEditorialService
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationService
 import com.eafc26.discordstats.store.PublishedMatchStore
@@ -50,6 +51,7 @@ class MatchAcquisitionService(
     private val canonicalMatchRepository: CanonicalMatchRepository,
     private val canonicalMatchFactory: CanonicalMatchFactory,
     private val editorialPresentationService: MatchEditorialPresentationService?,
+    private val llmEditorialService: LlmEditorialService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
@@ -163,6 +165,13 @@ class MatchAcquisitionService(
                     editorialPresentationService?.generateAndPersist(canonical)
                 } catch (ex: Exception) {
                     log.error("Editorial presentation failed for match {}: {}", canonical.matchId.value, ex.message)
+                }
+            }
+            canonicalByMatchId.values.lastOrNull()?.let { latest ->
+                try {
+                    llmEditorialService.generateAndPersistPanorama(latest)
+                } catch (ex: Exception) {
+                    log.error("LLM panorama generation failed: {}", ex.message)
                 }
             }
         }

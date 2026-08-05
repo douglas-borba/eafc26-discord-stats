@@ -3,13 +3,17 @@ export const dynamic = "force-dynamic";
 import { OverviewClubPanel } from "@/components/overview/overview-club-panel";
 import { OverviewMatchCard } from "@/components/overview/overview-match-card";
 import { getRecentMatchCards } from "@/lib/services/match-card-service";
-import { buildSequenceEditorial } from "@/lib/services/sequence-editorial-service";
+import { buildSequenceEditorial, fetchAiPanorama } from "@/lib/services/sequence-editorial-service";
 
 export default async function OverviewPage({ params }: { params: Promise<{ clubId: string }> }) {
   const { clubId } = await params;
 
-  const presentations = await getRecentMatchCards(clubId);
+  const [presentations, aiNarrative] = await Promise.all([
+    getRecentMatchCards(clubId),
+    fetchAiPanorama(clubId),
+  ]);
   const editorial = buildSequenceEditorial(presentations);
+  editorial.aiNarrative = aiNarrative;
 
   if (presentations.length === 0) {
     return (

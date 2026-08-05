@@ -28,6 +28,7 @@ class DiscordRenderer(
         interpretation: MatchInterpretation,
         stories: MatchStories,
         zoneId: ZoneId = ZoneId.systemDefault(),
+        editorialNarrative: String? = null,
     ): DiscordPayload {
         validateInputs(footballMatch, interpretation, stories)
         val summary = summaryBuilder.build(footballMatch, interpretation, stories, zoneId)
@@ -125,11 +126,19 @@ class DiscordRenderer(
             )
         })
 
+        val description = buildString {
+            append("${summary.outcome.emoji} ${summary.outcome.label}\n📅 ${summary.date}")
+            if (!editorialNarrative.isNullOrBlank()) {
+                append("\n\n")
+                append(editorialNarrative)
+            }
+        }
+
         return DiscordPayload(
             listOf(
                 DiscordEmbed(
                     title = "🏆 ${summary.ourName} ${summary.ourScore} × ${summary.oppScore} ${summary.oppName}",
-                    description = "${summary.outcome.emoji} ${summary.outcome.label}\n📅 ${summary.date}",
+                    description = description,
                     color = summary.outcome.color,
                     fields = fields,
                     timestamp = summary.timestamp,

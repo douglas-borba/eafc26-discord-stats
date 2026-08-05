@@ -5,6 +5,8 @@ import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.discord.DiscordDeliveryException
 import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.discord.DiscordWebhookClient
+import com.eafc26.discordstats.llm.LlmEditorialService
+import com.eafc26.discordstats.llm.LlmProperties
 import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
@@ -72,7 +74,13 @@ class DiscordMatchPublicationServiceTest {
 
     private fun makeStore() = PublishedMatchStore(ObjectMapper().registerModule(KotlinModule.Builder().build()))
     private fun makeService(s: PublishedMatchStore) = DiscordMatchPublicationService(
-        s, webhookClient, DiscordRenderer(MatchSummaryBuilder(PhraseBank(jacksonObjectMapper())))
+        s, webhookClient, DiscordRenderer(MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))),
+        LlmEditorialService(
+            com.eafc26.discordstats.llm.EditorialContextBuilder(),
+            null,
+            mock(),
+            LlmProperties(enabled = false),
+        ),
     )
 
     private fun canonical(id: String, ourScore: String = "2", oppScore: String = "1") =

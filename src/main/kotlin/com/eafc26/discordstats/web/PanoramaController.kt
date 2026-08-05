@@ -1,0 +1,56 @@
+package com.eafc26.discordstats.web
+
+import com.eafc26.discordstats.config.AppProperties
+import com.eafc26.discordstats.llm.LlmEditorialService
+import com.eafc26.discordstats.service.MatchHistoryService
+import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RestController
+import reactor.core.publisher.Mono
+import reactor.core.scheduler.Schedulers
+
+@RestController
+class PanoramaController(
+    private val llmEditorialService: LlmEditorialService,
+    private val matchHistoryService: MatchHistoryService,
+    private val appProperties: AppProperties,
+) {
+    @GetMapping("/api/panorama", produces = [MediaType.APPLICATION_JSON_VALUE])
+    fun getPanorama(): Mono<ResponseEntity<PanoramaResponse>> =
+        Mono.fromCallable {
+            val clubId = appProperties.ea.clubId
+            val text = llmEditorialService.getPersistedPanorama(clubId)
+            ResponseEntity.ok(
+                PanoramaResponse(
+                    status = if (text != null) "success" else "unavailable",
+                    text = text,
+                )
+            )
+        }.subscribeOn(Schedulers.boundedElastic())
+
+    @PostMapping("/api/panorama/regenerate", produces = [MediaType.APPLICATION_JSON_VALUE])
+    fun regeneratePanorama(): Mono<ResponseEntity<PanoramaResponse>> =
+        Mono.fromCallable {
+            val latest = matchHistoryService.latest(1).firstOrNull()
+                ?: return@fromCallable ResponseEntity.ok(
+                    PanoramaResponse(status = "no_matches", text = null)
+                )
+
+            llmEditorialService.generateAndPersistPanorama(latest)
+            val clubId = appProperties.ea.clubId
+            val text = llmEditorialService.getPersistedPanorama(clubId)
+            ResponseEntity.ok(
+                PanoramaResponse(
+                    status = if (text != null) "success" else "failed",
+                    text = text,
+                )
+            )
+        }.subscribeOn(Schedulers.boundedElastic())
+}
+
+data class PanoramaResponse(
+    val status: String,
+    val text: String?,
+)

@@ -1,9 +1,11 @@
+import { createServerSupabase } from "@/lib/supabase/server";
 import type { MatchSummaryPresentation } from "./match-card-service";
 
 export interface SequenceEditorial {
   title: string;
   subtitle: string;
   narrative: string;
+  aiNarrative: string | null;
   stats: SequenceStats;
   topScorer: { name: string; goals: number } | null;
   topHighlight: { name: string; appearances: number } | null;
@@ -30,6 +32,7 @@ export function buildSequenceEditorial(
       title: "Sem partidas recentes",
       subtitle: "Nenhuma partida processada ainda",
       narrative: "Aguardando os primeiros resultados para construir o panorama editorial.",
+      aiNarrative: null,
       stats: { wins: 0, draws: 0, losses: 0, goalsScored: 0, goalsConceded: 0, goalDifference: 0, matchCount: 0, avgGoalsScored: "0.0" },
       topScorer: null,
       topHighlight: null,
@@ -46,7 +49,25 @@ export function buildSequenceEditorial(
   const subtitle = pickSubtitle(matchCount);
   const narrative = buildNarrative(clubName, stats, currentRun, topScorer, topHighlight);
 
-  return { title, subtitle, narrative, stats, topScorer, topHighlight };
+  return { title, subtitle, narrative, aiNarrative: null, stats, topScorer, topHighlight };
+}
+
+export async function fetchAiPanorama(clubId: string): Promise<string | null> {
+  try {
+    const supabase = createServerSupabase();
+    const { data, error } = await supabase
+      .from("dashboard_panoramas")
+      .select("narrative")
+      .eq("club_id", clubId)
+      .order("generated_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error || !data?.narrative) return null;
+    return data.narrative as string;
+  } catch {
+    return null;
+  }
 }
 
 function computeStats(presentations: MatchSummaryPresentation[]): SequenceStats {
