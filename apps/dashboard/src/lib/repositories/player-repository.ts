@@ -70,13 +70,16 @@ export async function listPlayers(
   const players = Array.from(playerMap.values());
 
   const col = sortBy ?? "matchesPlayed";
-  const dir = sortDir === "ASC" ? 1 : -1;
+  const dir = sortDir === "ASC" ? -1 : 1;
   players.sort((a, b) => {
     const av = (a as unknown as Record<string, unknown>)[col] ?? 0;
     const bv = (b as unknown as Record<string, unknown>)[col] ?? 0;
     if (av < bv) return dir;
     if (av > bv) return -dir;
-    return a.playerId.localeCompare(b.playerId);
+    if (a.matchesPlayed !== b.matchesPlayed) return b.matchesPlayed - a.matchesPlayed;
+    const nameA = (a.displayName ?? a.platformName ?? a.playerId).toLocaleLowerCase("pt-BR");
+    const nameB = (b.displayName ?? b.platformName ?? b.playerId).toLocaleLowerCase("pt-BR");
+    return nameA.localeCompare(nameB, "pt-BR");
   });
 
   const totalElements = players.length;

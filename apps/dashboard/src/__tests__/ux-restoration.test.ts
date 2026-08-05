@@ -277,6 +277,43 @@ describe("UX: Sidebar has tagline", () => {
   });
 });
 
+describe("UX: Sidebar nav order", () => {
+  const sidebar = readFile("components/layout/sidebar-nav.tsx");
+
+  it("Jogadores appears immediately after Visão Geral", () => {
+    const visaoIdx = sidebar.indexOf('"Visão Geral"');
+    const jogadoresIdx = sidebar.indexOf('"Jogadores"');
+    const partidasIdx = sidebar.indexOf('"Partidas"');
+    expect(visaoIdx).toBeGreaterThan(-1);
+    expect(jogadoresIdx).toBeGreaterThan(visaoIdx);
+    expect(partidasIdx).toBeGreaterThan(jogadoresIdx);
+  });
+});
+
+describe("UX: Players page sort and auto-select", () => {
+  it("requests averageRating DESC from getPlayers", () => {
+    const page = readFile("app/clubs/[clubId]/(sidebar)/players/page.tsx");
+    expect(page).toContain('"averageRating"');
+    expect(page).toContain('"DESC"');
+  });
+
+  it("auto-selects the first player (highest rated) when no searchParam", () => {
+    const page = readFile("app/clubs/[clubId]/(sidebar)/players/page.tsx");
+    expect(page).toContain("selectedPlayerId ?? result.content[0]?.playerId");
+  });
+
+  it("repository sort uses matches played then name as tiebreakers", () => {
+    const repo = readFile("lib/repositories/player-repository.ts");
+    expect(repo).toContain("b.matchesPlayed - a.matchesPlayed");
+    expect(repo).toContain('localeCompare(nameB, "pt-BR")');
+  });
+
+  it("PlayersShell relies on server-provided order without re-sorting", () => {
+    const shell = readFile("components/players/players-shell.tsx");
+    expect(shell).not.toContain(".sort(");
+  });
+});
+
 describe("UX: Desktop split-pane layout", () => {
   it("matches shell uses lg:grid with list and detail columns", () => {
     const shell = readFile("components/matches/matches-shell.tsx");
