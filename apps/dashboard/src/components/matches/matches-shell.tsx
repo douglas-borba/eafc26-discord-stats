@@ -12,16 +12,16 @@ import type { MatchSummary, MatchDetail } from "@/lib/domain/types";
 /* ------------------------------------------------------------------ */
 
 const outcomeConfig = {
-  WIN:  { label: "Vitória", className: "text-outcome-win border-outcome-win" },
-  DRAW: { label: "Empate",  className: "text-outcome-draw border-outcome-draw" },
-  LOSS: { label: "Derrota", className: "text-outcome-loss border-outcome-loss" },
+  WIN:  { label: "Vitória", text: "text-win", border: "border-win" },
+  DRAW: { label: "Empate",  text: "text-draw", border: "border-draw" },
+  LOSS: { label: "Derrota", text: "text-loss", border: "border-loss" },
 } as const;
 
 function ListOutcomeBadge({ outcome }: { outcome: "WIN" | "DRAW" | "LOSS" }) {
   const cfg = outcomeConfig[outcome];
   return (
     <span
-      className={`inline-flex items-center gap-[5px] px-[9px] py-[5px] border rounded-full text-[11px] font-[800] tracking-[0.04em] uppercase leading-none ${cfg.className}`}
+      className={`inline-flex items-center gap-[5px] px-[9px] py-[5px] border rounded-full text-[11px] font-[800] tracking-[0.04em] uppercase leading-none ${cfg.text} ${cfg.border}`}
     >
       {cfg.label}
     </span>

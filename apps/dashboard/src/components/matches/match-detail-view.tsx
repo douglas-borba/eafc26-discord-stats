@@ -3,6 +3,21 @@ import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { formatDateTime, ratingColor, outcomeColor } from "@/lib/utils";
 import type { MatchDetail } from "@/lib/domain/types";
 
+/* ── reason labels ────────────────────────────────────────── */
+
+const reasonLabels: Record<string, string> = {
+  EA_MAN_OF_THE_MATCH: "Eleito craque pela EA",
+  HIGHEST_RATING: "Maior nota da partida",
+  LOWEST_ELIGIBLE_RATING: "Menor nota entre os elegíveis",
+  HIGHEST_DEFENSIVE_IMPACT: "Maior impacto defensivo",
+  NO_ELIGIBLE_CANDIDATE: "Nenhum candidato elegível",
+};
+
+function localizeReason(reason: string | null): string | null {
+  if (!reason) return null;
+  return reasonLabels[reason] ?? reason;
+}
+
 /* ── tone maps ─────────────────────────────────────────────── */
 
 const characterMeta: Record<string, { emoji: string; label: string; color: string; message: string }> = {
@@ -149,6 +164,9 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
               const award = match.awards[key];
               const meta = characterMeta[key];
               const awarded = !!award;
+              const player = awarded
+                ? match.players.find((p) => p.playerId === award.winnerId)
+                : null;
               return (
                 <Panel
                   key={key}
@@ -178,9 +196,21 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
                         <h3 className="text-[19px] font-bold text-text-primary mt-2">
                           {award.winnerName ?? "---"}
                         </h3>
+                        {player && (
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-soft mt-1">
+                            {player.rating != null && (
+                              <span className={`font-bold ${ratingColor(player.rating)}`}>
+                                {player.rating.toFixed(1)}
+                              </span>
+                            )}
+                            {player.goals > 0 && <span>{player.goals} gol{player.goals > 1 ? "s" : ""}</span>}
+                            {player.assists > 0 && <span>{player.assists} assist.</span>}
+                            {player.redCards > 0 && <span className="text-loss">{player.redCards} CV</span>}
+                          </div>
+                        )}
                         {award.reason && (
-                          <p className="text-sm mt-1" style={{ fontWeight: 650 }}>
-                            {award.reason}
+                          <p className="text-xs text-muted mt-2" style={{ fontWeight: 600 }}>
+                            {localizeReason(award.reason)}
                           </p>
                         )}
                         <p className="text-xs text-muted mt-3 pt-3 border-t border-border/40 italic leading-relaxed">
