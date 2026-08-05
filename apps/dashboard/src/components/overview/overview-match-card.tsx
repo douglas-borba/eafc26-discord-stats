@@ -39,11 +39,11 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
   return (
     <div className={c ? "" : "max-w-[420px] mx-auto px-3"}>
       <div
-        className={`match-card match-summary-card rounded-[10px] overflow-hidden match-card-elevated ${isLatest ? "match-card-featured" : ""}`}
+        className={`match-card match-summary-card rounded-[10px] match-card-elevated ${isLatest ? "match-card-featured" : ""}`}
       >
         {/* Header with vertical ribbon */}
         <div
-          className="card-header grid"
+          className="card-header grid rounded-t-[10px] overflow-hidden"
           style={{
             gridTemplateColumns: c ? "26px 1fr" : "32px 1fr",
             background: "linear-gradient(135deg, rgba(88, 166, 255, 0.08), transparent)",
@@ -276,7 +276,7 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
         </div>
 
         {/* Footer */}
-        <div className={`card-footer ${c ? "py-[0.35rem] px-3 text-[0.6rem]" : "py-[0.6rem] px-3 text-[0.7rem]"} text-center text-[#6e7681] bg-black/25 border-t border-[#30363d]`}>
+        <div className={`card-footer rounded-b-[10px] ${c ? "py-[0.35rem] px-3 text-[0.6rem]" : "py-[0.6rem] px-3 text-[0.7rem]"} text-center text-[#6e7681] bg-black/25 border-t border-[#30363d]`}>
           EA FC 26 — Associação BF
         </div>
       </div>
