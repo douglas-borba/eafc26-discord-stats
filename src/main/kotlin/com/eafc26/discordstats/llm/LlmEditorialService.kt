@@ -166,7 +166,7 @@ class LlmEditorialService(
         const val PANORAMA_MATCH_COUNT = 4
         const val PROMPT_VERSION = "v2"
         const val PANORAMA_MAX_CHARS = 450
-        const val DISCORD_MAX_CHARS = 250
+        const val DISCORD_MAX_CHARS = 220
 
         fun computeContextKey(clubId: String, sortedMatchIds: List<String>, promptVersion: String, model: String): String {
             val input = "$clubId|${sortedMatchIds.joinToString(",")}|$promptVersion|$model"
