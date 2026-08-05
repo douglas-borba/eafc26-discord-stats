@@ -6,19 +6,10 @@ interface Props {
   variant?: "full" | "compact";
 }
 
-const resultBadgeStyles = {
-  WIN: {
-    background: "rgba(63, 185, 80, 0.25)",
-    color: "#3fb950",
-  },
-  DRAW: {
-    background: "rgba(139, 148, 158, 0.25)",
-    color: "#8b949e",
-  },
-  LOSS: {
-    background: "rgba(248, 81, 73, 0.25)",
-    color: "#f85149",
-  },
+const ribbonStyles = {
+  WIN: { bg: "var(--color-win)", color: "#fff" },
+  DRAW: { bg: "var(--color-draw)", color: "#fff" },
+  LOSS: { bg: "var(--color-loss)", color: "#fff" },
 };
 
 export function OverviewMatchCard({ presentation, variant = "full" }: Props) {
@@ -33,7 +24,7 @@ export function OverviewMatchCard({ presentation, variant = "full" }: Props) {
     );
   }
 
-  const badgeStyle = resultBadgeStyles[presentation.outcome.type];
+  const ribbon = ribbonStyles[presentation.outcome.type];
   const divMy = c ? "my-[0.45rem]" : "my-3";
   const px = c ? "px-4" : "px-5";
   const sectionMb = c ? "mb-[0.35rem]" : "mb-2";
@@ -47,32 +38,49 @@ export function OverviewMatchCard({ presentation, variant = "full" }: Props) {
   return (
     <div className={c ? "" : "max-w-[420px] mx-auto px-3"}>
       <div className="match-card match-summary-card">
-        {/* Header */}
+        {/* Header with vertical ribbon */}
         <div
-          className={`card-header ${c ? "py-3 px-4" : "py-4 px-5"} text-center`}
-          style={{ background: "linear-gradient(135deg, rgba(88, 166, 255, 0.08), transparent)" }}
+          className="card-header grid overflow-hidden"
+          style={{
+            gridTemplateColumns: c ? "26px 1fr" : "32px 1fr",
+            background: "linear-gradient(135deg, rgba(88, 166, 255, 0.08), transparent)",
+          }}
         >
+          {/* Ribbon */}
           <div
-            className={`inline-block rounded-md ${c ? "text-[0.62rem]" : "text-[0.7rem]"} font-bold uppercase tracking-[0.05em] ${c ? "mb-1.5" : "mb-2"}`}
-            style={{ padding: c ? "0.15rem 0.55rem" : "0.2rem 0.7rem", ...badgeStyle }}
+            className="flex items-center justify-center"
+            style={{
+              background: ribbon.bg,
+              color: ribbon.color,
+              writingMode: "vertical-rl",
+              textOrientation: "mixed",
+              fontSize: c ? "0.52rem" : "0.6rem",
+              fontWeight: 800,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+            }}
           >
             {presentation.outcome.label}
           </div>
-          <div className={`card-score-row flex items-center justify-center ${c ? "gap-2 my-[0.3rem]" : "gap-3 my-[0.4rem]"}`}>
-            <div className={`card-team-name ${c ? "text-[0.78rem] max-w-[90px]" : "text-[0.85rem] max-w-[110px]"} font-medium text-[#e6edf3] text-center leading-[1.2]`}>
-              {presentation.ourName}
+
+          {/* Score area */}
+          <div className={`${c ? "py-3 px-3" : "py-4 px-4"} text-center`}>
+            <div className={`card-score-row flex items-center justify-center ${c ? "gap-2" : "gap-3"}`}>
+              <div className={`card-team-name ${c ? "text-[0.78rem] max-w-[90px]" : "text-[0.85rem] max-w-[110px]"} font-medium text-[#e6edf3] text-center leading-[1.2]`}>
+                {presentation.ourName}
+              </div>
+              <div className={`card-score flex items-center gap-0.5 ${c ? "text-[1.5rem]" : "text-[1.75rem]"} font-[800] text-white`}>
+                <span>{presentation.ourScore}</span>
+                <span className={`card-score-sep text-[#6e7681] ${c ? "text-[0.95rem]" : "text-[1.1rem]"} font-normal`}>×</span>
+                <span>{presentation.oppScore}</span>
+              </div>
+              <div className={`card-team-name ${c ? "text-[0.78rem] max-w-[90px]" : "text-[0.85rem] max-w-[110px]"} font-medium text-[#e6edf3] text-center leading-[1.2]`}>
+                {presentation.oppName}
+              </div>
             </div>
-            <div className={`card-score flex items-center gap-0.5 ${c ? "text-[1.5rem]" : "text-[1.75rem]"} font-[800] text-white`}>
-              <span>{presentation.ourScore}</span>
-              <span className={`card-score-sep text-[#6e7681] ${c ? "text-[0.95rem]" : "text-[1.1rem]"} font-normal`}>×</span>
-              <span>{presentation.oppScore}</span>
+            <div className={`card-date ${c ? "text-[0.62rem]" : "text-[0.7rem]"} text-muted ${c ? "mt-[0.25rem]" : "mt-[0.4rem]"}`}>
+              📅 {presentation.date}
             </div>
-            <div className={`card-team-name ${c ? "text-[0.78rem] max-w-[90px]" : "text-[0.85rem] max-w-[110px]"} font-medium text-[#e6edf3] text-center leading-[1.2]`}>
-              {presentation.oppName}
-            </div>
-          </div>
-          <div className={`card-date ${c ? "text-[0.62rem]" : "text-[0.7rem]"} text-muted ${c ? "mt-[0.25rem]" : "mt-[0.4rem]"}`}>
-            📅 {presentation.date}
           </div>
         </div>
 
