@@ -39,11 +39,11 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
   return (
     <div className={c ? "" : "max-w-[420px] mx-auto px-3"}>
       <div
-        className={`match-card match-summary-card rounded-[10px] match-card-elevated ${isLatest ? "match-card-featured" : ""}`}
+        className={`match-card match-summary-card rounded-[10px] overflow-hidden match-card-elevated ${isLatest ? "match-card-featured" : ""}`}
       >
         {/* Header with vertical ribbon */}
         <div
-          className="card-header grid overflow-hidden"
+          className="card-header grid"
           style={{
             gridTemplateColumns: c ? "26px 1fr" : "32px 1fr",
             background: "linear-gradient(135deg, rgba(88, 166, 255, 0.08), transparent)",
