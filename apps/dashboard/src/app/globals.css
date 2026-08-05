@@ -24,6 +24,11 @@
   --color-precision: #56d4dd;
   --color-discipline: #ff7b72;
 
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(48, 54, 61, 0.48);
+  --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(48, 54, 61, 0.64);
+  --shadow-card-featured: 0 2px 8px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(48, 54, 61, 0.64);
+  --shadow-card-featured-hover: 0 8px 20px rgba(0, 0, 0, 0.36), 0 0 0 1px rgba(88, 166, 255, 0.16);
+
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -40,4 +45,24 @@ body {
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
+}
+
+.match-card-elevated {
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 180ms ease-out, transform 180ms ease-out;
+}
+
+.match-card-elevated:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-2px);
+}
+
+.match-card-featured {
+  box-shadow: var(--shadow-card-featured);
+  transform: translateY(-1px);
+}
+
+.match-card-featured:hover {
+  box-shadow: var(--shadow-card-featured-hover);
+  transform: translateY(-3px);
 }

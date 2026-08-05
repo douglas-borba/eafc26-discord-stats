@@ -40,8 +40,8 @@ export default async function OverviewPage({ params }: { params: Promise<{ clubI
 
       {/* Columns 2-4: Match Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 p-5 lg:p-6 items-start">
-        {presentations.map((p) => (
-          <OverviewMatchCard key={p.matchId} presentation={p} variant="full" />
+        {presentations.map((p, i) => (
+          <OverviewMatchCard key={p.matchId} presentation={p} variant="full" isLatest={i === 0} />
         ))}
       </div>
     </div>

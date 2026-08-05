@@ -4,6 +4,7 @@ interface Props {
   presentation: MatchSummaryPresentation | null | undefined;
   simulated?: boolean;
   variant?: "full" | "compact";
+  isLatest?: boolean;
 }
 
 const ribbonStyles = {
@@ -12,7 +13,7 @@ const ribbonStyles = {
   LOSS: { bg: "var(--color-loss)", color: "#fff" },
 };
 
-export function OverviewMatchCard({ presentation, variant = "full" }: Props) {
+export function OverviewMatchCard({ presentation, variant = "full", isLatest = false }: Props) {
   const c = variant === "compact";
 
   if (!presentation) {
@@ -37,7 +38,9 @@ export function OverviewMatchCard({ presentation, variant = "full" }: Props) {
 
   return (
     <div className={c ? "" : "max-w-[420px] mx-auto px-3"}>
-      <div className="match-card match-summary-card">
+      <div
+        className={`match-card match-summary-card rounded-[10px] match-card-elevated ${isLatest ? "match-card-featured" : ""}`}
+      >
         {/* Header with vertical ribbon */}
         <div
           className="card-header grid overflow-hidden"
