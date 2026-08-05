@@ -29,17 +29,13 @@ private func installSignalHandlers() {
 // MARK: - App Entry
 
 @main
-struct EAFCStatsLauncherApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
-    var body: some Scene {
-        WindowGroup {
-            LauncherView()
-                .environmentObject(appDelegate.launcher)
-                .frame(width: 420, height: 340)
-        }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
+enum AppMain {
+    static func main() {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.regular)
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.run()
     }
 }
 
@@ -48,22 +44,42 @@ struct EAFCStatsLauncherApp: App {
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     let launcher = LauncherController()
+    private var mainWindow: NSWindow!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installSignalHandlers()
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
 
-        if let window = NSApp.windows.first {
-            window.center()
-            window.makeKeyAndOrderFront(nil)
-            window.isMovableByWindowBackground = true
-        }
+        let hostingView = NSHostingView(rootView:
+            LauncherView()
+                .environmentObject(launcher)
+                .frame(width: 420, height: 340)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 340),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.title = "EA FC Stats"
+        window.center()
+        window.isMovableByWindowBackground = true
+        window.isReleasedWhenClosed = false
+        window.makeKeyAndOrderFront(nil)
+        mainWindow = window
+
+        NSApp.activate(ignoringOtherApps: true)
 
         Task { await launcher.start() }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ a: NSApplication) -> Bool { false }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showMainWindow()
+        return true
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if launcher.isShuttingDown { return .terminateNow }
@@ -72,6 +88,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             await launcher.shutdownApplication(source: "system")
         }
         return .terminateCancel
+    }
+
+    func showMainWindow() {
+        mainWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 
@@ -468,6 +489,7 @@ class LauncherController: ObservableObject {
         process.environment = processEnv
 
         let logFile = FileHandle.forWritingOrCreate(atPath: backendLogFile)
+        process.standardInput = FileHandle.nullDevice
         process.standardOutput = logFile
         process.standardError = logFile
 

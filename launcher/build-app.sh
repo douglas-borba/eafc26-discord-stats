@@ -47,6 +47,8 @@ cat > "$APP_DIR/Info.plist" << 'EOF'
   <string>13.0</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSQuitAlwaysKeepsWindows</key>
+  <false/>
 </dict>
 </plist>
 EOF
