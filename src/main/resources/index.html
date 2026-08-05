@@ -235,6 +235,9 @@
 
     .match-status-icon { font-size: 0.78rem; }
     .match-status.published { color: #7ee787; }
+    .match-status.delivering { color: #58a6ff; }
+    .match-status.uncertain { color: #f0883e; }
+    .match-status.failed { color: #f85149; }
     .match-status.simulated { color: #f0883e; }
 
     .empty-state {
@@ -708,6 +711,22 @@
                 <span class="match-status-icon">—</span>
                 <span id="match-status-text">—</span>
               </div>
+              <!-- Publication Actions Panel (shown for DELIVERY_UNCERTAIN / FAILED_PERMANENT) -->
+              <div id="publication-actions" style="display: none; margin-top: 0.6rem;">
+                <div style="font-size: 0.7rem; color: #8b949e; margin-bottom: 0.5rem;" id="publication-actions-message">
+                  Não foi possível confirmar se a partida foi publicada no Discord.
+                </div>
+                <div style="display: flex; gap: 0.4rem;">
+                  <button class="btn btn-outline" style="flex: 1; font-size: 0.75rem; padding: 0.45rem;" onclick="resolveAsDelivered()" id="btn-resolve-delivered">
+                    <span>✓</span>
+                    <span>Marcar como publicada</span>
+                  </button>
+                  <button class="btn btn-outline" style="flex: 1; font-size: 0.75rem; padding: 0.45rem;" onclick="confirmForcePublish()" id="btn-force-publish">
+                    <span>🔄</span>
+                    <span>Reenviar</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -809,6 +828,7 @@
           }
           if (info.devMode) {
             document.getElementById('dev-panel').style.display = 'block';
+            document.getElementById('reconciliation-panel').style.display = 'block';
           }
         })
         .catch(() => {});
@@ -822,7 +842,7 @@
           if (data.status === 'success' && data.presentation) {
             lastMatchData = data.presentation;
             isMatchSimulated = data.simulated || false;
-            renderDashboard(data.presentation, isMatchSimulated);
+            renderDashboard(data.presentation, isMatchSimulated, data.publicationStatus);
           } else {
             lastMatchData = null;
             isMatchSimulated = false;
@@ -835,12 +855,12 @@
     }
 
     // ===== Render Dashboard =====
-    function renderDashboard(p, simulated) {
-      renderLatestMatchPanel(p, simulated);
+    function renderDashboard(p, simulated, pubStatus) {
+      renderLatestMatchPanel(p, simulated, pubStatus);
       renderCardPanel(p, simulated);
     }
 
-    function renderLatestMatchPanel(p, simulated) {
+    function renderLatestMatchPanel(p, simulated, pubStatus) {
       document.getElementById('match-empty').style.display = 'none';
       document.getElementById('match-content').style.display = 'block';
 
@@ -858,9 +878,25 @@
       document.getElementById('match-date').textContent = p.date || '—';
 
       if (simulated) {
-        updateMatchStatus('simulated');
+        updateMatchStatus('simulated', null, pubStatus);
+      } else if (pubStatus) {
+        // Show real publication state
+        if (pubStatus.state === 'DELIVERED') {
+          updateMatchStatus('published', null, pubStatus);
+        } else if (pubStatus.state === 'DELIVERING') {
+          updateMatchStatus('delivering', null, pubStatus);
+        } else if (pubStatus.state === 'DELIVERY_UNCERTAIN') {
+          updateMatchStatus('uncertain', null, pubStatus);
+          showPublicationActions(p.matchId, pubStatus);
+        } else if (pubStatus.state === 'FAILED_PERMANENT') {
+          updateMatchStatus('failed', null, pubStatus);
+          showPublicationActions(p.matchId, pubStatus);
+        } else {
+          updateMatchStatus('unknown', '—', pubStatus);
+        }
       } else {
-        updateMatchStatus('published');
+        // No publication record - not yet attempted
+        updateMatchStatus('unknown', 'Aguardando publicação', null);
       }
     }
 
@@ -1038,7 +1074,7 @@
       document.getElementById('card-actions').style.display = 'none';
     }
 
-    function updateMatchStatus(status, customText) {
+    function updateMatchStatus(status, customText, pubStatus) {
       const statusEl = document.getElementById('match-status');
       const iconEl = statusEl.querySelector('.match-status-icon');
       const textEl = document.getElementById('match-status-text');
@@ -1048,6 +1084,15 @@
       if (status === 'published') {
         iconEl.textContent = '✅';
         textEl.textContent = customText || 'Publicada no Discord';
+      } else if (status === 'delivering') {
+        iconEl.textContent = '⏳';
+        textEl.textContent = customText || 'Enviando...';
+      } else if (status === 'uncertain') {
+        iconEl.textContent = '⚠️';
+        textEl.textContent = customText || 'Status incerto';
+      } else if (status === 'failed') {
+        iconEl.textContent = '❌';
+        textEl.textContent = customText || 'Falha permanente';
       } else if (status === 'simulated') {
         iconEl.textContent = '🧪';
         textEl.textContent = customText || 'Simulação';
@@ -1245,6 +1290,196 @@
       } catch (e) {
         status.className = 'dev-status error';
         status.textContent = 'Erro ao resetar';
+      }
+    }
+
+    // ===== Publication Actions =====
+    let currentMatchIdForActions = null;
+
+    function showPublicationActions(matchId, pubStatus) {
+      currentMatchIdForActions = matchId;
+      const actionsPanel = document.getElementById('publication-actions');
+      const message = document.getElementById('publication-actions-message');
+
+      if (pubStatus.state === 'DELIVERY_UNCERTAIN') {
+        message.textContent = 'Não foi possível confirmar se a partida foi publicada no Discord. Verifique o canal Discord antes de tomar uma ação.';
+      } else if (pubStatus.state === 'FAILED_PERMANENT') {
+        message.textContent = 'A publicação falhou de forma permanente. Corrija o problema e tente reenviar.';
+      }
+
+      actionsPanel.style.display = 'block';
+    }
+
+    async function resolveAsDelivered() {
+      if (!currentMatchIdForActions) return;
+
+      const btn = document.getElementById('btn-resolve-delivered');
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>';
+
+      try {
+        const res = await fetch(`/api/publication/${currentMatchIdForActions}/resolve-delivered`, {
+          method: 'POST',
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+          showFeedback({ status: 'success', message: data.message || 'Partida marcada como publicada' });
+          loadLatestMatch();
+        } else {
+          showFeedback({ status: 'error', message: data.message || 'Erro ao marcar como publicada' });
+        }
+      } catch (e) {
+        showFeedback({ status: 'error', message: 'Erro de rede' });
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    }
+
+    function confirmForcePublish() {
+      if (!currentMatchIdForActions) return;
+
+      if (confirm('⚠️ ATENÇÃO: Reenviar pode causar duplicação se a mensagem anterior tiver chegado ao Discord.\n\nVocê verificou o canal Discord e confirmou que a mensagem NÃO foi publicada?\n\nClique OK para reenviar.')) {
+        forcePublishMatch();
+      }
+    }
+
+    async function forcePublishMatch() {
+      if (!currentMatchIdForActions) return;
+
+      const btn = document.getElementById('btn-force-publish');
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>';
+
+      try {
+        const res = await fetch(`/api/publication/${currentMatchIdForActions}/force-publish`, {
+          method: 'POST',
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+          if (data.status === 'success') {
+            showFeedback({ status: 'success', message: data.message || 'Partida reenviada com sucesso' });
+          } else {
+            showFeedback({ status: 'warning', message: data.message || 'Reenvio completado com advertências' });
+          }
+          loadLatestMatch();
+        } else {
+          showFeedback({ status: 'error', message: data.message || 'Erro ao reenviar partida' });
+        }
+      } catch (e) {
+        showFeedback({ status: 'error', message: 'Erro de rede' });
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    }
+
+    // ===== Reconciliation Functions =====
+    async function loadReconciliation() {
+      const btn = document.querySelector('#reconciliation-panel button');
+      const btnText = document.getElementById('btn-reconcile-text');
+      const result = document.getElementById('reconciliation-result');
+      const summary = document.getElementById('reconciliation-summary');
+      const list = document.getElementById('reconciliation-list');
+      const status = document.getElementById('reconciliation-status');
+
+      btn.disabled = true;
+      btnText.textContent = 'Carregando...';
+      status.textContent = '';
+
+      try {
+        const res = await fetch('/api/publication/reconcile/inspect');
+        const data = await res.json();
+
+        // Render summary
+        const s = data.summary;
+        summary.innerHTML = `
+          <div><strong>${s.totalInspected}</strong> partida(s) inspecionada(s)</div>
+          <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.3rem;">
+            <span>✅ ${s.delivered} publicada(s)</span>
+            <span>⏳ ${s.delivering} enviando</span>
+            <span>⚠️ ${s.uncertain} incerta(s)</span>
+            <span>❌ ${s.failedPermanent} falha permanente</span>
+            <span>➖ ${s.neverAttempted} nunca tentada(s)</span>
+          </div>
+        `;
+
+        // Render inspection list - using display info from API
+        list.innerHTML = data.inspections.map(item => {
+          const display = item.display;
+          const safeLabel = item.safeToAutoPublish ? '<span style="color: #3fb950;">✓ Seguro</span>' : '<span style="color: #8b949e;">⚠ Requer revisão</span>';
+
+          let detailsHtml = '';
+          if (item.attemptCount > 0) {
+            detailsHtml += `<div style="margin-top: 0.2rem; color: #8b949e;">Tentativas: ${item.attemptCount}</div>`;
+          }
+          if (item.lastError) {
+            detailsHtml += `<div style="margin-top: 0.2rem; color: #f85149; font-size: 0.65rem;">${esc(item.lastError)}</div>`;
+          }
+          if (item.lastHttpStatus) {
+            detailsHtml += `<div style="margin-top: 0.2rem; color: #8b949e;">HTTP ${item.lastHttpStatus}</div>`;
+          }
+
+          return `
+            <div style="padding: 0.5rem; background: rgba(255,255,255,0.03); border-radius: 4px; margin-bottom: 0.4rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <span style="color: ${display.color}; margin-right: 0.3rem;">${display.icon}</span>
+                  <span style="color: #c9d1d9;">${item.score}</span>
+                </div>
+                <div style="font-size: 0.65rem;">${safeLabel}</div>
+              </div>
+              <div style="margin-top: 0.2rem; color: #8b949e; font-size: 0.65rem;">${item.publicationState}</div>
+              ${detailsHtml}
+            </div>
+          `;
+        }).join('');
+
+        result.style.display = 'block';
+      } catch (e) {
+        status.style.color = '#f85149';
+        status.textContent = 'Erro ao carregar reconciliação';
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = 'Inspecionar publicações';
+      }
+    }
+
+    async function autoPublishSafe() {
+      const btn = document.querySelector('#reconciliation-result button');
+      const btnText = document.getElementById('btn-auto-publish-text');
+      const status = document.getElementById('reconciliation-status');
+
+      btn.disabled = true;
+      btnText.textContent = 'Publicando...';
+      status.textContent = '';
+
+      try {
+        const res = await fetch('/api/publication/reconcile/auto-publish', { method: 'POST' });
+        const data = await res.json();
+
+        if (data.publishedCount > 0) {
+          status.style.color = '#3fb950';
+        } else if (data.errorCount > 0) {
+          status.style.color = '#f85149';
+        } else {
+          status.style.color = '#8b949e';
+        }
+        status.textContent = data.message;
+
+        // Reload reconciliation data and latest match
+        loadReconciliation();
+        loadLatestMatch();
+      } catch (e) {
+        status.style.color = '#f85149';
+        status.textContent = 'Erro ao publicar partidas';
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = 'Publicar partidas seguras';
       }
     }
 

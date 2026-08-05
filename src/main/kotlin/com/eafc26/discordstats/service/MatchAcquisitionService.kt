@@ -260,6 +260,17 @@ class MatchAcquisitionService(
                     deliveryUncertain = listOf(AcquisitionResult.MatchSummary(latest.matchId, summary)),
                 )
             }
+            PublicationOutcome.SKIPPED_FAILED_PERMANENT -> {
+                log.warn("Match {} has FAILED_PERMANENT — blocked from automatic resend", latest.matchId)
+                AcquisitionResult.Processed(
+                    published = emptyList(),
+                    alreadyPublished = emptyList(),
+                    failed = listOf(AcquisitionResult.MatchFailure(
+                        latest.matchId, summary,
+                        "Falha permanente - requer correção e reenvio manual"
+                    )),
+                )
+            }
             PublicationOutcome.PUBLISHED, PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN -> {
                 stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Salvando histórico...")
                 log.info("Published match {}", latest.matchId)
@@ -419,6 +430,9 @@ class MatchAcquisitionService(
                 PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN -> {
                     log.warn("Match {} is DELIVERY_UNCERTAIN — blocked from automatic resend", match.matchId)
                 }
+                PublicationOutcome.SKIPPED_FAILED_PERMANENT -> {
+                    log.warn("Match {} has FAILED_PERMANENT — blocked from automatic resend", match.matchId)
+                }
                 PublicationOutcome.FAILED_BEFORE_SEND, PublicationOutcome.FAILED_HTTP -> {
                     val reason = pubResult.errorMessage ?: pubResult.outcome.name
                     if (reason.contains("not configured", ignoreCase = true) ||
@@ -543,7 +557,8 @@ class MatchAcquisitionService(
                 )
             }
             PublicationOutcome.SKIPPED_ALREADY_DELIVERED,
-            PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN -> error("forcePublish never returns SKIPPED")
+            PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN,
+            PublicationOutcome.SKIPPED_FAILED_PERMANENT -> error("forcePublish never returns SKIPPED")
         }
     }
 

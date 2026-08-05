@@ -1,6 +1,8 @@
 package com.eafc26.discordstats.service
 
 import com.eafc26.discordstats.presentation.MatchSummaryPresentation
+import com.eafc26.discordstats.store.PublishedMatchStore
+import com.eafc26.discordstats.web.PublicationStatus
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
@@ -16,6 +18,7 @@ import org.springframework.stereotype.Service
 @Service
 class MatchCardService(
     private val latestMatchHolder: LatestMatchHolder,
+    private val store: PublishedMatchStore,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -47,6 +50,19 @@ class MatchCardService(
         return MatchCardResult.Success(
             presentation = snapshot.presentation,
             simulated = snapshot.simulated,
+        )
+    }
+
+    /**
+     * Returns the publication status for a match.
+     */
+    fun getPublicationStatus(matchId: String): PublicationStatus? {
+        val record = store.loadRecords()[matchId] ?: return null
+        return PublicationStatus(
+            state = record.state.name,
+            attemptCount = record.attemptCount,
+            lastError = record.lastError,
+            lastHttpStatus = record.lastHttpStatus,
         )
     }
 

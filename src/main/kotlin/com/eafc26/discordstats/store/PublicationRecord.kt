@@ -26,12 +26,22 @@ package com.eafc26.discordstats.store
  *   The process died between the pre-send write and the 2xx confirmation. The message
  *   MAY or MAY NOT have reached Discord. Automatic resend is permanently blocked until
  *   explicit administrative resolution.
+ * - [PublicationState.FAILED_PERMANENT]: Discord explicitly rejected the request with a
+ *   definitive error (404, 401, 403, 400, 413). The message was NOT delivered.
  */
 data class PublicationRecord(
     val matchId: String,
     val state: PublicationState,
     /** Epoch-seconds of the last state write. */
     val updatedAt: Long = java.time.Instant.now().epochSecond,
+    /** Number of delivery attempts (for audit). */
+    val attemptCount: Int = 0,
+    /** Epoch-seconds of the last delivery attempt. */
+    val lastAttemptAt: Long? = null,
+    /** Last error message (sanitized, no stack traces). */
+    val lastError: String? = null,
+    /** Last HTTP status code received (if any). */
+    val lastHttpStatus: Int? = null,
 )
 
 enum class PublicationState {
@@ -47,5 +57,12 @@ enum class PublicationState {
      * Requires administrative resolution.
      */
     DELIVERY_UNCERTAIN,
+
+    /**
+     * Discord explicitly rejected the request (404, 401, 403, 400, 413).
+     * The message definitively was NOT delivered.
+     * Requires correction before manual resend.
+     */
+    FAILED_PERMANENT,
 }
 

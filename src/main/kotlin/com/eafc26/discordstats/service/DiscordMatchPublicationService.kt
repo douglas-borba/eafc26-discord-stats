@@ -70,6 +70,14 @@ class DiscordMatchPublicationService(
                     )
                     return DiscordPublicationResult(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN, matchId)
                 }
+                PublicationState.FAILED_PERMANENT -> {
+                    log.warn(
+                        "Match {} has FAILED_PERMANENT — blocking automatic resend. " +
+                            "Correction and manual resend required.",
+                        matchId,
+                    )
+                    return DiscordPublicationResult(PublicationOutcome.SKIPPED_FAILED_PERMANENT, matchId)
+                }
                 PublicationState.DELIVERING -> {
                     log.warn("Match {} found in DELIVERING state within session — treating as DELIVERY_UNCERTAIN", matchId)
                     return DiscordPublicationResult(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN, matchId)
@@ -289,6 +297,13 @@ enum class PublicationOutcome {
      * Automatic resend is blocked. Zero HTTP calls made.
      */
     SKIPPED_DELIVERY_UNCERTAIN,
+
+    /**
+     * Match has FAILED_PERMANENT state.
+     * Automatic resend is blocked. Zero HTTP calls made.
+     * Requires correction before manual resend.
+     */
+    SKIPPED_FAILED_PERMANENT,
 
     /**
      * Pre-send persistence of DELIVERING failed, OR webhook URL is not configured.

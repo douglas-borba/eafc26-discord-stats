@@ -27,13 +27,16 @@ class MatchCardController(
             .subscribeOn(Schedulers.boundedElastic())
             .map { result ->
                 when (result) {
-                    is MatchCardService.MatchCardResult.Success ->
+                    is MatchCardService.MatchCardResult.Success -> {
+                        val pubStatus = matchCardService.getPublicationStatus(result.presentation.matchId)
                         ResponseEntity.ok(MatchCardResponse(
                             status = "success",
                             presentation = result.presentation,
                             version = matchCardService.version(),
                             simulated = result.simulated,
+                            publicationStatus = pubStatus,
                         ))
+                    }
                     MatchCardService.MatchCardResult.NoMatches ->
                         ResponseEntity.ok(MatchCardResponse(
                             status = "no_matches",
@@ -50,5 +53,13 @@ data class MatchCardResponse(
     val presentation: MatchSummaryPresentation? = null,
     val version: Long? = null,
     val simulated: Boolean = false,
+    val publicationStatus: PublicationStatus? = null,
+)
+
+data class PublicationStatus(
+    val state: String,
+    val attemptCount: Int = 0,
+    val lastError: String? = null,
+    val lastHttpStatus: Int? = null,
 )
 

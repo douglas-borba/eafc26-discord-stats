@@ -1,20 +1,24 @@
 package com.eafc26.discordstats.service
 
 import com.eafc26.discordstats.presentation.*
+import com.eafc26.discordstats.store.PublishedMatchStore
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.mock
 
 class MatchCardServiceTest {
 
     private lateinit var latestMatchHolder: LatestMatchHolder
+    private lateinit var store: PublishedMatchStore
     private lateinit var service: MatchCardService
 
     @BeforeEach
     fun setUp() {
         latestMatchHolder = LatestMatchHolder()
-        service = MatchCardService(latestMatchHolder)
+        store = mock()
+        service = MatchCardService(latestMatchHolder, store)
     }
 
     // -------------------------------------------------------------------------
