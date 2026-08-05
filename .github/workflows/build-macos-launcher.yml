@@ -1,0 +1,73 @@
+name: Build macOS Launcher
+
+on:
+  workflow_dispatch:
+
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-launcher:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build .app bundle
+        run: bash launcher/build-app.sh
+
+      - name: Validate bundle
+        run: |
+          APP="dist/EA FC Stats.app"
+
+          echo "=== Bundle structure ==="
+          find "$APP" -type f | sort
+
+          echo ""
+          echo "=== Info.plist ==="
+          plutil -lint "$APP/Contents/Info.plist"
+
+          echo ""
+          echo "=== Executable ==="
+          ls -la "$APP/Contents/MacOS/EA FC Stats"
+          file "$APP/Contents/MacOS/EA FC Stats"
+          test -x "$APP/Contents/MacOS/EA FC Stats" || { echo "FAIL: not executable"; exit 1; }
+
+          echo ""
+          echo "=== No secrets embedded ==="
+          if strings "$APP/Contents/MacOS/EA FC Stats" | grep -qiE "(password|secret|token)=[^$]"; then
+            echo "FAIL: possible hardcoded secret"
+            exit 1
+          fi
+          echo "OK"
+
+      - name: Create distribution ZIP
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            "dist/EA FC Stats.app" \
+            "dist/EA-FC-Stats-macOS.zip"
+
+      - name: Verify ZIP
+        run: |
+          zipinfo -1 "dist/EA-FC-Stats-macOS.zip"
+          if zipinfo -1 "dist/EA-FC-Stats-macOS.zip" | grep -q "env.local"; then
+            echo "FAIL: .env.local found in ZIP"
+            exit 1
+          fi
+          echo "OK — no secrets in ZIP"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EA-FC-Stats-macOS
+          path: dist/EA-FC-Stats-macOS.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/EA-FC-Stats-macOS.zip

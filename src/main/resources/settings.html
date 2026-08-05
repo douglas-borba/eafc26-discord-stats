@@ -297,9 +297,13 @@
           throw new Error('HTTP ' + res.status);
         }
       } catch (e) {
-        btn.disabled = false;
-        btn.textContent = 'Encerrar aplicação';
-        showError('Erro ao encerrar a aplicação. Tente novamente.');
+        if (e instanceof TypeError && e.message.includes('fetch')) {
+          showInfo('Aplicação encerrada. O monitoramento foi interrompido e esta página pode ser fechada.');
+        } else {
+          btn.disabled = false;
+          btn.textContent = 'Encerrar aplicação';
+          showError('Erro ao encerrar a aplicação. Tente novamente.');
+        }
       }
     }
 
