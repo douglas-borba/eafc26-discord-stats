@@ -1,7 +1,7 @@
 import { Panel } from "@/components/ui/panel";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { formatDateTime, ratingColor, outcomeColor } from "@/lib/utils";
-import type { MatchDetail } from "@/lib/domain/types";
+import type { MatchDetail, Story, MatchPlayer } from "@/lib/domain/types";
 
 /* ── reason labels ────────────────────────────────────────── */
 
@@ -41,53 +41,231 @@ const characterMeta: Record<string, { emoji: string; label: string; color: strin
   },
 };
 
-const storyToneColor: Record<string, string> = {
-  DECISIVE: "var(--color-highlight)",
-  CONSTANT_THREAT: "var(--color-pressure)",
-  NEAR_MISS: "var(--color-near-miss)",
-  PASS_PRECISION: "var(--color-precision)",
-  RED_CARD: "var(--color-discipline)",
-  LOST_MAIL: "var(--color-development)",
-  GOALKEEPER: "var(--color-defense)",
-};
+interface StoryPresentation {
+  emoji: string;
+  title: string;
+  color: string;
+  message: string;
+}
 
-const storyMeta: Record<string, { emoji: string; title: string; message: string }> = {
-  DECISIVE: {
+const storyRegistry: Record<string, StoryPresentation> = {
+  MATCH_OUTCOME: {
+    emoji: "📋",
+    title: "Resultado",
+    color: "var(--color-accent)",
+    message: "O desfecho desta partida e o que os números contam.",
+  },
+  AWARD: {
+    emoji: "🏆",
+    title: "Premiação",
+    color: "var(--color-highlight)",
+    message: "Um reconhecimento individual que marcou esta partida.",
+  },
+  GOALS: {
+    emoji: "⚽",
+    title: "Gols",
+    color: "var(--color-win)",
+    message: "As finalizações que balançaram a rede neste jogo.",
+  },
+  ASSISTS: {
+    emoji: "👟",
+    title: "Assistências",
+    color: "var(--color-precision)",
+    message: "Passes decisivos que criaram oportunidades de gol.",
+  },
+  HIGHLIGHTS: {
+    emoji: "⭐",
+    title: "Destaques",
+    color: "var(--color-highlight)",
+    message: "Atuações que se destacaram nesta partida.",
+  },
+  BAGRE_PERFORMANCE: {
+    emoji: "📉",
+    title: "Menor Desempenho",
+    color: "var(--color-development)",
+    message: "Um aspecto desta atuação que pode encontrar uma resposta diferente no próximo jogo.",
+  },
+  OFFENSIVE_NARRATIVE: {
     emoji: "⚡",
-    title: "Fez a Diferença",
-    message: "Uma atuação que mudou o rumo da partida, sustentada pelos fatos do jogo.",
-  },
-  CONSTANT_THREAT: {
-    emoji: "🎯",
-    title: "Perigo Constante",
-    message: "Participação ofensiva frequente, pressionando e criando oportunidades.",
-  },
-  NEAR_MISS: {
-    emoji: "⏳",
-    title: "Ficou no Quase",
-    message: "A presença ofensiva apareceu; faltou transformar mais oportunidades em resultado.",
+    title: "Narrativa Ofensiva",
+    color: "var(--color-pressure)",
+    message: "A participação ofensiva que ajuda a explicar o jogo.",
   },
   RED_CARD: {
     emoji: "🟥",
     title: "Cartão Vermelho",
+    color: "var(--color-discipline)",
     message: "Um momento difícil que também faz parte da história deste jogo.",
   },
   PASS_PRECISION: {
     emoji: "🎯",
     title: "Passe de Precisão",
+    color: "var(--color-precision)",
     message: "Consistência com a bola para dar continuidade ao jogo do time.",
   },
   LOST_MAIL: {
     emoji: "📨",
     title: "Correio Extraviado",
+    color: "var(--color-development)",
     message: "Um aspecto desta atuação que pode encontrar uma resposta diferente no próximo jogo.",
   },
   GOALKEEPER: {
     emoji: "🧤",
     title: "Muralha",
+    color: "var(--color-defense)",
     message: "A presença do goleiro também escreveu parte desta partida.",
   },
+  EA_RECOGNIZED_MVP: {
+    emoji: "🌟",
+    title: "Craque EA",
+    color: "var(--color-highlight)",
+    message: "Reconhecido pela EA como o melhor em campo.",
+  },
 };
+
+const defaultStory: StoryPresentation = {
+  emoji: "📝",
+  title: "Acontecimento",
+  color: "var(--color-border)",
+  message: "Mais um fato que ajuda a compreender como o jogo aconteceu.",
+};
+
+function getStoryPresentation(type: string): StoryPresentation {
+  return storyRegistry[type] ?? defaultStory;
+}
+
+function formatStorySubtitle(
+  story: Story,
+  players: MatchPlayer[],
+): string | null {
+  const c = story.content;
+  const resolveName = (id: unknown): string | null => {
+    if (typeof id !== "string") return null;
+    const p = players.find((pl) => pl.playerId === id);
+    return p?.displayName ?? p?.platformName ?? null;
+  };
+
+  switch (story.type) {
+    case "MATCH_OUTCOME": {
+      const outcome = c.outcome as string | undefined;
+      const ourScore = c.ourScore as number | undefined;
+      const oppScore = c.opponentScore as number | undefined;
+      if (outcome && ourScore != null && oppScore != null) {
+        const label = outcome === "WIN" ? "Vitória" : outcome === "DRAW" ? "Empate" : "Derrota";
+        return `${label} por ${ourScore}×${oppScore}`;
+      }
+      return null;
+    }
+    case "AWARD": {
+      const name = resolveName(c.winnerId);
+      const awardType = c.awardType as string | undefined;
+      const reason = c.reason as string | undefined;
+      const awardLabels: Record<string, string> = {
+        CRAQUE: "Craque", BAGRE: "Menor desempenho", XERIFE: "Xerife",
+      };
+      const label = awardType ? (awardLabels[awardType] ?? null) : null;
+      const localized = reason ? (reasonLabels[reason] ?? null) : null;
+      const parts: string[] = [];
+      if (label) parts.push(label);
+      if (name) parts.push(name);
+      const main = parts.join(" — ");
+      if (localized) return main ? `${main} · ${localized}` : localized;
+      return main || null;
+    }
+    case "GOALS": {
+      const contribs = c.players as Array<{ playerId?: string; goals?: number }> | undefined;
+      if (!contribs?.length) return null;
+      return contribs
+        .filter((p) => (p.goals ?? 0) > 0)
+        .map((p) => {
+          const name = resolveName(p.playerId) ?? "Jogador";
+          const g = p.goals ?? 0;
+          return `${name} (${g})`;
+        })
+        .join(", ") || null;
+    }
+    case "ASSISTS": {
+      const contribs = c.players as Array<{ playerId?: string; assists?: number }> | undefined;
+      if (!contribs?.length) return null;
+      return contribs
+        .filter((p) => (p.assists ?? 0) > 0)
+        .map((p) => {
+          const name = resolveName(p.playerId) ?? "Jogador";
+          const a = p.assists ?? 0;
+          return `${name} (${a})`;
+        })
+        .join(", ") || null;
+    }
+    case "HIGHLIGHTS": {
+      const highlights = c.players as Array<{ playerId?: string; rating?: number }> | undefined;
+      if (!highlights?.length) return null;
+      return highlights
+        .map((h) => {
+          const name = resolveName(h.playerId) ?? "Jogador";
+          return h.rating != null ? `${name} (${Number(h.rating).toFixed(1)})` : name;
+        })
+        .join(", ");
+    }
+    case "BAGRE_PERFORMANCE": {
+      const name = resolveName(c.playerId);
+      const rating = c.rating as number | undefined;
+      if (name && rating != null) return `${name} — nota ${Number(rating).toFixed(1)}`;
+      if (name) return name;
+      return null;
+    }
+    case "OFFENSIVE_NARRATIVE": {
+      const name = resolveName(c.playerId);
+      const goals = c.goals as number | undefined;
+      const shots = c.shots as number | undefined;
+      const parts: string[] = [];
+      if (name) parts.push(name);
+      if (goals != null && shots != null) parts.push(`${goals} gol${goals !== 1 ? "s" : ""} em ${shots} fin.`);
+      return parts.length > 0 ? parts.join(" — ") : null;
+    }
+    case "RED_CARD": {
+      const name = resolveName(c.playerId);
+      const count = c.redCards as number | undefined;
+      if (name) return `${name}${count && count > 1 ? ` (${count} cartões)` : ""}`;
+      return null;
+    }
+    case "PASS_PRECISION": {
+      const name = resolveName(c.playerId);
+      const pct = c.accuracyPercent as number | undefined;
+      const completed = c.completed as number | undefined;
+      const attempted = c.attempted as number | undefined;
+      const parts: string[] = [];
+      if (name) parts.push(name);
+      if (pct != null) parts.push(`${pct}% de precisão`);
+      else if (completed != null && attempted != null) parts.push(`${completed}/${attempted}`);
+      return parts.length > 0 ? parts.join(" — ") : null;
+    }
+    case "LOST_MAIL": {
+      const name = resolveName(c.playerId);
+      const pct = c.playerAccuracyPercent as number | undefined;
+      const parts: string[] = [];
+      if (name) parts.push(name);
+      if (pct != null) parts.push(`${pct}% de precisão`);
+      return parts.length > 0 ? parts.join(" — ") : null;
+    }
+    case "GOALKEEPER": {
+      const name = resolveName(c.playerId);
+      const saves = c.saves as number | undefined;
+      const parts: string[] = [];
+      if (name) parts.push(name);
+      if (saves != null) parts.push(`${saves} defesa${saves !== 1 ? "s" : ""}`);
+      return parts.length > 0 ? parts.join(" — ") : null;
+    }
+    case "EA_RECOGNIZED_MVP": {
+      const name = resolveName(c.playerId);
+      const rating = c.rating as number | undefined;
+      if (name && rating != null) return `${name} (${Number(rating).toFixed(1)})`;
+      if (name) return name;
+      return null;
+    }
+    default:
+      return null;
+  }
+}
 
 /* ── component ─────────────────────────────────────────────── */
 
@@ -282,25 +460,20 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
         {match.stories.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {match.stories.map((s, i) => {
-              const meta = storyMeta[s.type] ?? {
-                emoji: "•",
-                title: s.type,
-                message: "Mais um fato que ajuda a compreender como o jogo aconteceu.",
-              };
-              const accent = storyToneColor[s.type] ?? "var(--color-border)";
+              const pres = getStoryPresentation(s.type);
+              const subtitle = formatStorySubtitle(s, match.players);
               return (
                 <div
                   key={i}
                   className="rounded-[10px] border border-border p-5"
                   style={{
-                    background: `linear-gradient(135deg, color-mix(in srgb, ${accent} 7%, var(--color-surface-raised)), var(--color-surface-raised) 55%)`,
+                    background: `linear-gradient(135deg, color-mix(in srgb, ${pres.color} 7%, var(--color-surface-raised)), var(--color-surface-raised) 55%)`,
                   }}
                 >
-                  <p className="text-lg mb-1">{meta.emoji}</p>
-                  <p className="text-sm font-semibold text-text-primary">{meta.title}</p>
-                  <p className="text-xs text-text-soft mt-1">{s.narrativeKey}</p>
-                  {/* involvedPlayers would go here if available in the data model */}
-                  <p className="text-xs text-muted mt-3 italic">{meta.message}</p>
+                  <p className="text-lg mb-1">{pres.emoji}</p>
+                  <p className="text-sm font-semibold text-text-primary">{pres.title}</p>
+                  {subtitle && <p className="text-xs text-text-soft mt-1">{subtitle}</p>}
+                  <p className="text-xs text-muted mt-3 italic">{pres.message}</p>
                 </div>
               );
             })}
@@ -497,7 +670,7 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
                     </p>
                     {award.reason && (
                       <p>
-                        <span className="text-muted">Razão:</span> {award.reason}
+                        <span className="text-muted">Razão:</span> {localizeReason(award.reason)}
                       </p>
                     )}
                     <p className="text-muted italic mt-1">
@@ -523,7 +696,7 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
                 match.stories.map((s, i) => (
                   <div key={i} className="border-t border-border/40 pt-3">
                     <p className="font-semibold text-text-primary">
-                      {storyMeta[s.type]?.title ?? s.type}
+                      {getStoryPresentation(s.type).title}
                     </p>
                     <p>
                       <span className="text-muted">Prioridade:</span> {s.priority}

@@ -80,6 +80,8 @@ export interface Story {
   type: string;
   priority: string;
   narrativeKey: string;
+  content: Record<string, unknown>;
+  involvedPlayers: string[];
 }
 
 export interface PlayerSummary {

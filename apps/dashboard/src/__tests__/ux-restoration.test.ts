@@ -141,11 +141,16 @@ describe("UX: Match detail has editorial sections", () => {
   });
 
   it("shows editorial messages for stories", () => {
-    expect(detail).toContain("Fez a Diferença");
-    expect(detail).toContain("Perigo Constante");
+    expect(detail).toContain("Resultado");
+    expect(detail).toContain("Premiação");
     expect(detail).toContain("Passe de Precisão");
     expect(detail).toContain("Correio Extraviado");
     expect(detail).toContain("Muralha");
+  });
+
+  it("never exposes internal story type enums to the UI", () => {
+    expect(detail).toContain("getStoryPresentation");
+    expect(detail).not.toContain("title: s.type");
   });
 
   it("shows unawarded characters with reduced opacity", () => {

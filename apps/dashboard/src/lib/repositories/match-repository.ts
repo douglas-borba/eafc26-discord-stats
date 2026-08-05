@@ -133,6 +133,8 @@ function parseCanonicalPayload(payload: any, matchId: string): MatchDetail {
     type: s.type ?? "",
     priority: s.priority ?? "",
     narrativeKey: s.narrativeKey ?? "",
+    content: s.content ?? {},
+    involvedPlayers: (s.involvedPlayers ?? []).map((id: string) => id),
   }));
 
   return {
