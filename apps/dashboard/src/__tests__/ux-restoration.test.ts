@@ -140,17 +140,28 @@ describe("UX: Match detail has editorial sections", () => {
     expect(detail).toContain("Consistência e segurança para proteger o time.");
   });
 
-  it("shows editorial messages for stories", () => {
-    expect(detail).toContain("Resultado");
-    expect(detail).toContain("Premiação");
-    expect(detail).toContain("Passe de Precisão");
-    expect(detail).toContain("Correio Extraviado");
+  it("has editorial narrative cards for non-redundant stories", () => {
+    expect(detail).toContain("Poder de Fogo");
+    expect(detail).toContain("Construção das Jogadas");
     expect(detail).toContain("Muralha");
+    expect(detail).toContain("Ponto de Atenção");
+    expect(detail).toContain("Momento Disciplinar");
   });
 
-  it("never exposes internal story type enums to the UI", () => {
+  it("filters out redundant story types from editorial timeline", () => {
+    expect(detail).toContain("REDUNDANT_STORY_TYPES");
+    expect(detail).toContain("MATCH_OUTCOME");
+    expect(detail).toContain("AWARD");
+    expect(detail).toContain("GOALS");
+    expect(detail).toContain("ASSISTS");
+  });
+
+  it("prioritizes stories by relevance not fixed order", () => {
+    expect(detail).toContain("cards.sort((a, b) => b.priority - a.priority)");
+  });
+
+  it("keeps storyRegistry for audit section", () => {
     expect(detail).toContain("getStoryPresentation");
-    expect(detail).not.toContain("title: s.type");
   });
 
   it("shows unawarded characters with reduced opacity", () => {

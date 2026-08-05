@@ -134,133 +134,152 @@ function getStoryPresentation(type: string): StoryPresentation {
   return storyRegistry[type] ?? defaultStory;
 }
 
-function formatStorySubtitle(
-  story: Story,
-  players: MatchPlayer[],
-): string | null {
+/* ── editorial narrative system ───────────────────────────── */
+
+const REDUNDANT_STORY_TYPES = new Set([
+  "MATCH_OUTCOME",
+  "AWARD",
+  "GOALS",
+  "ASSISTS",
+  "HIGHLIGHTS",
+  "BAGRE_PERFORMANCE",
+  "EA_RECOGNIZED_MVP",
+]);
+
+interface EditorialCard {
+  emoji: string;
+  title: string;
+  color: string;
+  playerName: string | null;
+  headline: string;
+  editorial: string;
+  priority: number;
+}
+
+function resolvePlayerName(id: unknown, players: MatchPlayer[]): string | null {
+  if (typeof id !== "string") return null;
+  const p = players.find((pl) => pl.playerId === id);
+  return p?.displayName ?? p?.platformName ?? null;
+}
+
+function buildEditorialCards(stories: Story[], players: MatchPlayer[]): EditorialCard[] {
+  const cards: EditorialCard[] = [];
+
+  for (const s of stories) {
+    if (REDUNDANT_STORY_TYPES.has(s.type)) continue;
+    const card = buildEditorialCard(s, players);
+    if (card) cards.push(card);
+  }
+
+  cards.sort((a, b) => b.priority - a.priority);
+  return cards;
+}
+
+function buildEditorialCard(story: Story, players: MatchPlayer[]): EditorialCard | null {
   const c = story.content;
-  const resolveName = (id: unknown): string | null => {
-    if (typeof id !== "string") return null;
-    const p = players.find((pl) => pl.playerId === id);
-    return p?.displayName ?? p?.platformName ?? null;
-  };
+  const name = resolvePlayerName(c.playerId, players);
+  const isPrimary = story.priority === "PRIMARY";
+  const priorityBoost = isPrimary ? 15 : 0;
 
   switch (story.type) {
-    case "MATCH_OUTCOME": {
-      const outcome = c.outcome as string | undefined;
-      const ourScore = c.ourScore as number | undefined;
-      const oppScore = c.opponentScore as number | undefined;
-      if (outcome && ourScore != null && oppScore != null) {
-        const label = outcome === "WIN" ? "Vitória" : outcome === "DRAW" ? "Empate" : "Derrota";
-        return `${label} por ${ourScore}×${oppScore}`;
-      }
-      return null;
-    }
-    case "AWARD": {
-      const name = resolveName(c.winnerId);
-      const awardType = c.awardType as string | undefined;
-      const reason = c.reason as string | undefined;
-      const awardLabels: Record<string, string> = {
-        CRAQUE: "Craque", BAGRE: "Menor desempenho", XERIFE: "Xerife",
-      };
-      const label = awardType ? (awardLabels[awardType] ?? null) : null;
-      const localized = reason ? (reasonLabels[reason] ?? null) : null;
-      const parts: string[] = [];
-      if (label) parts.push(label);
-      if (name) parts.push(name);
-      const main = parts.join(" — ");
-      if (localized) return main ? `${main} · ${localized}` : localized;
-      return main || null;
-    }
-    case "GOALS": {
-      const contribs = c.players as Array<{ playerId?: string; goals?: number }> | undefined;
-      if (!contribs?.length) return null;
-      return contribs
-        .filter((p) => (p.goals ?? 0) > 0)
-        .map((p) => {
-          const name = resolveName(p.playerId) ?? "Jogador";
-          const g = p.goals ?? 0;
-          return `${name} (${g})`;
-        })
-        .join(", ") || null;
-    }
-    case "ASSISTS": {
-      const contribs = c.players as Array<{ playerId?: string; assists?: number }> | undefined;
-      if (!contribs?.length) return null;
-      return contribs
-        .filter((p) => (p.assists ?? 0) > 0)
-        .map((p) => {
-          const name = resolveName(p.playerId) ?? "Jogador";
-          const a = p.assists ?? 0;
-          return `${name} (${a})`;
-        })
-        .join(", ") || null;
-    }
-    case "HIGHLIGHTS": {
-      const highlights = c.players as Array<{ playerId?: string; rating?: number }> | undefined;
-      if (!highlights?.length) return null;
-      return highlights
-        .map((h) => {
-          const name = resolveName(h.playerId) ?? "Jogador";
-          return h.rating != null ? `${name} (${Number(h.rating).toFixed(1)})` : name;
-        })
-        .join(", ");
-    }
-    case "BAGRE_PERFORMANCE": {
-      const name = resolveName(c.playerId);
-      const rating = c.rating as number | undefined;
-      if (name && rating != null) return `${name} — nota ${Number(rating).toFixed(1)}`;
-      if (name) return name;
-      return null;
-    }
     case "OFFENSIVE_NARRATIVE": {
-      const name = resolveName(c.playerId);
-      const goals = c.goals as number | undefined;
-      const shots = c.shots as number | undefined;
-      const parts: string[] = [];
-      if (name) parts.push(name);
-      if (goals != null && shots != null) parts.push(`${goals} gol${goals !== 1 ? "s" : ""} em ${shots} fin.`);
-      return parts.length > 0 ? parts.join(" — ") : null;
+      const goals = c.goals as number | undefined ?? 0;
+      const shots = c.shots as number | undefined ?? 0;
+      const hatTrickBoost = goals >= 3 ? 25 : 0;
+      const headline = name
+        ? `${name} finalizou ${shots} ${shots === 1 ? "vez" : "vezes"} e marcou ${goals} ${goals === 1 ? "gol" : "gols"}.`
+        : `${goals} ${goals === 1 ? "gol" : "gols"} em ${shots} ${shots === 1 ? "finalização" : "finalizações"}.`;
+      return {
+        emoji: "⚽",
+        title: "Poder de Fogo",
+        color: "var(--color-win)",
+        playerName: name,
+        headline,
+        editorial: "A participação ofensiva que ajuda a explicar o jogo.",
+        priority: 70 + hatTrickBoost + priorityBoost,
+      };
     }
     case "RED_CARD": {
-      const name = resolveName(c.playerId);
-      const count = c.redCards as number | undefined;
-      if (name) return `${name}${count && count > 1 ? ` (${count} cartões)` : ""}`;
-      return null;
+      const count = c.redCards as number | undefined ?? 1;
+      const headline = name
+        ? `${name} recebeu cartão vermelho${count > 1 ? ` (${count} cartões)` : ""}.`
+        : `Cartão vermelho${count > 1 ? ` (${count} cartões)` : ""} alterou o rumo da partida.`;
+      return {
+        emoji: "🟥",
+        title: "Momento Disciplinar",
+        color: "var(--color-discipline)",
+        playerName: name,
+        headline,
+        editorial: "Um momento difícil que também faz parte da história deste jogo.",
+        priority: 100 + priorityBoost,
+      };
+    }
+    case "GOALKEEPER": {
+      const saves = c.saves as number | undefined ?? 0;
+      const conceded = c.goalsConceded as number | undefined ?? 0;
+      const highSavesBoost = saves >= 5 ? 20 : 0;
+      const headline = name
+        ? `${name} realizou ${saves} ${saves === 1 ? "defesa" : "defesas"} e sofreu ${conceded} ${conceded === 1 ? "gol" : "gols"}.`
+        : `${saves} ${saves === 1 ? "defesa" : "defesas"} durante a partida.`;
+      return {
+        emoji: "🧤",
+        title: "Muralha",
+        color: "var(--color-defense)",
+        playerName: name,
+        headline,
+        editorial: "Quando o time precisou, a segurança veio do gol.",
+        priority: 65 + highSavesBoost + priorityBoost,
+      };
     }
     case "PASS_PRECISION": {
-      const name = resolveName(c.playerId);
       const pct = c.accuracyPercent as number | undefined;
       const completed = c.completed as number | undefined;
       const attempted = c.attempted as number | undefined;
-      const parts: string[] = [];
-      if (name) parts.push(name);
-      if (pct != null) parts.push(`${pct}% de precisão`);
-      else if (completed != null && attempted != null) parts.push(`${completed}/${attempted}`);
-      return parts.length > 0 ? parts.join(" — ") : null;
+      const eliteBoost = pct != null && pct >= 90 ? 10 : 0;
+      let headline: string;
+      if (name && pct != null && completed != null && attempted != null) {
+        headline = `${name} terminou com ${pct}% de precisão (${completed}/${attempted}).`;
+      } else if (name && pct != null) {
+        headline = `${name} terminou com ${pct}% de precisão nos passes.`;
+      } else if (name) {
+        headline = `${name} se destacou na construção das jogadas.`;
+      } else {
+        headline = "A construção de jogadas foi um ponto forte nesta partida.";
+      }
+      return {
+        emoji: "🎯",
+        title: "Construção das Jogadas",
+        color: "var(--color-precision)",
+        playerName: name,
+        headline,
+        editorial: "Foi quem deu ritmo à circulação da bola.",
+        priority: 50 + eliteBoost + priorityBoost,
+      };
     }
     case "LOST_MAIL": {
-      const name = resolveName(c.playerId);
-      const pct = c.playerAccuracyPercent as number | undefined;
-      const parts: string[] = [];
-      if (name) parts.push(name);
-      if (pct != null) parts.push(`${pct}% de precisão`);
-      return parts.length > 0 ? parts.join(" — ") : null;
-    }
-    case "GOALKEEPER": {
-      const name = resolveName(c.playerId);
-      const saves = c.saves as number | undefined;
-      const parts: string[] = [];
-      if (name) parts.push(name);
-      if (saves != null) parts.push(`${saves} defesa${saves !== 1 ? "s" : ""}`);
-      return parts.length > 0 ? parts.join(" — ") : null;
-    }
-    case "EA_RECOGNIZED_MVP": {
-      const name = resolveName(c.playerId);
-      const rating = c.rating as number | undefined;
-      if (name && rating != null) return `${name} (${Number(rating).toFixed(1)})`;
-      if (name) return name;
-      return null;
+      const playerPct = c.playerAccuracyPercent as number | undefined;
+      const teamPct = c.teamAccuracyPercent as number | undefined;
+      const delta = c.deltaPercent as number | undefined;
+      const bigDeltaBoost = delta != null && delta >= 20 ? 10 : 0;
+      let headline: string;
+      if (name && playerPct != null && teamPct != null) {
+        headline = `${name} acertou ${playerPct}% dos passes — média do time foi ${teamPct}%.`;
+      } else if (name && playerPct != null) {
+        headline = `${name} ficou com ${playerPct}% de precisão nos passes.`;
+      } else if (name) {
+        headline = `${name} ficou abaixo da média do time na distribuição de bola.`;
+      } else {
+        headline = "A precisão nos passes ficou abaixo do esperado.";
+      }
+      return {
+        emoji: "📉",
+        title: "Ponto de Atenção",
+        color: "var(--color-development)",
+        playerName: name,
+        headline,
+        editorial: "Nem tudo saiu como planejado — e reconhecer isso também faz parte.",
+        priority: 40 + bigDeltaBoost + priorityBoost,
+      };
     }
     default:
       return null;
@@ -455,34 +474,52 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
         <SectionHeading
           kicker="Como aconteceu"
           title="A História do Jogo"
-          subtitle="Quais decisões ajudam a explicar esta partida?"
+          subtitle="Os acontecimentos que ajudam a explicar esta partida."
         />
-        {match.stories.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {match.stories.map((s, i) => {
-              const pres = getStoryPresentation(s.type);
-              const subtitle = formatStorySubtitle(s, match.players);
-              return (
+        {(() => {
+          const editorialCards = buildEditorialCards(match.stories, match.players);
+          if (editorialCards.length === 0) {
+            return (
+              <div className="rounded-[10px] border border-dashed border-border p-8 text-center">
+                <p className="text-sm text-muted italic">
+                  Nenhum acontecimento editorial se destacou nesta partida.
+                </p>
+              </div>
+            );
+          }
+          return (
+            <div className="flex flex-col gap-3">
+              {editorialCards.map((card, i) => (
                 <div
                   key={i}
-                  className="rounded-[10px] border border-border p-5"
+                  className="relative rounded-[10px] border border-border overflow-hidden"
                   style={{
-                    background: `linear-gradient(135deg, color-mix(in srgb, ${pres.color} 7%, var(--color-surface-raised)), var(--color-surface-raised) 55%)`,
+                    background: `linear-gradient(135deg, color-mix(in srgb, ${card.color} 5%, var(--color-surface-raised)), var(--color-surface-raised) 40%)`,
                   }}
                 >
-                  <p className="text-lg mb-1">{pres.emoji}</p>
-                  <p className="text-sm font-semibold text-text-primary">{pres.title}</p>
-                  {subtitle && <p className="text-xs text-text-soft mt-1">{subtitle}</p>}
-                  <p className="text-xs text-muted mt-3 italic">{pres.message}</p>
+                  <span
+                    className="absolute top-0 bottom-0 left-0 w-[3px]"
+                    style={{ backgroundColor: card.color }}
+                  />
+                  <div className="pl-5 pr-5 py-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">{card.emoji}</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                        {card.title}
+                      </span>
+                    </div>
+                    <p className="text-[15px] font-semibold text-text-primary leading-snug">
+                      {card.headline}
+                    </p>
+                    <p className="text-xs text-muted mt-2 italic leading-relaxed">
+                      {card.editorial}
+                    </p>
+                  </div>
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-sm text-muted italic">
-            Nenhuma narrativa especial foi identificada nesta partida.
-          </p>
-        )}
+              ))}
+            </div>
+          );
+        })()}
       </EditorialSection>
 
       {/* ── Section 3: O Time em Números ───────────────── */}
