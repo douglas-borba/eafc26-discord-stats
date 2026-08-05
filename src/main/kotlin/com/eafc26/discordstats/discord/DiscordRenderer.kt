@@ -128,10 +128,11 @@ class DiscordRenderer(
 
         val description = buildString {
             append("${summary.outcome.emoji} ${summary.outcome.label}\n📅 ${summary.date}")
-            if (!editorialNarrative.isNullOrBlank()) {
-                append("\n\n")
-                append(editorialNarrative)
-            }
+            // Temporarily hidden until LLM issue is resolved
+            // if (!editorialNarrative.isNullOrBlank()) {
+            //     append("\n\n")
+            //     append(editorialNarrative)
+            // }
         }
 
         return DiscordPayload(
