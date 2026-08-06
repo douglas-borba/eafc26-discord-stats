@@ -172,30 +172,52 @@ class LauncherController: ObservableObject {
 
         phase = .locatingProject
         statusMessage = "Localizando projeto…"
-        guard let dir = await resolveProjectDir() else { return }
-        if cancelled { return }
-        projectDir = dir
-        log("Project directory: \(dir)")
+
+        // First try to find JAR in bundle (for distributed .app)
+        let bundleJar = findBundledJar()
+        let usingBundledJar = bundleJar != nil
+
+        // If no bundled JAR, we need the project directory
+        if !usingBundledJar {
+            guard let dir = await resolveProjectDir() else { return }
+            if cancelled { return }
+            projectDir = dir
+            log("Project directory: \(dir)")
+        } else {
+            log("Using bundled JAR from distribution package")
+        }
 
         phase = .validatingConfig
         statusMessage = "Verificando configuração…"
         detailMessage = ""
 
-        guard validatePrerequisites(dir) else { return }
+        guard validatePrerequisites(usingBundledJar ? nil : projectDir) else { return }
         if cancelled { return }
 
-        let jarPath = findBootJar(in: dir)
+        let jarPath: String?
+        if let bundled = bundleJar {
+            jarPath = bundled
+        } else if let dir = projectDir {
+            jarPath = findBootJar(in: dir)
+        } else {
+            jarPath = nil
+        }
+
         guard let jar = jarPath else {
             showError(
                 "JAR não encontrado",
-                detail: "O arquivo executável do backend não foi encontrado.\n\nExecute no Terminal:\n\ncd \"\(dir)\"\n./gradlew bootJar\n\nDepois abra o EA FC STATS novamente.",
+                detail: usingBundledJar
+                    ? "O arquivo JAR não foi encontrado no bundle da aplicação."
+                    : "O arquivo executável do backend não foi encontrado.\n\nExecute no Terminal:\n\ncd \"\(projectDir ?? "")\"\n./gradlew bootJar\n\nDepois abra o EA FC STATS novamente.",
                 canRetry: true
             )
             return
         }
         log("Using JAR: \(jar)")
 
-        let envVars = loadEnvLocal(at: "\(dir)/.env.local")
+        // Load environment from persistent location
+        let envVars = loadEnvLocal(at: "\(appSupportDir)/.env.local")
+        log("Loaded \(envVars.count) environment variables from persistent configuration")
 
         if cancelled { return }
 
@@ -203,7 +225,7 @@ class LauncherController: ObservableObject {
         statusMessage = "Iniciando backend…"
         detailMessage = "Isso pode levar alguns segundos."
 
-        guard startBackend(jar: jar, projectDir: dir, env: envVars) else { return }
+        guard startBackend(jar: jar, projectDir: projectDir, env: envVars) else { return }
 
         if cancelled { return }
 
@@ -241,8 +263,34 @@ class LauncherController: ObservableObject {
 
     func openDashboard() {
         guard !isShuttingDown else { return }
-        let url = URL(string: "http://localhost:\(port)")!
-        NSWorkspace.shared.open(url)
+        Task {
+            // Verify we're not being redirected to /setup
+            let homeUrl = URL(string: "http://localhost:\(port)/")!
+            var request = URLRequest(url: homeUrl)
+            request.timeoutInterval = 3
+
+            do {
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse {
+                    if let finalUrl = http.url?.absoluteString, finalUrl.contains("/setup") {
+                        log("WARNING: Application redirected to /setup - configuration may be incomplete")
+                        showError(
+                            "Configuração incompleta",
+                            detail: "A aplicação está redirecionando para /setup.\n\nVerifique se todas as variáveis necessárias estão configuradas em:\n\(appSupportDir)/.env.local",
+                            canRetry: true
+                        )
+                        return
+                    }
+                    log("Home endpoint verified, no redirect to /setup detected")
+                }
+            } catch {
+                log("WARNING: Could not verify home endpoint: \(error.localizedDescription)")
+            }
+
+            // Open in browser
+            NSWorkspace.shared.open(homeUrl)
+            log("Dashboard opened in browser")
+        }
     }
 
     func openLogs() {
@@ -388,6 +436,18 @@ class LauncherController: ObservableObject {
         FileManager.default.fileExists(atPath: "\(dir)/build.gradle.kts")
     }
 
+    private func findBundledJar() -> String? {
+        // Get the app bundle path
+        let bundlePath = Bundle.main.bundlePath
+        let appDir = "\(bundlePath)/Contents/app"
+
+        guard let files = try? FileManager.default.contentsOfDirectory(atPath: appDir) else { return nil }
+        if let jar = files.first(where: { $0.hasSuffix(".jar") && !$0.contains("-plain") }) {
+            return "\(appDir)/\(jar)"
+        }
+        return nil
+    }
+
     private func findBootJar(in dir: String) -> String? {
         let libsDir = "\(dir)/build/libs"
         guard let files = try? FileManager.default.contentsOfDirectory(atPath: libsDir) else { return nil }
@@ -397,16 +457,59 @@ class LauncherController: ObservableObject {
         return nil
     }
 
-    private func validatePrerequisites(_ dir: String) -> Bool {
-        let envFile = "\(dir)/.env.local"
-        if !FileManager.default.fileExists(atPath: envFile) {
-            showError(
-                "Configuração ausente",
-                detail: "Arquivo .env.local não encontrado em:\n\(dir)\n\nCrie o arquivo com as variáveis de ambiente necessárias.",
-                canRetry: true,
-                canChooseDir: true
-            )
-            return false
+    private func validatePrerequisites(_ dir: String?) -> Bool {
+        // Persistent configuration location
+        let persistentEnvFile = "\(appSupportDir)/.env.local"
+        let projectEnvFile = dir != nil ? "\(dir!)/.env.local" : nil
+
+        // Check if persistent config exists
+        if !FileManager.default.fileExists(atPath: persistentEnvFile) {
+            log("Persistent .env.local not found at \(persistentEnvFile)")
+
+            // Try one-time migration from project directory (if available)
+            if let projectEnv = projectEnvFile, FileManager.default.fileExists(atPath: projectEnv) {
+                log("Found .env.local in project directory, performing one-time migration")
+                do {
+                    try FileManager.default.copyItem(atPath: projectEnv, toPath: persistentEnvFile)
+                    // Set restrictive permissions (owner read/write only)
+                    try FileManager.default.setAttributes(
+                        [.posixPermissions: 0o600],
+                        ofItemAtPath: persistentEnvFile
+                    )
+
+                    // Validate permissions were applied correctly
+                    let attrs = try FileManager.default.attributesOfItem(atPath: persistentEnvFile)
+                    let permissions = attrs[.posixPermissions] as? NSNumber
+                    if permissions?.uint16Value != 0o600 {
+                        log("WARNING: Permissions validation failed, expected 0600 got \(String(format: "%o", permissions?.uint16Value ?? 0))")
+                    }
+
+                    log("Migration successful: copied to Application Support with restrictive permissions")
+                } catch {
+                    showError(
+                        "Erro na migração de configuração",
+                        detail: "Não foi possível copiar .env.local para Application Support:\n\(error.localizedDescription)\n\nCrie manualmente em:\n\(persistentEnvFile)",
+                        canRetry: true
+                    )
+                    return false
+                }
+            } else {
+                let detailMsg: String
+                if let projectEnv = projectEnvFile {
+                    detailMsg = "Arquivo .env.local não encontrado.\n\nCrie o arquivo em:\n\(persistentEnvFile)\n\nOu coloque em:\n\(projectEnv)\n\nDepois reinicie o launcher."
+                } else {
+                    detailMsg = "Arquivo .env.local não encontrado.\n\nCrie o arquivo em:\n\(persistentEnvFile)\n\nDepois reinicie o launcher."
+                }
+                showError(
+                    "Configuração ausente",
+                    detail: detailMsg,
+                    canRetry: true,
+                    canChooseDir: projectEnvFile != nil
+                )
+                return false
+            }
+        } else {
+            log("Using persistent .env.local from Application Support")
         }
 
         if findJava() == nil {
@@ -470,7 +573,7 @@ class LauncherController: ObservableObject {
         return env
     }
 
-    private func startBackend(jar: String, projectDir: String, env: [String: String]) -> Bool {
+    private func startBackend(jar: String, projectDir: String?, env: [String: String]) -> Bool {
         guard let javaPath = findJava() else {
             showError("Java não encontrado", detail: "Não foi possível localizar o Java.")
             return false
@@ -482,7 +585,9 @@ class LauncherController: ObservableObject {
             "-Deafc.dashboard.auto-open=false",
             "-jar", jar,
         ]
-        process.currentDirectoryURL = URL(fileURLWithPath: projectDir)
+        // Use project directory if available, otherwise use home directory
+        let workingDir = projectDir ?? FileManager.default.homeDirectoryForCurrentUser.path
+        process.currentDirectoryURL = URL(fileURLWithPath: workingDir)
 
         var processEnv = ProcessInfo.processInfo.environment
         for (k, v) in env { processEnv[k] = v }

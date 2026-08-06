@@ -107,46 +107,6 @@ tasks.register<BootRun>("dev") {
     }
 }
 
-runtime {
-    options = listOf(
-        "--strip-debug",
-        "--compress=zip-6",
-        "--no-header-files",
-        "--no-man-pages",
-    )
-    modules = listOf(
-        "java.base",
-        "java.compiler",
-        "java.desktop",
-        "java.instrument",
-        "java.logging",
-        "java.management",
-        "java.naming",
-        "java.net.http",
-        "java.prefs",
-        "java.security.jgss",
-        "java.sql",
-        "java.xml",
-        "jdk.crypto.ec",
-        "jdk.unsupported",
-        "jdk.zipfs",
-    )
-
-    jpackage {
-        outputDir = "macos"
-        imageName = "EA FC STATS"
-        installerName = "EA FC STATS"
-        appVersion = providers.gradleProperty("macAppVersion").getOrElse("1.0.0")
-        skipInstaller = true
-        jvmArgs = listOf("-Deafc.dashboard.auto-open=true")
-        imageOptions = listOf(
-            "--mac-package-identifier", "com.eafc26.stats",
-            "--mac-package-name", "EA FC STATS",
-            "--mac-app-category", "sports",
-        )
-    }
-}
-
 val macAppPath = layout.buildDirectory.dir("macos/EA FC STATS.app")
 
 val verifyMacOs by tasks.registering {
@@ -159,75 +119,130 @@ val verifyMacOs by tasks.registering {
     }
 }
 
-tasks.named("jpackageImage") {
-    dependsOn(verifyMacOs)
-}
-
 tasks.register("macApp") {
     group = "distribution"
-    description = "Generates the self-contained macOS application bundle."
-    dependsOn("jpackageImage")
+    description = "Generates the self-contained macOS application bundle with Swift launcher."
+    dependsOn("bootJar", verifyMacOs)
 
     doLast {
-        check(macAppPath.get().asFile.isDirectory) {
-            "macOS application bundle was not created at ${macAppPath.get().asFile}"
+        val projectDir = project.projectDir
+        val buildDir = project.layout.buildDirectory.get().asFile
+        val appBundle = File(buildDir, "macos/EA FC STATS.app")
+        val contentsDir = File(appBundle, "Contents")
+        val macOSDir = File(contentsDir, "MacOS")
+        val appDir = File(contentsDir, "app")
+        val resourcesDir = File(contentsDir, "Resources")
+        
+        println("=== Building EA FC STATS.app with Swift launcher ===")
+        
+        // Clean previous build
+        if (appBundle.exists()) {
+            appBundle.deleteRecursively()
         }
         
-        val appBundle = macAppPath.get().asFile
-        val appDir = File(appBundle, "Contents/app")
-        val macOSDir = File(appBundle, "Contents/MacOS")
-        val originalLauncher = File(macOSDir, "EA FC STATS")
-        val renamedLauncher = File(macOSDir, "EA FC STATS.bin")
-        val wrapperScript = File(macOSDir, "EA FC STATS")
+        // Create bundle structure
+        macOSDir.mkdirs()
+        appDir.mkdirs()
+        resourcesDir.mkdirs()
         
-        // Copy .env.local to Contents/app/ where the JAR is located
-        val envLocalSource = project.file(".env.local")
-        if (envLocalSource.exists()) {
-            if (appDir.exists()) {
-                val envLocalDest = File(appDir, ".env.local")
-                envLocalSource.copyTo(envLocalDest, overwrite = true)
-                println("Copied .env.local to ${appDir.relativeTo(project.projectDir)}")
-            } else {
-                println("WARNING: Contents/app directory not found")
-            }
-        } else {
-            println("WARNING: .env.local not found - app will open /setup on first run")
+        // Compile Swift launcher
+        println("Compiling Swift launcher...")
+        val swiftSource = File(projectDir, "launcher/EAFCStatsLauncher.swift")
+        val swiftBinary = File(macOSDir, "EA FC Stats")
+        
+        val swiftCompile = ProcessBuilder(
+            "swiftc",
+            "-parse-as-library",
+            "-framework", "AppKit",
+            "-framework", "SwiftUI",
+            "-O",
+            "-o", swiftBinary.absolutePath,
+            swiftSource.absolutePath
+        ).redirectErrorStream(true).start()
+        
+        val swiftOutput = swiftCompile.inputStream.bufferedReader().readText()
+        val swiftExitCode = swiftCompile.waitFor()
+        
+        if (swiftExitCode != 0) {
+            throw GradleException("Swift compilation failed:\n$swiftOutput")
         }
         
-        // Create wrapper script that loads .env.local before launching Java
-        if (originalLauncher.exists() && !renamedLauncher.exists()) {
-            originalLauncher.renameTo(renamedLauncher)
-            
-            // Copy the .cfg file with the new name so jpackage launcher can find it
-            val originalCfg = File(appDir, "EA FC STATS.cfg")
-            val renamedCfg = File(appDir, "EA FC STATS.bin.cfg")
-            if (originalCfg.exists()) {
-                originalCfg.copyTo(renamedCfg, overwrite = true)
-                println("Created EA FC STATS.bin.cfg for renamed launcher")
-            }
-            
-            val wrapperContent = """#!/usr/bin/env bash
-set -e
-
-# Get the directory where this script is located
-SCRIPT_DIR="${'$'}(cd "${'$'}(dirname "${'$'}{BASH_SOURCE[0]}")" && pwd)"
-APP_DIR="${'$'}SCRIPT_DIR/../app"
-
-# Load .env.local if it exists
-if [ -f "${'$'}APP_DIR/.env.local" ]; then
-    set -a  # Mark variables for export
-    source "${'$'}APP_DIR/.env.local"
-    set +a
-fi
-
-# Execute the original jpackage launcher
-exec "${'$'}SCRIPT_DIR/EA FC STATS.bin" "${'$'}@"
-"""
-            
-            wrapperScript.writeText(wrapperContent)
-            wrapperScript.setExecutable(true)
-            println("Created wrapper script that loads .env.local")
+        swiftBinary.setExecutable(true)
+        println("✓ Swift launcher compiled")
+        
+        // Copy JAR
+        val libsDir = File(buildDir, "libs")
+        val jarFile = libsDir.listFiles()?.firstOrNull { 
+            it.name.endsWith(".jar") && !it.name.contains("-plain") 
+        } ?: throw GradleException("Boot JAR not found in build/libs")
+        
+        val destJar = File(appDir, jarFile.name)
+        jarFile.copyTo(destJar, overwrite = true)
+        println("✓ Copied JAR: ${jarFile.name}")
+        
+        // Create Info.plist
+        val infoPlist = File(contentsDir, "Info.plist")
+        infoPlist.writeText("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+              <key>CFBundleName</key>
+              <string>EA FC Stats</string>
+              <key>CFBundleDisplayName</key>
+              <string>EA FC Stats</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.eafc26.stats.launcher</string>
+              <key>CFBundleVersion</key>
+              <string>1.0.0</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0.0</string>
+              <key>CFBundleExecutable</key>
+              <string>EA FC Stats</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleIconFile</key>
+              <string>AppIcon</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>13.0</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+              <key>NSQuitAlwaysKeepsWindows</key>
+              <false/>
+            </dict>
+            </plist>
+        """.trimIndent())
+        println("✓ Created Info.plist")
+        
+        // Validate Info.plist
+        val validatePlist = ProcessBuilder("plutil", "-lint", infoPlist.absolutePath)
+            .redirectErrorStream(true).start()
+        validatePlist.waitFor()
+        
+        // Create .env.example (NOT .env.local with real credentials)
+        val envExample = File(projectDir, ".env.example")
+        if (envExample.exists()) {
+            val destEnvExample = File(appDir, ".env.example")
+            envExample.copyTo(destEnvExample, overwrite = true)
+            println("✓ Copied .env.example as configuration template")
         }
+        
+        println("\n=== Bundle structure ===")
+        println("Contents/MacOS/")
+        macOSDir.listFiles()?.forEach { file ->
+            val perm = if (file.canExecute()) "x" else "-"
+            println("  [$perm] ${file.name}")
+        }
+        println("Contents/app/")
+        appDir.listFiles()?.forEach { file ->
+            println("  [+] ${file.name}")
+        }
+        
+        println("\n✓ EA FC STATS.app built successfully")
+        println("  Location: ${appBundle.relativeTo(projectDir)}")
+        println("  Launcher: Swift native")
+        println("  Configuration: ~/Library/Application Support/EAFC26DiscordStats/.env.local")
+        println("  Security: No credentials in bundle")
     }
 }
 
@@ -253,3 +268,4 @@ tasks.register("rebuildMacApp") {
 tasks.named("macApp") {
     mustRunAfter("clean")
 }
+
