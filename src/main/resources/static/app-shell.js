@@ -10,7 +10,7 @@
     overview: { label: "Visão Geral", href: "/", icon: icons.overview },
     matches: { label: "Partidas", href: "/history", icon: icons.matches },
     players: { label: "Jogadores", href: "/players", icon: icons.players },
-    opponents: { label: "Adversários", href: "/opponents", icon: icons.opponents },
+    // opponents: { label: "Adversários", href: "/opponents", icon: icons.opponents }, // Temporariamente desabilitado
   };
 
   function link(page, currentPage) {
@@ -85,8 +85,8 @@
           ${link("overview", currentPage)}
           ${link("matches", currentPage)}
           ${link("players", currentPage)}
-          ${link("opponents", currentPage)}
         </nav>
+        <!-- ${link("opponents", currentPage)} Temporariamente desabilitado -->
         <p class="app-shell-story">Partidas viram histórias. Histórias revelam a trajetória do clube.</p>
         <div class="app-shell-utility">
           <a class="app-shell-link" href="/settings"

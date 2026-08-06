@@ -10,7 +10,7 @@ const navItems = [
   { label: "Visão Geral", href: "overview", icon: Shield },
   { label: "Partidas", href: "matches", icon: Circle },
   { label: "Jogadores", href: "players", icon: Users },
-  { label: "Adversários", href: "opponents", icon: Swords },
+  // { label: "Adversários", href: "opponents", icon: Swords }, // Temporariamente desabilitado
 ];
 
 export function OverviewHeader({ clubId }: { clubId: string }) {
