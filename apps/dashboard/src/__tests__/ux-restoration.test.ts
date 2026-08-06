@@ -285,13 +285,6 @@ describe("UX: Overview sub-components exist", () => {
   });
 });
 
-describe("UX: Sidebar has tagline", () => {
-  const sidebar = readFile("components/layout/sidebar-nav.tsx");
-
-  it("shows tagline text", () => {
-    expect(sidebar).toContain("Partidas viram histórias");
-  });
-});
 
 describe("UX: Sidebar nav order", () => {
   const sidebar = readFile("components/layout/sidebar-nav.tsx");

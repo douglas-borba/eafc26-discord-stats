@@ -87,7 +87,6 @@
           ${link("players", currentPage)}
         </nav>
         <!-- ${link("opponents", currentPage)} Temporariamente desabilitado -->
-        <p class="app-shell-story">Partidas viram histórias. Histórias revelam a trajetória do clube.</p>
         <div class="app-shell-utility">
           <a class="app-shell-link" href="/settings"
              ${currentPage === "settings" ? 'aria-current="page"' : ""}>

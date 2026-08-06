@@ -92,12 +92,6 @@ export function SidebarNav({ clubId }: { clubId: string }) {
             })}
           </ul>
         </nav>
-
-        <div className="px-5 py-4 border-t border-border">
-          <p className="text-xs text-muted leading-relaxed">
-            Partidas viram histórias. Histórias revelam a trajetória do clube.
-          </p>
-        </div>
       </aside>
     </>
   );

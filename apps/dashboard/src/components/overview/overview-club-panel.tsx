@@ -179,10 +179,6 @@ export function OverviewClubPanel({ clubId, editorial, presentations }: Props) {
             );
           })}
         </nav>
-
-        <p className="text-[0.65rem] text-[#484f58] leading-relaxed pt-3 pb-1">
-          Partidas viram histórias. Histórias revelam a trajetória do clube.
-        </p>
       </div>
     </div>
   );
