@@ -1214,8 +1214,7 @@
       feedback.style.display = 'none';
 
       try {
-        // Use applicationFetch() which automatically adds CSRF token
-        const res = await applicationFetch('/api/matches/notify-latest', { method: 'POST' });
+        const res = await fetch('/api/matches/notify-latest', { method: 'POST' });
 
         // Try to parse as JSON, fallback to text
         let data;
@@ -1299,7 +1298,7 @@
       status.textContent = '';
 
       try {
-        const res = await applicationFetch('/api/dev/simulate/latest', { method: 'POST' });
+        const res = await fetch('/api/dev/simulate/latest', { method: 'POST' });
         const data = await res.json();
 
         if (data.status === 'simulated') {
@@ -1325,7 +1324,7 @@
       const status = document.getElementById('dev-status');
 
       try {
-        const res = await applicationFetch('/api/dev/reset', { method: 'POST' });
+        const res = await fetch('/api/dev/reset', { method: 'POST' });
         const data = await res.json();
 
         status.className = 'dev-status';
@@ -1364,7 +1363,7 @@
       btn.innerHTML = '<span class="spinner"></span>';
 
       try {
-        const res = await applicationFetch(`/api/publication/${currentMatchIdForActions}/resolve-delivered`, {
+        const res = await fetch(`/api/publication/${currentMatchIdForActions}/resolve-delivered`, {
           method: 'POST',
         });
         const data = await res.json();
@@ -1400,7 +1399,7 @@
       btn.innerHTML = '<span class="spinner"></span>';
 
       try {
-        const res = await applicationFetch(`/api/publication/${currentMatchIdForActions}/force-publish`, {
+        const res = await fetch(`/api/publication/${currentMatchIdForActions}/force-publish`, {
           method: 'POST',
         });
         const data = await res.json();
@@ -1509,7 +1508,7 @@
       const status = document.getElementById('reconciliation-status');
 
       try {
-        const res = await applicationFetch(`/api/publication/${matchId}/resolve-delivered`, { method: 'POST' });
+        const res = await fetch(`/api/publication/${matchId}/resolve-delivered`, { method: 'POST' });
         const data = await res.json();
 
         if (res.ok) {
@@ -1541,7 +1540,7 @@
       const status = document.getElementById('reconciliation-status');
 
       try {
-        const res = await applicationFetch(`/api/publication/${matchId}/force-publish`, { method: 'POST' });
+        const res = await fetch(`/api/publication/${matchId}/force-publish`, { method: 'POST' });
         const data = await res.json();
 
         if (res.ok) {
