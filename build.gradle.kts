@@ -172,6 +172,62 @@ tasks.register("macApp") {
         check(macAppPath.get().asFile.isDirectory) {
             "macOS application bundle was not created at ${macAppPath.get().asFile}"
         }
+        
+        val appBundle = macAppPath.get().asFile
+        val appDir = File(appBundle, "Contents/app")
+        val macOSDir = File(appBundle, "Contents/MacOS")
+        val originalLauncher = File(macOSDir, "EA FC STATS")
+        val renamedLauncher = File(macOSDir, "EA FC STATS.bin")
+        val wrapperScript = File(macOSDir, "EA FC STATS")
+        
+        // Copy .env.local to Contents/app/ where the JAR is located
+        val envLocalSource = project.file(".env.local")
+        if (envLocalSource.exists()) {
+            if (appDir.exists()) {
+                val envLocalDest = File(appDir, ".env.local")
+                envLocalSource.copyTo(envLocalDest, overwrite = true)
+                println("Copied .env.local to ${appDir.relativeTo(project.projectDir)}")
+            } else {
+                println("WARNING: Contents/app directory not found")
+            }
+        } else {
+            println("WARNING: .env.local not found - app will open /setup on first run")
+        }
+        
+        // Create wrapper script that loads .env.local before launching Java
+        if (originalLauncher.exists() && !renamedLauncher.exists()) {
+            originalLauncher.renameTo(renamedLauncher)
+            
+            // Copy the .cfg file with the new name so jpackage launcher can find it
+            val originalCfg = File(appDir, "EA FC STATS.cfg")
+            val renamedCfg = File(appDir, "EA FC STATS.bin.cfg")
+            if (originalCfg.exists()) {
+                originalCfg.copyTo(renamedCfg, overwrite = true)
+                println("Created EA FC STATS.bin.cfg for renamed launcher")
+            }
+            
+            val wrapperContent = """#!/usr/bin/env bash
+set -e
+
+# Get the directory where this script is located
+SCRIPT_DIR="${'$'}(cd "${'$'}(dirname "${'$'}{BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="${'$'}SCRIPT_DIR/../app"
+
+# Load .env.local if it exists
+if [ -f "${'$'}APP_DIR/.env.local" ]; then
+    set -a  # Mark variables for export
+    source "${'$'}APP_DIR/.env.local"
+    set +a
+fi
+
+# Execute the original jpackage launcher
+exec "${'$'}SCRIPT_DIR/EA FC STATS.bin" "${'$'}@"
+"""
+            
+            wrapperScript.writeText(wrapperContent)
+            wrapperScript.setExecutable(true)
+            println("Created wrapper script that loads .env.local")
+        }
     }
 }
 
