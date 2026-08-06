@@ -216,9 +216,21 @@
   }
 
   function renderPlayers(players) {
-    const tableRows = players.map(player => `
+    // Sort players: active players by rating DESC, then disconnected players (3.0) at the end
+    const disconnectedPlayers = players.filter(p => p.rating === 3.0);
+    const activePlayers = players.filter(p => p.rating !== 3.0);
+    activePlayers.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+    const sortedPlayers = [...activePlayers, ...disconnectedPlayers];
+
+    const tableRows = sortedPlayers.map(player => {
+      const isDisconnected = player.rating === 3.0;
+      return `
       <tr>
-        <td><a href="/players?playerId=${encodeURIComponent(player.id)}&from=match-history"><strong>${escapeHtml(player.name)}</strong></a><span class="player-role">${escapeHtml(player.role)}</span></td>
+        <td>
+          <a href="/players?playerId=${encodeURIComponent(player.id)}&from=match-history"><strong>${escapeHtml(player.name)}</strong></a>
+          <span class="player-role">${escapeHtml(player.role)}</span>
+          ${isDisconnected ? '<span class="player-disconnected">Saiu da partida</span>' : ''}
+        </td>
         <td>${display(player.rating)}</td>
         <td>${display(player.goals)}</td>
         <td>${display(player.assists)}</td>
@@ -228,9 +240,11 @@
         <td>${display(player.redCards)}</td>
         <td>${display(player.saves)}</td>
       </tr>
-    `).join("");
+    `;
+    }).join("");
 
-    const mobileCards = players.map(player => {
+    const mobileCards = sortedPlayers.map(player => {
+      const isDisconnected = player.rating === 3.0;
       const stats = [
         `${display(player.goals)} G`,
         `${display(player.assists)} A`,
@@ -243,7 +257,11 @@
       return `
         <article class="player-performance-card player-mobile-card">
           <div class="player-mobile-head">
-            <div><a href="/players?playerId=${encodeURIComponent(player.id)}&from=match-history"><strong>${escapeHtml(player.name)}</strong></a><span class="player-role">${escapeHtml(player.role)}</span></div>
+            <div>
+              <a href="/players?playerId=${encodeURIComponent(player.id)}&from=match-history"><strong>${escapeHtml(player.name)}</strong></a>
+              <span class="player-role">${escapeHtml(player.role)}</span>
+              ${isDisconnected ? '<span class="player-disconnected-mobile">Saiu da partida</span>' : ''}
+            </div>
             <span class="player-mobile-rating">${display(player.rating)}</span>
           </div>
           <div class="player-mobile-stats">${stats.join(" · ")}</div>

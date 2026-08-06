@@ -286,6 +286,21 @@ function buildEditorialCard(story: Story, players: MatchPlayer[]): EditorialCard
   }
 }
 
+/* ── player sorting ────────────────────────────────────────── */
+
+function sortPlayersByRating(players: MatchPlayer[]): MatchPlayer[] {
+  const disconnectedPlayers = players.filter(p => p.rating === 3.0);
+  const activePlayers = players.filter(p => p.rating !== 3.0);
+
+  activePlayers.sort((a, b) => {
+    const ratingA = a.rating ?? 0;
+    const ratingB = b.rating ?? 0;
+    return ratingB - ratingA; // descending order
+  });
+
+  return [...activePlayers, ...disconnectedPlayers];
+}
+
 /* ── component ─────────────────────────────────────────────── */
 
 export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId: string }) {
@@ -596,7 +611,9 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
               </tr>
             </thead>
             <tbody>
-              {match.players.map((p) => (
+              {sortPlayersByRating(match.players).map((p) => {
+                const isDisconnected = p.rating === 3.0;
+                return (
                 <tr key={p.playerId} className="border-b border-border/50 hover:bg-surface-raised/50">
                   <td className="px-4 py-2.5">
                     <a
@@ -610,9 +627,14 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
                         ⭐
                       </span>
                     )}
+                    {isDisconnected && (
+                      <span className="ml-2 text-xs text-muted italic">
+                        (Saiu da partida)
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-center" style={{ fontSize: 16, fontWeight: 850 }}>
-                    <span className={p.rating ? ratingColor(p.rating) : "text-muted"}>
+                    <span className={p.rating ? (isDisconnected ? "text-muted" : ratingColor(p.rating)) : "text-muted"}>
                       {p.rating?.toFixed(1) ?? "---"}
                     </span>
                   </td>
@@ -628,14 +650,17 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
                   <td className="px-3 py-2.5 text-center">{p.redCards || "---"}</td>
                   <td className="px-3 py-2.5 text-center text-muted">---</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
 
         {/* mobile cards */}
         <div className="sm:hidden rounded-[10px] border border-border divide-y divide-border">
-          {match.players.map((p) => (
+          {sortPlayersByRating(match.players).map((p) => {
+            const isDisconnected = p.rating === 3.0;
+            return (
             <div key={p.playerId} className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <a
@@ -646,12 +671,17 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
                   {p.manOfTheMatch && <span className="ml-1 text-highlight">⭐</span>}
                 </a>
                 <span
-                  className={p.rating ? ratingColor(p.rating) : "text-muted"}
+                  className={p.rating ? (isDisconnected ? "text-muted" : ratingColor(p.rating)) : "text-muted"}
                   style={{ fontSize: 16, fontWeight: 850 }}
                 >
                   {p.rating?.toFixed(1) ?? "---"}
                 </span>
               </div>
+              {isDisconnected && (
+                <div className="text-xs text-muted italic mb-2">
+                  Saiu da partida
+                </div>
+              )}
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
                 <span>
                   <span className="font-semibold text-text-soft">{p.goals}</span> G
@@ -676,7 +706,8 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
                 </span>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </EditorialSection>
 

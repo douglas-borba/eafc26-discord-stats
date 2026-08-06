@@ -236,6 +236,22 @@
   font-size: 11px;
 }
 
+.player-disconnected {
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--editorial-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.player-disconnected-mobile {
+  display: block;
+  color: var(--editorial-muted);
+  font-size: 11px;
+  font-style: italic;
+  margin-top: 2px;
+}
+
 .players-mobile { display: none; }
 
 .player-mobile-head {
