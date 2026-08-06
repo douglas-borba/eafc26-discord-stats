@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Shield, Circle, Users, Swords, Menu, X } from "lucide-react";
+import { Shield, Circle, Users, Menu, X } from "lucide-react";
 import { useState, useEffect } from "react";
 
 const navItems = [
