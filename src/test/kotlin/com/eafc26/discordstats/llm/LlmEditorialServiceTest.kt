@@ -155,7 +155,7 @@ class LlmEditorialServiceTest {
                 assertThat(record.narrative).isEqualTo("Grande fase do clube.")
                 assertThat(record.status).isEqualTo("success")
                 assertThat(record.provider).isNotNull()
-                assertThat(record.promptVersion).isEqualTo("v2")
+                assertThat(record.promptVersion).isEqualTo("v3")
                 assertThat(record.generatedAt).isEqualTo(fixedInstant)
             })
         }

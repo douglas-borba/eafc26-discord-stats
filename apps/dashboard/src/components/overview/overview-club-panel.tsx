@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Shield, Circle, Users } from "lucide-react";
 import type { SequenceEditorial } from "@/lib/services/sequence-editorial-service";
@@ -36,6 +37,7 @@ function PanelDivider() {
 export function OverviewClubPanel({ clubId, editorial, presentations }: Props) {
   const pathname = usePathname();
   const { stats } = editorial;
+  const [hoveredMatch, setHoveredMatch] = useState<number | null>(null);
 
   return (
     <div className="flex flex-col h-full">
@@ -61,20 +63,37 @@ export function OverviewClubPanel({ clubId, editorial, presentations }: Props) {
 
       <PanelDivider />
 
-      {/* ── Bloco 2: Últimas N partidas ── */}
+      {/* ── Bloco 2: Últimas 10 partidas ── */}
       <div className="py-5">
         <p className="text-[0.6rem] font-bold uppercase tracking-[0.1em] text-[#8b949e] mb-3">
-          Últimas {presentations.length} partida{presentations.length > 1 ? "s" : ""}
+          Últimas {editorial.matchDetails.length} partida{editorial.matchDetails.length !== 1 ? "s" : ""}
         </p>
 
-        <div className="flex items-center gap-[7px] mb-2.5">
-          {presentations.map((p) => (
+        <div className="flex items-center gap-[9px] mb-2.5 flex-wrap relative">
+          {editorial.matchDetails.map((match, idx) => (
             <div
-              key={p.matchId}
-              className="w-[10px] h-[10px] rounded-full"
-              style={{ backgroundColor: resultDotColors[p.outcome.type] }}
-              title={`${p.outcome.label} — ${p.ourScore}×${p.oppScore}`}
-            />
+              key={match.matchId}
+              className="relative cursor-pointer transition-transform hover:scale-125 active:scale-110"
+              onMouseEnter={() => setHoveredMatch(idx)}
+              onMouseLeave={() => setHoveredMatch(null)}
+              onClick={() => setHoveredMatch(hoveredMatch === idx ? null : idx)}
+            >
+              <div
+                className="w-[14px] h-[14px] rounded-full"
+                style={{ backgroundColor: resultDotColors[match.outcome] }}
+              />
+              {hoveredMatch === idx && (
+                <div className="absolute z-50 left-1/2 -translate-x-1/2 bottom-[calc(100%+8px)] bg-[#161b22] border border-[#30363d] rounded-md px-2.5 py-1.5 text-[0.7rem] whitespace-nowrap shadow-lg pointer-events-none">
+                  <div className="text-[#c9d1d9] font-medium mb-0.5">{match.date}</div>
+                  <div className="text-[#8b949e]">{match.opponent}</div>
+                  <div className="text-[#c9d1d9] font-semibold">{match.ourScore}×{match.oppScore}</div>
+                  <div
+                    className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent"
+                    style={{ borderTopColor: "#30363d" }}
+                  />
+                </div>
+              )}
+            </div>
           ))}
         </div>
 
@@ -97,10 +116,10 @@ export function OverviewClubPanel({ clubId, editorial, presentations }: Props) {
 
       <PanelDivider />
 
-      {/* ── Bloco 3: Panorama ── */}
+      {/* ── Bloco 3: Momento do Clube ── */}
       <div className="py-5 flex-1">
         <p className="text-[0.6rem] font-bold uppercase tracking-[0.1em] text-[#58a6ff] mb-3">
-          Panorama
+          Momento do Clube
         </p>
 
         <h2 className="text-[0.95rem] font-bold text-[#e6edf3] leading-tight mb-2.5">
@@ -108,25 +127,35 @@ export function OverviewClubPanel({ clubId, editorial, presentations }: Props) {
         </h2>
 
         <p className="text-[0.78rem] text-[#9da5b0] leading-[1.65] mb-5 max-w-[260px]">
-          {editorial.narrative}
+          {editorial.aiNarrative ?? editorial.narrative}
         </p>
 
-        {/* Métricas */}
+        {/* Estatísticas do Período */}
         {stats.matchCount > 0 && (
-          <div className="flex flex-col gap-[5px] text-[0.73rem] mb-5">
-            <StatRow label="Gols marcados" value={String(stats.goalsScored)} />
-            <StatRow label="Gols sofridos" value={String(stats.goalsConceded)} />
-            <StatRow
-              label="Saldo"
-              value={`${stats.goalDifference > 0 ? "+" : ""}${stats.goalDifference}`}
-              color={stats.goalDifference > 0 ? "#3fb950" : stats.goalDifference < 0 ? "#f85149" : "#6e7681"}
-            />
-            <StatRow label="Média de gols" value={stats.avgGoalsScored} />
-          </div>
+          <>
+            <div className="flex flex-col gap-[5px] text-[0.73rem] mb-5">
+              <StatRow label="Gols marcados" value={String(stats.goalsScored)} />
+              <StatRow label="Gols sofridos" value={String(stats.goalsConceded)} />
+              <StatRow
+                label="Saldo"
+                value={`${stats.goalDifference > 0 ? "+" : ""}${stats.goalDifference}`}
+                color={stats.goalDifference > 0 ? "#3fb950" : stats.goalDifference < 0 ? "#f85149" : "#6e7681"}
+              />
+              <StatRow label="Média de gols" value={stats.avgGoalsScored} />
+              <StatRow
+                label="Aproveitamento"
+                value={`${stats.pointsPercentage}%`}
+                color={parseFloat(stats.pointsPercentage) >= 60 ? "#3fb950" : parseFloat(stats.pointsPercentage) >= 40 ? "#d29922" : "#f85149"}
+              />
+              {editorial.currentStreak && (
+                <StatRow label="Sequência atual" value={editorial.currentStreak.label} />
+              )}
+            </div>
+          </>
         )}
 
-        {/* Destaques da sequência */}
-        {(editorial.topScorer || editorial.topHighlight) && (
+        {/* Destaques do Período */}
+        {(editorial.topScorer || editorial.topAssister || editorial.topHighlight || editorial.topRatedPlayer) && (
           <>
             <div className="h-px bg-[#21262d] mb-4" />
             <div className="flex flex-col gap-2 text-[0.73rem]">
@@ -140,13 +169,33 @@ export function OverviewClubPanel({ clubId, editorial, presentations }: Props) {
                   </span>
                 </div>
               )}
+              {editorial.topAssister && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[0.82rem] w-5 text-center shrink-0">🎯</span>
+                  <span className="text-[#9da5b0]">
+                    <span className="font-medium text-[#c9d1d9]">{editorial.topAssister.name}</span>
+                    <span className="text-[#6e7681]"> — </span>
+                    {editorial.topAssister.assists} {editorial.topAssister.assists === 1 ? "assistência" : "assistências"}
+                  </span>
+                </div>
+              )}
               {editorial.topHighlight && (
                 <div className="flex items-center gap-2">
                   <span className="text-[0.82rem] w-5 text-center shrink-0">🥇</span>
                   <span className="text-[#9da5b0]">
                     <span className="font-medium text-[#c9d1d9]">{editorial.topHighlight.name}</span>
                     <span className="text-[#6e7681]"> — </span>
-                    {editorial.topHighlight.appearances}× destaque
+                    {editorial.topHighlight.appearances}× MVP
+                  </span>
+                </div>
+              )}
+              {editorial.topRatedPlayer && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[0.82rem] w-5 text-center shrink-0">⭐</span>
+                  <span className="text-[#9da5b0]">
+                    <span className="font-medium text-[#c9d1d9]">{editorial.topRatedPlayer.name}</span>
+                    <span className="text-[#6e7681]"> — </span>
+                    média {editorial.topRatedPlayer.avgRating}
                   </span>
                 </div>
               )}

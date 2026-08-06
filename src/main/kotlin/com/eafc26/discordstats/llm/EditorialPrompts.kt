@@ -9,7 +9,7 @@ Seu trabalho é escrever uma breve introdução editorial sobre UMA PARTIDA espe
 Regras: use apenas fatos fornecidos; nunca invente dados; escreva em prosa corrida sem listas, markdown ou formatação; responda apenas com o texto narrativo curto."""
 
     private const val PANORAMA_SYSTEM = """Você é um redator esportivo brasileiro de EA FC Pro Clubs.
-Seu trabalho é escrever uma abertura de matéria analisando o MOMENTO ATUAL do clube com base nas últimas três partidas.
+Seu trabalho é escrever uma abertura de matéria analisando o MOMENTO ATUAL do clube com base nas últimas dez partidas.
 Regras: use apenas fatos fornecidos; nunca invente dados; escreva em prosa corrida sem listas, markdown ou formatação; responda apenas com o texto narrativo."""
 
     fun matchNarrativePrompt(context: EditorialContext): Pair<String, String> {
@@ -67,7 +67,7 @@ Regras: use apenas fatos fornecidos; nunca invente dados; escreva em prosa corri
     fun panoramaPrompt(context: EditorialContext): Pair<String, String> {
         val m = context.match
         val userPrompt = buildString {
-            append("CONTEXTO: Abertura de matéria sobre o MOMENTO ATUAL do clube baseado nas últimas 3 partidas.\n\n")
+            append("CONTEXTO: Abertura de matéria sobre o MOMENTO ATUAL do clube baseado nas últimas 10 partidas.\n\n")
             append("PARTIDA MAIS RECENTE:\n")
             append("${m.ourClub} ${m.ourScore}×${m.opponentScore} ${m.opponent} — ${outcomeLabel(m.outcome)} (${m.date})\n")
             m.mvp?.let { 
@@ -78,7 +78,7 @@ Regras: use apenas fatos fornecidos; nunca invente dados; escreva em prosa corri
             m.teamAverageRating?.let { append("Média do time: $it\n") }
             
             context.recentForm?.let { form ->
-                append("\nSEQUÊNCIA DAS ÚLTIMAS 3 PARTIDAS:\n")
+                append("\nSEQUÊNCIA DAS ÚLTIMAS ${form.results.size} PARTIDAS:\n")
                 form.results.forEach { r ->
                     append("${outcomeLabel(r.outcome)}: ${r.ourScore}×${r.opponentScore} vs ${r.opponent}\n")
                 }
@@ -95,22 +95,22 @@ Regras: use apenas fatos fornecidos; nunca invente dados; escreva em prosa corri
             }
             
             append("\nTAREFA:\n")
-            append("Escreva 2-3 frases (máximo 450 caracteres) analisando o MOMENTO ATUAL do clube.\n")
+            append("Escreva 2-3 frases (entre 350 e 550 caracteres) analisando o MOMENTO ATUAL do clube.\n")
             append("Texto corrido em português brasileiro, sem listas, emoji ou markdown.\n\n")
             
             append("VOCÊ DEVE:\n")
-            append("- Comparar as 3 partidas e identificar tendências\n")
+            append("- Comparar as 10 partidas e identificar tendências evidentes\n")
             append("- Discutir consistência ou inconsistência entre as partidas\n")
-            append("- Avaliar produção ofensiva considerando os gols nas 3 partidas\n")
-            append("- Avaliar solidez defensiva considerando os gols sofridos nas 3 partidas\n")
+            append("- Avaliar produção ofensiva considerando os gols nas 10 partidas\n")
+            append("- Avaliar solidez defensiva considerando os gols sofridos nas 10 partidas\n")
             append("- Comentar se há evolução, deterioração ou estabilidade entre as partidas\n")
-            append("- Caracterizar a forma atual do clube\n\n")
+            append("- Caracterizar a forma atual do clube com base em fatos observáveis\n\n")
             
             append("FOCO:\n")
             append("Este NÃO é um resumo da última partida.\n")
-            append("Este é uma análise do momento do clube através das últimas 3 partidas.\n")
+            append("Este é uma análise do momento do clube através das últimas 10 partidas.\n")
             append("A partida mais recente pode ter ênfase, mas o texto deve comparar e analisar a sequência.\n")
-            append("Narre a tendência geral, não liste resultados individuais.")
+            append("Narre a tendência geral baseada em evidências, não liste resultados individuais.")
         }
         return PANORAMA_SYSTEM to userPrompt
     }

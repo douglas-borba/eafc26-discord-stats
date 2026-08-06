@@ -1,6 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
+
+// Mock server-only module before importing the service
+vi.mock("@/lib/supabase/server", () => ({
+  createServerSupabase: vi.fn(),
+}));
+
 import { buildSequenceEditorial } from "../lib/services/sequence-editorial-service";
 import type { MatchSummaryPresentation } from "../lib/services/match-card-service";
 
@@ -41,9 +47,14 @@ describe("buildSequenceEditorial", () => {
       expect(result.stats.losses).toBe(0);
       expect(result.stats.goalsScored).toBe(0);
       expect(result.stats.goalsConceded).toBe(0);
+      expect(result.stats.pointsPercentage).toBe("0.0");
       expect(result.title).toBe("Sem partidas recentes");
+      expect(result.matchDetails).toEqual([]);
       expect(result.topScorer).toBeNull();
+      expect(result.topAssister).toBeNull();
       expect(result.topHighlight).toBeNull();
+      expect(result.topRatedPlayer).toBeNull();
+      expect(result.currentStreak).toBeNull();
     });
   });
 
@@ -70,7 +81,9 @@ describe("buildSequenceEditorial", () => {
       expect(result.stats.losses).toBe(1);
       expect(result.stats.goalsScored).toBe(3);
       expect(result.stats.goalsConceded).toBe(3);
-      expect(result.subtitle).toBe("As duas últimas partidas");
+      expect(result.stats.pointsPercentage).toBe("50.0"); // 3 points out of 6 possible
+      expect(result.subtitle).toBe("As 2 últimas partidas");
+      expect(result.matchDetails).toHaveLength(2);
     });
   });
 
@@ -88,7 +101,8 @@ describe("buildSequenceEditorial", () => {
       expect(result.stats.goalsConceded).toBe(6);
       expect(result.stats.goalDifference).toBe(0);
       expect(result.stats.avgGoalsScored).toBe("2.0");
-      expect(result.subtitle).toBe("As três últimas partidas");
+      expect(result.stats.pointsPercentage).toBe("44.4"); // 4 points out of 9 possible
+      expect(result.subtitle).toBe("As 3 últimas partidas");
     });
 
     it("picks top scorer across matches", () => {
@@ -98,6 +112,16 @@ describe("buildSequenceEditorial", () => {
         makePresentation({ matchId: "m3", goals: { scorers: [{ name: "Pelé", count: 3 }] } }),
       ]);
       expect(result.topScorer).toEqual({ name: "Pelé", goals: 4 });
+    });
+
+    it("picks top assister across matches", () => {
+      const result = buildSequenceEditorial([
+        makePresentation({ assists: { assisters: [{ name: "Zidane", count: 2 }] } }),
+        makePresentation({ matchId: "m2", assists: { assisters: [{ name: "Beckham", count: 1 }, { name: "Zidane", count: 1 }] } }),
+        makePresentation({ matchId: "m3", assists: { assisters: [{ name: "Beckham", count: 2 }] } }),
+      ]);
+      // Both have 3 assists, but alphabetically Beckham < Zidane, so Beckham wins
+      expect(result.topAssister).toEqual({ name: "Beckham", assists: 3 });
     });
 
     it("picks top highlight across matches", () => {
@@ -116,6 +140,7 @@ describe("buildSequenceEditorial", () => {
         makePresentation({ matchId: "m3", outcome: { emoji: "✅", label: "V", color: 0, type: "WIN" } }),
       ]);
       expect(allWins.title).toBe("Fase impecável");
+      expect(allWins.currentStreak).toEqual({ type: "WIN", count: 3, label: "3 vitórias" });
 
       const allLosses = buildSequenceEditorial([
         makePresentation({ outcome: { emoji: "❌", label: "D", color: 0, type: "LOSS" } }),
@@ -123,6 +148,7 @@ describe("buildSequenceEditorial", () => {
         makePresentation({ matchId: "m3", outcome: { emoji: "❌", label: "D", color: 0, type: "LOSS" } }),
       ]);
       expect(allLosses.title).toBe("Momento difícil");
+      expect(allLosses.currentStreak).toEqual({ type: "LOSS", count: 3, label: "3 derrotas" });
     });
   });
 

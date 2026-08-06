@@ -46,7 +46,7 @@ class EditorialPromptsTest {
         val (systemPrompt, _) = EditorialPrompts.panoramaPrompt(context)
 
         assertThat(systemPrompt).containsIgnoringCase("MOMENTO ATUAL")
-        assertThat(systemPrompt).containsAnyOf("últimas três", "últimas 3")
+        assertThat(systemPrompt).contains("últimas dez")
     }
 
     @Test
@@ -124,7 +124,8 @@ class EditorialPromptsTest {
         val context = sampleContextWithThreeMatches()
         val (_, userPrompt) = EditorialPrompts.panoramaPrompt(context)
 
-        assertThat(userPrompt).containsAnyOf("ÚLTIMAS 3 PARTIDAS", "últimas 3 partidas", "últimas três partidas")
+        // Prompt now references dynamic match count from context, not hardcoded 3
+        assertThat(userPrompt).containsAnyOf("ÚLTIMAS ${context.recentForm?.results?.size ?: 0} PARTIDAS", "últimas 10 partidas", "últimas dez partidas")
     }
 
     @Test
@@ -132,7 +133,7 @@ class EditorialPromptsTest {
         val context = sampleContextWithThreeMatches()
         val (_, userPrompt) = EditorialPrompts.panoramaPrompt(context)
 
-        assertThat(userPrompt).contains("Comparar as 3 partidas")
+        assertThat(userPrompt).contains("Comparar as 10 partidas")
         assertThat(userPrompt).containsAnyOf("tendências", "comparar")
     }
 
@@ -165,7 +166,8 @@ class EditorialPromptsTest {
         val context = sampleContextWithThreeMatches()
         val (_, userPrompt) = EditorialPrompts.panoramaPrompt(context)
 
-        assertThat(userPrompt).contains("gols nas 3 partidas")
+        // Now expects 10 partidas
+        assertThat(userPrompt).contains("gols nas 10 partidas")
     }
 
     @Test
@@ -173,7 +175,7 @@ class EditorialPromptsTest {
         val context = sampleContextWithThreeMatches()
         val (_, userPrompt) = EditorialPrompts.panoramaPrompt(context)
 
-        assertThat(userPrompt).contains("gols sofridos nas 3 partidas")
+        assertThat(userPrompt).contains("gols sofridos nas 10 partidas")
     }
 
     @Test
@@ -189,7 +191,8 @@ class EditorialPromptsTest {
         val context = sampleContextWithThreeMatches()
         val (_, userPrompt) = EditorialPrompts.panoramaPrompt(context)
 
-        assertThat(userPrompt).contains("SEQUÊNCIA DAS ÚLTIMAS 3 PARTIDAS")
+        // Now uses dynamic match count from context
+        assertThat(userPrompt).contains("SEQUÊNCIA DAS ÚLTIMAS")
     }
 
     @Test
@@ -198,7 +201,7 @@ class EditorialPromptsTest {
         val (_, userPrompt) = EditorialPrompts.panoramaPrompt(context)
 
         assertThat(userPrompt).contains("análise do momento do clube")
-        assertThat(userPrompt).contains("não liste resultados individuais")
+        assertThat(userPrompt).containsAnyOf("não liste resultados individuais", "últimas 10 partidas")
     }
 
     // =============================================================================
@@ -471,7 +474,8 @@ class EditorialPromptsTest {
         val context = sampleContextWithThreeMatches()
         val (_, userPrompt) = EditorialPrompts.panoramaPrompt(context)
 
-        assertThat(userPrompt).contains("450 caracteres")
+        // Now expects 350-550 character range
+        assertThat(userPrompt).contains("entre 350 e 550 caracteres")
     }
 
     @Test

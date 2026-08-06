@@ -8,11 +8,12 @@ import { buildSequenceEditorial, fetchAiPanorama } from "@/lib/services/sequence
 export default async function OverviewPage({ params }: { params: Promise<{ clubId: string }> }) {
   const { clubId } = await params;
 
-  const [presentations, aiNarrative] = await Promise.all([
-    getRecentMatchCards(clubId),
+  const [presentations, editorialPresentations, aiNarrative] = await Promise.all([
+    getRecentMatchCards(clubId, 3),  // 3 for match cards
+    getRecentMatchCards(clubId, 10), // 10 for editorial analysis
     fetchAiPanorama(clubId),
   ]);
-  const editorial = buildSequenceEditorial(presentations);
+  const editorial = buildSequenceEditorial(editorialPresentations);
   editorial.aiNarrative = aiNarrative;
 
   if (presentations.length === 0) {
