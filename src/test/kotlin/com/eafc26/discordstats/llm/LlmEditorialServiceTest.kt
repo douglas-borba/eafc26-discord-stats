@@ -130,8 +130,9 @@ class LlmEditorialServiceTest {
 
             service.generateAndPersistPanorama(match)
 
+            // Context key must use chronological order (as returned by historyService.latest)
             val expectedKey = LlmEditorialService.computeContextKey(
-                "club1", listOf("m1", "m2", "m3").sorted(), LlmEditorialService.PROMPT_VERSION, enabledProps.model
+                "club1", listOf("m1", "m2", "m3"), LlmEditorialService.PROMPT_VERSION, enabledProps.model
             )
             verify(panoramaRepository).findByContextKey("club1", expectedKey)
             verify(provider).generatePanorama(any())
@@ -291,12 +292,11 @@ class LlmEditorialServiceTest {
         }
 
         @Test
-        fun `different match order with sorted IDs produces same key`() {
-            val ids1 = listOf("m2", "m1").sorted()
-            val ids2 = listOf("m1", "m2").sorted()
-            val key1 = LlmEditorialService.computeContextKey("c1", ids1, "v1", "model")
-            val key2 = LlmEditorialService.computeContextKey("c1", ids2, "v1", "model")
-            assertThat(key1).isEqualTo(key2)
+        fun `different chronological order produces different key`() {
+            // Chronological order matters - ensures cache invalidation when match order changes
+            val key1 = LlmEditorialService.computeContextKey("c1", listOf("m2", "m1"), "v1", "model")
+            val key2 = LlmEditorialService.computeContextKey("c1", listOf("m1", "m2"), "v1", "model")
+            assertThat(key1).isNotEqualTo(key2)
         }
 
         @Test

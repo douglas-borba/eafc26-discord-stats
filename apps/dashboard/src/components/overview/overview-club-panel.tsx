@@ -70,31 +70,45 @@ export function OverviewClubPanel({ clubId, editorial, presentations }: Props) {
         </p>
 
         <div className="flex items-center gap-[9px] mb-2.5 flex-wrap relative">
-          {editorial.matchDetails.map((match, idx) => (
-            <div
-              key={match.matchId}
-              className="relative cursor-pointer transition-transform hover:scale-125 active:scale-110"
-              onMouseEnter={() => setHoveredMatch(idx)}
-              onMouseLeave={() => setHoveredMatch(null)}
-              onClick={() => setHoveredMatch(hoveredMatch === idx ? null : idx)}
-            >
+          {editorial.matchDetails.map((match, idx) => {
+            const totalMatches = editorial.matchDetails.length;
+            const isFirst = idx < totalMatches / 3;
+            const isLast = idx > (totalMatches * 2) / 3;
+
+            return (
               <div
-                className="w-[14px] h-[14px] rounded-full"
-                style={{ backgroundColor: resultDotColors[match.outcome] }}
-              />
-              {hoveredMatch === idx && (
-                <div className="absolute z-50 left-1/2 -translate-x-1/2 bottom-[calc(100%+8px)] bg-[#161b22] border border-[#30363d] rounded-md px-2.5 py-1.5 text-[0.7rem] whitespace-nowrap shadow-lg pointer-events-none">
-                  <div className="text-[#c9d1d9] font-medium mb-0.5">{match.date}</div>
-                  <div className="text-[#8b949e]">{match.opponent}</div>
-                  <div className="text-[#c9d1d9] font-semibold">{match.ourScore}×{match.oppScore}</div>
+                key={match.matchId}
+                className="relative cursor-pointer transition-transform hover:scale-125 active:scale-110"
+                onMouseEnter={() => setHoveredMatch(idx)}
+                onMouseLeave={() => setHoveredMatch(null)}
+                onClick={() => setHoveredMatch(hoveredMatch === idx ? null : idx)}
+              >
+                <div
+                  className="w-[14px] h-[14px] rounded-full"
+                  style={{ backgroundColor: resultDotColors[match.outcome] }}
+                />
+                {hoveredMatch === idx && (
                   <div
-                    className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent"
-                    style={{ borderTopColor: "#30363d" }}
-                  />
-                </div>
-              )}
-            </div>
-          ))}
+                    className={cn(
+                      "absolute z-50 bottom-[calc(100%+8px)] bg-[#161b22] border border-[#30363d] rounded-md px-2.5 py-1.5 text-[0.7rem] whitespace-nowrap shadow-lg pointer-events-none",
+                      isFirst ? "left-0" : isLast ? "right-0" : "left-1/2 -translate-x-1/2"
+                    )}
+                  >
+                    <div className="text-[#c9d1d9] font-medium mb-0.5">{match.date}</div>
+                    <div className="text-[#8b949e]">{match.opponent}</div>
+                    <div className="text-[#c9d1d9] font-semibold">{match.ourScore}×{match.oppScore}</div>
+                    <div
+                      className={cn(
+                        "absolute top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent",
+                        isFirst ? "left-3" : isLast ? "right-3" : "left-1/2 -translate-x-1/2"
+                      )}
+                      style={{ borderTopColor: "#30363d" }}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {stats.matchCount > 0 && (

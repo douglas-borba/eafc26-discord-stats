@@ -30,7 +30,9 @@ class LlmEditorialService(
         try {
             val clubId = canonical.interpretation.perspectiveClubId.value
             val recentMatches = historyService.latest(PANORAMA_MATCH_COUNT)
-            val matchIds = recentMatches.map { it.matchId.value }.sorted()
+            // IMPORTANT: Use chronological order (newest first), NOT sorted alphabetically
+            // This ensures cache invalidation when match order changes due to reconciliation/republication
+            val matchIds = recentMatches.map { it.matchId.value }
             val contextKey = computeContextKey(clubId, matchIds, PROMPT_VERSION, properties.model)
 
             val existing = panoramaRepository.findByContextKey(clubId, contextKey)
@@ -168,8 +170,18 @@ class LlmEditorialService(
         const val PANORAMA_MAX_CHARS = 550
         const val DISCORD_MAX_CHARS = 220
 
-        fun computeContextKey(clubId: String, sortedMatchIds: List<String>, promptVersion: String, model: String): String {
-            val input = "$clubId|${sortedMatchIds.joinToString(",")}|$promptVersion|$model"
+        /**
+         * Computes a deterministic context key for panorama caching.
+         *
+         * @param clubId The club ID
+         * @param chronologicalMatchIds Match IDs in chronological order (newest first).
+         *        MUST NOT be sorted alphabetically - order matters for cache invalidation.
+         * @param promptVersion The prompt version identifier
+         * @param model The LLM model identifier
+         * @return SHA-256 hash of the context parameters
+         */
+        fun computeContextKey(clubId: String, chronologicalMatchIds: List<String>, promptVersion: String, model: String): String {
+            val input = "$clubId|${chronologicalMatchIds.joinToString(",")}|$promptVersion|$model"
             val digest = MessageDigest.getInstance("SHA-256")
             return digest.digest(input.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it) }
