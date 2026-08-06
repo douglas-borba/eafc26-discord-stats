@@ -43,7 +43,7 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
       >
         {/* Header with vertical ribbon */}
         <div
-          className="card-header grid rounded-t-[10px] overflow-hidden"
+          className="card-header grid rounded-t-[10px]"
           style={{
             gridTemplateColumns: c ? "26px 1fr" : "32px 1fr",
             background: "linear-gradient(135deg, rgba(88, 166, 255, 0.08), transparent)",
@@ -51,7 +51,7 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
         >
           {/* Ribbon */}
           <div
-            className="flex items-center justify-center"
+            className="flex items-center justify-center rounded-tl-[10px]"
             style={{
               background: ribbon.bg,
               color: ribbon.color,
