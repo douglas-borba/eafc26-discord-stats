@@ -257,6 +257,12 @@
 
     .dev-panel .panel-title { color: #f0883e; }
 
+    .admin-panel {
+      border: 1px solid var(--border);
+    }
+
+    .admin-panel .panel-title { color: #8b949e; }
+
     .dev-info {
       margin-bottom: 0.5rem;
       padding: 0.35rem 0.55rem;
@@ -752,6 +758,22 @@
           </div>
         </div>
 
+        <!-- Reconciliation Panel -->
+        <div class="panel admin-panel" id="reconciliation-panel" style="display: none;">
+          <div class="panel-title">🔍 Reconciliação</div>
+          <div class="panel-body">
+            <button class="btn btn-primary" onclick="loadReconciliation()">
+              <span class="btn-icon">🔍</span>
+              <span id="btn-reconcile-text">Inspecionar publicações</span>
+            </button>
+            <div id="reconciliation-result" style="display: none; margin-top: 0.75rem;">
+              <div id="reconciliation-summary" style="font-size: 0.75rem; color: #c9d1d9; margin-bottom: 0.75rem;"></div>
+              <div id="reconciliation-list" style="margin-bottom: 0.75rem;"></div>
+            </div>
+            <div id="reconciliation-status" style="margin-top: 0.5rem; font-size: 0.72rem; min-height: 1em;"></div>
+          </div>
+        </div>
+
         <!-- Network access information remains contextual to this page. -->
         <div class="panel settings-panel" id="network-panel" style="display: none;">
           <span class="network-url" id="network-url"></span>
@@ -828,8 +850,8 @@
           }
           if (info.devMode) {
             document.getElementById('dev-panel').style.display = 'block';
-            document.getElementById('reconciliation-panel').style.display = 'block';
           }
+          document.getElementById('reconciliation-panel').style.display = 'block';
         })
         .catch(() => {});
     }
@@ -1192,10 +1214,33 @@
       feedback.style.display = 'none';
 
       try {
-        const res = await fetch('/api/matches/notify-latest', { method: 'POST' });
-        const data = await res.json().catch(() => ({}));
+        // Use applicationFetch() which automatically adds CSRF token
+        const res = await applicationFetch('/api/matches/notify-latest', { method: 'POST' });
+
+        // Try to parse as JSON, fallback to text
+        let data;
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          data = await res.json().catch(() => ({}));
+        } else {
+          // Non-JSON response (e.g., unexpected error format)
+          const text = await res.text();
+          data = { message: text || 'Erro desconhecido' };
+        }
+
         if (!res.ok) {
-          showFeedback({ status: 'error', message: data.message || 'Não foi possível atualizar a partida.' });
+          // Map HTTP status to user-friendly messages
+          let errorMessage = data.message || 'Não foi possível atualizar a partida.';
+
+          if (res.status === 403) {
+            errorMessage = 'Sessão expirada. Recarregue a página e tente novamente.';
+          } else if (res.status === 409) {
+            errorMessage = data.message || 'Outra atualização já está em andamento.';
+          } else if (res.status === 502 || res.status === 503) {
+            errorMessage = data.message || 'Serviço temporariamente indisponível.';
+          }
+
+          showFeedback({ status: 'error', message: errorMessage });
           return;
         }
         showFeedback(data);
@@ -1254,7 +1299,7 @@
       status.textContent = '';
 
       try {
-        const res = await fetch('/api/dev/simulate/latest', { method: 'POST' });
+        const res = await applicationFetch('/api/dev/simulate/latest', { method: 'POST' });
         const data = await res.json();
 
         if (data.status === 'simulated') {
@@ -1280,7 +1325,7 @@
       const status = document.getElementById('dev-status');
 
       try {
-        const res = await fetch('/api/dev/reset', { method: 'POST' });
+        const res = await applicationFetch('/api/dev/reset', { method: 'POST' });
         const data = await res.json();
 
         status.className = 'dev-status';
@@ -1319,7 +1364,7 @@
       btn.innerHTML = '<span class="spinner"></span>';
 
       try {
-        const res = await fetch(`/api/publication/${currentMatchIdForActions}/resolve-delivered`, {
+        const res = await applicationFetch(`/api/publication/${currentMatchIdForActions}/resolve-delivered`, {
           method: 'POST',
         });
         const data = await res.json();
@@ -1355,7 +1400,7 @@
       btn.innerHTML = '<span class="spinner"></span>';
 
       try {
-        const res = await fetch(`/api/publication/${currentMatchIdForActions}/force-publish`, {
+        const res = await applicationFetch(`/api/publication/${currentMatchIdForActions}/force-publish`, {
           method: 'POST',
         });
         const data = await res.json();
@@ -1408,10 +1453,9 @@
           </div>
         `;
 
-        // Render inspection list - using display info from API
+        // Render inspection list with per-match actions
         list.innerHTML = data.inspections.map(item => {
           const display = item.display;
-          const safeLabel = item.safeToAutoPublish ? '<span style="color: #3fb950;">✓ Seguro</span>' : '<span style="color: #8b949e;">⚠ Requer revisão</span>';
 
           let detailsHtml = '';
           if (item.attemptCount > 0) {
@@ -1424,6 +1468,15 @@
             detailsHtml += `<div style="margin-top: 0.2rem; color: #8b949e;">HTTP ${item.lastHttpStatus}</div>`;
           }
 
+          let actionsHtml = '';
+          const state = item.publicationState;
+          if (state === 'DELIVERY_UNCERTAIN' || state === 'FAILED_PERMANENT' || state === 'NEVER_ATTEMPTED') {
+            actionsHtml += '<div style="display: flex; gap: 0.4rem; margin-top: 0.4rem;">';
+            actionsHtml += `<button class="btn btn-outline" style="flex: 1; font-size: 0.7rem; padding: 0.35rem;" onclick="reconcileResolve('${esc(item.matchId)}', this)"><span>✓</span> <span>Marcar como publicada</span></button>`;
+            actionsHtml += `<button class="btn btn-outline" style="flex: 1; font-size: 0.7rem; padding: 0.35rem;" onclick="reconcileResend('${esc(item.matchId)}', this)"><span>🔄</span> <span>Reenviar</span></button>`;
+            actionsHtml += '</div>';
+          }
+
           return `
             <div style="padding: 0.5rem; background: rgba(255,255,255,0.03); border-radius: 4px; margin-bottom: 0.4rem;">
               <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1431,10 +1484,10 @@
                   <span style="color: ${display.color}; margin-right: 0.3rem;">${display.icon}</span>
                   <span style="color: #c9d1d9;">${item.score}</span>
                 </div>
-                <div style="font-size: 0.65rem;">${safeLabel}</div>
+                <div style="font-size: 0.65rem; color: ${display.color};">${display.label}</div>
               </div>
-              <div style="margin-top: 0.2rem; color: #8b949e; font-size: 0.65rem;">${item.publicationState}</div>
               ${detailsHtml}
+              ${actionsHtml}
             </div>
           `;
         }).join('');
@@ -1449,37 +1502,63 @@
       }
     }
 
-    async function autoPublishSafe() {
-      const btn = document.querySelector('#reconciliation-result button');
-      const btnText = document.getElementById('btn-auto-publish-text');
+    async function reconcileResolve(matchId, btn) {
+      const originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>';
       const status = document.getElementById('reconciliation-status');
 
-      btn.disabled = true;
-      btnText.textContent = 'Publicando...';
-      status.textContent = '';
-
       try {
-        const res = await fetch('/api/publication/reconcile/auto-publish', { method: 'POST' });
+        const res = await applicationFetch(`/api/publication/${matchId}/resolve-delivered`, { method: 'POST' });
         const data = await res.json();
 
-        if (data.publishedCount > 0) {
+        if (res.ok) {
           status.style.color = '#3fb950';
-        } else if (data.errorCount > 0) {
-          status.style.color = '#f85149';
+          status.textContent = data.message || 'Partida marcada como publicada';
+          loadReconciliation();
+          loadLatestMatch();
         } else {
-          status.style.color = '#8b949e';
+          status.style.color = '#f85149';
+          status.textContent = data.message || 'Erro ao marcar como publicada';
         }
-        status.textContent = data.message;
-
-        // Reload reconciliation data and latest match
-        loadReconciliation();
-        loadLatestMatch();
       } catch (e) {
         status.style.color = '#f85149';
-        status.textContent = 'Erro ao publicar partidas';
+        status.textContent = 'Erro de rede';
       } finally {
         btn.disabled = false;
-        btnText.textContent = 'Publicar partidas seguras';
+        btn.innerHTML = originalHtml;
+      }
+    }
+
+    async function reconcileResend(matchId, btn) {
+      if (!confirm('⚠️ ATENÇÃO: Reenviar pode causar duplicação se a mensagem anterior tiver chegado ao Discord.\n\nVocê verificou o canal Discord e confirmou que a mensagem NÃO foi publicada?\n\nClique OK para reenviar.')) {
+        return;
+      }
+
+      const originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>';
+      const status = document.getElementById('reconciliation-status');
+
+      try {
+        const res = await applicationFetch(`/api/publication/${matchId}/force-publish`, { method: 'POST' });
+        const data = await res.json();
+
+        if (res.ok) {
+          status.style.color = '#3fb950';
+          status.textContent = data.message || 'Partida reenviada com sucesso';
+          loadReconciliation();
+          loadLatestMatch();
+        } else {
+          status.style.color = '#f85149';
+          status.textContent = data.message || 'Erro ao reenviar partida';
+        }
+      } catch (e) {
+        status.style.color = '#f85149';
+        status.textContent = 'Erro de rede';
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
       }
     }
 

@@ -59,8 +59,35 @@ tasks.withType<Test> {
     environment("DOCKER_API_VERSION", "1.43")
 }
 
+// Load .env.local for local development
+fun loadEnvFile(file: File): Map<String, String> {
+    if (!file.exists()) return emptyMap()
+    
+    return file.readLines()
+        .filterNot { it.isBlank() || it.trimStart().startsWith("#") }
+        .mapNotNull { line ->
+            val parts = line.split("=", limit = 2)
+            if (parts.size == 2) {
+                val key = parts[0].trim()
+                val value = parts[1].trim().removeSurrounding("'").removeSurrounding("\"")
+                key to value
+            } else null
+        }
+        .toMap()
+}
+
 tasks.named<BootRun>("bootRun") {
     systemProperty("eafc.dashboard.auto-open", "true")
+    
+    // Load environment variables from .env.local if it exists
+    val envFile = project.file(".env.local")
+    if (envFile.exists()) {
+        val envVars = loadEnvFile(envFile)
+        envVars.forEach { (key, value) ->
+            environment(key, value)
+        }
+        println("Loaded ${envVars.size} environment variables from .env.local")
+    }
 }
 
 tasks.register<BootRun>("dev") {
@@ -69,6 +96,15 @@ tasks.register<BootRun>("dev") {
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set(application.mainClass)
     systemProperty("eafc.dashboard.auto-open", "true")
+    
+    // Load environment variables from .env.local if it exists
+    val envFile = project.file(".env.local")
+    if (envFile.exists()) {
+        val envVars = loadEnvFile(envFile)
+        envVars.forEach { (key, value) ->
+            environment(key, value)
+        }
+    }
 }
 
 runtime {
