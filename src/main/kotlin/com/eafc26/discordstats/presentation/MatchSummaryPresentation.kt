@@ -34,6 +34,19 @@ data class MatchSummaryPresentation(
     val passePrecisao: PassePrecisaoSection?,
     val correioExtraviado: CorreioExtraviadoSection?,
     val muralha: MuralhaSection?,
+    
+    /**
+     * All players who participated in this match with their ratings.
+     * Used for accurate average rating calculation across multiple matches.
+     * Excludes sentinel ratings (3.0) which indicate abandonment.
+     */
+    val allPlayers: List<PlayerRating>? = null,
+)
+
+data class PlayerRating(
+    val name: String,
+    val rating: String,
+    val played: Boolean,
 )
 
 data class MatchOutcome(

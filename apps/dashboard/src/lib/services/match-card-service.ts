@@ -35,6 +35,13 @@ export interface MatchSummaryPresentation {
   passePrecisao: PassePrecisaoSection | null;
   correioExtraviado: CorreioExtraviadoSection | null;
   muralha: MuralhaSection | null;
+  allPlayers?: PlayerRating[] | null;
+}
+
+export interface PlayerRating {
+  name: string;
+  rating: string;
+  played: boolean;
 }
 
 export interface MatchOutcome {

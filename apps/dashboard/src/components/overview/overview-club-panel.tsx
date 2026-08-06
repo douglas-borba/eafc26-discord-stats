@@ -174,43 +174,55 @@ export function OverviewClubPanel({ clubId, editorial, presentations }: Props) {
             <div className="h-px bg-[#21262d] mb-4" />
             <div className="flex flex-col gap-2 text-[0.73rem]">
               {editorial.topScorer && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 group relative">
                   <span className="text-[0.82rem] w-5 text-center shrink-0">⚽</span>
                   <span className="text-[#9da5b0]">
                     <span className="font-medium text-[#c9d1d9]">{editorial.topScorer.name}</span>
                     <span className="text-[#6e7681]"> — </span>
                     {editorial.topScorer.goals} {editorial.topScorer.goals === 1 ? "gol" : "gols"}
                   </span>
+                  <div className="invisible group-hover:visible absolute left-0 bottom-full mb-2 bg-[#161b22] border border-[#30363d] rounded-md px-2.5 py-1.5 text-[0.65rem] text-[#8b949e] whitespace-nowrap shadow-lg z-50 pointer-events-none">
+                    Mínimo de 2 gols no período
+                  </div>
                 </div>
               )}
               {editorial.topAssister && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 group relative">
                   <span className="text-[0.82rem] w-5 text-center shrink-0">🎯</span>
                   <span className="text-[#9da5b0]">
                     <span className="font-medium text-[#c9d1d9]">{editorial.topAssister.name}</span>
                     <span className="text-[#6e7681]"> — </span>
                     {editorial.topAssister.assists} {editorial.topAssister.assists === 1 ? "assistência" : "assistências"}
                   </span>
+                  <div className="invisible group-hover:visible absolute left-0 bottom-full mb-2 bg-[#161b22] border border-[#30363d] rounded-md px-2.5 py-1.5 text-[0.65rem] text-[#8b949e] whitespace-nowrap shadow-lg z-50 pointer-events-none">
+                    Mínimo de 2 assistências no período
+                  </div>
                 </div>
               )}
               {editorial.topHighlight && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 group relative">
                   <span className="text-[0.82rem] w-5 text-center shrink-0">🥇</span>
                   <span className="text-[#9da5b0]">
                     <span className="font-medium text-[#c9d1d9]">{editorial.topHighlight.name}</span>
                     <span className="text-[#6e7681]"> — </span>
-                    {editorial.topHighlight.appearances}× MVP
+                    destaque {editorial.topHighlight.appearances}×
                   </span>
+                  <div className="invisible group-hover:visible absolute left-0 bottom-full mb-2 bg-[#161b22] border border-[#30363d] rounded-md px-2.5 py-1.5 text-[0.65rem] text-[#8b949e] whitespace-nowrap shadow-lg z-50 pointer-events-none">
+                    Jogador que mais ganhou o prêmio de Craque
+                  </div>
                 </div>
               )}
               {editorial.topRatedPlayer && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 group relative">
                   <span className="text-[0.82rem] w-5 text-center shrink-0">⭐</span>
                   <span className="text-[#9da5b0]">
                     <span className="font-medium text-[#c9d1d9]">{editorial.topRatedPlayer.name}</span>
                     <span className="text-[#6e7681]"> — </span>
                     média {editorial.topRatedPlayer.avgRating}
                   </span>
+                  <div className="invisible group-hover:visible absolute left-0 bottom-full mb-2 bg-[#161b22] border border-[#30363d] rounded-md px-2.5 py-1.5 text-[0.65rem] text-[#8b949e] max-w-[200px] shadow-lg z-50 pointer-events-none">
+                    Média das notas nas partidas em que o jogador ficou entre os destaques (mínimo de 3 aparições)
+                  </div>
                 </div>
               )}
             </div>

@@ -126,10 +126,11 @@ describe("buildSequenceEditorial", () => {
 
     it("picks top highlight across matches", () => {
       const result = buildSequenceEditorial([
-        makePresentation({ highlights: { top3: [{ medal: "🥇", name: "R. Nazario", rating: "9.0" }], teamAverage: null } }),
-        makePresentation({ matchId: "m2", highlights: { top3: [{ medal: "🥇", name: "R. Nazario", rating: "8.5" }], teamAverage: null } }),
-        makePresentation({ matchId: "m3", highlights: { top3: [{ medal: "🥇", name: "Pelé", rating: "9.5" }], teamAverage: null } }),
+        makePresentation({ craque: { name: "R. Nazario", reason: "2 gols", phrase: "Imparável" } }),
+        makePresentation({ matchId: "m2", craque: { name: "R. Nazario", reason: "1 gol", phrase: "Decisivo" } }),
+        makePresentation({ matchId: "m3", craque: { name: "Pelé", reason: "3 gols", phrase: "Lendário" } }),
       ]);
+      // R. Nazario ganhou o prêmio de Craque 2 vezes
       expect(result.topHighlight).toEqual({ name: "R. Nazario", appearances: 2 });
     });
 
@@ -171,14 +172,116 @@ describe("buildSequenceEditorial", () => {
   });
 
   describe("no award recalculation", () => {
-    it("does not recalculate craque, bagre, xerife or any individual award", () => {
+    it("does not recalculate bagre, xerife or other individual awards", () => {
       const source = readFileSync(join(SRC, "lib/services/sequence-editorial-service.ts"), "utf-8");
-      expect(source).not.toMatch(/craque/i);
+      // Nota: "craque" é usado porque lemos o campo p.craque das apresentações
       expect(source).not.toMatch(/bagre/i);
       expect(source).not.toMatch(/xerife/i);
       expect(source).not.toMatch(/muralha/i);
       expect(source).not.toMatch(/passePrecisao/i);
       expect(source).not.toMatch(/correioExtraviado/i);
+    });
+  });
+
+  describe("minimum criteria", () => {
+    it("requires minimum 2 goals for top scorer", () => {
+      const result = buildSequenceEditorial([
+        makePresentation({ goals: { scorers: [{ name: "R. Nazario", count: 1 }] } }),
+        makePresentation({ matchId: "m2", goals: { scorers: [{ name: "Pelé", count: 1 }] } }),
+      ]);
+      // Nenhum jogador tem 2 gols, então topScorer deve ser null
+      expect(result.topScorer).toBeNull();
+    });
+
+    it("requires minimum 2 assists for top assister", () => {
+      const result = buildSequenceEditorial([
+        makePresentation({ assists: { assisters: [{ name: "Zidane", count: 1 }] } }),
+        makePresentation({ matchId: "m2", assists: { assisters: [{ name: "Beckham", count: 1 }] } }),
+      ]);
+      // Nenhum jogador tem 2 assistências, então topAssister deve ser null
+      expect(result.topAssister).toBeNull();
+    });
+
+    it("requires minimum 3 top3 appearances for top rated player", () => {
+      const result = buildSequenceEditorial([
+        makePresentation({
+          highlights: { top3: [{ medal: "🥇", name: "R. Nazario", rating: "9.5" }], teamAverage: null }
+        }),
+        makePresentation({
+          matchId: "m2",
+          highlights: { top3: [{ medal: "🥈", name: "R. Nazario", rating: "9.0" }], teamAverage: null }
+        }),
+      ]);
+      // R. Nazario tem apenas 2 aparições no Top3, então topRatedPlayer deve ser null
+      expect(result.topRatedPlayer).toBeNull();
+    });
+
+    it("qualifies player with exactly minimum criteria", () => {
+      const result = buildSequenceEditorial([
+        makePresentation({
+          goals: { scorers: [{ name: "R. Nazario", count: 2 }] },
+          assists: { assisters: [{ name: "Zidane", count: 2 }] },
+          highlights: { top3: [{ medal: "🥇", name: "Pelé", rating: "9.0" }], teamAverage: null },
+          craque: { name: "Pelé", reason: "3 gols", phrase: "Lendário" }
+        }),
+        makePresentation({
+          matchId: "m2",
+          goals: { scorers: [] },
+          assists: { assisters: [] },
+          highlights: { top3: [{ medal: "🥈", name: "Pelé", rating: "8.5" }], teamAverage: null },
+          craque: { name: "Outro", reason: "Boa partida", phrase: "Regular" }
+        }),
+        makePresentation({
+          matchId: "m3",
+          goals: { scorers: [] },
+          assists: { assisters: [] },
+          highlights: { top3: [{ medal: "🥉", name: "Pelé", rating: "8.8" }], teamAverage: null },
+          craque: { name: "Outro2", reason: "Boa partida", phrase: "Regular" }
+        }),
+      ]);
+      // R. Nazario tem exatamente 2 gols
+      expect(result.topScorer).toEqual({ name: "R. Nazario", goals: 2 });
+      // Zidane tem exatamente 2 assistências
+      expect(result.topAssister).toEqual({ name: "Zidane", assists: 2 });
+      // Pelé tem exatamente 3 aparições no Top3
+      expect(result.topRatedPlayer).toEqual({ name: "Pelé", avgRating: "8.77" });
+    });
+
+    it("tie breaks alphabetically when criteria met", () => {
+      const result = buildSequenceEditorial([
+        makePresentation({
+          goals: { scorers: [{ name: "Zidane", count: 2 }] },
+          assists: { assisters: [{ name: "Zidane", count: 2 }] }
+        }),
+        makePresentation({
+          matchId: "m2",
+          goals: { scorers: [{ name: "Beckham", count: 2 }] },
+          assists: { assisters: [{ name: "Beckham", count: 2 }] }
+        }),
+      ]);
+      // Ambos têm 2 gols e 2 assistências, Beckham vence alfabeticamente
+      expect(result.topScorer).toEqual({ name: "Beckham", goals: 2 });
+      expect(result.topAssister).toEqual({ name: "Beckham", assists: 2 });
+    });
+
+    it("returns null for all indicators when no players meet criteria", () => {
+      const result = buildSequenceEditorial([
+        makePresentation({
+          goals: { scorers: [{ name: "R. Nazario", count: 1 }] },
+          assists: { assisters: [{ name: "Zidane", count: 1 }] },
+          highlights: { top3: [{ medal: "🥇", name: "Pelé", rating: "9.0" }], teamAverage: null }
+        }),
+        makePresentation({
+          matchId: "m2",
+          goals: { scorers: [{ name: "Beckham", count: 1 }] },
+          assists: { assisters: [{ name: "Xavi", count: 1 }] },
+          highlights: { top3: [{ medal: "🥈", name: "Iniesta", rating: "8.5" }], teamAverage: null }
+        }),
+      ]);
+      // Ninguém atinge os critérios mínimos
+      expect(result.topScorer).toBeNull();
+      expect(result.topAssister).toBeNull();
+      expect(result.topRatedPlayer).toBeNull();
     });
   });
 });

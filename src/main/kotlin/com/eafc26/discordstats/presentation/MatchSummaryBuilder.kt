@@ -94,6 +94,7 @@ class MatchSummaryBuilder(
                 footballMatch.id.value,
                 random,
             ),
+            allPlayers = buildAllPlayers(ourClub.players),
         )
     }
 
@@ -307,6 +308,24 @@ class MatchSummaryBuilder(
     private fun seedName(player: PlayerMatchPerformance): String =
         player.player.platformName?.value
             ?: if (player.role == PlayerRole.Goalkeeper) "Goleiro BOT" else "Desconhecido"
+
+    /**
+     * Builds a list of all players who participated in the match with their ratings.
+     * Excludes sentinel ratings (3.0) which indicate abandonment.
+     */
+    private fun buildAllPlayers(players: List<PlayerMatchPerformance>): List<PlayerRating> {
+        val SENTINEL_RATING = BigDecimal("3.0")
+        return players
+            .filter { it.player.rating != null }
+            .filter { it.player.rating != SENTINEL_RATING }
+            .map { player ->
+                PlayerRating(
+                    name = name(player),
+                    rating = fmtRating(player.player.rating!!),
+                    played = true,
+                )
+            }
+    }
 
     private fun phrase(
         category: PhraseCategory,

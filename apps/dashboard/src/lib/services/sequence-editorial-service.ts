@@ -1,6 +1,12 @@
 import { createServerSupabase } from "@/lib/supabase/server";
 import type { MatchSummaryPresentation } from "./match-card-service";
 
+// Critérios mínimos
+const MIN_GOALS = 2;
+const MIN_ASSISTS = 2;
+const MIN_TOP3_APPEARANCES = 3;
+const MIN_MATCHES_FOR_AVG = 5;
+
 export interface MatchDetail {
   matchId: string;
   date: string;
@@ -36,6 +42,114 @@ export interface SequenceStats {
   pointsPercentage: string;
 }
 
+/**
+ * Agregado de estatísticas de um jogador durante o período.
+ * Evita loops duplicados e centraliza toda a lógica de agregação.
+ */
+interface PlayerPeriodAggregate {
+  name: string;
+  matchesPlayed: number;
+  goals: number;
+  assists: number;
+  ratingSum: number;
+  ratingCount: number;
+  averageRating: number;
+  mvpCount: number;
+  top3Count: number;
+}
+
+/**
+ * Constrói agregados para todos os jogadores em um único loop.
+ * Esta é a ÚNICA função que percorre as partidas para estatísticas de jogadores.
+ */
+function buildPlayerAggregates(presentations: MatchSummaryPresentation[]): Map<string, PlayerPeriodAggregate> {
+  const aggregates = new Map<string, PlayerPeriodAggregate>();
+
+  for (const p of presentations) {
+    // Gols
+    if (p.goals) {
+      for (const scorer of p.goals.scorers) {
+        const agg = getOrCreate(aggregates, scorer.name);
+        agg.goals += scorer.count;
+      }
+    }
+
+    // Assistências
+    if (p.assists) {
+      for (const assister of p.assists.assisters) {
+        const agg = getOrCreate(aggregates, assister.name);
+        agg.assists += assister.count;
+      }
+    }
+
+    // MVP (prêmio de Craque - medalha de ouro)
+    if (p.craque) {
+      const agg = getOrCreate(aggregates, p.craque.name);
+      agg.mvpCount += 1;
+    }
+
+    // Top3 e Notas (de todos os jogadores, não só top3)
+    if (p.highlights?.top3) {
+      for (const highlight of p.highlights.top3) {
+        const agg = getOrCreate(aggregates, highlight.name);
+        agg.top3Count += 1;
+        const rating = parseFloat(highlight.rating.replace(',', '.'));
+        if (!isNaN(rating) && rating > 0) {
+          agg.ratingSum += rating;
+          agg.ratingCount += 1;
+        }
+      }
+    }
+
+    // Notas de TODOS os jogadores (não só top3)
+    if (p.allPlayers) {
+      for (const player of p.allPlayers) {
+        const agg = getOrCreate(aggregates, player.name);
+        agg.matchesPlayed += 1;
+
+        const rating = parseFloat(player.rating.replace(',', '.'));
+        if (!isNaN(rating) && rating > 0 && rating !== 3.0) { // Ignora sentinela 3.0
+          agg.ratingSum += rating;
+          agg.ratingCount += 1;
+        }
+      }
+    } else {
+      // Fallback: se allPlayers não existe, conta apenas quem apareceu no top3
+      // (para compatibilidade com apresentações antigas)
+      if (p.highlights?.top3) {
+        for (const highlight of p.highlights.top3) {
+          const agg = getOrCreate(aggregates, highlight.name);
+          agg.matchesPlayed += 1;
+        }
+      }
+    }
+  }
+
+  // Calcula médias
+  for (const agg of aggregates.values()) {
+    agg.averageRating = agg.ratingCount > 0 ? agg.ratingSum / agg.ratingCount : 0;
+  }
+
+  return aggregates;
+}
+
+function getOrCreate(map: Map<string, PlayerPeriodAggregate>, name: string): PlayerPeriodAggregate {
+  if (!map.has(name)) {
+    map.set(name, {
+      name,
+      matchesPlayed: 0,
+      goals: 0,
+      assists: 0,
+      ratingSum: 0,
+      ratingCount: 0,
+      averageRating: 0,
+      mvpCount: 0,
+      top3Count: 0,
+    });
+  }
+  return map.get(name)!;
+}
+
 export function buildSequenceEditorial(
   presentations: MatchSummaryPresentation[],
 ): SequenceEditorial {
@@ -57,12 +171,15 @@ export function buildSequenceEditorial(
     };
   }
 
+  // Constrói agregados de TODOS os jogadores em um único loop
+  const playerAggregates = buildPlayerAggregates(presentations);
+
   const stats = computeStats(presentations);
   const matchDetails = buildMatchDetails(presentations);
-  const topScorer = computeTopScorer(presentations);
-  const topAssister = computeTopAssister(presentations);
-  const topHighlight = computeTopHighlight(presentations);
-  const topRatedPlayer = computeTopRatedPlayer(presentations);
+  const topScorer = computeTopScorer(playerAggregates);
+  const topAssister = computeTopAssister(playerAggregates);
+  const topHighlight = computeTopHighlight(playerAggregates);
+  const topRatedPlayer = computeTopRatedPlayer(playerAggregates);
   const currentStreak = computeCurrentStreak(presentations);
   const clubName = presentations[0].ourName;
 
@@ -119,46 +236,35 @@ function computeStats(presentations: MatchSummaryPresentation[]): SequenceStats 
 }
 
 function computeTopScorer(
-  presentations: MatchSummaryPresentation[],
+  aggregates: Map<string, PlayerPeriodAggregate>,
 ): { name: string; goals: number } | null {
-  const tally = new Map<string, number>();
+  const qualified = Array.from(aggregates.values())
+    .filter(agg => agg.goals >= MIN_GOALS);
 
-  for (const p of presentations) {
-    if (!p.goals) continue;
-    for (const s of p.goals.scorers) {
-      tally.set(s.name, (tally.get(s.name) ?? 0) + s.count);
-    }
-  }
-
-  if (tally.size === 0) return null;
+  if (qualified.length === 0) return null;
 
   let best: { name: string; goals: number } | null = null;
-  for (const [name, goals] of tally) {
-    if (!best || goals > best.goals || (goals === best.goals && name < best.name)) {
-      best = { name, goals };
+  for (const agg of qualified) {
+    if (!best || agg.goals > best.goals || (agg.goals === best.goals && agg.name < best.name)) {
+      best = { name: agg.name, goals: agg.goals };
     }
   }
   return best;
 }
 
 function computeTopHighlight(
-  presentations: MatchSummaryPresentation[],
+  aggregates: Map<string, PlayerPeriodAggregate>,
 ): { name: string; appearances: number } | null {
-  const tally = new Map<string, number>();
+  // Agora conta apenas quem ganhou o prêmio de Craque (MVP)
+  const qualified = Array.from(aggregates.values())
+    .filter(agg => agg.mvpCount > 0);
 
-  for (const p of presentations) {
-    if (!p.highlights) continue;
-    for (const h of p.highlights.top3) {
-      tally.set(h.name, (tally.get(h.name) ?? 0) + 1);
-    }
-  }
-
-  if (tally.size === 0) return null;
+  if (qualified.length === 0) return null;
 
   let best: { name: string; appearances: number } | null = null;
-  for (const [name, appearances] of tally) {
-    if (!best || appearances > best.appearances || (appearances === best.appearances && name < best.name)) {
-      best = { name, appearances };
+  for (const agg of qualified) {
+    if (!best || agg.mvpCount > best.appearances || (agg.mvpCount === best.appearances && agg.name < best.name)) {
+      best = { name: agg.name, appearances: agg.mvpCount };
     }
   }
   return best;
@@ -176,53 +282,36 @@ function buildMatchDetails(presentations: MatchSummaryPresentation[]): MatchDeta
 }
 
 function computeTopAssister(
-  presentations: MatchSummaryPresentation[],
+  aggregates: Map<string, PlayerPeriodAggregate>,
 ): { name: string; assists: number } | null {
-  const tally = new Map<string, number>();
+  const qualified = Array.from(aggregates.values())
+    .filter(agg => agg.assists >= MIN_ASSISTS);
 
-  for (const p of presentations) {
-    if (!p.assists) continue;
-    for (const a of p.assists.assisters) {
-      tally.set(a.name, (tally.get(a.name) ?? 0) + a.count);
-    }
-  }
-
-  if (tally.size === 0) return null;
+  if (qualified.length === 0) return null;
 
   let best: { name: string; assists: number } | null = null;
-  for (const [name, assists] of tally) {
-    if (!best || assists > best.assists || (assists === best.assists && name < best.name)) {
-      best = { name, assists };
+  for (const agg of qualified) {
+    if (!best || agg.assists > best.assists || (agg.assists === best.assists && agg.name < best.name)) {
+      best = { name: agg.name, assists: agg.assists };
     }
   }
   return best;
 }
 
 function computeTopRatedPlayer(
-  presentations: MatchSummaryPresentation[],
+  aggregates: Map<string, PlayerPeriodAggregate>,
 ): { name: string; avgRating: string } | null {
-  const ratingSum = new Map<string, number>();
-  const ratingCount = new Map<string, number>();
+  // Requer mínimo de 3 aparições no Top3
+  const qualified = Array.from(aggregates.values())
+    .filter(agg => agg.top3Count >= MIN_TOP3_APPEARANCES && agg.ratingCount > 0);
 
-  for (const p of presentations) {
-    if (!p.highlights?.top3) continue;
-    for (const h of p.highlights.top3) {
-      const rating = parseFloat(h.rating);
-      if (!isNaN(rating) && rating > 0) {
-        ratingSum.set(h.name, (ratingSum.get(h.name) ?? 0) + rating);
-        ratingCount.set(h.name, (ratingCount.get(h.name) ?? 0) + 1);
-      }
-    }
-  }
-
-  if (ratingSum.size === 0) return null;
+  if (qualified.length === 0) return null;
 
   let best: { name: string; avgRating: number } | null = null;
-  for (const [name, sum] of ratingSum) {
-    const count = ratingCount.get(name)!;
-    const avg = sum / count;
-    if (!best || avg > best.avgRating || (avg === best.avgRating && name < best.name)) {
-      best = { name, avgRating: avg };
+  for (const agg of qualified) {
+    const avg = agg.averageRating;
+    if (!best || avg > best.avgRating || (avg === best.avgRating && agg.name < best.name)) {
+      best = { name: agg.name, avgRating: avg };
     }
   }
 
