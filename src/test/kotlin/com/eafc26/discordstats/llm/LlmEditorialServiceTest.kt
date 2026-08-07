@@ -83,7 +83,7 @@ class LlmEditorialServiceTest {
         )
     }
 
-    private fun successResult(text: String = "Narrativa gerada pelo LLM.") =
+    private fun successResult(text: String = "O clube apresenta desempenho sólido com 8 vitórias nas últimas 10 partidas, evidenciando consistência ofensiva ao marcar 28 gols. A equipe mantém solidez defensiva e busca consolidar posição na tabela.") =
         LlmEditorialResult.Success(text, LlmMetadata("test-provider", "test-model", 50, 30))
 
     @Nested
@@ -97,7 +97,8 @@ class LlmEditorialServiceTest {
             whenever(panoramaRepository.findByContextKey(eq("club1"), any()))
                 .thenReturn(PanoramaRecord(
                     clubId = "club1", contextKey = "existing-key", matchIds = listOf("m1", "m2", "m3"),
-                    narrative = "Existing", provider = "openrouter", model = "anthropic/claude-sonnet-4",
+                    narrative = "O clube mantém desempenho consistente com 7 vitórias nas últimas 10 partidas. A equipe demonstra solidez ao marcar 24 gols e sofrer apenas 11 no período.",
+                    provider = "openrouter", model = "anthropic/claude-sonnet-4",
                     promptVersion = "v2", status = "success", generatedAt = fixedInstant,
                 ))
 
@@ -148,13 +149,14 @@ class LlmEditorialServiceTest {
             val match = canonical("m1")
             whenever(historyService.latest(any())).thenReturn(listOf(match))
             whenever(panoramaRepository.findByContextKey(any(), any())).thenReturn(null)
-            whenever(provider.generatePanorama(any())).thenReturn(successResult("Grande fase do clube."))
+            val validText = "O clube vive grande fase com 8 vitórias em 10 partidas. A equipe marcou 30 gols e sofreu apenas 12, consolidando-se entre os favoritos do campeonato."
+            whenever(provider.generatePanorama(any())).thenReturn(successResult(validText))
 
             service.generateAndPersistPanorama(match)
 
             verify(panoramaRepository).upsert(org.mockito.kotlin.check { record ->
                 assertThat(record.clubId).isEqualTo("club1")
-                assertThat(record.narrative).isEqualTo("Grande fase do clube.")
+                assertThat(record.narrative).isEqualTo(validText)
                 assertThat(record.status).isEqualTo("success")
                 assertThat(record.provider).isNotNull()
                 assertThat(record.promptVersion).isEqualTo("v3")
@@ -251,13 +253,13 @@ class LlmEditorialServiceTest {
                     provider = "openrouter", model = "anthropic/claude-sonnet-4",
                     promptVersion = "v3", status = "success", generatedAt = fixedInstant,
                 ))
-            whenever(provider.generatePanorama(any())).thenReturn(successResult("Nova narrativa válida."))
+            whenever(provider.generatePanorama(any())).thenReturn(successResult("A equipe atravessa fase irregular com 5 vitórias e 5 derrotas nas últimas partidas. O ataque produziu 20 gols, mas a defesa sofreu 18, comprometendo o aproveitamento no campeonato."))
 
             service.generateAndPersistPanorama(match)
 
             verify(provider).generatePanorama(any())
             verify(panoramaRepository).upsert(org.mockito.kotlin.check { record ->
-                assertThat(record.narrative).isEqualTo("Nova narrativa válida.")
+                assertThat(record.narrative).contains("equipe atravessa fase irregular")
                 assertThat(record.status).isEqualTo("success")
             })
         }
@@ -274,13 +276,13 @@ class LlmEditorialServiceTest {
                     provider = "openrouter", model = "anthropic/claude-sonnet-4",
                     promptVersion = "v3", status = "success", generatedAt = fixedInstant,
                 ))
-            whenever(provider.generatePanorama(any())).thenReturn(successResult("Novo panorama em português."))
+            whenever(provider.generatePanorama(any())).thenReturn(successResult("O clube busca recuperação após sequência de resultados irregulares, com 6 vitórias e 4 derrotas. A campanha revela fragilidade defensiva ao sofrer 22 gols, demandando ajustes para retomar consistência."))
 
             service.generateAndPersistPanorama(match)
 
             verify(provider).generatePanorama(any())
             verify(panoramaRepository).upsert(org.mockito.kotlin.check { record ->
-                assertThat(record.narrative).isEqualTo("Novo panorama em português.")
+                assertThat(record.narrative).contains("clube busca recuperação")
                 assertThat(record.status).isEqualTo("success")
             })
         }
@@ -333,13 +335,13 @@ class LlmEditorialServiceTest {
                     promptVersion = "v3", status = "failed", errorCategory = "llm_prompt_echo",
                     generatedAt = fixedInstant,
                 ))
-            whenever(provider.generatePanorama(any())).thenReturn(successResult("Novo panorama válido após retry."))
+            whenever(provider.generatePanorama(any())).thenReturn(successResult("A campanha recente mostra desempenho positivo com 7 vitórias em 10 partidas. O time marcou 25 gols e sofreu 15, consolidando-se entre os favoritos da competição."))
 
             service.generateAndPersistPanorama(match)
 
             verify(provider).generatePanorama(any())
             verify(panoramaRepository).upsert(org.mockito.kotlin.check { record ->
-                assertThat(record.narrative).isEqualTo("Novo panorama válido após retry.")
+                assertThat(record.narrative).contains("campanha recente mostra desempenho positivo")
                 assertThat(record.status).isEqualTo("success")
             })
         }
@@ -349,12 +351,20 @@ class LlmEditorialServiceTest {
     inner class NextJsIntegration {
 
         @Test
-        fun `reads persisted panorama from repository`() {
-            whenever(panoramaRepository.findLatestSuccessful("club1"))
+        fun `reads persisted panorama from repository for current context`() {
+            val match = canonical("m1")
+            val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
+            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            
+            val expectedKey = LlmEditorialService.computeContextKey(
+                "club1", listOf("m1", "m2", "m3"), "v3", enabledProps.model
+            )
+            
+            whenever(panoramaRepository.findSuccessfulByContextKey("club1", expectedKey))
                 .thenReturn(PanoramaRecord(
-                    clubId = "club1", contextKey = "key", matchIds = listOf("m1"),
+                    clubId = "club1", contextKey = expectedKey, matchIds = listOf("m1", "m2", "m3"),
                     narrative = "AI panorama text", provider = "openrouter",
-                    model = "anthropic/claude-sonnet-4", promptVersion = "v2",
+                    model = "anthropic/claude-sonnet-4", promptVersion = "v3",
                     status = "success", generatedAt = fixedInstant,
                 ))
 
@@ -363,8 +373,15 @@ class LlmEditorialServiceTest {
         }
 
         @Test
-        fun `returns null when no AI panorama exists`() {
-            whenever(panoramaRepository.findLatestSuccessful("club1")).thenReturn(null)
+        fun `returns null when no panorama exists for current context`() {
+            val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
+            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            
+            val expectedKey = LlmEditorialService.computeContextKey(
+                "club1", listOf("m1", "m2", "m3"), "v3", enabledProps.model
+            )
+            
+            whenever(panoramaRepository.findSuccessfulByContextKey("club1", expectedKey)).thenReturn(null)
 
             val result = service.getPersistedPanorama("club1")
             assertThat(result).isNull()

@@ -139,7 +139,17 @@ class LlmEditorialService(
     }
 
     fun getPersistedPanorama(clubId: String): String? {
-        return panoramaRepository?.findLatestSuccessful(clubId)?.narrative
+        if (panoramaRepository == null) return null
+        
+        // Calculate current contextKey based on latest matches
+        val recentMatches = historyService.latest(PANORAMA_MATCH_COUNT)
+        if (recentMatches.isEmpty()) return null
+        
+        val matchIds = recentMatches.map { it.matchId.value }
+        val contextKey = computeContextKey(clubId, matchIds, PROMPT_VERSION, properties.model)
+        
+        // Only return panorama if it belongs to the current context
+        return panoramaRepository.findSuccessfulByContextKey(clubId, contextKey)?.narrative
     }
 
     fun generateMatchNarrative(canonical: CanonicalMatch): String? {
@@ -207,54 +217,128 @@ class LlmEditorialService(
     }
 
     /**
-     * Detecta se o texto parece ser um echo do prompt em vez de uma resposta real.
+     * Valida semanticamente a resposta do panorama.
      * 
-     * Alguns modelos gratuitos/instáveis ocasionalmente retornam o próprio prompt.
-     * Esta função valida baseada em padrões comuns de instruções.
+     * Uma resposta só pode ser considerada válida se parecer um panorama editorial:
+     * - Deve estar em português
+     * - Deve conter análise do clube
+     * - NÃO deve conter instruções ao modelo
+     * - NÃO deve conter restrições de formato ("2-3 sentences", "350-550 characters", "no markdown", "must", "should", etc.)
+     * - NÃO se parecer com um prompt
+     * 
+     * Se o texto não passar na validação, é tratado como erro de geração (PromptEcho).
      */
     private fun isPromptEcho(text: String): Boolean {
+        if (text.isBlank()) {
+            log.debug("Validation failed: empty or blank text")
+            return true
+        }
+        
         val lowerText = text.lowercase()
         
-        // Padrões de instruções em inglês
-        val englishPatterns = listOf(
-            "we need to",
-            "must compare",
-            "must mention",
-            "must use",
-            "use exact values",
-            "should not",
-            "between 350 and 550 characters",
-            "between 120 and 220 characters",
-            "in prose",
-            "no lists",
-            "no markdown",
-            "no emojis",
+        // 1. Validar que está em português (indicadores básicos)
+        val portugueseIndicators = listOf(
+            " é ", " são ", " está ", " estão ", " foi ", " foram ", " tem ", " têm ",
+            " com ", " para ", " pela ", " pelo ", " dos ", " das ", " aos ", " nas ", " nos ",
+            " o ", " a ", " os ", " as ", " do ", " da ", " de ", " em ",
+            "clube", "time", "equipe", "partida", "jogo", "vitória", "derrota",
+            "gols", "gol", "desempenho", "momento", "fase", "sequência", "campanha"
         )
+        val portugueseCount = portugueseIndicators.count { lowerText.contains(it) }
         
-        // Padrões de instruções em português
-        val portuguesePatterns = listOf(
-            "escreva 2-3 frases",
-            "escreva entre",
-            "utilize apenas os fatos",
-            "utilize apenas os dados",
-            "não utilize markdown",
-            "compare as partidas",
-            "compare as 10 partidas",
-            "entre 350 e 550 caracteres",
-            "entre 120 e 220 caracteres",
-            "sem listas",
-            "sem markdown",
-            "sem emoji",
-            "você deve analisar",
-            "você deve comparar",
+        // Deve ter pelo menos 4 indicadores de português (mais flexível)
+        if (portugueseCount < 4) {
+            log.debug("Validation failed: insufficient Portuguese indicators (found: {})", portugueseCount)
+            return true // É prompt echo se não estiver em português
+        }
+        
+        // 2. Detectar instruções ao modelo (imperativos em inglês e português)
+        val instructionVerbs = listOf(
+            // Inglês - verbos imperativos e modais de instrução
+            "write", "produce", "must", "should", "need to", "have to",
+            "use only", "do not", "don't", "avoid", "ensure", "make sure",
+            "need", "needs", "require", "required",
+            // Português - formas imperativas diretas (não usar "deve/devem" sozinho pois é comum em análises)
+            "escreva", "escrever", "produza", "produzir",
+            "você deve", "você precisa", "é necessário", "certifique-se"
         )
+        val hasInstructions = instructionVerbs.any { lowerText.contains(it) }
+        if (hasInstructions) {
+            log.debug("Validation failed: contains model instructions")
+            return true
+        }
         
-        // Contar quantos padrões foram encontrados
-        val englishMatches = englishPatterns.count { lowerText.contains(it) }
-        val portugueseMatches = portuguesePatterns.count { lowerText.contains(it) }
+        // 3. Detectar restrições de formato (meta-instruções sobre o texto)
+        val formatRestrictions = listOf(
+            // Referências a caracteres e frases
+            "character", "sentence", "frase", "caractere",
+            // Números associados a limites de formato
+            "between", "entre", "2-3", "350", "450", "550", "120", "220",
+            // Restrições de estilo
+            "no lists", "no markdown", "no emoji", "sem lista", "sem markdown", "sem emoji",
+            "in prose", "prose format", "formato de prosa", "prose",
+            // Meta-instruções
+            "including spaces", "com espaços", "incluindo espaços"
+        )
+        val formatRestrictionCount = formatRestrictions.count { lowerText.contains(it) }
         
-        // Se encontrar 3 ou mais padrões de qualquer idioma, provavelmente é o prompt
-        return englishMatches >= 3 || portugueseMatches >= 3
+        // Mais de 2 restrições de formato = definitivamente é prompt
+        if (formatRestrictionCount >= 2) {
+            log.debug("Validation failed: contains format restrictions (found: {})", formatRestrictionCount)
+            return true
+        }
+        
+        // 4. Detectar estrutura de prompt (padrões meta-textuais)
+        val promptPatterns = listOf(
+            // Marcadores de tarefa/instrução
+            "task:", "instruction:", "prompt:", "system:",
+            "tarefa:", "instrução:", "exemplo:",
+            // Referências a dados fornecidos (contexto de prompt)
+            "given facts", "fatos fornecidos", "dados fornecidos", "given data",
+            // Formas imperativas de segunda pessoa
+            "you must", "you should", "você deve", "você precisa",
+            // Comandos de análise (típicos de prompts)
+            "compare the", "analyze the", "compare as", "analise as",
+            // Verbos imperativos diretos comuns em prompts
+            "list", "mention", "include", "cite", "mencione", "liste", "inclua"
+        )
+        val promptPatternCount = promptPatterns.count { lowerText.contains(it) }
+        
+        // Mais de 1 padrão de prompt = suspeito
+        if (promptPatternCount > 1) {
+            log.debug("Validation failed: contains prompt patterns (found: {})", promptPatternCount)
+            return true
+        }
+        
+        // 5. Validar que contém análise do clube (palavras-chave de análise)
+        val analysisKeywords = listOf(
+            "vitória", "vitórias", "derrota", "derrotas", "empate",
+            "gol", "gols", "marcou", "marcaram", "sofreu", "sofreram", "produziu",
+            "momento", "fase", "desempenho", "sequência", "campanha",
+            "ofensiv", "defensiv", "solidez", "fragilidade",
+            "domínio", "consistência", "inconsistência", "irregularidade",
+            "partida", "partidas", "resultado", "aproveitamento", "revela", "busca",
+            "atravessa", "evidenci", "consolida", "compromet", "exige"
+        )
+        val analysisCount = analysisKeywords.count { lowerText.contains(it) }
+        
+        // Deve ter pelo menos 2 palavras de análise (mais flexível)
+        if (analysisCount < 2) {
+            log.debug("Validation failed: insufficient analysis content (found: {} keywords)", analysisCount)
+            return true
+        }
+        
+        // 6. Verificar se parece com prompt ao invés de narrativa editorial
+        val sentences = text.split(Regex("[.!?]")).filter { it.trim().isNotEmpty() }
+        if (sentences.size > 6 && sentences.count { it.length < 30 } > 3) {
+            // Muitas frases muito curtas = suspeito de ser lista de instruções
+            log.debug("Validation failed: text structure resembles instruction list")
+            return true
+        }
+        
+        // Se passou em todas as validações, é um panorama válido
+        log.debug("Validation passed: text appears to be a valid editorial panorama")
+        return false
     }
 
     companion object {

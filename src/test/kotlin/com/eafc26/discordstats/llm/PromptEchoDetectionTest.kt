@@ -5,14 +5,14 @@ import org.junit.jupiter.api.Test
 import java.lang.reflect.Method
 
 /**
- * Tests for LLM prompt echo detection.
+ * Tests for semantic validation of LLM panorama responses.
  * 
- * Validates that the system correctly identifies when an LLM returns
- * the prompt instructions instead of a proper narrative response.
+ * Validates that the system correctly identifies:
+ * - Valid editorial panoramas (in Portuguese, with club analysis)
+ * - Invalid responses (prompts, instructions, format restrictions)
  */
 class PromptEchoDetectionTest {
 
-    // Helper para testar a função privada usando reflexão
     private val isPromptEchoMethod: Method = LlmEditorialService::class.java.getDeclaredMethod("isPromptEcho", String::class.java).apply {
         isAccessible = true
     }
@@ -22,134 +22,156 @@ class PromptEchoDetectionTest {
     }
 
     @Test
-    fun `normal LLM response is accepted`() {
+    fun `valid Portuguese editorial panorama is accepted`() {
         val service = createService()
-        val normalResponse = """
+        val validPanorama = """
             A Associação BF atravessa momento excepcional com 9 vitórias em 10 partidas,
             evidenciando domínio ofensivo ao marcar 34 gols e solidez defensiva ao sofrer apenas 14.
             A sequência atual de 4 vitórias consecutivas consolida o time entre os favoritos da competição.
         """.trimIndent()
         
-        val isEcho = isPromptEcho(normalResponse, service)
+        val isEcho = isPromptEcho(validPanorama, service)
         
         assertThat(isEcho).isFalse()
     }
 
     @Test
-    fun `response containing We need to produce is rejected`() {
+    fun `response in English with instructions is rejected`() {
         val service = createService()
-        val promptEcho = """
+        val englishInstructions = """
             We need to produce 2-3 sentences, between 350 and 550 characters (including spaces).
             Must be prose, no lists, no markdown. Should not list results, just analyze trend.
             Use only given facts. Must compare the 10 matches.
         """.trimIndent()
         
-        val isEcho = isPromptEcho(promptEcho, service)
+        val isEcho = isPromptEcho(englishInstructions, service)
         
         assertThat(isEcho).isTrue()
     }
 
     @Test
-    fun `response containing Must compare is rejected`() {
+    fun `response with format restrictions is rejected`() {
         val service = createService()
-        val promptEcho = """
-            We need to write something. Must compare the 10 matches and identify trends.
-            Must use exact values provided. Should not invent data. Between 350 and 550 characters.
+        val formatRestrictions = """
+            Write between 350 and 550 characters in prose format.
+            No lists, no markdown, no emojis. Should not invent data.
         """.trimIndent()
         
-        val isEcho = isPromptEcho(promptEcho, service)
+        val isEcho = isPromptEcho(formatRestrictions, service)
         
         assertThat(isEcho).isTrue()
     }
 
     @Test
-    fun `response containing Use exact values is rejected`() {
+    fun `response with Portuguese format restrictions is rejected`() {
         val service = createService()
-        val promptEcho = """
+        val portugueseRestrictions = """
+            Escreva entre 350 e 550 caracteres. Sem listas, sem markdown, sem emoji.
+            Você deve comparar as 10 partidas e utilizar apenas os dados fornecidos.
+        """.trimIndent()
+        
+        val isEcho = isPromptEcho(portugueseRestrictions, service)
+        
+        assertThat(isEcho).isTrue()
+    }
+
+    @Test
+    fun `response with model instructions is rejected`() {
+        val service = createService()
+        val modelInstructions = """
             Task: analyze the matches. Use exact values: 9 wins, 1 loss, 34 goals scored.
-            Must mention that the latest match is part of totals. No lists, no markdown.
+            Must mention that the latest match is part of totals. Should not use markdown.
         """.trimIndent()
         
-        val isEcho = isPromptEcho(promptEcho, service)
+        val isEcho = isPromptEcho(modelInstructions, service)
         
         assertThat(isEcho).isTrue()
     }
 
     @Test
-    fun `response with Portuguese instructions is rejected`() {
+    fun `valid Portuguese analysis with natural language is accepted`() {
         val service = createService()
-        val promptEcho = """
-            Escreva 2-3 frases entre 350 e 550 caracteres. Utilize apenas os fatos fornecidos.
-            Compare as 10 partidas e identifique tendências. Não utilize markdown ou listas.
+        val naturalAnalysis = """
+            O clube apresenta desempenho irregular nas últimas partidas, com 5 vitórias e 5 derrotas.
+            A equipe marcou 18 gols mas sofreu 20, evidenciando fragilidade defensiva que tem custado pontos importantes.
+            O momento exige ajustes para recuperar a solidez e buscar uma sequência de resultados positivos.
         """.trimIndent()
         
-        val isEcho = isPromptEcho(promptEcho, service)
-        
-        assertThat(isEcho).isTrue()
-    }
-
-    @Test
-    fun `response mentioning character limits is rejected`() {
-        val service = createService()
-        val promptEcho = """
-            Write between 120 and 220 characters in prose, no lists, no markdown, no emojis.
-            Use only the given facts. Should not invent data or tactical details.
-        """.trimIndent()
-        
-        val isEcho = isPromptEcho(promptEcho, service)
-        
-        assertThat(isEcho).isTrue()
-    }
-
-    @Test
-    fun `response with few instruction words is accepted`() {
-        val service = createService()
-        val borderlineResponse = """
-            O time deve manter o ritmo para conquistar o título. A equipe precisa comparar
-            este desempenho com campanhas anteriores e pode escrever uma nova história no campeonato.
-        """.trimIndent()
-        
-        val isEcho = isPromptEcho(borderlineResponse, service)
+        val isEcho = isPromptEcho(naturalAnalysis, service)
         
         assertThat(isEcho).isFalse()
     }
 
     @Test
-    fun `empty text is not prompt echo`() {
+    fun `response lacking Portuguese indicators is rejected`() {
+        val service = createService()
+        val noPortuguese = """
+            The team shows good performance with many victories.
+            Analysis of recent matches reveals strong offensive play.
+        """.trimIndent()
+        
+        val isEcho = isPromptEcho(noPortuguese, service)
+        
+        assertThat(isEcho).isTrue()
+    }
+
+    @Test
+    fun `response lacking analysis keywords is rejected`() {
+        val service = createService()
+        val noAnalysis = """
+            O texto está em português e tem várias palavras.
+            Mas não contém análise do clube ou desempenho esportivo.
+        """.trimIndent()
+        
+        val isEcho = isPromptEcho(noAnalysis, service)
+        
+        assertThat(isEcho).isTrue()
+    }
+
+    @Test
+    fun `response with prompt patterns is rejected`() {
+        val service = createService()
+        val promptPatterns = """
+            Tarefa: escreva um panorama. Você deve comparar as partidas.
+            Analise os dados fornecidos e identifique tendências.
+        """.trimIndent()
+        
+        val isEcho = isPromptEcho(promptPatterns, service)
+        
+        assertThat(isEcho).isTrue()
+    }
+
+    @Test
+    fun `response resembling instruction list is rejected`() {
+        val service = createService()
+        val instructionList = """
+            Escreva texto. Compare. Analise. Use dados. Não invente. Seja breve.
+            Liste tendências. Evite listas. Sem markdown. Entre 350-550 chars.
+        """.trimIndent()
+        
+        val isEcho = isPromptEcho(instructionList, service)
+        
+        assertThat(isEcho).isTrue()
+    }
+
+    @Test
+    fun `valid panorama with club performance analysis is accepted`() {
+        val service = createService()
+        val validAnalysis = """
+            A campanha recente revela inconsistência, alternando vitórias expressivas com derrotas preocupantes.
+            O ataque produziu 25 gols em 10 partidas, mas a defesa sofreu 18, comprometendo o aproveitamento.
+            A equipe busca estabilidade para consolidar posição na tabela e retomar a confiança.
+        """.trimIndent()
+        
+        val isEcho = isPromptEcho(validAnalysis, service)
+        
+        assertThat(isEcho).isFalse()
+    }
+
+    @Test
+    fun `empty text is rejected as invalid`() {
         val service = createService()
         val isEcho = isPromptEcho("", service)
-        
-        assertThat(isEcho).isFalse()
-    }
-
-    @Test
-    fun `single instruction word is not prompt echo`() {
-        val service = createService()
-        val response = "Escreva um texto sobre futebol profissional no Brasil."
-        
-        val isEcho = isPromptEcho(response, service)
-        
-        assertThat(isEcho).isFalse()
-    }
-
-    @Test
-    fun `two instruction words is not prompt echo`() {
-        val service = createService()
-        val response = "Você deve escrever textos melhores para ganhar mais partidas."
-        
-        val isEcho = isPromptEcho(response, service)
-        
-        assertThat(isEcho).isFalse()
-    }
-
-    @Test
-    fun `three or more instruction words triggers detection`() {
-        val service = createService()
-        val promptEcho = """
-            Escreva 2-3 frases. Você deve comparar as tendências. Utilize apenas os dados fornecidos.
-        """.trimIndent()
-        
-        val isEcho = isPromptEcho(promptEcho, service)
         
         assertThat(isEcho).isTrue()
     }

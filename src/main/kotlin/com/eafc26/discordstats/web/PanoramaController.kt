@@ -3,6 +3,7 @@ package com.eafc26.discordstats.web
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.llm.LlmEditorialService
 import com.eafc26.discordstats.service.MatchHistoryService
+import org.slf4j.LoggerFactory
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -17,6 +18,8 @@ class PanoramaController(
     private val matchHistoryService: MatchHistoryService,
     private val appProperties: AppProperties,
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
     @GetMapping("/api/panorama", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun getPanorama(): Mono<ResponseEntity<PanoramaResponse>> =
         Mono.fromCallable {

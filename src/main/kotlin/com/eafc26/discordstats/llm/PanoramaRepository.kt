@@ -29,22 +29,26 @@ class PanoramaRepository(
         return rows.firstOrNull()
     }
 
-    fun findLatestSuccessful(clubId: String): PanoramaRecord? {
+    /**
+     * Finds a successful panorama for a specific context key.
+     * Only returns panoramas that belong to the exact context (same 10 matches).
+     * Does NOT return successful panoramas from different contexts.
+     */
+    fun findSuccessfulByContextKey(clubId: String, contextKey: String): PanoramaRecord? {
         val rows = jdbcTemplate.query(
             """
             SELECT id, club_id, context_key, match_ids, narrative, provider, model,
                    prompt_version, status, error_category, input_tokens, output_tokens,
                    generated_at, created_at
             FROM editorial_panoramas
-            WHERE club_id = ? AND status = 'success' AND narrative IS NOT NULL
-            ORDER BY generated_at DESC
+            WHERE club_id = ? AND context_key = ? AND status = 'success' AND narrative IS NOT NULL
             LIMIT 1
             """.trimIndent(),
             { rs, _ -> mapRow(rs) },
             clubId,
+            contextKey,
         )
-        val result = rows.firstOrNull()
-        return result
+        return rows.firstOrNull()
     }
 
     fun upsert(record: PanoramaRecord) {
