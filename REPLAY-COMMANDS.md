@@ -9,6 +9,12 @@
 
 # Inspecionar partida específica
 ./gradlew bootRun --args="--app.replay.enabled=true --app.replay.matchId=944922107030449 --app.replay.dryRun=true"
+
+# Inspecionar 10 partidas excluindo uma específica
+./gradlew bootRun --args="--app.replay.enabled=true --app.replay.matches=10 --app.replay.excludeMatchIds=944922107030449 --app.replay.dryRun=true"
+
+# Inspecionar 10 partidas excluindo várias
+./gradlew bootRun --args="--app.replay.enabled=true --app.replay.matches=10 --app.replay.excludeMatchIds=944922107030449,944922107030450,944922107030451 --app.replay.dryRun=true"
 ```
 
 ### Replay Real (Envia mensagens ao Discord)
@@ -18,6 +24,12 @@
 
 # Reenviar partida específica
 ./gradlew bootRun --args="--app.replay.enabled=true --app.replay.matchId=944922107030449"
+
+# Reenviar 10 partidas excluindo uma específica
+./gradlew bootRun --args="--app.replay.enabled=true --app.replay.matches=10 --app.replay.excludeMatchIds=944922107030449"
+
+# Reenviar 10 partidas excluindo várias
+./gradlew bootRun --args="--app.replay.enabled=true --app.replay.matches=10 --app.replay.excludeMatchIds=944922107030449,944922107030450,944922107030451"
 ```
 
 ## ⚠️ Comportamento Quando Replay Está Ativo
@@ -38,6 +50,7 @@ Quando `--app.replay.enabled=true` é especificado:
 | `app.replay.matches` | int | Não* | Número de partidas a reenviar |
 | `app.replay.matchId` | string | Não* | ID específico de uma partida |
 | `app.replay.dryRun` | boolean | Não | Modo inspeção (não envia) |
+| `app.replay.excludeMatchIds` | string | Não | IDs para excluir (separados por vírgula) |
 
 \* Você deve especificar **OU** `matches` **OU** `matchId`, nunca os dois.
 

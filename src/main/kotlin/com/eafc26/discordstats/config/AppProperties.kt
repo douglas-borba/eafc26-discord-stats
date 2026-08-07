@@ -87,5 +87,6 @@ data class ReplayProperties(
     val matches: Int? = null,
     val matchId: String? = null,
     val dryRun: Boolean = false,
+    val excludeMatchIds: String? = null,
 )
 
