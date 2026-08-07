@@ -1,4 +1,3 @@
-import { createServerSupabase } from "@/lib/supabase/server";
 import type { MatchSummaryPresentation } from "./match-card-service";
 
 // Critérios mínimos
@@ -190,42 +189,6 @@ export function buildSequenceEditorial(
   return { title, subtitle, narrative, aiNarrative: null, stats, matchDetails, topScorer, topAssister, topHighlight, topRatedPlayer, currentStreak };
 }
 
-export async function fetchAiPanorama(clubId: string): Promise<string | null> {
-  try {
-    const supabase = createServerSupabase();
-
-    // Buscar panoramas do clube para obter configuração real do backend
-    const { data: allPanoramas, error: allError } = await supabase
-      .from("dashboard_panoramas")
-      .select("*")
-      .eq("club_id", clubId)
-      .order("generated_at", { ascending: false })
-      .limit(1);
-
-    if (allError) {
-      console.error("Erro ao buscar panoramas:", allError);
-    }
-
-    // Ler promptVersion e model do panorama mais recente (valores reais do backend)
-    // Em vez de usar hardcoded incorretos
-    const promptVersion = allPanoramas?.[0]?.prompt_version || "v3";
-    const model = allPanoramas?.[0]?.model || "openrouter/free";
-
-    const { data, error } = await supabase
-      .from("dashboard_panoramas")
-      .select("narrative")
-      .eq("club_id", clubId)
-      .order("generated_at", { ascending: false })
-      .limit(1)
-      .single();
-
-    if (error || !data?.narrative) return null;
-    return data.narrative as string;
-  } catch (e) {
-    console.error("Erro ao buscar panorama:", e);
-    return null;
-  }
-}
 
 function computeStats(presentations: MatchSummaryPresentation[]): SequenceStats {
   let wins = 0, draws = 0, losses = 0, goalsScored = 0, goalsConceded = 0;

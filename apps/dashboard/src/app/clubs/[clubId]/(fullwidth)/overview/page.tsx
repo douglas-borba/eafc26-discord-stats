@@ -3,7 +3,8 @@ export const dynamic = "force-dynamic";
 import { OverviewClubPanel } from "@/components/overview/overview-club-panel";
 import { OverviewMatchCard } from "@/components/overview/overview-match-card";
 import { getRecentMatchCards } from "@/lib/services/match-card-service";
-import { buildSequenceEditorial, fetchAiPanorama } from "@/lib/services/sequence-editorial-service";
+import { buildSequenceEditorial } from "@/lib/services/sequence-editorial-service";
+import { fetchAiPanorama } from "@/lib/api/panorama-client";
 
 export default async function OverviewPage({ params }: { params: Promise<{ clubId: string }> }) {
   const { clubId } = await params;
@@ -11,7 +12,7 @@ export default async function OverviewPage({ params }: { params: Promise<{ clubI
   const [presentations, editorialPresentations, aiNarrative] = await Promise.all([
     getRecentMatchCards(clubId, 3),  // 3 for match cards
     getRecentMatchCards(clubId, 10), // 10 for editorial analysis
-    fetchAiPanorama(clubId),
+    fetchAiPanorama(),                // Fetch from REST API (validates contextKey in backend)
   ]);
   const editorial = buildSequenceEditorial(editorialPresentations);
   editorial.aiNarrative = aiNarrative;
