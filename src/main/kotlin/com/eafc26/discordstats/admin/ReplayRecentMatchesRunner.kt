@@ -33,6 +33,12 @@ import java.time.format.DateTimeFormatter
  * 
  * # Replay a specific match by ID
  * ./gradlew bootRun --args="--app.replay.enabled=true --app.replay.matchId=944922107030449"
+ * 
+ * # Exclude specific match IDs (filters before applying limit)
+ * ./gradlew bootRun --args="--app.replay.enabled=true --app.replay.matches=10 --app.replay.excludeMatchIds=944922107030449"
+ * 
+ * # Exclude multiple matches (comma-separated)
+ * ./gradlew bootRun --args="--app.replay.enabled=true --app.replay.matches=10 --app.replay.excludeMatchIds=id1,id2,id3"
  * ```
  * 
  * This is intended for one-time recovery of lost publication history.
@@ -57,19 +63,36 @@ class ReplayRecentMatchesRunner(
         val specificMatchId = replayConfig.matchId?.trim()
         val limit = replayConfig.matches
         val dryRun = replayConfig.dryRun
+        
+        // Parse excluded matchIds
+        val excludedIds = replayConfig.excludeMatchIds
+            ?.split(",")
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.toSet()
+            ?: emptySet()
 
         log.info("=====================================")
         if (dryRun) {
             log.info("REPLAY DRY RUN")
         } else {
             log.info("REPLAY RECENT MATCHES - ADMIN TOOL")
-            if (specificMatchId != null) {
-                log.info("Mode: SINGLE MATCH")
-                log.info("Match ID: {}", specificMatchId)
-            } else {
-                log.info("Mode: RECENT MATCHES")
-                log.info("Limit: {} matches", limit ?: 10)
-            }
+        }
+        
+        if (specificMatchId != null) {
+            log.info("Mode: SINGLE MATCH")
+            log.info("Match ID: {}", specificMatchId)
+        } else {
+            log.info("Mode: RECENT MATCHES")
+            log.info("Limit: {} matches", limit ?: 10)
+        }
+        
+        if (excludedIds.isNotEmpty()) {
+            log.info("Excluding {} matchId(s): {}", excludedIds.size, excludedIds.joinToString(", "))
+        }
+        
+        if (dryRun) {
+            log.info("DRY RUN: No messages will be sent")
         }
         log.info("=====================================")
         if (dryRun) {
@@ -80,7 +103,10 @@ class ReplayRecentMatchesRunner(
             val match = canonicalMatchRepository.findById(MatchId(specificMatchId))
             if (match != null) listOf(match) else emptyList()
         } else {
-            canonicalMatchRepository.findAll().take(limit ?: 10)
+            // Load all matches, filter excluded, then apply limit
+            canonicalMatchRepository.findAll()
+                .filter { it.matchId.value !in excludedIds }
+                .take(limit ?: 10)
         }
 
         if (matches.isEmpty()) {
