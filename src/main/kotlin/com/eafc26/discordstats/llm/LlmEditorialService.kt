@@ -41,7 +41,7 @@ class LlmEditorialService(
                 return
             }
 
-            val context = contextBuilder.buildFullContext(canonical, recentMatches)
+            val context = contextBuilder.buildPanoramaContext(canonical, recentMatches)
             val result = provider!!.generatePanorama(context)
 
             val record = when (result) {

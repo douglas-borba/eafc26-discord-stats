@@ -36,6 +36,20 @@ class EditorialContextBuilder {
         recentForm = recentForm(recentMatches, current),
     )
 
+    /**
+     * Builds a panorama context using ALL recent matches (including current).
+     * For dashboard panorama, we want statistics to match exactly what the UI displays,
+     * so we include the current match in the aggregated statistics.
+     */
+    fun buildPanoramaContext(
+        current: CanonicalMatch,
+        recentMatches: List<CanonicalMatch>,
+        zoneId: ZoneId = ZoneId.systemDefault(),
+    ): EditorialContext = EditorialContext(
+        match = matchContext(current, zoneId),
+        recentForm = recentFormIncludingCurrent(recentMatches),
+    )
+
     private fun matchContext(canonical: CanonicalMatch, zoneId: ZoneId): MatchContext {
         val interp = canonical.interpretation
         val match = canonical.footballMatch
@@ -139,6 +153,40 @@ class EditorialContextBuilder {
 
         val allResults = listOf(excluding).plus(others).map { it.interpretation.result.outcome }
         val streak = computeStreak(allResults)
+
+        return RecentFormContext(
+            results = results,
+            wins = results.count { it.outcome == MatchOutcome.WIN },
+            draws = results.count { it.outcome == MatchOutcome.DRAW },
+            losses = results.count { it.outcome == MatchOutcome.LOSS },
+            goalsScored = results.sumOf { it.ourScore },
+            goalsConceded = results.sumOf { it.opponentScore },
+            streak = streak,
+        )
+    }
+
+    /**
+     * Builds recent form context INCLUDING all matches (no exclusion).
+     * Used for panorama where we want aggregated statistics to match
+     * exactly what the dashboard displays (all 10 matches).
+     */
+    private fun recentFormIncludingCurrent(recentMatches: List<CanonicalMatch>): RecentFormContext? {
+        if (recentMatches.isEmpty()) return null
+
+        val results = recentMatches.map { canonical ->
+            val interp = canonical.interpretation
+            val opponent = canonical.footballMatch.participants
+                .first { it.club.id == interp.result.opponentClub }
+            RecentMatchResult(
+                opponent = opponent.club.name?.value ?: "Adversário",
+                ourScore = interp.result.ourScore.goals,
+                opponentScore = interp.result.opponentScore.goals,
+                outcome = interp.result.outcome,
+            )
+        }
+
+        val allOutcomes = recentMatches.map { it.interpretation.result.outcome }
+        val streak = computeStreak(allOutcomes)
 
         return RecentFormContext(
             results = results,

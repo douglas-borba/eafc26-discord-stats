@@ -44,19 +44,20 @@ class LlmEditorialServiceTest {
         panoramaRepository = mock()
         clock = Clock.fixed(fixedInstant, ZoneId.of("UTC"))
 
-        whenever(contextBuilder.buildFullContext(any(), any(), any())).thenReturn(
-            EditorialContext(
-                match = MatchContext(
-                    ourClub = "Associação BF", opponent = "Rival FC",
-                    ourScore = 3, opponentScore = 1,
-                    outcome = com.eafc26.discordstats.domain.interpretation.MatchOutcome.WIN,
-                    date = "05/08/2026", mvp = null, worstPerformer = null,
-                    xerife = null, goalkeeper = null, goals = emptyList(),
-                    assists = emptyList(), teamAverageRating = null, notableEvents = emptyList(),
-                ),
-                recentForm = null,
-            )
+        val mockContext = EditorialContext(
+            match = MatchContext(
+                ourClub = "Associação BF", opponent = "Rival FC",
+                ourScore = 3, opponentScore = 1,
+                outcome = com.eafc26.discordstats.domain.interpretation.MatchOutcome.WIN,
+                date = "05/08/2026", mvp = null, worstPerformer = null,
+                xerife = null, goalkeeper = null, goals = emptyList(),
+                assists = emptyList(), teamAverageRating = null, notableEvents = emptyList(),
+            ),
+            recentForm = null,
         )
+
+        whenever(contextBuilder.buildFullContext(any(), any(), any())).thenReturn(mockContext)
+        whenever(contextBuilder.buildPanoramaContext(any(), any(), any())).thenReturn(mockContext)
 
         service = LlmEditorialService(
             contextBuilder, provider, historyService, enabledProps, panoramaRepository, clock,

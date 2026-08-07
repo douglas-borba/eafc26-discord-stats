@@ -82,10 +82,15 @@ Regras: use apenas fatos fornecidos; nunca invente dados; escreva em prosa corri
                 form.results.forEach { r ->
                     append("${outcomeLabel(r.outcome)}: ${r.ourScore}×${r.opponentScore} vs ${r.opponent}\n")
                 }
-                append("\nBALANÇO GERAL:\n")
+                append("\nBALANÇO GERAL DAS ${form.results.size} PARTIDAS:\n")
                 append("Resultados: ${form.wins}V ${form.draws}E ${form.losses}D\n")
-                append("Gols: ${form.goalsScored} marcados, ${form.goalsConceded} sofridos\n")
-                append("Sequência: ${form.streak}\n")
+                append("Gols marcados: ${form.goalsScored}\n")
+                append("Gols sofridos: ${form.goalsConceded}\n")
+                append("Sequência atual: ${form.streak}\n")
+                append("\n⚠️ IMPORTANTE:\n")
+                append("Os números acima são EXATOS e representam a soma de TODAS as ${form.results.size} partidas listadas.\n")
+                append("A partida mais recente (${m.ourClub} ${m.ourScore}×${m.opponentScore} ${m.opponent}) JÁ está incluída nestes totais.\n")
+                append("Utilize EXATAMENTE os valores fornecidos. NUNCA recalcule ou modifique as estatísticas.\n")
             }
             
             if (m.goals.isNotEmpty()) {
