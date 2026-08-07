@@ -1,6 +1,5 @@
 import { createServerSupabase } from "@/lib/supabase/server";
 import type { MatchSummaryPresentation } from "./match-card-service";
-import crypto from "crypto";
 
 // Critérios mínimos
 const MIN_GOALS = 2;
@@ -195,132 +194,37 @@ export async function fetchAiPanorama(clubId: string): Promise<string | null> {
   try {
     const supabase = createServerSupabase();
 
-    // 🔍 INVESTIGAÇÃO: Buscar as 10 partidas mais recentes (mesmo critério do backend)
-    const { data: recentMatches, error: matchError } = await supabase
-      .from("dashboard_editorial_presentations")
-      .select("match_id, played_at")
-      .eq("club_id", clubId)
-      .order("played_at", { ascending: false })
-      .limit(10);
-
-    if (matchError || !recentMatches) {
-      console.error("❌ [PANORAMA DEBUG] Erro ao buscar partidas recentes:", matchError);
-      return null;
-    }
-
-    const matchIds = recentMatches.map(m => m.match_id);
-
-    // 🔍 INVESTIGAÇÃO: Calcular contextKey esperado (mesmo algoritmo do backend)
-    // Backend: SHA-256 de clubId + ordenedMatchIds + promptVersion + model
-    const promptVersion = "v1"; // Valor padrão no backend
-    const model = "claude-3-5-sonnet-20241022"; // Modelo padrão usado
-    const expectedContextKey = computeContextKey(clubId, matchIds, promptVersion, model);
-
-    console.log("🔍 [PANORAMA DEBUG] ========================================");
-    console.log("🔍 [PANORAMA DEBUG] Investigando seleção de panorama");
-    console.log("🔍 [PANORAMA DEBUG] ========================================");
-    console.log("🔍 [PANORAMA DEBUG] 1. PARTIDAS UTILIZADAS (10 mais recentes):");
-    recentMatches.forEach((m, i) => {
-      console.log(`🔍 [PANORAMA DEBUG]    ${i + 1}. ${m.match_id} (played_at: ${m.played_at})`);
-    });
-    console.log("🔍 [PANORAMA DEBUG]");
-    console.log("🔍 [PANORAMA DEBUG] 2. CONTEXT KEY ESPERADO:");
-    console.log(`🔍 [PANORAMA DEBUG]    ${expectedContextKey}`);
-    console.log("🔍 [PANORAMA DEBUG]");
-
-    // 🔍 INVESTIGAÇÃO: Buscar TODOS os panoramas do clube
+    // Buscar panoramas do clube para obter configuração real do backend
     const { data: allPanoramas, error: allError } = await supabase
       .from("dashboard_panoramas")
       .select("*")
       .eq("club_id", clubId)
-      .order("generated_at", { ascending: false });
+      .order("generated_at", { ascending: false })
+      .limit(1);
 
     if (allError) {
-      console.error("❌ [PANORAMA DEBUG] Erro ao buscar panoramas:", allError);
-    } else {
-      console.log("🔍 [PANORAMA DEBUG] 3. TODOS OS PANORAMAS ENCONTRADOS:");
-      if (!allPanoramas || allPanoramas.length === 0) {
-        console.log("🔍 [PANORAMA DEBUG]    ⚠️  NENHUM PANORAMA ENCONTRADO!");
-      } else {
-        allPanoramas.forEach((p: any, i: number) => {
-          const isSelected = i === 0;
-          const matchesExpected = p.context_key === expectedContextKey;
-          const marker = isSelected ? "👉 SELECIONADO" : matchesExpected ? "✅ CORRETO" : "  ";
-          console.log(`🔍 [PANORAMA DEBUG]    ${marker} Panorama ${i + 1}:`);
-          console.log(`🔍 [PANORAMA DEBUG]       - generated_at: ${p.generated_at}`);
-          console.log(`🔍 [PANORAMA DEBUG]       - context_key: ${p.context_key || 'N/A'}`);
-          console.log(`🔍 [PANORAMA DEBUG]       - matches expected: ${matchesExpected ? 'SIM ✅' : 'NÃO ❌'}`);
-          if (p.match_ids && Array.isArray(p.match_ids)) {
-            console.log(`🔍 [PANORAMA DEBUG]       - match_ids (${p.match_ids.length}): ${p.match_ids.slice(0, 3).join(', ')}...`);
-          }
-          console.log(`🔍 [PANORAMA DEBUG]       - narrative preview: ${p.narrative?.substring(0, 80)}...`);
-          console.log(`🔍 [PANORAMA DEBUG]`);
-        });
-      }
+      console.error("Erro ao buscar panoramas:", allError);
     }
 
-    // 🔍 INVESTIGAÇÃO: Buscar o panorama atualmente selecionado (lógica atual)
+    // Ler promptVersion e model do panorama mais recente (valores reais do backend)
+    // Em vez de usar hardcoded incorretos
+    const promptVersion = allPanoramas?.[0]?.prompt_version || "v3";
+    const model = allPanoramas?.[0]?.model || "openrouter/free";
+
     const { data, error } = await supabase
       .from("dashboard_panoramas")
-      .select("narrative, context_key, generated_at")
+      .select("narrative")
       .eq("club_id", clubId)
       .order("generated_at", { ascending: false })
       .limit(1)
       .single();
 
-    console.log("🔍 [PANORAMA DEBUG] 4. RESULTADO DA SELEÇÃO:");
-    if (error || !data?.narrative) {
-      console.log("🔍 [PANORAMA DEBUG]    ❌ Nenhum panorama selecionado (erro ou vazio)");
-      console.log("🔍 [PANORAMA DEBUG]    Error:", error);
-    } else {
-      const isCorrect = data.context_key === expectedContextKey;
-      console.log(`🔍 [PANORAMA DEBUG]    ${isCorrect ? '✅' : '❌'} Panorama selecionado está ${isCorrect ? 'CORRETO' : 'INCORRETO'}`);
-      console.log(`🔍 [PANORAMA DEBUG]    - generated_at: ${data.generated_at}`);
-      console.log(`🔍 [PANORAMA DEBUG]    - context_key: ${data.context_key}`);
-      console.log(`🔍 [PANORAMA DEBUG]    - matches expected: ${isCorrect ? 'SIM ✅' : 'NÃO ❌'}`);
-      console.log(`🔍 [PANORAMA DEBUG]    - narrative preview: ${data.narrative.substring(0, 80)}...`);
-    }
-
-    console.log("🔍 [PANORAMA DEBUG] ========================================");
-    console.log("🔍 [PANORAMA DEBUG] 5. DIAGNÓSTICO:");
-
-    if (!allPanoramas || allPanoramas.length === 0) {
-      console.log("🔍 [PANORAMA DEBUG]    🔴 PROBLEMA: Nenhum panorama gerado para este clube");
-    } else {
-      const correctPanorama = allPanoramas.find((p: any) => p.context_key === expectedContextKey);
-      if (!correctPanorama) {
-        console.log("🔍 [PANORAMA DEBUG]    🔴 PROBLEMA: Panorama para contexto atual NÃO EXISTE");
-        console.log("🔍 [PANORAMA DEBUG]       → Panorama precisa ser gerado para as 10 partidas atuais");
-      } else if (data?.context_key !== expectedContextKey) {
-        console.log("🔍 [PANORAMA DEBUG]    🔴 PROBLEMA: Panorama ERRADO sendo selecionado");
-        console.log("🔍 [PANORAMA DEBUG]       → Existe panorama correto, mas outro está sendo escolhido");
-        console.log("🔍 [PANORAMA DEBUG]       → Causa: Ordenação por generated_at em vez de relevância");
-      } else {
-        console.log("🔍 [PANORAMA DEBUG]    ✅ OK: Panorama correto está sendo exibido");
-      }
-    }
-    console.log("🔍 [PANORAMA DEBUG] ========================================");
-
     if (error || !data?.narrative) return null;
     return data.narrative as string;
   } catch (e) {
-    console.error("❌ [PANORAMA DEBUG] Exceção capturada:", e);
+    console.error("Erro ao buscar panorama:", e);
     return null;
   }
-}
-
-/**
- * Calcula o contextKey da mesma forma que o backend Kotlin.
- * Backend: SHA-256 de clubId + matchIds (ordenados) + promptVersion + model
- */
-function computeContextKey(
-  clubId: string,
-  matchIds: string[],
-  promptVersion: string,
-  model: string
-): string {
-  const input = `${clubId}|${matchIds.join(',')}|${promptVersion}|${model}`;
-  return crypto.createHash('sha256').update(input, 'utf8').digest('hex');
 }
 
 function computeStats(presentations: MatchSummaryPresentation[]): SequenceStats {

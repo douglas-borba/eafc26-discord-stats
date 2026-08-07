@@ -316,12 +316,12 @@ class MatchSummaryBuilder(
     private fun buildAllPlayers(players: List<PlayerMatchPerformance>): List<PlayerRating> {
         val SENTINEL_RATING = BigDecimal("3.0")
         return players
-            .filter { it.player.rating != null }
-            .filter { it.player.rating != SENTINEL_RATING }
+            .filter { it.rating != null }
+            .filter { it.rating?.value != SENTINEL_RATING }
             .map { player ->
                 PlayerRating(
                     name = name(player),
-                    rating = fmtRating(player.player.rating!!),
+                    rating = fmtRating(player.rating!!.value),
                     played = true,
                 )
             }
