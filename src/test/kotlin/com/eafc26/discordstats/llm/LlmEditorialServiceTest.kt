@@ -218,6 +218,134 @@ class LlmEditorialServiceTest {
     }
 
     @Nested
+    inner class ResilientCache {
+
+        @Test
+        fun `cached valid panorama is reused`() {
+            val match = canonical("m1")
+            val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
+            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(panoramaRepository.findByContextKey(eq("club1"), any()))
+                .thenReturn(PanoramaRecord(
+                    clubId = "club1", contextKey = "key", matchIds = listOf("m1", "m2", "m3"),
+                    narrative = "Grande momento do clube com vitórias consecutivas.", 
+                    provider = "openrouter", model = "anthropic/claude-sonnet-4",
+                    promptVersion = "v3", status = "success", generatedAt = fixedInstant,
+                ))
+
+            service.generateAndPersistPanorama(match)
+
+            verify(provider, never()).generatePanorama(any())
+            verify(panoramaRepository, never()).upsert(any())
+        }
+
+        @Test
+        fun `cached prompt echo is ignored and regenerated`() {
+            val match = canonical("m1")
+            val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
+            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(panoramaRepository.findByContextKey(eq("club1"), any()))
+                .thenReturn(PanoramaRecord(
+                    clubId = "club1", contextKey = "key", matchIds = listOf("m1", "m2", "m3"),
+                    narrative = "We need to write between 350 and 550 characters. Must compare the matches. Should not use markdown.",
+                    provider = "openrouter", model = "anthropic/claude-sonnet-4",
+                    promptVersion = "v3", status = "success", generatedAt = fixedInstant,
+                ))
+            whenever(provider.generatePanorama(any())).thenReturn(successResult("Nova narrativa válida."))
+
+            service.generateAndPersistPanorama(match)
+
+            verify(provider).generatePanorama(any())
+            verify(panoramaRepository).upsert(org.mockito.kotlin.check { record ->
+                assertThat(record.narrative).isEqualTo("Nova narrativa válida.")
+                assertThat(record.status).isEqualTo("success")
+            })
+        }
+
+        @Test
+        fun `cached prompt echo in Portuguese is ignored and regenerated`() {
+            val match = canonical("m1")
+            val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
+            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(panoramaRepository.findByContextKey(eq("club1"), any()))
+                .thenReturn(PanoramaRecord(
+                    clubId = "club1", contextKey = "key", matchIds = listOf("m1", "m2", "m3"),
+                    narrative = "Escreva entre 350 e 550 caracteres. Utilize apenas os fatos. Compare as partidas. Não utilize markdown.",
+                    provider = "openrouter", model = "anthropic/claude-sonnet-4",
+                    promptVersion = "v3", status = "success", generatedAt = fixedInstant,
+                ))
+            whenever(provider.generatePanorama(any())).thenReturn(successResult("Novo panorama em português."))
+
+            service.generateAndPersistPanorama(match)
+
+            verify(provider).generatePanorama(any())
+            verify(panoramaRepository).upsert(org.mockito.kotlin.check { record ->
+                assertThat(record.narrative).isEqualTo("Novo panorama em português.")
+                assertThat(record.status).isEqualTo("success")
+            })
+        }
+
+        @Test
+        fun `fresh prompt echo is not persisted`() {
+            val match = canonical("m1")
+            whenever(historyService.latest(any())).thenReturn(listOf(match))
+            whenever(panoramaRepository.findByContextKey(any(), any())).thenReturn(null)
+            whenever(provider.generatePanorama(any()))
+                .thenReturn(successResult("We need to produce a narrative. Must compare all matches. Should not use lists or markdown."))
+
+            service.generateAndPersistPanorama(match)
+
+            verify(panoramaRepository).upsert(org.mockito.kotlin.check { record ->
+                assertThat(record.status).isEqualTo("failed")
+                assertThat(record.narrative).isNull()
+                assertThat(record.errorCategory).isEqualTo("llm_prompt_echo")
+            })
+        }
+
+        @Test
+        fun `cached failed status prevents regeneration`() {
+            val match = canonical("m1")
+            val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
+            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(panoramaRepository.findByContextKey(eq("club1"), any()))
+                .thenReturn(PanoramaRecord(
+                    clubId = "club1", contextKey = "key", matchIds = listOf("m1", "m2", "m3"),
+                    narrative = null, provider = "openrouter", model = "anthropic/claude-sonnet-4",
+                    promptVersion = "v3", status = "failed", errorCategory = "timeout",
+                    generatedAt = fixedInstant,
+                ))
+
+            service.generateAndPersistPanorama(match)
+
+            verify(provider, never()).generatePanorama(any())
+            verify(panoramaRepository, never()).upsert(any())
+        }
+
+        @Test
+        fun `cached prompt echo failure allows retry`() {
+            val match = canonical("m1")
+            val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
+            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(panoramaRepository.findByContextKey(eq("club1"), any()))
+                .thenReturn(PanoramaRecord(
+                    clubId = "club1", contextKey = "key", matchIds = listOf("m1", "m2", "m3"),
+                    narrative = null, provider = "openrouter", model = "anthropic/claude-sonnet-4",
+                    promptVersion = "v3", status = "failed", errorCategory = "llm_prompt_echo",
+                    generatedAt = fixedInstant,
+                ))
+            whenever(provider.generatePanorama(any())).thenReturn(successResult("Novo panorama válido após retry."))
+
+            service.generateAndPersistPanorama(match)
+
+            verify(provider).generatePanorama(any())
+            verify(panoramaRepository).upsert(org.mockito.kotlin.check { record ->
+                assertThat(record.narrative).isEqualTo("Novo panorama válido após retry.")
+                assertThat(record.status).isEqualTo("success")
+            })
+        }
+    }
+
+    @Nested
     inner class NextJsIntegration {
 
         @Test

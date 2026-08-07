@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.llm
 
+import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
@@ -11,6 +12,7 @@ import java.time.Instant
 class PanoramaRepository(
     private val jdbcTemplate: JdbcTemplate,
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
     fun findByContextKey(clubId: String, contextKey: String): PanoramaRecord? {
         val rows = jdbcTemplate.query(
             """
@@ -41,7 +43,8 @@ class PanoramaRepository(
             { rs, _ -> mapRow(rs) },
             clubId,
         )
-        return rows.firstOrNull()
+        val result = rows.firstOrNull()
+        return result
     }
 
     fun upsert(record: PanoramaRecord) {

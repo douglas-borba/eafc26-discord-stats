@@ -37,8 +37,27 @@ class LlmEditorialService(
 
             val existing = panoramaRepository.findByContextKey(clubId, contextKey)
             if (existing != null) {
-                log.debug("Panorama already exists for context key {} (status={})", contextKey.take(12), existing.status)
-                return
+                // Cache resiliente: validar se o panorama existente é válido
+                if (existing.status == "success" && existing.narrative != null) {
+                    if (isPromptEcho(existing.narrative)) {
+                        log.warn(
+                            "Cached prompt echo detected: contextKey={} model={} - Regenerating",
+                            contextKey.take(12),
+                            existing.model
+                        )
+                        // Não retornar - continuar para regenerar
+                    } else {
+                        log.debug("Panorama already exists for context key {} (status={})", contextKey.take(12), existing.status)
+                        return
+                    }
+                } else if (existing.status == "failed" && existing.errorCategory == "llm_prompt_echo") {
+                    // Prompt echo failures devem permitir retry (não bloquear)
+                    log.debug("Previous prompt echo failure for context key {} - Retrying", contextKey.take(12))
+                    // Não retornar - continuar para regenerar
+                } else {
+                    log.debug("Panorama already exists for context key {} (status={})", contextKey.take(12), existing.status)
+                    return
+                }
             }
 
             val context = contextBuilder.buildPanoramaContext(canonical, recentMatches)
@@ -47,27 +66,49 @@ class LlmEditorialService(
             val record = when (result) {
                 is LlmEditorialResult.Success -> {
                     val validated = validateAndTrim(result.text, PANORAMA_MAX_CHARS)
-                    log.info(
-                        "Panorama generated: provider={} model={} prompt={} latency={}ms tokens={}in/{}out chars={}",
-                        result.metadata.provider, result.metadata.model, PROMPT_VERSION,
-                        result.metadata.latencyMs ?: "?",
-                        result.metadata.inputTokens ?: "?",
-                        result.metadata.outputTokens ?: "?",
-                        validated.length,
-                    )
-                    PanoramaRecord(
-                        clubId = clubId,
-                        contextKey = contextKey,
-                        matchIds = matchIds,
-                        narrative = validated,
-                        provider = result.metadata.provider,
-                        model = result.metadata.model,
-                        promptVersion = PROMPT_VERSION,
-                        status = "success",
-                        inputTokens = result.metadata.inputTokens,
-                        outputTokens = result.metadata.outputTokens,
-                        generatedAt = clock.instant(),
-                    )
+                    
+                    if (isPromptEcho(validated)) {
+                        log.warn(
+                            "Prompt echo detected: provider={} model={} promptVersion={} - Response rejected",
+                            result.metadata.provider,
+                            result.metadata.model,
+                            PROMPT_VERSION
+                        )
+                        PanoramaRecord(
+                            clubId = clubId,
+                            contextKey = contextKey,
+                            matchIds = matchIds,
+                            narrative = null,
+                            provider = properties.provider,
+                            model = result.metadata.model,
+                            promptVersion = PROMPT_VERSION,
+                            status = "failed",
+                            errorCategory = "llm_prompt_echo",
+                            generatedAt = clock.instant(),
+                        )
+                    } else {
+                        log.info(
+                            "Panorama generated: provider={} model={} prompt={} latency={}ms tokens={}in/{}out chars={}",
+                            result.metadata.provider, result.metadata.model, PROMPT_VERSION,
+                            result.metadata.latencyMs ?: "?",
+                            result.metadata.inputTokens ?: "?",
+                            result.metadata.outputTokens ?: "?",
+                            validated.length,
+                        )
+                        PanoramaRecord(
+                            clubId = clubId,
+                            contextKey = contextKey,
+                            matchIds = matchIds,
+                            narrative = validated,
+                            provider = result.metadata.provider,
+                            model = result.metadata.model,
+                            promptVersion = PROMPT_VERSION,
+                            status = "success",
+                            inputTokens = result.metadata.inputTokens,
+                            outputTokens = result.metadata.outputTokens,
+                            generatedAt = clock.instant(),
+                        )
+                    }
                 }
                 is LlmEditorialResult.Failure -> {
                     val category = classifyError(result)
@@ -89,6 +130,7 @@ class LlmEditorialService(
                     )
                 }
             }
+
 
             panoramaRepository.upsert(record)
         } catch (ex: Exception) {
@@ -162,6 +204,57 @@ class LlmEditorialService(
             reason.contains("parse") -> "parse_error"
             else -> "unknown"
         }
+    }
+
+    /**
+     * Detecta se o texto parece ser um echo do prompt em vez de uma resposta real.
+     * 
+     * Alguns modelos gratuitos/instáveis ocasionalmente retornam o próprio prompt.
+     * Esta função valida baseada em padrões comuns de instruções.
+     */
+    private fun isPromptEcho(text: String): Boolean {
+        val lowerText = text.lowercase()
+        
+        // Padrões de instruções em inglês
+        val englishPatterns = listOf(
+            "we need to",
+            "must compare",
+            "must mention",
+            "must use",
+            "use exact values",
+            "should not",
+            "between 350 and 550 characters",
+            "between 120 and 220 characters",
+            "in prose",
+            "no lists",
+            "no markdown",
+            "no emojis",
+        )
+        
+        // Padrões de instruções em português
+        val portuguesePatterns = listOf(
+            "escreva 2-3 frases",
+            "escreva entre",
+            "utilize apenas os fatos",
+            "utilize apenas os dados",
+            "não utilize markdown",
+            "compare as partidas",
+            "compare as 10 partidas",
+            "entre 350 e 550 caracteres",
+            "entre 120 e 220 caracteres",
+            "sem listas",
+            "sem markdown",
+            "sem emoji",
+            "você deve analisar",
+            "você deve comparar",
+        )
+        
+        // Contar quantos padrões foram encontrados
+        val englishMatches = englishPatterns.count { lowerText.contains(it) }
+        val portugueseMatches = portuguesePatterns.count { lowerText.contains(it) }
+        
+        // Se encontrar 3 ou mais padrões de qualquer idioma, provavelmente é o prompt
+        return englishMatches >= 3 || portugueseMatches >= 3
     }
 
     companion object {

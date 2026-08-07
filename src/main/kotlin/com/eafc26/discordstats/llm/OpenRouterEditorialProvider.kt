@@ -50,6 +50,7 @@ class OpenRouterEditorialProvider(
                 .block(Duration.ofSeconds(properties.timeoutSeconds))
                 ?: return LlmEditorialResult.Failure("Empty response from OpenRouter API")
 
+
             val latencyMs = (System.nanoTime() - startNanos) / 1_000_000
             parseResponse(responseBody, latencyMs)
         } catch (ex: WebClientResponseException) {
@@ -76,6 +77,7 @@ class OpenRouterEditorialProvider(
                 ?.path("content")
                 ?.asText()
                 ?: return LlmEditorialResult.Failure("No content in OpenRouter response")
+
 
             val usage = root.path("usage")
             LlmEditorialResult.Success(
