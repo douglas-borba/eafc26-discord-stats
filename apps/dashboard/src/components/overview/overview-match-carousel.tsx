@@ -9,20 +9,21 @@ interface Props {
   presentations: MatchSummaryPresentation[];
 }
 
-const CARDS_VISIBLE = 3;
+const CARDS_PER_PAGE = 3;
 
 export function OverviewMatchCarousel({ presentations }: Props) {
-  const [startIndex, setStartIndex] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
-  const canGoBack = startIndex > 0;
-  const canGoForward = startIndex + CARDS_VISIBLE < presentations.length;
+  const totalPages = Math.ceil(presentations.length / CARDS_PER_PAGE);
+  const canGoBack = currentPage > 0;
+  const canGoForward = currentPage < totalPages - 1;
 
   const handlePrevious = (e: React.MouseEvent) => {
     e.preventDefault();
     if (!canGoBack || isTransitioning) return;
     setIsTransitioning(true);
-    setStartIndex((prev) => Math.max(0, prev - 1));
+    setCurrentPage((prev) => prev - 1);
     setTimeout(() => setIsTransitioning(false), 400);
   };
 
@@ -30,11 +31,12 @@ export function OverviewMatchCarousel({ presentations }: Props) {
     e.preventDefault();
     if (!canGoForward || isTransitioning) return;
     setIsTransitioning(true);
-    setStartIndex((prev) => Math.min(presentations.length - CARDS_VISIBLE, prev + 1));
+    setCurrentPage((prev) => prev + 1);
     setTimeout(() => setIsTransitioning(false), 400);
   };
 
-  const visibleCards = presentations.slice(startIndex, startIndex + CARDS_VISIBLE);
+  const startIndex = currentPage * CARDS_PER_PAGE;
+  const visibleCards = presentations.slice(startIndex, startIndex + CARDS_PER_PAGE);
 
   return (
     <>
@@ -47,7 +49,7 @@ export function OverviewMatchCarousel({ presentations }: Props) {
               onClick={handlePrevious}
               disabled={isTransitioning}
               className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-[#21262d]/90 border border-[#30363d] hover:bg-[#30363d] hover:scale-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all backdrop-blur-sm shadow-lg z-10"
-              aria-label="Card anterior"
+              aria-label="Página anterior"
             >
               <ChevronLeft className="w-6 h-6 text-[#e6edf3]" />
             </button>
@@ -78,7 +80,7 @@ export function OverviewMatchCarousel({ presentations }: Props) {
               onClick={handleNext}
               disabled={isTransitioning}
               className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-[#21262d]/90 border border-[#30363d] hover:bg-[#30363d] hover:scale-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all backdrop-blur-sm shadow-lg z-10"
-              aria-label="Próximo card"
+              aria-label="Próxima página"
             >
               <ChevronRight className="w-6 h-6 text-[#e6edf3]" />
             </button>
