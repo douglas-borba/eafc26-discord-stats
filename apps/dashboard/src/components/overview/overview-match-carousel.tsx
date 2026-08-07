@@ -9,96 +9,81 @@ interface Props {
   presentations: MatchSummaryPresentation[];
 }
 
-const CARDS_PER_PAGE = 3;
+const CARDS_VISIBLE = 3;
 
 export function OverviewMatchCarousel({ presentations }: Props) {
-  const [currentPage, setCurrentPage] = useState(0);
+  const [startIndex, setStartIndex] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const totalPages = Math.ceil(presentations.length / CARDS_PER_PAGE);
 
-  const handlePrevious = () => {
-    if (isTransitioning) return;
+  const canGoBack = startIndex > 0;
+  const canGoForward = startIndex + CARDS_VISIBLE < presentations.length;
+
+  const handlePrevious = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!canGoBack || isTransitioning) return;
     setIsTransitioning(true);
-    setCurrentPage((prev) => Math.max(0, prev - 1));
-    setTimeout(() => setIsTransitioning(false), 300);
+    setStartIndex((prev) => Math.max(0, prev - 1));
+    setTimeout(() => setIsTransitioning(false), 400);
   };
 
-  const handleNext = () => {
-    if (isTransitioning) return;
+  const handleNext = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!canGoForward || isTransitioning) return;
     setIsTransitioning(true);
-    setCurrentPage((prev) => Math.min(totalPages - 1, prev + 1));
-    setTimeout(() => setIsTransitioning(false), 300);
+    setStartIndex((prev) => Math.min(presentations.length - CARDS_VISIBLE, prev + 1));
+    setTimeout(() => setIsTransitioning(false), 400);
   };
 
-  const goToPage = (page: number) => {
-    if (isTransitioning || page === currentPage) return;
-    setIsTransitioning(true);
-    setCurrentPage(page);
-    setTimeout(() => setIsTransitioning(false), 300);
-  };
-
-  const startIndex = currentPage * CARDS_PER_PAGE;
-  const visibleCards = presentations.slice(startIndex, startIndex + CARDS_PER_PAGE);
+  const visibleCards = presentations.slice(startIndex, startIndex + CARDS_VISIBLE);
 
   return (
     <>
-      {/* Desktop: Carousel with pagination */}
-      <div className="hidden md:block">
-        {/* Cards grid */}
-        <div
-          className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 p-5 lg:p-6 items-start min-h-[600px] transition-opacity duration-300"
-          style={{ opacity: isTransitioning ? 0.5 : 1 }}
-        >
-          {visibleCards.map((p, i) => (
-            <OverviewMatchCard
-              key={p.matchId}
-              presentation={p}
-              variant="full"
-              isLatest={startIndex + i === 0}
-            />
-          ))}
-        </div>
-
-        {/* Navigation controls */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-4 pb-6">
+      {/* Desktop: Netflix-style carousel with side arrows */}
+      <div className="hidden md:block relative">
+        <div className="flex items-center gap-3 p-5 lg:p-6">
+          {/* Left arrow */}
+          {canGoBack && (
             <button
               onClick={handlePrevious}
-              disabled={currentPage === 0 || isTransitioning}
-              className="flex items-center justify-center w-10 h-10 rounded-full bg-[#21262d] border border-[#30363d] hover:bg-[#30363d] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              aria-label="Página anterior"
+              disabled={isTransitioning}
+              className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-[#21262d]/90 border border-[#30363d] hover:bg-[#30363d] hover:scale-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all backdrop-blur-sm shadow-lg z-10"
+              aria-label="Card anterior"
             >
-              <ChevronLeft className="w-5 h-5 text-[#e6edf3]" />
+              <ChevronLeft className="w-6 h-6 text-[#e6edf3]" />
             </button>
+          )}
 
-            {/* Page indicator */}
-            <div className="flex items-center gap-2">
-              {Array.from({ length: totalPages }, (_, i) => (
-                <button
-                  key={i}
-                  onClick={() => goToPage(i)}
-                  disabled={isTransitioning}
-                  className={`rounded-full transition-all ${
-                    i === currentPage
-                      ? "bg-[#58a6ff] w-6 h-2"
-                      : "bg-[#30363d] hover:bg-[#484f58] w-2 h-2"
-                  }`}
-                  aria-label={`Ir para página ${i + 1}`}
-                  aria-current={i === currentPage ? "true" : undefined}
+          {/* Cards container with slide animation */}
+          <div className="flex-1 overflow-hidden">
+            <div
+              className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 transition-transform duration-400 ease-in-out"
+              style={{
+                transform: `translateX(0)`,
+              }}
+            >
+              {visibleCards.map((p, i) => (
+                <OverviewMatchCard
+                  key={p.matchId}
+                  presentation={p}
+                  variant="full"
+                  isLatest={startIndex + i === 0}
                 />
               ))}
             </div>
+          </div>
 
+          {/* Right arrow */}
+          {canGoForward && (
             <button
               onClick={handleNext}
-              disabled={currentPage === totalPages - 1 || isTransitioning}
-              className="flex items-center justify-center w-10 h-10 rounded-full bg-[#21262d] border border-[#30363d] hover:bg-[#30363d] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              aria-label="Próxima página"
+              disabled={isTransitioning}
+              className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-[#21262d]/90 border border-[#30363d] hover:bg-[#30363d] hover:scale-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all backdrop-blur-sm shadow-lg z-10"
+              aria-label="Próximo card"
             >
-              <ChevronRight className="w-5 h-5 text-[#e6edf3]" />
+              <ChevronRight className="w-6 h-6 text-[#e6edf3]" />
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Mobile: All cards in vertical scroll */}
@@ -115,5 +100,4 @@ export function OverviewMatchCarousel({ presentations }: Props) {
     </>
   );
 }
-
 
