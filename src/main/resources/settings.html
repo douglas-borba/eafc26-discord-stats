@@ -258,7 +258,10 @@
       try {
         const res = await fetch('/api/settings/network', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
+          },
           body: JSON.stringify({ enabled })
         });
         const data = await res.json();
@@ -272,7 +275,10 @@
       try {
         const res = await fetch('/api/settings/development-mode', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
+          },
           body: JSON.stringify({ enabled })
         });
         const data = await res.json();
@@ -290,7 +296,12 @@
       btn.textContent = 'Encerrando...';
 
       try {
-        const res = await fetch('/api/application/stop', { method: 'POST' });
+        const res = await fetch('/api/application/stop', {
+          method: 'POST',
+          headers: {
+            'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
+          }
+        });
         if (res.ok) {
           showInfo('Aplicação encerrada. O monitoramento foi interrompido e esta página pode ser fechada.');
         } else {
@@ -385,7 +396,10 @@
       try {
         const res = await fetch('/api/settings/phrases', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
+          },
           body: JSON.stringify(payload),
         });
         if (res.ok) {

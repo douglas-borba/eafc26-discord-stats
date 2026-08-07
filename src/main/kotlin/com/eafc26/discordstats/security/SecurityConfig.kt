@@ -37,7 +37,10 @@ class SecurityConfig {
 
     @Bean
     fun csrfTokenSubscriptionFilter(): WebFilter = WebFilter { exchange, chain ->
-        exchange.getAttributeOrDefault<Mono<CsrfToken>>(CsrfToken::class.java.name, Mono.empty())
-            .then(chain.filter(exchange))
+        // In WebFlux, CSRF token must be subscribed to be materialized in the cookie.
+        // Without subscription, the token generation never happens.
+        exchange.getAttribute<Mono<CsrfToken>>(CsrfToken::class.java.name)
+            ?.flatMap { chain.filter(exchange) }
+            ?: chain.filter(exchange)
     }
 }

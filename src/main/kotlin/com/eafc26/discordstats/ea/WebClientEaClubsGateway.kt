@@ -41,19 +41,103 @@ class WebClientEaClubsGateway(
     }
 
     override fun getLatestMatches(clubId: String): EaApiResult<List<MatchResponse>> {
+        log.info("========================================")
+        log.info("Fetching matches for club: {}", clubId)
+        log.info("Strategy: Fetch both leagueMatch and playoffMatch, then merge")
+        log.info("========================================")
+        
+        // Fetch league matches
+        val leagueResult = fetchMatchesByType(clubId, "leagueMatch")
+        val leagueMatches = when (leagueResult) {
+            is EaApiResult.Success -> leagueResult.data
+            EaApiResult.NoMatches -> emptyList()
+            is EaApiResult.Unavailable -> {
+                log.warn("EA API unavailable when fetching league matches: {}", leagueResult.message)
+                return leagueResult
+            }
+            is EaApiResult.UnexpectedPayload -> {
+                log.error("Unexpected payload when fetching league matches", leagueResult.cause)
+                return leagueResult
+            }
+        }
+        
+        // Fetch playoff matches
+        val playoffResult = fetchMatchesByType(clubId, "playoffMatch")
+        val playoffMatches = when (playoffResult) {
+            is EaApiResult.Success -> playoffResult.data
+            EaApiResult.NoMatches -> emptyList()
+            is EaApiResult.Unavailable -> {
+                log.warn("EA API unavailable when fetching playoff matches: {}", playoffResult.message)
+                // Se league funcionou mas playoff falhou, retorna apenas league
+                if (leagueMatches.isNotEmpty()) {
+                    log.info("Returning only league matches due to playoff fetch failure")
+                    return EaApiResult.Success(leagueMatches.sortedByDescending { it.timestamp })
+                }
+                return playoffResult
+            }
+            is EaApiResult.UnexpectedPayload -> {
+                log.error("Unexpected payload when fetching playoff matches", playoffResult.cause)
+                // Se league funcionou mas playoff falhou, retorna apenas league
+                if (leagueMatches.isNotEmpty()) {
+                    log.info("Returning only league matches due to playoff parse failure")
+                    return EaApiResult.Success(leagueMatches.sortedByDescending { it.timestamp })
+                }
+                return playoffResult
+            }
+        }
+        
+        log.info("League matches: {}", leagueMatches.size)
+        log.info("Playoff matches: {}", playoffMatches.size)
+        
+        // Merge and deduplicate by matchId
+        val allMatches = (leagueMatches + playoffMatches)
+            .distinctBy { it.matchId }
+            .sortedByDescending { it.timestamp }
+        
+        log.info("Total matches after merge and dedupe: {}", allMatches.size)
+        
+        if (allMatches.isEmpty()) {
+            log.info("No matches found")
+            return EaApiResult.NoMatches
+        }
+        
+        log.info("========================================")
+        log.info("EA API PARSE SUCCESS")
+        log.info("All Match IDs:")
+        allMatches.take(10).forEach { match ->
+            log.info("  ID: {} | Timestamp: {} | Date: {}", 
+                match.matchId, 
+                match.timestamp,
+                java.time.Instant.ofEpochSecond(match.timestamp)
+            )
+        }
+        log.info("========================================")
+        
+        return EaApiResult.Success(allMatches)
+    }
+    
+    private fun fetchMatchesByType(clubId: String, matchType: String): EaApiResult<List<MatchResponse>> {
         val uri = "/clubs/matches" +
                 "?platform=${props.ea.platform}" +
                 "&clubIds=${encode(clubId)}" +
-                "&matchType=${props.ea.matchType}" +
+                "&matchType=${matchType}" +
                 "&maxResultCount=${props.ea.maxResultCount}"
 
-        log.debug("EA matches request: {}{}", props.ea.baseUrl, uri)
+        log.info("Fetching matchType={}", matchType)
+        log.info("URL: {}{}", props.ea.baseUrl, uri)
 
         return try {
             val body = webClient.get().uri(uri).retrieve()
                 .bodyToMono(String::class.java)
                 .block() ?: "[]"
-            parser.parseMatches(body)
+            
+            val result = parser.parseMatches(body)
+            
+            if (result is EaApiResult.Success) {
+                log.info("  {} matches returned", result.data.size)
+            }
+            
+            result
         } catch (ex: WebClientResponseException) {
             log.warn("EA matches returned HTTP {}: {}", ex.statusCode.value(), ex.message)
             EaApiResult.Unavailable(ex.statusCode.value(), ex.message ?: ex.statusCode.toString())

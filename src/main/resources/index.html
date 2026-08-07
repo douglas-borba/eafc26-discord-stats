@@ -1214,7 +1214,12 @@
       feedback.style.display = 'none';
 
       try {
-        const res = await fetch('/api/matches/notify-latest', { method: 'POST' });
+        const res = await fetch('/api/matches/notify-latest', {
+          method: 'POST',
+          headers: {
+            'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
+          }
+        });
 
         // Try to parse as JSON, fallback to text
         let data;
@@ -1298,7 +1303,12 @@
       status.textContent = '';
 
       try {
-        const res = await fetch('/api/dev/simulate/latest', { method: 'POST' });
+        const res = await fetch('/api/dev/simulate/latest', {
+          method: 'POST',
+          headers: {
+            'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
+          }
+        });
         const data = await res.json();
 
         if (data.status === 'simulated') {
@@ -1324,7 +1334,12 @@
       const status = document.getElementById('dev-status');
 
       try {
-        const res = await fetch('/api/dev/reset', { method: 'POST' });
+        const res = await fetch('/api/dev/reset', {
+          method: 'POST',
+          headers: {
+            'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
+          }
+        });
         const data = await res.json();
 
         status.className = 'dev-status';
@@ -1365,6 +1380,9 @@
       try {
         const res = await fetch(`/api/publication/${currentMatchIdForActions}/resolve-delivered`, {
           method: 'POST',
+          headers: {
+            'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
+          }
         });
         const data = await res.json();
 
@@ -1401,6 +1419,9 @@
       try {
         const res = await fetch(`/api/publication/${currentMatchIdForActions}/force-publish`, {
           method: 'POST',
+          headers: {
+            'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
+          }
         });
         const data = await res.json();
 
@@ -1508,7 +1529,12 @@
       const status = document.getElementById('reconciliation-status');
 
       try {
-        const res = await fetch(`/api/publication/${matchId}/resolve-delivered`, { method: 'POST' });
+        const res = await fetch(`/api/publication/${matchId}/resolve-delivered`, {
+          method: 'POST',
+          headers: {
+            'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
+          }
+        });
         const data = await res.json();
 
         if (res.ok) {
@@ -1540,7 +1566,12 @@
       const status = document.getElementById('reconciliation-status');
 
       try {
-        const res = await fetch(`/api/publication/${matchId}/force-publish`, { method: 'POST' });
+        const res = await fetch(`/api/publication/${matchId}/force-publish`, {
+          method: 'POST',
+          headers: {
+            'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
+          }
+        });
         const data = await res.json();
 
         if (res.ok) {
