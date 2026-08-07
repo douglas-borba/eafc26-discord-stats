@@ -10,6 +10,7 @@ data class AppProperties(
     val web: WebProperties = WebProperties(),
     val postgres: PostgresProperties = PostgresProperties(),
     val acquisition: AcquisitionProperties = AcquisitionProperties(),
+    val replay: ReplayProperties = ReplayProperties(),
 )
 
 data class PostgresProperties(
@@ -80,3 +81,11 @@ data class PlaywrightProperties(
         "--renderer-process-limit=1",
     ),
 )
+
+data class ReplayProperties(
+    val enabled: Boolean = false,
+    val matches: Int? = null,
+    val matchId: String? = null,
+    val dryRun: Boolean = false,
+)
+

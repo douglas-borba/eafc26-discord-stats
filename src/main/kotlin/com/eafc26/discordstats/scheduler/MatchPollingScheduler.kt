@@ -17,17 +17,24 @@ import java.time.Instant
  * A slow request does not shift subsequent polling cycles.
  *
  * Concurrency is controlled internally by [MatchAcquisitionService] via its
- * [AcquisitionLock]. If a cycle is still running when the next minute arrives,
+ * internal lock. If a cycle is still running when the next minute arrives,
  * that execution is skipped, but the following cycle remains aligned with the
  * original one-minute cadence.
  *
- * Acquisition state is reported through [AcquisitionStateHolder], which is
+ * Acquisition state is reported through internal state holder, which is
  * updated by [MatchAcquisitionService] at each phase transition.
  *
  * First execution runs immediately after Spring startup (initialDelay = 0).
+ * 
+ * DISABLED when replay mode is active (app.replay.enabled=true).
  */
 @Component
-@ConditionalOnProperty(name = ["app.polling.enabled", "app.acquisition.enabled"], havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(
+    prefix = "app.replay",
+    name = ["enabled"],
+    havingValue = "false",
+    matchIfMissing = true
+)
 class MatchPollingScheduler(
     private val acquisitionService: MatchAcquisitionService,
     private val statusHolder: PollingStatusHolder,

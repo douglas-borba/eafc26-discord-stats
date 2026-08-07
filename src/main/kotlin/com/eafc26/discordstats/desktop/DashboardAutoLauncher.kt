@@ -2,6 +2,7 @@ package com.eafc26.discordstats.desktop
 
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.boot.web.context.WebServerApplicationContext
 import org.springframework.context.event.EventListener
@@ -18,8 +19,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * The macOS package and the Gradle development task supply the opt-in JVM
  * property. Regular server and test executions remain unchanged.
+ * 
+ * DISABLED when replay mode is active (app.replay.enabled=true).
  */
 @Component
+@ConditionalOnProperty(prefix = "app.replay", name = ["enabled"], havingValue = "false", matchIfMissing = true)
 class DashboardAutoLauncher(
     @Value("\${eafc.dashboard.auto-open:false}")
     private val enabled: Boolean,
