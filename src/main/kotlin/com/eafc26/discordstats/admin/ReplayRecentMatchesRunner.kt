@@ -177,14 +177,6 @@ class ReplayRecentMatchesRunner(
     ) {
         val matchId = canonical.matchId.value
         val footballMatch = canonical.footballMatch
-    private fun inspectMatch(
-        canonical: com.eafc26.discordstats.canonical.CanonicalMatch,
-        index: Int,
-        total: Int,
-        webhookUrl: String,
-    ) {
-        val matchId = canonical.matchId.value
-        val footballMatch = canonical.footballMatch
         val interpretation = canonical.interpretation
 
         // Extract match info
