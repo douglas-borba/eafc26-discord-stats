@@ -64,5 +64,19 @@ enum class PublicationState {
      * Requires correction before manual resend.
      */
     FAILED_PERMANENT,
+
+    /**
+     * Match is part of the initial baseline (historical window).
+     * These matches were known to the system but intentionally NOT published to Discord
+     * to avoid flooding with old data.
+     * 
+     * Semantics: "Known by the system, deliberately not sent."
+     * 
+     * This state allows the system to:
+     * - Track that the match was never published (unlike DELIVERED)
+     * - Prevent automatic publication (deduplication)
+     * - Enable future selective publication of historical matches
+     */
+    BASELINED,
 }
 

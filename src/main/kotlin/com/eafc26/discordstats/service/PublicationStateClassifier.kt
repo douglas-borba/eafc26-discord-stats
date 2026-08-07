@@ -24,6 +24,7 @@ object PublicationStateClassifier {
      * - DELIVERING - ambiguous, should have been upgraded
      * - DELIVERY_UNCERTAIN - may have been delivered
      * - FAILED_PERMANENT - explicit rejection, requires correction AND manual resend via forcePublish
+     * - BASELINED - intentionally not published, requires explicit action to publish
      */
     fun isSafeToAutoPublish(state: PublicationState?): Boolean {
         return when (state) {
@@ -32,6 +33,7 @@ object PublicationStateClassifier {
             PublicationState.DELIVERING -> false // Ambiguous (should be upgraded to UNCERTAIN)
             PublicationState.DELIVERY_UNCERTAIN -> false // Requires manual resolution
             PublicationState.FAILED_PERMANENT -> false // Requires correction + manual forcePublish
+            PublicationState.BASELINED -> false // Intentionally not published, needs explicit action
         }
     }
 
@@ -75,6 +77,13 @@ object PublicationStateClassifier {
                 cssClass = "failed-permanent",
                 color = "#f85149",
                 requiresAction = true,
+            )
+            PublicationState.BASELINED -> PublicationStateDisplay(
+                icon = "📚",
+                label = "Baseline (não publicada)",
+                cssClass = "baselined",
+                color = "#6e7681",
+                requiresAction = false,
             )
         }
     }

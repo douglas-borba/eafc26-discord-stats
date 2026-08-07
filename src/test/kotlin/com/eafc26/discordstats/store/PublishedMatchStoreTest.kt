@@ -69,11 +69,11 @@ class PublishedMatchStoreTest {
     // =========================================================================
 
     @Test
-    fun `saveIds saves all IDs as DELIVERED`() {
+    fun `saveIds saves all IDs as BASELINED`() {
         store.saveIds(setOf("a", "b", "c"))
         val records = store.loadRecords()
         assertThat(records.keys).containsExactlyInAnyOrder("a", "b", "c")
-        assertThat(records.values.map { it.state }.distinct()).containsExactly(PublicationState.DELIVERED)
+        assertThat(records.values.map { it.state }.distinct()).containsExactly(PublicationState.BASELINED)
     }
 
     @Test

@@ -343,7 +343,12 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.published).hasSize(1)
             assertThat(processed.published[0].matchId).isEqualTo("m1")
             verify(webhookClient).send(any())
+            // Baseline now uses BASELINED state instead of DELIVERED
             verify(store).saveIds(setOf("m1"))
+            // Verify the baseline is BASELINED not DELIVERED
+            val captor = argumentCaptor<Set<String>>()
+            verify(store).saveIds(captor.capture())
+            assertThat(captor.firstValue).containsExactly("m1")
         }
 
         @Test

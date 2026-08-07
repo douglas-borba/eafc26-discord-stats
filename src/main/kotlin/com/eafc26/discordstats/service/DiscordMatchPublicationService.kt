@@ -82,6 +82,10 @@ class DiscordMatchPublicationService(
                     log.warn("Match {} found in DELIVERING state within session — treating as DELIVERY_UNCERTAIN", matchId)
                     return DiscordPublicationResult(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN, matchId)
                 }
+                PublicationState.BASELINED -> {
+                    log.info("Match {} is BASELINED (never published) — blocking automatic publication", matchId)
+                    return DiscordPublicationResult(PublicationOutcome.SKIPPED_ALREADY_DELIVERED, matchId)
+                }
                 null -> { /* not in store → proceed */ }
             }
 

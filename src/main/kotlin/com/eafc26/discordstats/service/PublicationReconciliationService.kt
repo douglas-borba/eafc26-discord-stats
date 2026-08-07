@@ -75,6 +75,7 @@ class PublicationReconciliationService(
             delivering = inspections.count { it.publicationState == PublicationState.DELIVERING },
             uncertain = inspections.count { it.publicationState == PublicationState.DELIVERY_UNCERTAIN },
             failedPermanent = inspections.count { it.publicationState == PublicationState.FAILED_PERMANENT },
+            baselined = inspections.count { it.publicationState == PublicationState.BASELINED },
         )
 
         return ReconciliationReport(
@@ -170,6 +171,7 @@ data class ReconciliationSummary(
     val delivering: Int,
     val uncertain: Int,
     val failedPermanent: Int,
+    val baselined: Int,
 )
 
 data class AutoPublishResult(

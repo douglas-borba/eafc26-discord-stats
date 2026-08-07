@@ -142,15 +142,18 @@ class PublishedMatchStore(private val objectMapper: ObjectMapper) {
     fun loadIds(): Set<String> = loadRecords().keys
 
     /**
-     * Saves all [ids] as DELIVERED, replacing the entire store contents.
+     * Saves all [ids] as BASELINED, replacing the entire store contents.
      *
      * Used exclusively by [MatchAcquisitionService.establishBaseline] to mark the
-     * initial EA-window as "already seen" without publishing them to Discord.
+     * initial EA-window as "known but not published" without delivering them to Discord.
+     * 
+     * BASELINED semantics: Match is known to the system but was intentionally not published
+     * (to avoid flooding Discord with historical data).
      */
     fun saveIds(ids: Set<String>) = storeLock.withLock {
-        val records = ids.sorted().map { PublicationRecord(it, PublicationState.DELIVERED) }
+        val records = ids.sorted().map { PublicationRecord(it, PublicationState.BASELINED) }
         saveAllRecordsAtomic(records)
-        log.debug("Baseline: saved {} IDs as DELIVERED (full replacement)", ids.size)
+        log.debug("Baseline: saved {} IDs as BASELINED (full replacement)", ids.size)
     }
 
     // -------------------------------------------------------------------------
