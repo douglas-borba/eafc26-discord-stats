@@ -290,7 +290,7 @@ describe("Overview page composition", () => {
   it("uses OverviewClubPanel and OverviewMatchCard", () => {
     const page = readFileSync(join(SRC, "app/clubs/[clubId]/(fullwidth)/overview/page.tsx"), "utf-8");
     expect(page).toContain("OverviewClubPanel");
-    expect(page).toContain("OverviewMatchCard");
+    expect(page).toMatch(/OverviewMatchCard|OverviewMatchCarousel/);
     expect(page).toContain("getRecentMatchCards");
     expect(page).toContain("buildSequenceEditorial");
   });
@@ -302,14 +302,16 @@ describe("Overview page composition", () => {
   });
 
   it("uses full variant for match cards", () => {
-    const page = readFileSync(join(SRC, "app/clubs/[clubId]/(fullwidth)/overview/page.tsx"), "utf-8");
-    expect(page).toContain('variant="full"');
+    // variant="full" is now in the carousel component
+    const carousel = readFileSync(join(SRC, "components/overview/overview-match-carousel.tsx"), "utf-8");
+    expect(carousel).toContain('variant="full"');
   });
 
   it("has responsive grid layout", () => {
-    const page = readFileSync(join(SRC, "app/clubs/[clubId]/(fullwidth)/overview/page.tsx"), "utf-8");
-    expect(page).toContain("md:grid-cols-2");
-    expect(page).toContain("xl:grid-cols-3");
+    // responsive grid is now in the carousel component
+    const carousel = readFileSync(join(SRC, "components/overview/overview-match-carousel.tsx"), "utf-8");
+    expect(carousel).toContain("md:grid-cols-2");
+    expect(carousel).toContain("xl:grid-cols-3");
   });
 });
 

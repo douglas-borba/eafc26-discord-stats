@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { OverviewClubPanel } from "@/components/overview/overview-club-panel";
-import { OverviewMatchCard } from "@/components/overview/overview-match-card";
+import { OverviewMatchCarousel } from "@/components/overview/overview-match-carousel";
 import { getRecentMatchCards } from "@/lib/services/match-card-service";
 import { buildSequenceEditorial } from "@/lib/services/sequence-editorial-service";
 import { fetchAiPanorama } from "@/lib/api/panorama-client";
@@ -9,12 +9,11 @@ import { fetchAiPanorama } from "@/lib/api/panorama-client";
 export default async function OverviewPage({ params }: { params: Promise<{ clubId: string }> }) {
   const { clubId } = await params;
 
-  const [presentations, editorialPresentations, aiNarrative] = await Promise.all([
-    getRecentMatchCards(clubId, 3),  // 3 for match cards
-    getRecentMatchCards(clubId, 10), // 10 for editorial analysis
+  const [presentations, aiNarrative] = await Promise.all([
+    getRecentMatchCards(clubId, 10), // 10 for both match cards and editorial analysis
     fetchAiPanorama(),                // Fetch from REST API (validates contextKey in backend)
   ]);
-  const editorial = buildSequenceEditorial(editorialPresentations);
+  const editorial = buildSequenceEditorial(presentations);
   editorial.aiNarrative = aiNarrative;
 
   if (presentations.length === 0) {
@@ -40,12 +39,8 @@ export default async function OverviewPage({ params }: { params: Promise<{ clubI
         />
       </aside>
 
-      {/* Columns 2-4: Match Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 p-5 lg:p-6 items-start">
-        {presentations.map((p, i) => (
-          <OverviewMatchCard key={p.matchId} presentation={p} variant="full" isLatest={i === 0} />
-        ))}
-      </div>
+      {/* Columns 2-4: Match Cards with Carousel */}
+      <OverviewMatchCarousel presentations={presentations} />
     </div>
   );
 }

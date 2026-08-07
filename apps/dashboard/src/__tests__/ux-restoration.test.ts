@@ -281,7 +281,7 @@ describe("UX: Overview sub-components exist", () => {
     expect(page).not.toContain("OverviewActions");
     expect(page).not.toContain("OverviewLatestMatch");
     expect(page).toContain("OverviewClubPanel");
-    expect(page).toContain("OverviewMatchCard");
+    expect(page).toMatch(/OverviewMatchCard|OverviewMatchCarousel/);
   });
 });
 
