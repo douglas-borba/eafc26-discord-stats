@@ -463,22 +463,78 @@ class MatchAcquisitionService(
     }
 
     /**
-     * Handles first use without publishing the existing EA window.
+     * Handles first use: publishes the latest match and establishes baseline for the rest.
+     * 
+     * This ensures that in a fresh install or after data loss, the most recent match
+     * is delivered to Discord (giving immediate value), while older matches are marked
+     * as baseline to avoid flooding Discord with historical data.
      */
     private fun handleFirstRun(
         matches: List<MatchResponse>,
         canonicalByMatchId: Map<String, CanonicalMatch>,
     ): AcquisitionResult {
-        // Cache the latest presentation regardless of publish mode
+        // Find the latest match
         val latestMatch = matches.maxByOrNull { it.timestamp }
-        if (latestMatch != null) {
-            stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
-            val presentation = buildDashboardPresentation(canonicalByMatchId.getValue(latestMatch.matchId))
-            val newVersion = latestMatchHolder.update(presentation)
-            log.debug("Cached presentation for match {} (version={})", latestMatch.matchId, newVersion)
+            ?: return AcquisitionResult.NoMatches
+
+        log.info("First-run detected: will publish latest match {} and establish baseline for {} older matches",
+            latestMatch.matchId, matches.size - 1)
+
+        // Cache the latest presentation
+        stateHolder.enterPhase(AcquisitionPhase.CACHING, "Atualizando cache...")
+        val canonical = canonicalByMatchId.getValue(latestMatch.matchId)
+        val presentation = buildDashboardPresentation(canonical)
+        val newVersion = latestMatchHolder.update(presentation)
+        log.debug("Cached presentation for match {} (version={})", latestMatch.matchId, newVersion)
+
+        // Try to publish the latest match
+        stateHolder.enterPhase(AcquisitionPhase.DELIVERING, "Publicando partida mais recente...")
+        val pubResult = publicationService.publishIfNeeded(canonical)
+        val summary = buildSummary(canonical)
+
+        val published = mutableListOf<AcquisitionResult.MatchSummary>()
+        val failed = mutableListOf<AcquisitionResult.MatchFailure>()
+
+        when (pubResult.outcome) {
+            PublicationOutcome.PUBLISHED -> {
+                log.info("Latest match {} published successfully during first-run", latestMatch.matchId)
+                published += AcquisitionResult.MatchSummary(latestMatch.matchId, summary, true)
+            }
+            PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN -> {
+                log.warn("Latest match {} delivered but state uncertain during first-run", latestMatch.matchId)
+                published += AcquisitionResult.MatchSummary(latestMatch.matchId, summary, false)
+            }
+            PublicationOutcome.FAILED_BEFORE_SEND, PublicationOutcome.FAILED_HTTP -> {
+                val reason = pubResult.errorMessage ?: pubResult.outcome.name
+                if (reason.contains("not configured", ignoreCase = true) ||
+                    reason.contains("Webhook", ignoreCase = true)) {
+                    log.warn("Webhook not configured during first-run")
+                    // Still establish baseline even if webhook is not configured
+                    establishBaseline(matches)
+                    return AcquisitionResult.WebhookNotConfigured
+                }
+                log.error("Failed to publish latest match during first-run: {}", reason)
+                failed += AcquisitionResult.MatchFailure(latestMatch.matchId, summary, reason)
+            }
+            else -> {
+                log.warn("Unexpected publication outcome during first-run: {}", pubResult.outcome)
+            }
         }
 
-        return establishBaseline(matches)
+        // Establish baseline for all matches (including the one we just published)
+        // This prevents re-publication of historical matches
+        stateHolder.enterPhase(AcquisitionPhase.PERSISTING, "Estabelecendo baseline...")
+        establishBaseline(matches)
+
+        log.info("First-run complete: {} published, {} in baseline",
+            if (published.isNotEmpty()) 1 else 0, matches.size)
+
+        return AcquisitionResult.Processed(
+            published = published,
+            alreadyPublished = emptyList(),
+            failed = failed,
+            baselineEstablished = true,
+        )
     }
 
     private fun establishBaseline(matches: List<MatchResponse>): AcquisitionResult {

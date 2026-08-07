@@ -339,8 +339,10 @@ class MatchAcquisitionServiceTest {
 
             val processed = result as AcquisitionResult.Processed
             assertThat(processed.baselineEstablished).isTrue()
-            assertThat(processed.published).isEmpty()
-            verify(webhookClient, never()).send(any())
+            // NEW BEHAVIOR: First-run now publishes the latest match
+            assertThat(processed.published).hasSize(1)
+            assertThat(processed.published[0].matchId).isEqualTo("m1")
+            verify(webhookClient).send(any())
             verify(store).saveIds(setOf("m1"))
         }
 
@@ -355,8 +357,10 @@ class MatchAcquisitionServiceTest {
 
             val processed = result as AcquisitionResult.Processed
             assertThat(processed.baselineEstablished).isTrue()
-            assertThat(processed.published).isEmpty()
-            verify(webhookClient, never()).send(any())
+            // NEW BEHAVIOR: First-run now publishes the latest match (m2)
+            assertThat(processed.published).hasSize(1)
+            assertThat(processed.published[0].matchId).isEqualTo("m2")
+            verify(webhookClient).send(any())
             verify(store).saveIds(setOf("m1", "m2"))
         }
 
@@ -1153,7 +1157,9 @@ class MatchAcquisitionServiceTest {
             assertThat(result.baselineEstablished).isTrue()
             verify(canonicalMatchRepository, times(2)).save(any())
             verify(store).saveIds(setOf("m1", "m2"))
-            verify(webhookClient, never()).send(any())
+            // NEW BEHAVIOR: First-run now publishes the latest match
+            assertThat(result.published).hasSize(1)
+            verify(webhookClient).send(any())
         }
 
         @Test
