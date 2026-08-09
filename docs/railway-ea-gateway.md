@@ -38,6 +38,15 @@ Spring variables required for the canonical PostgreSQL mirror are
 `EAFC_DISCORD_MATCH_WEBHOOK_URL` is optional. LLM and periodic PostgreSQL sync
 variables remain optional and disabled by default.
 
+## Public monitoring
+
+The Next.js dashboard exposes `GET /api/health` as the public system
+healthcheck. It reads `BACKEND_URL` on the server and checks the Spring
+`GET /api/health` endpoint without forwarding browser cookies or headers. A
+healthy Vercel response therefore verifies the Vercel to Spring Railway link;
+failures return only `{"status":"DOWN"}` (or
+`backend_not_configured`) without internal connection details.
+
 The current application does not read the historical
 `EAFC_VIEWER_PASSWORD`, `EAFC_ADMIN_PASSWORD`, `EAFC_COOKIE_SECURE`, or
 `EAFC_SESSION_TIMEOUT` names. Do not configure them as if they protected this
