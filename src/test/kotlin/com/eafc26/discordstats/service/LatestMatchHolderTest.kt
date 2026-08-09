@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.service
 
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.presentation.*
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -17,6 +18,21 @@ class LatestMatchHolderTest {
     @BeforeEach
     fun setUp() {
         holder = LatestMatchHolder()
+    }
+
+    @Test
+    fun `clubs keep independent latest match snapshots`() {
+        val clubA = ClubId("1104972")
+        val clubB = ClubId("2200000")
+
+        holder.update(clubA, createPresentation("match-a"))
+        holder.update(clubB, createPresentation("match-b"))
+        holder.clear(clubA)
+
+        assertThat(holder.presentation(clubA)).isNull()
+        assertThat(holder.version(clubA)).isEqualTo(2)
+        assertThat(holder.presentation(clubB)?.matchId).isEqualTo("match-b")
+        assertThat(holder.version(clubB)).isEqualTo(1)
     }
 
     // -------------------------------------------------------------------------
@@ -272,4 +288,3 @@ class LatestMatchHolderTest {
             muralha = null,
         )
 }
-

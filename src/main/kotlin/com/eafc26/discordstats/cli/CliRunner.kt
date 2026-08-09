@@ -9,6 +9,7 @@ import com.eafc26.discordstats.service.CanonicalBackfillResult
 import com.eafc26.discordstats.service.CanonicalBackfillService
 import com.eafc26.discordstats.service.MatchAcquisitionService
 import com.eafc26.discordstats.service.PostgresSyncService
+import com.eafc26.discordstats.domain.match.ClubId
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
@@ -180,7 +181,7 @@ class CliRunner(
 
         out.println("Fetching latest match for club-id=$clubId ...")
 
-        when (val result = acquisitionService.acquire(AcquisitionTrigger.CLI)) {
+        when (val result = acquisitionService.acquire(ClubId(clubId), AcquisitionTrigger.CLI)) {
             is AcquisitionResult.Processed -> handleProcessedResult(result, clubId)
             is AcquisitionResult.ForceResent -> {
                 // CLI doesn't use force-resend, but handle gracefully

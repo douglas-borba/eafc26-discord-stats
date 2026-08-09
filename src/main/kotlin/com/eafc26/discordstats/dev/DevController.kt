@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.dev
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.service.AcquisitionResult
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -30,6 +31,7 @@ import reactor.core.scheduler.Schedulers
 @RequestMapping("/api/dev")
 class DevController(
     private val simulatorService: DevSimulatorService,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
 
     /**
@@ -56,7 +58,7 @@ class DevController(
      */
     @PostMapping("/simulate/latest", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun simulateLatest(): Mono<ResponseEntity<DevSimulatorResponse>> =
-        Mono.fromCallable { simulatorService.simulateLatest() }
+        Mono.fromCallable { simulatorService.simulateLatest(defaultClubProvider.get().clubId) }
             .subscribeOn(Schedulers.boundedElastic())
             .map { result -> toResponse(result, "Simulate") }
 
@@ -68,7 +70,7 @@ class DevController(
      */
     @PostMapping("/reprocess", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun reprocess(): Mono<ResponseEntity<DevSimulatorResponse>> =
-        Mono.fromCallable { simulatorService.simulateLatest() }
+        Mono.fromCallable { simulatorService.simulateLatest(defaultClubProvider.get().clubId) }
             .subscribeOn(Schedulers.boundedElastic())
             .map { result -> toResponse(result, "Reprocess") }
 
@@ -80,7 +82,7 @@ class DevController(
      */
     @PostMapping("/reset", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun reset(): ResponseEntity<DevSimulatorResponse> {
-        simulatorService.reset()
+        simulatorService.reset(defaultClubProvider.get().clubId)
         return ResponseEntity.ok(
             DevSimulatorResponse(
                 status = "success",
@@ -126,4 +128,3 @@ data class DevSimulatorResponse(
     val message: String,
     val action: String,
 )
-

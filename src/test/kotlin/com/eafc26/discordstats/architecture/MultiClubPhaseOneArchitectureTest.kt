@@ -21,7 +21,8 @@ class MultiClubPhaseOneArchitectureTest {
         val scheduler = Files.readString(source.resolve("scheduler/MatchPollingScheduler.kt"))
         assertThat(acquisition).doesNotContain("MonitoredClub", "MonitoredClubRepository", "MonitoredClubService")
         assertThat(scheduler).doesNotContain("MonitoredClub", "MonitoredClubRepository", "MonitoredClubService")
-        assertThat(acquisition).contains("props.ea.clubId")
+        assertThat(acquisition).contains("clubId: ClubId")
+        assertThat(scheduler).contains("defaultClubProvider.get().clubId")
     }
 
     @Test

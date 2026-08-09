@@ -1,6 +1,8 @@
 package com.eafc26.discordstats.service
 
+import com.eafc26.discordstats.domain.match.ClubId
 import org.slf4j.LoggerFactory
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -17,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class AcquisitionLock {
 
     private val log = LoggerFactory.getLogger(javaClass)
-    private val busy = AtomicBoolean(false)
+    private val locks = ConcurrentHashMap<ClubId, AtomicBoolean>()
 
     /**
      * Attempts to acquire the lock and run [action].
@@ -25,7 +27,8 @@ internal class AcquisitionLock {
      * @return The result of [action] if the lock was acquired, or `null` if
      *         another acquisition is already in progress.
      */
-    fun <T> tryRun(action: () -> T): T? {
+    fun <T> tryRun(clubId: ClubId, action: () -> T): T? {
+        val busy = locks.computeIfAbsent(clubId) { AtomicBoolean(false) }
         if (!busy.compareAndSet(false, true)) {
             log.debug("Acquisition skipped — another execution is already in progress")
             return null
@@ -41,6 +44,5 @@ internal class AcquisitionLock {
      * Returns true if an acquisition is currently in progress.
      * This is for status reporting only — do not use for synchronization decisions.
      */
-    fun isBusy(): Boolean = busy.get()
+    fun isBusy(clubId: ClubId): Boolean = locks[clubId]?.get() ?: false
 }
-

@@ -1,12 +1,15 @@
 package com.eafc26.discordstats.web
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.config.WebhookConfigService
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.service.AcquisitionResult
 import com.eafc26.discordstats.service.AcquisitionTrigger
 import com.eafc26.discordstats.service.MatchAcquisitionService
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.whenever
+import com.eafc26.discordstats.support.defaultClubProvider
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest
 import org.springframework.boot.autoconfigure.security.reactive.ReactiveSecurityAutoConfiguration
@@ -27,9 +30,13 @@ class MatchControllerTest {
     @MockBean
     private lateinit var webhookConfigService: WebhookConfigService
 
+    @MockBean
+    private lateinit var defaultClub: DefaultClubProvider
+
     @BeforeEach
     fun setUp() {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
+        whenever(defaultClub.get()).thenReturn(defaultClubProvider(ClubId("1104972")).get())
     }
 
     @Test

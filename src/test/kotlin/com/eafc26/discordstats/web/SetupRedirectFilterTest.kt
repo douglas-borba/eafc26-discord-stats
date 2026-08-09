@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.web
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.config.WebhookConfigService
 import com.eafc26.discordstats.service.MatchAcquisitionService
 import org.assertj.core.api.Assertions.assertThat
@@ -23,6 +24,9 @@ class SetupRedirectFilterTest {
 
     @MockBean
     private lateinit var webhookConfigService: WebhookConfigService
+
+    @MockBean
+    private lateinit var defaultClubProvider: DefaultClubProvider
 
     @Test
     fun `webhook not configured redirects to setup`() {

@@ -220,6 +220,26 @@ invoke the same club-scoped services. The service layer never performs this
 fallback. The Dashboard panorama request carries its active `clubId`; omitting
 that optional parameter preserves the legacy default-club behavior.
 
+### Club-scoped operational state
+
+All transient state that describes acquisition work is keyed by the official EA
+`ClubId`: latest-match presentation and version, acquisition phase and errors,
+polling status, acquisition exclusion and in-process publication exclusion.
+Consequently, activity or failure for one club cannot overwrite or block another
+club. Publication exclusion uses `(ClubId, MatchId)`, so equal external MatchIds
+from different clubs remain independent.
+
+This isolation does not activate multi-club processing. The scheduler deliberately
+resolves exactly one club through `DefaultClubProvider`, preserving the Associação
+BF runtime behavior while legacy routes do not yet carry a club context. Controllers
+resolve that same default only at the web compatibility boundary; application
+services and state holders require an explicit `ClubId`.
+
+Durable Discord delivery state in `PublishedMatchStore`, webhook selection, replay,
+reconciliation and administrative operations remain on their legacy contracts in
+this phase. Their persistence migration belongs to the later publication/configuration
+phases; the in-memory publication lock is already isolated in preparation for it.
+
 ### Historical Dashboard
 
 `MatchHistoryController` exposes the persisted history through:

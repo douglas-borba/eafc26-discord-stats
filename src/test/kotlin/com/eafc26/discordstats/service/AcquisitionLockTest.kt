@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.service
 
+import com.eafc26.discordstats.domain.match.ClubId
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -15,6 +16,30 @@ class AcquisitionLockTest {
     @BeforeEach
     fun setUp() {
         lock = AcquisitionLock()
+    }
+
+    @Test
+    fun `different clubs can acquire their locks concurrently`() {
+        val clubA = ClubId("1104972")
+        val clubB = ClubId("2200000")
+        val executor = Executors.newSingleThreadExecutor()
+        val actionStarted = CountDownLatch(1)
+        val actionCanFinish = CountDownLatch(1)
+
+        executor.submit {
+            lock.tryRun(clubA) {
+                actionStarted.countDown()
+                actionCanFinish.await(5, TimeUnit.SECONDS)
+            }
+        }
+        assertThat(actionStarted.await(1, TimeUnit.SECONDS)).isTrue()
+
+        assertThat(lock.tryRun(clubA) { "same club" }).isNull()
+        assertThat(lock.tryRun(clubB) { "other club" }).isEqualTo("other club")
+
+        actionCanFinish.countDown()
+        executor.shutdown()
+        executor.awaitTermination(2, TimeUnit.SECONDS)
     }
 
     @Test
@@ -151,4 +176,3 @@ class AcquisitionLockTest {
         assertThat(results).containsExactly("first", "second", "third")
     }
 }
-

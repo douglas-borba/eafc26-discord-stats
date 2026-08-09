@@ -1,7 +1,9 @@
 package com.eafc26.discordstats.scheduler
 
+import com.eafc26.discordstats.domain.match.ClubId
 import org.springframework.stereotype.Component
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Holds the status of the polling scheduler.
@@ -16,16 +18,19 @@ import java.time.Instant
  */
 @Component
 class PollingStatusHolder {
-    /**
-     * Whether the scheduler is enabled.
-     * Defaults to `true` because polling is enabled by default.
-     * Set to `true` explicitly by [MatchPollingScheduler] on initialization.
-     */
-    @Volatile var enabled: Boolean = true
-    
-    @Volatile var intervalSeconds: Int = 60  // 1 minute default
-    @Volatile var running: Boolean = false
-    @Volatile var lastCheck: Instant? = null
-    @Volatile var nextCheck: Instant? = null
-    @Volatile var lastResult: String = "Aguardando primeira verificação..."
+    private val states = ConcurrentHashMap<ClubId, PollingStatus>()
+
+    fun current(clubId: ClubId): PollingStatus = states[clubId] ?: PollingStatus()
+
+    fun update(clubId: ClubId, transform: (PollingStatus) -> PollingStatus): PollingStatus =
+        states.compute(clubId) { _, current -> transform(current ?: PollingStatus()) }!!
 }
+
+data class PollingStatus(
+    val enabled: Boolean = true,
+    val intervalSeconds: Int = 60,
+    val running: Boolean = false,
+    val lastCheck: Instant? = null,
+    val nextCheck: Instant? = null,
+    val lastResult: String = "Aguardando primeira verificação...",
+)

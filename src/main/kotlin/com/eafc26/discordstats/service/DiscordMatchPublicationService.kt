@@ -11,8 +11,6 @@ import com.eafc26.discordstats.store.PublishedMatchStore
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClientResponseException
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.locks.ReentrantLock
 
 /**
  * Single authoritative boundary for all Discord match publication.
@@ -47,20 +45,18 @@ class DiscordMatchPublicationService(
     private val webhookClient: DiscordWebhookClient,
     private val discordRenderer: DiscordRenderer,
     private val llmEditorialService: LlmEditorialService,
+    private val publicationLocks: PublicationLockRegistry = PublicationLockRegistry(),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val matchLocks = ConcurrentHashMap<String, ReentrantLock>()
 
     fun publishIfNeeded(canonical: CanonicalMatch): DiscordPublicationResult {
         val matchId = canonical.matchId.value
-        val lock = matchLocks.computeIfAbsent(matchId) { ReentrantLock() }
-        lock.lock()
-        try {
+        return publicationLocks.withLock(canonical.interpretation.perspectiveClubId, matchId) {
             val existing = store.loadRecords()[matchId]
             when (existing?.state) {
                 PublicationState.DELIVERED -> {
                     log.info("Match {} already DELIVERED — skipping", matchId)
-                    return DiscordPublicationResult(PublicationOutcome.SKIPPED_ALREADY_DELIVERED, matchId)
+                    return@withLock DiscordPublicationResult(PublicationOutcome.SKIPPED_ALREADY_DELIVERED, matchId)
                 }
                 PublicationState.DELIVERY_UNCERTAIN -> {
                     log.warn(
@@ -68,7 +64,7 @@ class DiscordMatchPublicationService(
                             "Administrative resolution required (resolveAsDelivered / resolveAsUndelivered).",
                         matchId,
                     )
-                    return DiscordPublicationResult(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN, matchId)
+                    return@withLock DiscordPublicationResult(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN, matchId)
                 }
                 PublicationState.FAILED_PERMANENT -> {
                     log.warn(
@@ -76,15 +72,15 @@ class DiscordMatchPublicationService(
                             "Correction and manual resend required.",
                         matchId,
                     )
-                    return DiscordPublicationResult(PublicationOutcome.SKIPPED_FAILED_PERMANENT, matchId)
+                    return@withLock DiscordPublicationResult(PublicationOutcome.SKIPPED_FAILED_PERMANENT, matchId)
                 }
                 PublicationState.DELIVERING -> {
                     log.warn("Match {} found in DELIVERING state within session — treating as DELIVERY_UNCERTAIN", matchId)
-                    return DiscordPublicationResult(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN, matchId)
+                    return@withLock DiscordPublicationResult(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN, matchId)
                 }
                 PublicationState.BASELINED -> {
                     log.info("Match {} is BASELINED (never published) — blocking automatic publication", matchId)
-                    return DiscordPublicationResult(PublicationOutcome.SKIPPED_ALREADY_DELIVERED, matchId)
+                    return@withLock DiscordPublicationResult(PublicationOutcome.SKIPPED_ALREADY_DELIVERED, matchId)
                 }
                 null -> { /* not in store → proceed */ }
             }
@@ -97,13 +93,13 @@ class DiscordMatchPublicationService(
                     "Cannot persist DELIVERING state for match {} — aborting to prevent ambiguous delivery. Error: {}",
                     matchId, ex.message,
                 )
-                return DiscordPublicationResult(
+                return@withLock DiscordPublicationResult(
                     PublicationOutcome.FAILED_BEFORE_SEND, matchId,
                     errorMessage = "Pre-send persistence failed: ${ex.message}",
                 )
             }
 
-            return when (val send = trySend(canonical, matchId)) {
+            return@withLock when (val send = trySend(canonical, matchId)) {
                 is SendOutcome.Success -> persistDelivered(matchId)
                 is SendOutcome.FailedBeforeSend -> {
                     safeRemoveDelivering(matchId)
@@ -129,25 +125,21 @@ class DiscordMatchPublicationService(
                         errorMessage = send.message)
                 }
             }
-        } finally {
-            lock.unlock()
         }
     }
 
     fun forcePublish(canonical: CanonicalMatch): DiscordPublicationResult {
         val matchId = canonical.matchId.value
-        val lock = matchLocks.computeIfAbsent(matchId) { ReentrantLock() }
-        lock.lock()
-        try {
+        return publicationLocks.withLock(canonical.interpretation.perspectiveClubId, matchId) {
             try {
                 store.saveRecord(PublicationRecord(matchId, PublicationState.DELIVERING))
             } catch (ex: Exception) {
                 log.error("Cannot persist DELIVERING for force-resend of match {}: {}", matchId, ex.message)
-                return DiscordPublicationResult(PublicationOutcome.FAILED_BEFORE_SEND, matchId,
+                return@withLock DiscordPublicationResult(PublicationOutcome.FAILED_BEFORE_SEND, matchId,
                     errorMessage = "Pre-send persistence failed: ${ex.message}")
             }
 
-            return when (val send = trySend(canonical, matchId)) {
+            return@withLock when (val send = trySend(canonical, matchId)) {
                 is SendOutcome.Success -> persistDelivered(matchId)
                 is SendOutcome.FailedBeforeSend -> {
                     safeRemoveDelivering(matchId)
@@ -168,8 +160,6 @@ class DiscordMatchPublicationService(
                         errorMessage = send.message)
                 }
             }
-        } finally {
-            lock.unlock()
         }
     }
 
@@ -348,4 +338,3 @@ data class DiscordPublicationResult(
         get() = outcome == PublicationOutcome.PUBLISHED ||
             outcome == PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN
 }
-

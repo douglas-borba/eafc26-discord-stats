@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.service
 
+import com.eafc26.discordstats.domain.match.ClubId
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
@@ -15,6 +16,21 @@ class AcquisitionStateHolderTest {
     @BeforeEach
     fun setUp() {
         holder = AcquisitionStateHolder()
+    }
+
+    @Test
+    fun `failure for one club does not overwrite another club state`() {
+        val clubA = ClubId("1104972")
+        val clubB = ClubId("2200000")
+
+        holder.start(clubA, AcquisitionTrigger.MANUAL)
+        holder.start(clubB, AcquisitionTrigger.SCHEDULER)
+        holder.fail(clubA, "EA unavailable", "Failed")
+
+        assertThat(holder.current(clubA).currentPhase).isEqualTo(AcquisitionPhase.FAILED)
+        assertThat(holder.current(clubA).lastError).isEqualTo("EA unavailable")
+        assertThat(holder.current(clubB).currentPhase).isEqualTo(AcquisitionPhase.FETCHING)
+        assertThat(holder.current(clubB).lastError).isNull()
     }
 
     // -------------------------------------------------------------------------
@@ -353,4 +369,3 @@ class AcquisitionStateHolderTest {
         }
     }
 }
-

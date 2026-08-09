@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.scheduler
 
+import com.eafc26.discordstats.domain.match.ClubId
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -70,23 +71,19 @@ class PollingStatusHolderTest {
     }
 
     @Test
-    fun `all fields are volatile for thread safety`() {
-        // This test uses reflection to verify thread safety annotations
-        val holderClass = PollingStatusHolder::class.java
-        
-        val volatileFields = holderClass.declaredFields
-            .filter { java.lang.reflect.Modifier.isVolatile(it.modifiers) }
-            .map { it.name }
-        
-        // All state fields should be volatile for proper visibility across threads
-        assertThat(volatileFields).containsExactlyInAnyOrder(
-            "enabled",
-            "intervalSeconds", 
-            "running",
-            "lastCheck",
-            "nextCheck",
-            "lastResult"
-        )
+    fun `clubs keep independent polling status`() {
+        val holder = PollingStatusHolder()
+        val clubA = ClubId("1104972")
+        val clubB = ClubId("2200000")
+
+        holder.update(clubA) { it.copy(running = true, lastResult = "A running") }
+        holder.update(clubB) { it.copy(enabled = false, lastResult = "B disabled") }
+
+        assertThat(holder.current(clubA).running).isTrue()
+        assertThat(holder.current(clubA).enabled).isTrue()
+        assertThat(holder.current(clubA).lastResult).isEqualTo("A running")
+        assertThat(holder.current(clubB).running).isFalse()
+        assertThat(holder.current(clubB).enabled).isFalse()
+        assertThat(holder.current(clubB).lastResult).isEqualTo("B disabled")
     }
 }
-

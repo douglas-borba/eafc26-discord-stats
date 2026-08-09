@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.service
 
 import com.eafc26.discordstats.presentation.MatchSummaryPresentation
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.store.PublishedMatchStore
 import com.eafc26.discordstats.web.PublicationStatus
 import org.slf4j.LoggerFactory
@@ -36,8 +37,8 @@ class MatchCardService(
      * @return [MatchCardResult.Success] with the cached presentation and simulation status, or
      *         [MatchCardResult.NoMatches] if no acquisition has succeeded yet.
      */
-    fun getLatestMatchCard(): MatchCardResult {
-        val snapshot = latestMatchHolder.snapshot()
+    fun getLatestMatchCard(clubId: ClubId): MatchCardResult {
+        val snapshot = latestMatchHolder.snapshot(clubId)
 
         if (snapshot.presentation == null) {
             log.debug("No cached presentation available (version={})", snapshot.version)
@@ -70,11 +71,10 @@ class MatchCardService(
      * Returns the current cache version.
      * Useful for clients to detect changes without fetching the full presentation.
      */
-    fun version(): Long = latestMatchHolder.version()
+    fun version(clubId: ClubId): Long = latestMatchHolder.version(clubId)
 
     /**
      * Returns whether the current cached presentation is from a simulated match.
      */
-    fun isSimulated(): Boolean = latestMatchHolder.isSimulated()
+    fun isSimulated(clubId: ClubId): Boolean = latestMatchHolder.isSimulated(clubId)
 }
-

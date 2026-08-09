@@ -1,9 +1,11 @@
 package com.eafc26.discordstats.service
 
+import com.eafc26.discordstats.domain.match.ClubId
 import org.springframework.stereotype.Component
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -25,13 +27,15 @@ import java.util.concurrent.atomic.AtomicReference
  */
 @Component
 class AcquisitionStateHolder {
+    private val states = ConcurrentHashMap<ClubId, AtomicReference<AcquisitionState>>()
 
-    private val stateRef = AtomicReference(AcquisitionState.idle())
+    private fun stateRef(clubId: ClubId): AtomicReference<AcquisitionState> =
+        states.computeIfAbsent(clubId) { AtomicReference(AcquisitionState.idle()) }
 
     /**
      * Returns a snapshot of the current acquisition state.
      */
-    fun current(): AcquisitionState = stateRef.get()
+    fun current(clubId: ClubId): AcquisitionState = stateRef(clubId).get()
 
     /**
      * Starts a new acquisition. Called when the lock is acquired.
@@ -39,7 +43,7 @@ class AcquisitionStateHolder {
      * @param trigger The origin of the acquisition request.
      * @return The new execution ID.
      */
-    fun start(trigger: AcquisitionTrigger): String {
+    fun start(clubId: ClubId, trigger: AcquisitionTrigger): String {
         val executionId = UUID.randomUUID().toString().take(8)
         val newState = AcquisitionState(
             executionId = executionId,
@@ -51,7 +55,7 @@ class AcquisitionStateHolder {
             lastError = null,
             currentStatus = "Iniciando aquisição...",
         )
-        stateRef.set(newState)
+        stateRef(clubId).set(newState)
         return executionId
     }
 
@@ -61,8 +65,8 @@ class AcquisitionStateHolder {
      * @param phase The phase being entered.
      * @param status Human-readable status message.
      */
-    fun enterPhase(phase: AcquisitionPhase, status: String) {
-        stateRef.updateAndGet { current ->
+    fun enterPhase(clubId: ClubId, phase: AcquisitionPhase, status: String) {
+        stateRef(clubId).updateAndGet { current ->
             val completed = if (current.currentPhase != AcquisitionPhase.IDLE &&
                 current.currentPhase != AcquisitionPhase.COMPLETED &&
                 current.currentPhase != AcquisitionPhase.FAILED
@@ -84,8 +88,8 @@ class AcquisitionStateHolder {
      *
      * @param status Final status message.
      */
-    fun complete(status: String) {
-        stateRef.updateAndGet { current ->
+    fun complete(clubId: ClubId, status: String) {
+        stateRef(clubId).updateAndGet { current ->
             val completed = if (current.currentPhase != AcquisitionPhase.IDLE) {
                 current.completedPhases + current.currentPhase
             } else {
@@ -106,8 +110,8 @@ class AcquisitionStateHolder {
      * @param error Description of the failure.
      * @param status Human-readable status message.
      */
-    fun fail(error: String, status: String) {
-        stateRef.updateAndGet { current ->
+    fun fail(clubId: ClubId, error: String, status: String) {
+        stateRef(clubId).updateAndGet { current ->
             current.copy(
                 currentPhase = AcquisitionPhase.FAILED,
                 finishedAt = Instant.now(),
@@ -122,10 +126,10 @@ class AcquisitionStateHolder {
      *
      * @param trigger The trigger that was rejected.
      */
-    fun recordBusy(trigger: AcquisitionTrigger) {
+    fun recordBusy(clubId: ClubId, trigger: AcquisitionTrigger) {
         // Don't overwrite the current running state.
         // Just update the status to reflect that a request was rejected.
-        stateRef.updateAndGet { current ->
+        stateRef(clubId).updateAndGet { current ->
             // Only update if there's actually a running acquisition
             if (current.isRunning()) {
                 current.copy(
@@ -200,4 +204,3 @@ data class AcquisitionState(
         )
     }
 }
-

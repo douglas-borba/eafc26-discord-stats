@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.web
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.presentation.MatchSummaryPresentation
 import com.eafc26.discordstats.service.MatchCardService
 import org.springframework.core.io.ClassPathResource
@@ -13,6 +14,7 @@ import reactor.core.scheduler.Schedulers
 @RestController
 class MatchCardController(
     private val matchCardService: MatchCardService,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
 
     @GetMapping("/match-card", produces = [MediaType.TEXT_HTML_VALUE])
@@ -23,16 +25,19 @@ class MatchCardController(
 
     @GetMapping("/api/match-card/latest", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun getLatestMatchCard(): Mono<ResponseEntity<MatchCardResponse>> =
-        Mono.fromCallable { matchCardService.getLatestMatchCard() }
+        Mono.fromCallable {
+            val clubId = defaultClubProvider.get().clubId
+            clubId to matchCardService.getLatestMatchCard(clubId)
+        }
             .subscribeOn(Schedulers.boundedElastic())
-            .map { result ->
+            .map { (clubId, result) ->
                 when (result) {
                     is MatchCardService.MatchCardResult.Success -> {
                         val pubStatus = matchCardService.getPublicationStatus(result.presentation.matchId)
                         ResponseEntity.ok(MatchCardResponse(
                             status = "success",
                             presentation = result.presentation,
-                            version = matchCardService.version(),
+                            version = matchCardService.version(clubId),
                             simulated = result.simulated,
                             publicationStatus = pubStatus,
                         ))
@@ -41,7 +46,7 @@ class MatchCardController(
                         ResponseEntity.ok(MatchCardResponse(
                             status = "no_matches",
                             message = "Nenhuma partida encontrada. Aguarde a primeira aquisição.",
-                            version = matchCardService.version(),
+                            version = matchCardService.version(clubId),
                         ))
                 }
             }
@@ -62,4 +67,3 @@ data class PublicationStatus(
     val lastError: String? = null,
     val lastHttpStatus: Int? = null,
 )
-

@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.web
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.service.AcquisitionResult
 import com.eafc26.discordstats.service.AcquisitionTrigger
 import com.eafc26.discordstats.service.MatchAcquisitionService
@@ -23,6 +24,7 @@ import reactor.core.scheduler.Schedulers
 @RestController
 class MatchController(
     private val acquisitionService: MatchAcquisitionService,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -44,7 +46,7 @@ class MatchController(
      */
     @PostMapping("/api/matches/notify-latest", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun notifyLatest(): Mono<ResponseEntity<NotifyResponse>> =
-        Mono.fromCallable { acquisitionService.acquire(AcquisitionTrigger.MANUAL) }
+        Mono.fromCallable { acquisitionService.acquire(defaultClubProvider.get().clubId, AcquisitionTrigger.MANUAL) }
             .subscribeOn(Schedulers.boundedElastic())
             .map { result -> mapAcquisitionResult(result) }
 
@@ -56,7 +58,7 @@ class MatchController(
      */
     @PostMapping("/api/matches/resend-latest", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun resendLatest(): Mono<ResponseEntity<NotifyResponse>> =
-        Mono.fromCallable { acquisitionService.acquire(AcquisitionTrigger.FORCE_RESEND) }
+        Mono.fromCallable { acquisitionService.acquire(defaultClubProvider.get().clubId, AcquisitionTrigger.FORCE_RESEND) }
             .subscribeOn(Schedulers.boundedElastic())
             .map { result -> mapAcquisitionResult(result) }
 

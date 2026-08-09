@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.dev
 
 import com.eafc26.discordstats.config.WebhookConfigService
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.service.AcquisitionResult
 import com.eafc26.discordstats.service.AcquisitionTrigger
 import com.eafc26.discordstats.service.LatestMatchHolder
@@ -67,10 +68,11 @@ class DevSimulatorService(
      * @return The result of the acquisition
      * @throws DevelopmentModeDisabledException if development mode is disabled
      */
-    fun simulateLatest(): AcquisitionResult {
+    fun simulateLatest(clubId: ClubId): AcquisitionResult {
         requireEnabled()
         log.info("DevSimulator: Starting simulated acquisition (web-only)")
         return acquisitionService.acquire(
+            clubId = clubId,
             trigger = AcquisitionTrigger.DEV_SIMULATOR,
             gateway = fixtureGateway,
         )
@@ -88,12 +90,12 @@ class DevSimulatorService(
      *
      * @throws DevelopmentModeDisabledException if development mode is disabled
      */
-    fun reset() {
+    fun reset(clubId: ClubId) {
         requireEnabled()
         log.info("DevSimulator: Resetting state")
 
         // Clear latest match holder
-        latestMatchHolder.clear()
+        latestMatchHolder.clear(clubId)
         log.debug("DevSimulator: Cleared latest match holder")
 
         // Reset fixture gateway
@@ -114,4 +116,3 @@ class DevSimulatorService(
  * Exception thrown when attempting simulator operations while development mode is disabled.
  */
 class DevelopmentModeDisabledException : RuntimeException("Development mode is disabled")
-
