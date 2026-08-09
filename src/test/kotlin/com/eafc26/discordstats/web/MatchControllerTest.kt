@@ -32,6 +32,17 @@ class MatchControllerTest {
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
     }
 
+    @Test
+    fun `GET health returns the public minimal health contract`() {
+        webClient.get().uri("/api/health")
+            .exchange()
+            .expectStatus().isOk
+            .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
+            .expectBody()
+            .jsonPath("$.status").isEqualTo("UP")
+            .jsonPath("$.length()").isEqualTo(1)
+    }
+
     // -- GET / --
 
     @Test

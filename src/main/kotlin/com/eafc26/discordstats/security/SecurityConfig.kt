@@ -2,6 +2,7 @@ package com.eafc26.discordstats.security
 
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity
 import org.springframework.security.config.web.server.ServerHttpSecurity
 import org.springframework.security.web.server.SecurityWebFilterChain
@@ -28,7 +29,10 @@ class SecurityConfig {
                 it.csrfTokenRepository(csrfRepository)
                     .csrfTokenRequestHandler(ServerCsrfTokenRequestAttributeHandler())
             }
-            .authorizeExchange { it.anyExchange().permitAll() }
+            .authorizeExchange {
+                it.pathMatchers(HttpMethod.GET, "/api/health").permitAll()
+                    .anyExchange().permitAll()
+            }
             .formLogin { it.disable() }
             .logout { it.disable() }
             .httpBasic { it.disable() }

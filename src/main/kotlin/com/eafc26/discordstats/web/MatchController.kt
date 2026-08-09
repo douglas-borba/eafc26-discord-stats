@@ -28,7 +28,7 @@ class MatchController(
 
     @GetMapping("/api/health", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun health(): ResponseEntity<Map<String, String>> =
-        ResponseEntity.ok(mapOf("status" to "ok"))
+        ResponseEntity.ok(mapOf("status" to "UP"))
 
     @GetMapping("/", produces = [MediaType.TEXT_HTML_VALUE])
     fun index(): ResponseEntity<ClassPathResource> =

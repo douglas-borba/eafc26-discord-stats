@@ -23,7 +23,7 @@ Public:
 
 - `GET /login`, `GET /admin/login`, `POST /login`;
 - `GET /access-denied`, `GET /session-expired`;
-- `GET /api/health` (only `{"status":"ok"}`).
+- `GET /api/health` (only `{"status":"UP"}`).
 
 VIEWER and ADMIN:
 

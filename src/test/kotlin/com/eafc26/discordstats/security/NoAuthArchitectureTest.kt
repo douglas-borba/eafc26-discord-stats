@@ -34,6 +34,7 @@ class NoAuthArchitectureTest {
     @Test
     fun `security config permits all exchanges without authentication`() {
         val config = Files.readString(root.resolve("kotlin/com/eafc26/discordstats/security/SecurityConfig.kt"))
+        assertThat(config).contains("pathMatchers(HttpMethod.GET, \"/api/health\").permitAll()")
         assertThat(config).contains("permitAll")
         assertThat(config).doesNotContain("PasswordEncoder", "MapReactiveUserDetailsService", "hasRole", "loginPage")
         assertThat(config).contains("formLogin { it.disable() }")
@@ -79,5 +80,11 @@ class NoAuthArchitectureTest {
         assertThat(config).contains("CookieServerCsrfTokenRepository")
         val shell = Files.readString(root.resolve("resources/static/app-shell.js"))
         assertThat(shell).contains("X-XSRF-TOKEN")
+    }
+
+    @Test
+    fun `railway uses the public Spring health endpoint`() {
+        val railway = Files.readString(Path.of("railway.json"))
+        assertThat(railway).contains("\"healthcheckPath\": \"/api/health\"")
     }
 }
