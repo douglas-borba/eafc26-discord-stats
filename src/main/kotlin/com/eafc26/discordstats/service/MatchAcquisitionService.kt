@@ -529,6 +529,12 @@ class MatchAcquisitionService(
                 log.error("Failed to publish latest match during first-run: {}", reason)
                 failed += AcquisitionResult.MatchFailure(latestMatch.matchId, summary, reason)
             }
+            PublicationOutcome.SKIPPED_NO_DESTINATION -> {
+                log.info(
+                    "Discord skipped during first-run: clubId={}, destinationConfigured=false",
+                    clubId.value,
+                )
+            }
             else -> {
                 log.warn("Unexpected publication outcome during first-run: {}", pubResult.outcome)
             }

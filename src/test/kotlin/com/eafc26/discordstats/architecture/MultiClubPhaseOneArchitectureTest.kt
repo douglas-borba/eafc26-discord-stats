@@ -16,13 +16,17 @@ class MultiClubPhaseOneArchitectureTest {
     }
 
     @Test
-    fun `new administrative clubs do not enter acquisition or scheduling`() {
+    fun `multi-club coordinator owns monitored club selection while acquisition remains explicit`() {
         val acquisition = Files.readString(source.resolve("service/MatchAcquisitionService.kt"))
         val scheduler = Files.readString(source.resolve("scheduler/MatchPollingScheduler.kt"))
+        val coordinator = Files.readString(source.resolve("scheduler/ClubPollingCoordinator.kt"))
         assertThat(acquisition).doesNotContain("MonitoredClub", "MonitoredClubRepository", "MonitoredClubService")
         assertThat(scheduler).doesNotContain("MonitoredClub", "MonitoredClubRepository", "MonitoredClubService")
         assertThat(acquisition).contains("clubId: ClubId")
-        assertThat(scheduler).contains("defaultClubProvider.get().clubId")
+        assertThat(scheduler).contains("coordinator.pollEnabledClubs")
+        assertThat(scheduler).doesNotContain("DefaultClubProvider", "defaultClubProvider")
+        assertThat(coordinator).contains("MonitoredClubRepository", "monitoringEnabled", "sortedBy { it.clubId.value }")
+        assertThat(coordinator).doesNotContain("DefaultClubProvider")
     }
 
     @Test
@@ -31,5 +35,18 @@ class MultiClubPhaseOneArchitectureTest {
         assertThat(migration).contains("club_id", "PRIMARY KEY", "discord_webhook_secret_ref")
         assertThat(migration).doesNotContain("webhook_url", "webhook_token")
         assertThat(migration).contains("discord_webhook_secret_ref !~* '^https?://'")
+    }
+
+    @Test
+    fun `legacy administrative routes remain scoped to default club`() {
+        val matchController = Files.readString(source.resolve("web/MatchController.kt"))
+        val publicationController = Files.readString(source.resolve("web/PublicationAdminController.kt"))
+        assertThat(matchController).contains(
+            "DefaultClubProvider",
+            "acquisitionService.acquire(defaultClubProvider.get().clubId",
+        )
+        assertThat(publicationController).contains("DefaultClubProvider", "defaultClubProvider.get().clubId")
+        assertThat(matchController).doesNotContain("ClubPollingCoordinator")
+        assertThat(publicationController).doesNotContain("ClubPollingCoordinator")
     }
 }

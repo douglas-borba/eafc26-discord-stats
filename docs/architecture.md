@@ -144,11 +144,24 @@ configuration through `MonitoredClubRepository`.
 
 The PostgreSQL `monitored_clubs` table uses `club_id` directly as its primary
 key. Discord configuration is represented only by an opaque secret reference;
-raw webhook URLs are not stored in this table. During Phase 1,
-`DefaultClubProvider` and `LegacyDefaultClubImporter` register the legacy club
-without overwriting an existing administrative record. The acquisition service
-and scheduler deliberately continue to read `app.ea.club-id`, so additional
-registered clubs remain administratively visible but operationally inactive.
+raw webhook URLs are not stored in this table. `DefaultClubProvider` and
+`LegacyDefaultClubImporter` register the legacy club without overwriting an
+existing administrative record. When PostgreSQL administration is disabled, a
+small in-memory compatibility repository exposes that same legacy registration
+so the established local single-club workflow remains operational.
+
+Automatic acquisition is driven by one `MatchPollingScheduler`, which preserves
+the existing fixed-rate interval and immediate startup trigger. It delegates one
+cycle to `ClubPollingCoordinator`. The coordinator reads `MonitoredClubRepository`,
+selects only `monitoringEnabled` clubs, sorts them by official EA `ClubId`, and
+calls `MatchAcquisitionService.acquire(clubId, SCHEDULER)` sequentially. A failure
+is recorded for its club and does not abort later clubs. It contains no EA,
+football, persistence or Discord logic.
+
+The coordinator never uses `DefaultClubProvider`; Associação BF participates in
+the PostgreSQL runtime because it is a normal enabled `monitored_clubs` record.
+Legacy routes without a club parameter continue resolving exactly one default
+club at their controller or command boundary and never trigger a multi-club cycle.
 
 `application.interpretation` is the single football decision engine:
 
