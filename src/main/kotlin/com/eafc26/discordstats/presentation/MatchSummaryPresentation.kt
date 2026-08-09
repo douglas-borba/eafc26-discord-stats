@@ -39,6 +39,8 @@ data class MatchSummaryPresentation(
      * All players who participated in this match with their ratings.
      * Used for accurate average rating calculation across multiple matches.
      * Excludes sentinel ratings (3.0) which indicate abandonment.
+     * `null` means that an older payload did not provide this field; an empty
+     * list means that the match was evaluated and contained no usable ratings.
      */
     val allPlayers: List<PlayerRating>? = null,
 )

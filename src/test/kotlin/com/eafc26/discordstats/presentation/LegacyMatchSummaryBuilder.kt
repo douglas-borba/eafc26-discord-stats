@@ -149,6 +149,16 @@ class LegacyMatchSummaryBuilder(
             passePrecisao = buildPassePrecisaoSection(positiveOutfield, matchId, random, proNames),
             correioExtraviado = buildCorreioSection(outfield, matchId, random, proNames),
             muralha = buildMuralhaSection(goalkeeper, matchId, random, proNames),
+            allPlayers = allPlayers
+                .filter { it.rating?.toBigDecimalOrNull() != null }
+                .filter { it.rating?.toBigDecimalOrNull() != java.math.BigDecimal("3.0") }
+                .map {
+                    PlayerRating(
+                        name = it.displayName(proNames),
+                        rating = fmtRating(it.rating),
+                        played = true,
+                    )
+                },
         )
     }
 
