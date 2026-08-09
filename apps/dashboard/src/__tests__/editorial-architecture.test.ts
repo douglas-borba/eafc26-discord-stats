@@ -63,6 +63,15 @@ describe("Editorial Architecture: Supabase Only", () => {
     expect(matchCardService).toContain('eq("club_id", clubId)');
   });
 
+  it("requests the panorama for the active club", () => {
+    const panoramaClient = readFile("lib/api/panorama-client.ts");
+    const overviewPage = readFile("app/clubs/[clubId]/(fullwidth)/overview/page.tsx");
+
+    expect(panoramaClient).toContain("fetchAiPanorama(clubId: string)");
+    expect(panoramaClient).toContain("clubId=${encodeURIComponent(clubId)}");
+    expect(overviewPage).toContain("fetchAiPanorama(clubId)");
+  });
+
   it("orders by played_at", () => {
     expect(matchCardService).toContain('.order("played_at"');
   });

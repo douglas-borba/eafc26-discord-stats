@@ -14,7 +14,6 @@ import com.eafc26.discordstats.domain.match.PlayerIdentity
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
 import com.eafc26.discordstats.history.MatchHistoryOrder
 import com.eafc26.discordstats.history.MatchHistoryQuery
-import com.eafc26.discordstats.support.defaultClubProvider
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
@@ -31,7 +30,7 @@ class MatchHistoryServiceTest {
     @BeforeEach
     fun setUp() {
         repository = mock()
-        service = MatchHistoryService(repository, defaultClubProvider(CLUB_ID))
+        service = MatchHistoryService(repository)
         whenever(repository.findAll(CLUB_ID)).thenReturn(emptyList())
     }
 
@@ -40,7 +39,7 @@ class MatchHistoryServiceTest {
         val expected = canonical("match-1", "2026-07-01T10:00:00Z")
         whenever(repository.findById(CLUB_ID, expected.matchId)).thenReturn(expected)
 
-        assertThat(service.findById(expected.matchId)).isSameAs(expected)
+        assertThat(service.findById(CLUB_ID, expected.matchId)).isSameAs(expected)
         verify(repository).findById(CLUB_ID, expected.matchId)
     }
 
@@ -51,7 +50,7 @@ class MatchHistoryServiceTest {
         val sameTimeA = canonical("a", "2026-07-03T10:00:00Z")
         whenever(repository.findAll(CLUB_ID)).thenReturn(listOf(old, sameTimeB, sameTimeA))
 
-        assertThat(service.list().map { it.matchId.value }).containsExactly("a", "b", "old")
+        assertThat(service.list(CLUB_ID).map { it.matchId.value }).containsExactly("a", "b", "old")
     }
 
     @Test
@@ -60,7 +59,7 @@ class MatchHistoryServiceTest {
         val old = canonical("old", "2026-07-01T10:00:00Z")
         whenever(repository.findAll(CLUB_ID)).thenReturn(listOf(recent, old))
 
-        assertThat(service.list(MatchHistoryQuery(order = MatchHistoryOrder.OLDEST_FIRST)))
+        assertThat(service.list(CLUB_ID, MatchHistoryQuery(order = MatchHistoryOrder.OLDEST_FIRST)))
             .containsExactly(old, recent)
     }
 
@@ -73,6 +72,7 @@ class MatchHistoryServiceTest {
         whenever(repository.findAll(CLUB_ID)).thenReturn(listOf(before, start, inside, end))
 
         val result = service.list(
+            CLUB_ID,
             MatchHistoryQuery(
                 fromInclusive = Instant.parse("2026-07-01T00:00:00Z"),
                 untilExclusive = Instant.parse("2026-08-01T00:00:00Z"),
@@ -89,7 +89,7 @@ class MatchHistoryServiceTest {
         val unknown = canonical("unknown", "2026-07-01T10:00:00Z", null)
         whenever(repository.findAll(CLUB_ID)).thenReturn(listOf(league, playoff, unknown))
 
-        assertThat(service.list(MatchHistoryQuery(competition = CompetitionType.PLAYOFF)))
+        assertThat(service.list(CLUB_ID, MatchHistoryQuery(competition = CompetitionType.PLAYOFF)))
             .containsExactly(playoff)
     }
 
@@ -108,7 +108,7 @@ class MatchHistoryServiceTest {
         )
         whenever(repository.findAll(CLUB_ID)).thenReturn(listOf(matching, other))
 
-        assertThat(service.list(MatchHistoryQuery(playerId = target))).containsExactly(matching)
+        assertThat(service.list(CLUB_ID, MatchHistoryQuery(playerId = target))).containsExactly(matching)
     }
 
     @Test
@@ -118,7 +118,7 @@ class MatchHistoryServiceTest {
         val two = canonical("two", "2026-07-02T10:00:00Z")
         whenever(repository.findAll(CLUB_ID)).thenReturn(listOf(one, three, two))
 
-        assertThat(service.latest(2)).containsExactly(three, two)
+        assertThat(service.latest(CLUB_ID, 2)).containsExactly(three, two)
     }
 
     @Test
@@ -133,8 +133,30 @@ class MatchHistoryServiceTest {
         )
         whenever(repository.metadata(CLUB_ID)).thenReturn(metadata)
 
-        assertThat(service.metadata()).isSameAs(metadata)
+        assertThat(service.metadata(CLUB_ID)).isSameAs(metadata)
         verify(repository).metadata(CLUB_ID)
+    }
+
+    @Test
+    fun `history and metadata remain isolated between clubs including a shared match ID`() {
+        val otherClub = ClubId("other-club")
+        val ours = canonical("shared-match", "2026-07-03T10:00:00Z")
+        val theirs = canonical("shared-match", "2026-06-03T10:00:00Z")
+        val ourMetadata = metadata(1, ours.footballMatch.playedAt)
+        val theirMetadata = metadata(1, theirs.footballMatch.playedAt)
+        whenever(repository.findAll(CLUB_ID)).thenReturn(listOf(ours))
+        whenever(repository.findAll(otherClub)).thenReturn(listOf(theirs))
+        whenever(repository.findById(CLUB_ID, MatchId("shared-match"))).thenReturn(ours)
+        whenever(repository.findById(otherClub, MatchId("shared-match"))).thenReturn(theirs)
+        whenever(repository.metadata(CLUB_ID)).thenReturn(ourMetadata)
+        whenever(repository.metadata(otherClub)).thenReturn(theirMetadata)
+
+        assertThat(service.list(CLUB_ID)).containsExactly(ours)
+        assertThat(service.list(otherClub)).containsExactly(theirs)
+        assertThat(service.findById(CLUB_ID, MatchId("shared-match"))).isSameAs(ours)
+        assertThat(service.findById(otherClub, MatchId("shared-match"))).isSameAs(theirs)
+        assertThat(service.metadata(CLUB_ID)).isSameAs(ourMetadata)
+        assertThat(service.metadata(otherClub)).isSameAs(theirMetadata)
     }
 
     @Test
@@ -181,6 +203,15 @@ class MatchHistoryServiceTest {
         whenever(canonical.matchId).thenReturn(matchId)
         return canonical
     }
+
+    private fun metadata(count: Int, playedAt: Instant) = CanonicalRepositoryMetadata(
+        matchCount = count,
+        oldestMatchAt = playedAt,
+        newestMatchAt = playedAt,
+        lastGeneratedAt = playedAt,
+        schemaVersions = emptySet(),
+        engineVersions = emptySet(),
+    )
 
     private companion object {
         val CLUB_ID = ClubId("our-club")

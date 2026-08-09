@@ -14,10 +14,10 @@ interface PanoramaResponse {
  *
  * @returns The panorama text if available, null otherwise
  */
-export async function fetchAiPanorama(): Promise<string | null> {
+export async function fetchAiPanorama(clubId: string): Promise<string | null> {
   try {
     const backendUrl = process.env.BACKEND_URL || "http://localhost:8080";
-    const response = await fetch(`${backendUrl}/api/panorama`, {
+    const response = await fetch(`${backendUrl}/api/panorama?clubId=${encodeURIComponent(clubId)}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -43,4 +43,3 @@ export async function fetchAiPanorama(): Promise<string | null> {
     return null;
   }
 }
-

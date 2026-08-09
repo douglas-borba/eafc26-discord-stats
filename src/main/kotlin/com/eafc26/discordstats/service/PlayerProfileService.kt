@@ -5,6 +5,7 @@ import com.eafc26.discordstats.domain.interpretation.AwardDecision
 import com.eafc26.discordstats.domain.interpretation.AwardType
 import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.domain.match.PlayerId
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
 import com.eafc26.discordstats.history.MatchHistoryQuery
 import com.eafc26.discordstats.profile.PlayerProfile
@@ -18,10 +19,10 @@ import java.math.RoundingMode
 class PlayerProfileService(
     private val matchHistoryService: MatchHistoryService,
 ) {
-    fun listPlayers(): List<PlayerProfileIndexEntry> {
+    fun listPlayers(clubId: ClubId): List<PlayerProfileIndexEntry> {
         val accumulated = linkedMapOf<PlayerId, MutablePlayerIndex>()
 
-        matchHistoryService.list().forEach { canonical ->
+        matchHistoryService.list(clubId).forEach { canonical ->
             canonical.perspectivePlayers().forEach { performance ->
                 val player = performance.player
                 val current = accumulated.getOrPut(player.id) {
@@ -49,11 +50,15 @@ class PlayerProfileService(
         )
     }
 
-    fun findById(playerId: PlayerId, recentMatchLimit: Int = DEFAULT_RECENT_MATCH_LIMIT): PlayerProfile? {
+    fun findById(
+        clubId: ClubId,
+        playerId: PlayerId,
+        recentMatchLimit: Int = DEFAULT_RECENT_MATCH_LIMIT,
+    ): PlayerProfile? {
         require(recentMatchLimit > 0) { "Recent match limit must be positive" }
 
         val appearances = matchHistoryService
-            .list(MatchHistoryQuery(playerId = playerId))
+            .list(clubId, MatchHistoryQuery(playerId = playerId))
             .mapNotNull { canonical ->
                 canonical.perspectivePlayers()
                     .firstOrNull { it.player.id == playerId }

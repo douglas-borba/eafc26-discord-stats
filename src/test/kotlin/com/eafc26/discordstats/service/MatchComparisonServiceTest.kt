@@ -37,10 +37,10 @@ class MatchComparisonServiceTest {
     fun `compares two canonical matches and produces structured differences`() {
         val first = canonical("first", 1_801_000_000L, 3, 1, "8.0", 2, 1, 4, 18, 20, 3, 4, 0)
         val second = canonical("second", 1_802_000_000L, 1, 2, "6.0", 1, 0, 2, 12, 20, 1, 3, 1)
-        whenever(history.findById(first.matchId)).thenReturn(first)
-        whenever(history.findById(second.matchId)).thenReturn(second)
+        whenever(history.findById(OUR_CLUB, first.matchId)).thenReturn(first)
+        whenever(history.findById(OUR_CLUB, second.matchId)).thenReturn(second)
 
-        val comparison = (service.compare(first.matchId, second.matchId) as MatchComparisonResult.Success).comparison
+        val comparison = (service.compare(OUR_CLUB, first.matchId, second.matchId) as MatchComparisonResult.Success).comparison
 
         assertThat(comparison.first.ourScore).isEqualTo(3)
         assertThat(comparison.second.ourScore).isEqualTo(1)
@@ -63,25 +63,25 @@ class MatchComparisonServiceTest {
     @Test
     fun `same match compared with itself has zero available differences`() {
         val canonical = canonical("same", 1_801_000_000L, 3, 1, "8.0", 2, 1, 4, 18, 20, 3, 4, 0)
-        whenever(history.findById(canonical.matchId)).thenReturn(canonical)
+        whenever(history.findById(OUR_CLUB, canonical.matchId)).thenReturn(canonical)
 
-        val comparison = (service.compare(canonical.matchId, canonical.matchId) as MatchComparisonResult.Success).comparison
+        val comparison = (service.compare(OUR_CLUB, canonical.matchId, canonical.matchId) as MatchComparisonResult.Success).comparison
 
         assertThat(comparison.differences.numeric.filter { it.delta != null })
             .allMatch { it.delta!!.signum() == 0 }
         assertThat(comparison.differences.awards).allMatch { !it.changed }
         assertThat(comparison.differences.stories).allMatch { it.delta == 0 }
-        verify(history).findById(canonical.matchId)
+        verify(history).findById(OUR_CLUB, canonical.matchId)
     }
 
     @Test
     fun `reports every missing MatchId`() {
         val first = MatchId("missing-first")
         val second = MatchId("missing-second")
-        whenever(history.findById(first)).thenReturn(null)
-        whenever(history.findById(second)).thenReturn(null)
+        whenever(history.findById(OUR_CLUB, first)).thenReturn(null)
+        whenever(history.findById(OUR_CLUB, second)).thenReturn(null)
 
-        val result = service.compare(first, second) as MatchComparisonResult.NotFound
+        val result = service.compare(OUR_CLUB, first, second) as MatchComparisonResult.NotFound
 
         assertThat(result.missingMatchIds).containsExactlyInAnyOrder(first, second)
     }
@@ -90,10 +90,10 @@ class MatchComparisonServiceTest {
     fun `comparison supports canonical matches without optional narrative stories`() {
         val first = canonicalWithoutPlayers("empty-one", 1_801_000_000L)
         val second = canonicalWithoutPlayers("empty-two", 1_802_000_000L)
-        whenever(history.findById(first.matchId)).thenReturn(first)
-        whenever(history.findById(second.matchId)).thenReturn(second)
+        whenever(history.findById(OUR_CLUB, first.matchId)).thenReturn(first)
+        whenever(history.findById(OUR_CLUB, second.matchId)).thenReturn(second)
 
-        val comparison = (service.compare(first.matchId, second.matchId) as MatchComparisonResult.Success).comparison
+        val comparison = (service.compare(OUR_CLUB, first.matchId, second.matchId) as MatchComparisonResult.Success).comparison
 
         assertThat(comparison.first.stories.map { it.story.type }).containsExactly(StoryType.MATCH_OUTCOME)
         assertThat(comparison.second.stories.map { it.story.type }).containsExactly(StoryType.MATCH_OUTCOME)
@@ -105,14 +105,31 @@ class MatchComparisonServiceTest {
     fun `options preserve history order and canonical result summary`() {
         val recent = canonical("recent", 1_802_000_000L, 3, 1, "8.0", 2, 1, 4, 18, 20, 3, 4, 0)
         val old = canonical("old", 1_801_000_000L, 1, 2, "6.0", 1, 0, 2, 12, 20, 1, 3, 1)
-        whenever(history.list()).thenReturn(listOf(recent, old))
+        whenever(history.list(OUR_CLUB)).thenReturn(listOf(recent, old))
 
-        val options = service.listOptions()
+        val options = service.listOptions(OUR_CLUB)
 
         assertThat(options.map { it.matchId.value }).containsExactly("recent", "old")
         assertThat(options.first().ourScore).isEqualTo(3)
         assertThat(options.first().opponentClubName).isEqualTo("Opponent FC")
-        verify(history, never()).findById(recent.matchId)
+        verify(history, never()).findById(OUR_CLUB, recent.matchId)
+    }
+
+    @Test
+    fun `comparison never resolves either match outside the requested club`() {
+        val otherClub = ClubId("other-club")
+        val first = MatchId("first")
+        val second = MatchId("second")
+        whenever(history.findById(OUR_CLUB, first)).thenReturn(null)
+        whenever(history.findById(OUR_CLUB, second)).thenReturn(null)
+
+        val result = service.compare(OUR_CLUB, first, second)
+
+        assertThat(result).isInstanceOf(MatchComparisonResult.NotFound::class.java)
+        verify(history).findById(OUR_CLUB, first)
+        verify(history).findById(OUR_CLUB, second)
+        verify(history, never()).findById(otherClub, first)
+        verify(history, never()).findById(otherClub, second)
     }
 
     private fun canonical(

@@ -11,7 +11,7 @@ export default async function OverviewPage({ params }: { params: Promise<{ clubI
 
   const [presentations, aiNarrative] = await Promise.all([
     getRecentMatchCards(clubId, 10), // 10 for both match cards and editorial analysis
-    fetchAiPanorama(),                // Fetch from REST API (validates contextKey in backend)
+    fetchAiPanorama(clubId),          // Fetch from REST API (validates club-scoped contextKey in backend)
   ]);
   const editorial = buildSequenceEditorial(presentations);
   editorial.aiNarrative = aiNarrative;

@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.llm
 
 import com.eafc26.discordstats.canonical.CanonicalMatch
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.service.MatchHistoryService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -18,7 +19,7 @@ class LlmEditorialService(
     private val clock: Clock = Clock.systemDefaultZone(),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val discordNarrativeCache = ConcurrentHashMap<String, String?>()
+    private val discordNarrativeCache = ConcurrentHashMap<NarrativeCacheKey, String?>()
 
     fun generateAndPersistPanorama(canonical: CanonicalMatch) {
         if (!isEnabled()) return
@@ -28,14 +29,14 @@ class LlmEditorialService(
         }
 
         try {
-            val clubId = canonical.interpretation.perspectiveClubId.value
-            val recentMatches = historyService.latest(PANORAMA_MATCH_COUNT)
+            val clubId = canonical.interpretation.perspectiveClubId
+            val recentMatches = historyService.latest(clubId, PANORAMA_MATCH_COUNT)
             // IMPORTANT: Use chronological order (newest first), NOT sorted alphabetically
             // This ensures cache invalidation when match order changes due to reconciliation/republication
             val matchIds = recentMatches.map { it.matchId.value }
-            val contextKey = computeContextKey(clubId, matchIds, PROMPT_VERSION, properties.model)
+            val contextKey = computeContextKey(clubId.value, matchIds, PROMPT_VERSION, properties.model)
 
-            val existing = panoramaRepository.findByContextKey(clubId, contextKey)
+            val existing = panoramaRepository.findByContextKey(clubId.value, contextKey)
             if (existing != null) {
                 // Cache resiliente: validar se o panorama existente é válido
                 if (existing.status == "success" && existing.narrative != null) {
@@ -75,7 +76,7 @@ class LlmEditorialService(
                             PROMPT_VERSION
                         )
                         PanoramaRecord(
-                            clubId = clubId,
+                            clubId = clubId.value,
                             contextKey = contextKey,
                             matchIds = matchIds,
                             narrative = null,
@@ -96,7 +97,7 @@ class LlmEditorialService(
                             validated.length,
                         )
                         PanoramaRecord(
-                            clubId = clubId,
+                            clubId = clubId.value,
                             contextKey = contextKey,
                             matchIds = matchIds,
                             narrative = validated,
@@ -117,7 +118,7 @@ class LlmEditorialService(
                         properties.provider, properties.model, PROMPT_VERSION, category, result.reason,
                     )
                     PanoramaRecord(
-                        clubId = clubId,
+                        clubId = clubId.value,
                         contextKey = contextKey,
                         matchIds = matchIds,
                         narrative = null,
@@ -138,35 +139,36 @@ class LlmEditorialService(
         }
     }
 
-    fun getPersistedPanorama(clubId: String): String? {
+    fun getPersistedPanorama(clubId: ClubId): String? {
         if (panoramaRepository == null) return null
         
         // Calculate current contextKey based on latest matches
-        val recentMatches = historyService.latest(PANORAMA_MATCH_COUNT)
+        val recentMatches = historyService.latest(clubId, PANORAMA_MATCH_COUNT)
         if (recentMatches.isEmpty()) return null
         
         val matchIds = recentMatches.map { it.matchId.value }
-        val contextKey = computeContextKey(clubId, matchIds, PROMPT_VERSION, properties.model)
+        val contextKey = computeContextKey(clubId.value, matchIds, PROMPT_VERSION, properties.model)
         
         // Only return panorama if it belongs to the current context
-        return panoramaRepository.findSuccessfulByContextKey(clubId, contextKey)?.narrative
+        return panoramaRepository.findSuccessfulByContextKey(clubId.value, contextKey)?.narrative
     }
 
     fun generateMatchNarrative(canonical: CanonicalMatch): String? {
         if (!isEnabled()) return null
 
         val matchId = canonical.matchId.value
-        val cached = discordNarrativeCache[matchId]
+        val cacheKey = NarrativeCacheKey(canonical.interpretation.perspectiveClubId, matchId)
+        val cached = discordNarrativeCache[cacheKey]
         if (cached != null) {
             log.debug("Returning cached Discord narrative for match {}", matchId)
             return cached
         }
-        if (discordNarrativeCache.containsKey(matchId)) {
+        if (discordNarrativeCache.containsKey(cacheKey)) {
             return null
         }
 
         return try {
-            val recentMatches = historyService.latest(PANORAMA_MATCH_COUNT)
+            val recentMatches = historyService.latest(canonical.interpretation.perspectiveClubId, PANORAMA_MATCH_COUNT)
             val context = contextBuilder.buildFullContext(canonical, recentMatches)
             when (val result = provider!!.generateMatchNarrative(context)) {
                 is LlmEditorialResult.Success -> {
@@ -179,18 +181,18 @@ class LlmEditorialService(
                         result.metadata.outputTokens ?: "?",
                         validated.length,
                     )
-                    discordNarrativeCache[matchId] = validated
+                    discordNarrativeCache[cacheKey] = validated
                     validated
                 }
                 is LlmEditorialResult.Failure -> {
                     log.warn("Discord narrative failed: model={} reason={}", properties.model, result.reason)
-                    discordNarrativeCache[matchId] = null
+                    discordNarrativeCache[cacheKey] = null
                     null
                 }
             }
         } catch (ex: Exception) {
             log.warn("Discord narrative error: model={} error={}", properties.model, ex.message)
-            discordNarrativeCache[matchId] = null
+            discordNarrativeCache[cacheKey] = null
             null
         }
     }
@@ -203,6 +205,8 @@ class LlmEditorialService(
         }
         return true
     }
+
+    private data class NarrativeCacheKey(val clubId: ClubId, val matchId: String)
 
     private fun classifyError(failure: LlmEditorialResult.Failure): String {
         val reason = failure.reason.lowercase()

@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.web
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.presentation.profile.PlayerProfileListResponse
 import com.eafc26.discordstats.presentation.profile.PlayerProfilePresenter
@@ -18,6 +19,7 @@ import reactor.core.scheduler.Schedulers
 @RestController
 class PlayerProfileController(
     private val playerProfileService: PlayerProfileService,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
     @GetMapping("/players", produces = [MediaType.TEXT_HTML_VALUE])
     fun playersPage(): ResponseEntity<ClassPathResource> =
@@ -28,7 +30,7 @@ class PlayerProfileController(
     @GetMapping("/api/player-profiles", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun listPlayers(): Mono<ResponseEntity<PlayerProfileListResponse>> =
         Mono.fromCallable {
-            val players = playerProfileService.listPlayers()
+            val players = playerProfileService.listPlayers(defaultClubProvider.get().clubId)
             ResponseEntity.ok(
                 PlayerProfileListResponse(
                     status = if (players.isEmpty()) "empty" else "success",
@@ -42,7 +44,7 @@ class PlayerProfileController(
         @RequestParam playerId: String,
     ): Mono<ResponseEntity<PlayerProfileResponse>> =
         Mono.fromCallable {
-            val profile = playerProfileService.findById(PlayerId(playerId))
+            val profile = playerProfileService.findById(defaultClubProvider.get().clubId, PlayerId(playerId))
             if (profile == null) {
                 ResponseEntity.status(HttpStatus.NOT_FOUND).body(
                     PlayerProfileResponse(

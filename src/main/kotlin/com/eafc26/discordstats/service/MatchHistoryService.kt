@@ -1,9 +1,9 @@
 package com.eafc26.discordstats.service
 
-import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
 import com.eafc26.discordstats.canonical.CanonicalMatch
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.history.MatchHistoryOrder
 import com.eafc26.discordstats.history.MatchHistoryQuery
@@ -17,13 +17,10 @@ import org.springframework.stereotype.Service
 @Service
 class MatchHistoryService(
     private val repository: CanonicalMatchRepository,
-    private val defaultClubProvider: DefaultClubProvider,
 ) {
-    private val clubId get() = defaultClubProvider.get().clubId
+    fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch? = repository.findById(clubId, matchId)
 
-    fun findById(matchId: MatchId): CanonicalMatch? = repository.findById(clubId, matchId)
-
-    fun list(query: MatchHistoryQuery = MatchHistoryQuery()): List<CanonicalMatch> {
+    fun list(clubId: ClubId, query: MatchHistoryQuery = MatchHistoryQuery()): List<CanonicalMatch> {
         val comparator = if (query.order == MatchHistoryOrder.NEWEST_FIRST) {
             compareByDescending<CanonicalMatch> { it.footballMatch.playedAt }
                 .thenBy { it.matchId.value }
@@ -56,8 +53,8 @@ class MatchHistoryService(
         return query.limit?.let(matches::take)?.toList() ?: matches.toList()
     }
 
-    fun latest(limit: Int): List<CanonicalMatch> =
-        list(MatchHistoryQuery(order = MatchHistoryOrder.NEWEST_FIRST, limit = limit))
+    fun latest(clubId: ClubId, limit: Int): List<CanonicalMatch> =
+        list(clubId, MatchHistoryQuery(order = MatchHistoryOrder.NEWEST_FIRST, limit = limit))
 
-    fun metadata(): CanonicalRepositoryMetadata = repository.metadata(clubId)
+    fun metadata(clubId: ClubId): CanonicalRepositoryMetadata = repository.metadata(clubId)
 }

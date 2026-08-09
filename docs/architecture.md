@@ -194,9 +194,11 @@ duplicate state from entering the stable format.
 - club-scoped repository metadata: count, time range, latest generation time
   and observed schema/engine versions.
 
-`MatchHistoryService` is the read-only application boundary over that port. It
-returns complete `CanonicalMatch` records without accessing EA or invoking the
-football engine. Its generic query supports:
+`MatchHistoryService` is the read-only application boundary over that port. All
+of its operations require an explicit canonical `ClubId`; no application
+service can infer a global club or aggregate histories across clubs. It returns
+complete `CanonicalMatch` records without accessing EA or invoking the football
+engine. Its generic query supports, within one club:
 
 - all matches in deterministic newest-first or oldest-first order;
 - latest `N` matches;
@@ -207,9 +209,16 @@ football engine. Its generic query supports:
 - repository metadata.
 
 Filters can be combined and the optional limit is applied after chronological
-ordering. This service is the sole data boundary for the Historical Dashboard
-and the future profile, comparison and export consumers; it contains no
-football or presentation rules.
+ordering. Player profiles, comparisons, opponents, metadata and editorial
+contexts receive the same `ClubId` before reading history. This service is the
+sole data boundary for those consumers; it contains no football or presentation
+rules.
+
+Legacy Spring routes that do not yet carry a club identifier resolve the
+Associação BF through `DefaultClubProvider` at the controller boundary and then
+invoke the same club-scoped services. The service layer never performs this
+fallback. The Dashboard panorama request carries its active `clubId`; omitting
+that optional parameter preserves the legacy default-club behavior.
 
 ### Historical Dashboard
 

@@ -4,7 +4,9 @@ import com.eafc26.discordstats.comparison.MatchComparisonOption
 import com.eafc26.discordstats.comparison.MatchComparisonResult
 import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.service.MatchComparisonService
+import com.eafc26.discordstats.support.defaultClubProvider
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -20,7 +22,7 @@ class MatchComparisonControllerTest {
     @BeforeEach
     fun setUp() {
         service = mock()
-        controller = MatchComparisonController(service)
+        controller = MatchComparisonController(service, defaultClubProvider(CLUB_ID))
     }
 
     @Test
@@ -31,7 +33,7 @@ class MatchComparisonControllerTest {
 
     @Test
     fun `empty options have explicit state`() {
-        whenever(service.listOptions()).thenReturn(emptyList())
+        whenever(service.listOptions(CLUB_ID)).thenReturn(emptyList())
 
         val response = controller.listOptions().block()!!
 
@@ -41,7 +43,7 @@ class MatchComparisonControllerTest {
 
     @Test
     fun `options are exposed through comparison layer`() {
-        whenever(service.listOptions()).thenReturn(
+        whenever(service.listOptions(CLUB_ID)).thenReturn(
             listOf(
                 MatchComparisonOption(
                     MatchId("m1"),
@@ -65,7 +67,7 @@ class MatchComparisonControllerTest {
     fun `missing comparison match returns not found with IDs`() {
         val first = MatchId("missing")
         val second = MatchId("existing")
-        whenever(service.compare(first, second)).thenReturn(
+        whenever(service.compare(CLUB_ID, first, second)).thenReturn(
             MatchComparisonResult.NotFound(setOf(first))
         )
 
@@ -74,5 +76,9 @@ class MatchComparisonControllerTest {
         assertThat(response.statusCode.value()).isEqualTo(404)
         assertThat(response.body!!.status).isEqualTo("not_found")
         assertThat(response.body!!.missingMatchIds).containsExactly("missing")
+    }
+
+    private companion object {
+        val CLUB_ID = ClubId("our-club")
     }
 }

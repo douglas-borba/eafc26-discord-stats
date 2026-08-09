@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.web
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.presentation.opponent.OpponentDetailResponse
 import com.eafc26.discordstats.presentation.opponent.OpponentHistoryPresenter
@@ -16,7 +17,10 @@ import reactor.core.publisher.Mono
 import reactor.core.scheduler.Schedulers
 
 @RestController
-class OpponentHistoryController(private val opponentHistoryService: OpponentHistoryService) {
+class OpponentHistoryController(
+    private val opponentHistoryService: OpponentHistoryService,
+    private val defaultClubProvider: DefaultClubProvider,
+) {
     @GetMapping("/opponents", "/opponents/{clubId}", produces = [MediaType.TEXT_HTML_VALUE])
     fun page(@PathVariable(required = false) clubId: String?): ResponseEntity<ClassPathResource> =
         ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(ClassPathResource("opponents.html"))
@@ -26,12 +30,12 @@ class OpponentHistoryController(private val opponentHistoryService: OpponentHist
 
     @GetMapping("/api/opponents", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun list(): Mono<ResponseEntity<OpponentIndexResponse>> = Mono.fromCallable {
-        ResponseEntity.ok(OpponentHistoryPresenter.index(opponentHistoryService.listOpponents()))
+        ResponseEntity.ok(OpponentHistoryPresenter.index(opponentHistoryService.listOpponents(defaultClubProvider.get().clubId)))
     }.subscribeOn(Schedulers.boundedElastic())
 
     @GetMapping("/api/opponents/{clubId}", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun detail(@PathVariable clubId: String): Mono<ResponseEntity<OpponentDetailResponse>> = Mono.fromCallable {
-        val history = opponentHistoryService.findByClubId(ClubId(clubId))
+        val history = opponentHistoryService.findByClubId(defaultClubProvider.get().clubId, ClubId(clubId))
         if (history == null) ResponseEntity.status(HttpStatus.NOT_FOUND).body(OpponentDetailResponse("not_found", message = "Adversário não encontrado."))
         else ResponseEntity.ok(OpponentHistoryPresenter.detail(history))
     }.subscribeOn(Schedulers.boundedElastic())

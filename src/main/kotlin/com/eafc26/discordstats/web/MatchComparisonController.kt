@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.web
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.comparison.MatchComparisonResult
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.presentation.comparison.MatchComparisonOptionsResponse
@@ -19,6 +20,7 @@ import reactor.core.scheduler.Schedulers
 @RestController
 class MatchComparisonController(
     private val matchComparisonService: MatchComparisonService,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
     @GetMapping("/compare", produces = [MediaType.TEXT_HTML_VALUE])
     fun comparisonPage(): ResponseEntity<ClassPathResource> =
@@ -29,7 +31,7 @@ class MatchComparisonController(
     @GetMapping("/api/match-comparisons/options", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun listOptions(): Mono<ResponseEntity<MatchComparisonOptionsResponse>> =
         Mono.fromCallable {
-            val options = matchComparisonService.listOptions()
+            val options = matchComparisonService.listOptions(defaultClubProvider.get().clubId)
             ResponseEntity.ok(
                 MatchComparisonOptionsResponse(
                     status = if (options.isEmpty()) "empty" else "success",
@@ -46,6 +48,7 @@ class MatchComparisonController(
         Mono.fromCallable {
             when (
                 val result = matchComparisonService.compare(
+                    defaultClubProvider.get().clubId,
                     MatchId(firstMatchId),
                     MatchId(secondMatchId),
                 )

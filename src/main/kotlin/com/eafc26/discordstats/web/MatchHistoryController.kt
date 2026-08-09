@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.web
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.presentation.history.HistoricalMatchDetailResponse
 import com.eafc26.discordstats.presentation.history.HistoricalMatchListResponse
@@ -18,6 +19,7 @@ import reactor.core.scheduler.Schedulers
 @RestController
 class MatchHistoryController(
     private val matchHistoryService: MatchHistoryService,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
     @GetMapping("/history", produces = [MediaType.TEXT_HTML_VALUE])
     fun historyPage(): ResponseEntity<ClassPathResource> =
@@ -28,11 +30,12 @@ class MatchHistoryController(
     @GetMapping("/api/history/matches", produces = [MediaType.APPLICATION_JSON_VALUE])
     fun listMatches(): Mono<ResponseEntity<HistoricalMatchListResponse>> =
         Mono.fromCallable {
-            val matches = matchHistoryService.list()
+            val clubId = defaultClubProvider.get().clubId
+            val matches = matchHistoryService.list(clubId)
             val response = HistoricalMatchListResponse(
                 status = if (matches.isEmpty()) "empty" else "success",
                 matches = matches.map(HistoricalMatchPresenter::summary),
-                metadata = HistoricalMatchPresenter.metadata(matchHistoryService.metadata()),
+                metadata = HistoricalMatchPresenter.metadata(matchHistoryService.metadata(clubId)),
             )
             ResponseEntity.ok(response)
         }.subscribeOn(Schedulers.boundedElastic())
@@ -42,7 +45,7 @@ class MatchHistoryController(
         @PathVariable matchId: String,
     ): Mono<ResponseEntity<HistoricalMatchDetailResponse>> =
         Mono.fromCallable {
-            val canonical = matchHistoryService.findById(MatchId(matchId))
+            val canonical = matchHistoryService.findById(defaultClubProvider.get().clubId, MatchId(matchId))
             if (canonical == null) {
                 ResponseEntity.status(HttpStatus.NOT_FOUND).body(
                     HistoricalMatchDetailResponse(

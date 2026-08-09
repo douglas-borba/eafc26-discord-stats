@@ -90,10 +90,30 @@ class LlmEditorialServiceTest {
     inner class PanoramaIdempotency {
 
         @Test
+        fun `panorama reads only the requested club latest ten matches`() {
+            val clubA = ClubId("club-a")
+            val clubB = ClubId("club-b")
+            val match = canonical("shared", clubA.value)
+            val recentMatches = listOf(canonical("shared", clubA.value), canonical("a2", clubA.value))
+            whenever(historyService.latest(clubA, LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentMatches)
+            whenever(panoramaRepository.findByContextKey(eq(clubA.value), any())).thenReturn(null)
+            whenever(provider.generatePanorama(any())).thenReturn(successResult())
+
+            service.generateAndPersistPanorama(match)
+
+            verify(historyService).latest(clubA, LlmEditorialService.PANORAMA_MATCH_COUNT)
+            verify(historyService, never()).latest(clubB, LlmEditorialService.PANORAMA_MATCH_COUNT)
+            verify(panoramaRepository).upsert(org.mockito.kotlin.check { record ->
+                assertThat(record.clubId).isEqualTo(clubA.value)
+                assertThat(record.matchIds).containsExactly("shared", "a2")
+            })
+        }
+
+        @Test
         fun `same three matches do not regenerate`() {
             val match = canonical("m1")
             val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
-            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentMatches)
             whenever(panoramaRepository.findByContextKey(eq("club1"), any()))
                 .thenReturn(PanoramaRecord(
                     clubId = "club1", contextKey = "existing-key", matchIds = listOf("m1", "m2", "m3"),
@@ -112,7 +132,7 @@ class LlmEditorialServiceTest {
         fun `changed recent match set regenerates`() {
             val match = canonical("m4")
             val recentMatches = listOf(canonical("m4"), canonical("m2"), canonical("m3"))
-            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentMatches)
             whenever(panoramaRepository.findByContextKey(eq("club1"), any())).thenReturn(null)
             whenever(provider.generatePanorama(any())).thenReturn(successResult())
 
@@ -126,7 +146,7 @@ class LlmEditorialServiceTest {
         fun `prompt version change regenerates`() {
             val match = canonical("m1")
             val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
-            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentMatches)
             whenever(panoramaRepository.findByContextKey(eq("club1"), any())).thenReturn(null)
             whenever(provider.generatePanorama(any())).thenReturn(successResult())
 
@@ -147,7 +167,7 @@ class LlmEditorialServiceTest {
         @Test
         fun `successful panorama persists with correct fields`() {
             val match = canonical("m1")
-            whenever(historyService.latest(any())).thenReturn(listOf(match))
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(listOf(match))
             whenever(panoramaRepository.findByContextKey(any(), any())).thenReturn(null)
             val validText = "O clube vive grande fase com 8 vitórias em 10 partidas. A equipe marcou 30 gols e sofreu apenas 12, consolidando-se entre os favoritos do campeonato."
             whenever(provider.generatePanorama(any())).thenReturn(successResult(validText))
@@ -167,7 +187,7 @@ class LlmEditorialServiceTest {
         @Test
         fun `provider failure preserves deterministic panorama`() {
             val match = canonical("m1")
-            whenever(historyService.latest(any())).thenReturn(listOf(match))
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(listOf(match))
             whenever(panoramaRepository.findByContextKey(any(), any())).thenReturn(null)
             whenever(provider.generatePanorama(any()))
                 .thenReturn(LlmEditorialResult.Failure("timeout", RuntimeException("Connection timed out")))
@@ -180,14 +200,14 @@ class LlmEditorialServiceTest {
                 assertThat(record.errorCategory).isEqualTo("timeout")
             })
 
-            val persisted = service.getPersistedPanorama("club1")
+            val persisted = service.getPersistedPanorama(ClubId("club1"))
             assertThat(persisted).isNull()
         }
 
         @Test
         fun `HTTP 429 rate limit uses deterministic fallback`() {
             val match = canonical("m1")
-            whenever(historyService.latest(any())).thenReturn(listOf(match))
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(listOf(match))
             whenever(panoramaRepository.findByContextKey(any(), any())).thenReturn(null)
             whenever(provider.generatePanorama(any()))
                 .thenReturn(LlmEditorialResult.Failure("OpenRouter API HTTP 429", RuntimeException("Too Many Requests")))
@@ -204,7 +224,7 @@ class LlmEditorialServiceTest {
         @Test
         fun `free model unavailability uses deterministic fallback`() {
             val match = canonical("m1")
-            whenever(historyService.latest(any())).thenReturn(listOf(match))
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(listOf(match))
             whenever(panoramaRepository.findByContextKey(any(), any())).thenReturn(null)
             whenever(provider.generatePanorama(any()))
                 .thenReturn(LlmEditorialResult.Failure("OpenRouter API HTTP 503", RuntimeException("Service Unavailable")))
@@ -226,7 +246,7 @@ class LlmEditorialServiceTest {
         fun `cached valid panorama is reused`() {
             val match = canonical("m1")
             val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
-            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentMatches)
             whenever(panoramaRepository.findByContextKey(eq("club1"), any()))
                 .thenReturn(PanoramaRecord(
                     clubId = "club1", contextKey = "key", matchIds = listOf("m1", "m2", "m3"),
@@ -245,7 +265,7 @@ class LlmEditorialServiceTest {
         fun `cached prompt echo is ignored and regenerated`() {
             val match = canonical("m1")
             val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
-            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentMatches)
             whenever(panoramaRepository.findByContextKey(eq("club1"), any()))
                 .thenReturn(PanoramaRecord(
                     clubId = "club1", contextKey = "key", matchIds = listOf("m1", "m2", "m3"),
@@ -268,7 +288,7 @@ class LlmEditorialServiceTest {
         fun `cached prompt echo in Portuguese is ignored and regenerated`() {
             val match = canonical("m1")
             val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
-            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentMatches)
             whenever(panoramaRepository.findByContextKey(eq("club1"), any()))
                 .thenReturn(PanoramaRecord(
                     clubId = "club1", contextKey = "key", matchIds = listOf("m1", "m2", "m3"),
@@ -290,7 +310,7 @@ class LlmEditorialServiceTest {
         @Test
         fun `fresh prompt echo is not persisted`() {
             val match = canonical("m1")
-            whenever(historyService.latest(any())).thenReturn(listOf(match))
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(listOf(match))
             whenever(panoramaRepository.findByContextKey(any(), any())).thenReturn(null)
             whenever(provider.generatePanorama(any()))
                 .thenReturn(successResult("We need to produce a narrative. Must compare all matches. Should not use lists or markdown."))
@@ -308,7 +328,7 @@ class LlmEditorialServiceTest {
         fun `cached failed status prevents regeneration`() {
             val match = canonical("m1")
             val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
-            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentMatches)
             whenever(panoramaRepository.findByContextKey(eq("club1"), any()))
                 .thenReturn(PanoramaRecord(
                     clubId = "club1", contextKey = "key", matchIds = listOf("m1", "m2", "m3"),
@@ -327,7 +347,7 @@ class LlmEditorialServiceTest {
         fun `cached prompt echo failure allows retry`() {
             val match = canonical("m1")
             val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
-            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentMatches)
             whenever(panoramaRepository.findByContextKey(eq("club1"), any()))
                 .thenReturn(PanoramaRecord(
                     clubId = "club1", contextKey = "key", matchIds = listOf("m1", "m2", "m3"),
@@ -352,9 +372,8 @@ class LlmEditorialServiceTest {
 
         @Test
         fun `reads persisted panorama from repository for current context`() {
-            val match = canonical("m1")
             val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
-            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentMatches)
             
             val expectedKey = LlmEditorialService.computeContextKey(
                 "club1", listOf("m1", "m2", "m3"), "v3", enabledProps.model
@@ -368,14 +387,14 @@ class LlmEditorialServiceTest {
                     status = "success", generatedAt = fixedInstant,
                 ))
 
-            val result = service.getPersistedPanorama("club1")
+            val result = service.getPersistedPanorama(ClubId("club1"))
             assertThat(result).isEqualTo("AI panorama text")
         }
 
         @Test
         fun `returns null when no panorama exists for current context`() {
             val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
-            whenever(historyService.latest(any())).thenReturn(recentMatches)
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentMatches)
             
             val expectedKey = LlmEditorialService.computeContextKey(
                 "club1", listOf("m1", "m2", "m3"), "v3", enabledProps.model
@@ -383,7 +402,7 @@ class LlmEditorialServiceTest {
             
             whenever(panoramaRepository.findSuccessfulByContextKey("club1", expectedKey)).thenReturn(null)
 
-            val result = service.getPersistedPanorama("club1")
+            val result = service.getPersistedPanorama(ClubId("club1"))
             assertThat(result).isNull()
         }
     }
@@ -394,7 +413,7 @@ class LlmEditorialServiceTest {
         @Test
         fun `retries do not create duplicate LLM generation`() {
             val match = canonical("m1")
-            whenever(historyService.latest(any())).thenReturn(listOf(match))
+            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(listOf(match))
             whenever(provider.generateMatchNarrative(any())).thenReturn(successResult("Narrativa Discord."))
 
             val first = service.generateMatchNarrative(match)
@@ -450,6 +469,15 @@ class LlmEditorialServiceTest {
             val key1 = LlmEditorialService.computeContextKey("c1", listOf("m1"), "v1", "model-a")
             val key2 = LlmEditorialService.computeContextKey("c1", listOf("m1"), "v1", "model-b")
             assertThat(key1).isNotEqualTo(key2)
+        }
+
+        @Test
+        fun `same matches have independent context keys for different clubs`() {
+            val matches = listOf("shared", "m2")
+            val keyA = LlmEditorialService.computeContextKey("club-a", matches, "v1", "model")
+            val keyB = LlmEditorialService.computeContextKey("club-b", matches, "v1", "model")
+
+            assertThat(keyA).isNotEqualTo(keyB)
         }
     }
 }

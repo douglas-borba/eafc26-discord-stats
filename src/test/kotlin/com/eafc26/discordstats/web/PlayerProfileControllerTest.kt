@@ -1,9 +1,11 @@
 package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.domain.match.PlayerId
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.profile.PlayerProfile
 import com.eafc26.discordstats.profile.PlayerProfileIndexEntry
 import com.eafc26.discordstats.service.PlayerProfileService
+import com.eafc26.discordstats.support.defaultClubProvider
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -21,7 +23,7 @@ class PlayerProfileControllerTest {
     @BeforeEach
     fun setUp() {
         service = mock()
-        controller = PlayerProfileController(service)
+        controller = PlayerProfileController(service, defaultClubProvider(CLUB_ID))
     }
 
     @Test
@@ -32,7 +34,7 @@ class PlayerProfileControllerTest {
 
     @Test
     fun `empty player index returns explicit empty state`() {
-        whenever(service.listPlayers()).thenReturn(emptyList())
+        whenever(service.listPlayers(CLUB_ID)).thenReturn(emptyList())
 
         val response = controller.listPlayers().block()!!
 
@@ -42,7 +44,7 @@ class PlayerProfileControllerTest {
 
     @Test
     fun `player index exposes presentation contract`() {
-        whenever(service.listPlayers()).thenReturn(
+        whenever(service.listPlayers(CLUB_ID)).thenReturn(
             listOf(PlayerProfileIndexEntry(PlayerId("p1"), "Player", 3, Instant.parse("2026-07-03T10:00:00Z")))
         )
 
@@ -72,25 +74,29 @@ class PlayerProfileControllerTest {
             redCards = 0,
             recentMatches = emptyList(),
         )
-        whenever(service.findById(PlayerId("p1"))).thenReturn(profile)
+        whenever(service.findById(CLUB_ID, PlayerId("p1"))).thenReturn(profile)
 
         val response = controller.getProfile("p1").block()!!
 
         assertThat(response.body!!.profile!!.name).isEqualTo("Player")
         assertThat(response.body!!.profile!!.averageRating).isEqualByComparingTo("7.50")
         assertThat(response.body!!.profile!!.craques).isEqualTo(1)
-        verify(service).findById(PlayerId("p1"))
+        verify(service).findById(CLUB_ID, PlayerId("p1"))
         verifyNoMoreInteractions(service)
     }
 
     @Test
     fun `unknown player returns not found`() {
-        whenever(service.findById(PlayerId("missing"))).thenReturn(null)
+        whenever(service.findById(CLUB_ID, PlayerId("missing"))).thenReturn(null)
 
         val response = controller.getProfile("missing").block()!!
 
         assertThat(response.statusCode.value()).isEqualTo(404)
         assertThat(response.body!!.status).isEqualTo("not_found")
         assertThat(response.body!!.profile).isNull()
+    }
+
+    private companion object {
+        val CLUB_ID = ClubId("our-club")
     }
 }

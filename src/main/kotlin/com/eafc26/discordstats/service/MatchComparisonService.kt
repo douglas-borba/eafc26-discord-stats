@@ -17,6 +17,7 @@ import com.eafc26.discordstats.comparison.StoryMatchDifference
 import com.eafc26.discordstats.domain.interpretation.AwardDecision
 import com.eafc26.discordstats.domain.interpretation.AwardType
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
 import com.eafc26.discordstats.domain.story.StoryType
 import org.springframework.stereotype.Service
@@ -26,8 +27,8 @@ import java.math.BigDecimal
 class MatchComparisonService(
     private val matchHistoryService: MatchHistoryService,
 ) {
-    fun listOptions(): List<MatchComparisonOption> =
-        matchHistoryService.list().map { canonical ->
+    fun listOptions(clubId: ClubId): List<MatchComparisonOption> =
+        matchHistoryService.list(clubId).map { canonical ->
             val result = canonical.interpretation.result
             val participants = canonical.footballMatch.participants.associateBy { it.club.id }
             MatchComparisonOption(
@@ -41,12 +42,12 @@ class MatchComparisonService(
             )
         }
 
-    fun compare(firstMatchId: MatchId, secondMatchId: MatchId): MatchComparisonResult {
-        val firstCanonical = matchHistoryService.findById(firstMatchId)
+    fun compare(clubId: ClubId, firstMatchId: MatchId, secondMatchId: MatchId): MatchComparisonResult {
+        val firstCanonical = matchHistoryService.findById(clubId, firstMatchId)
         val secondCanonical = if (firstMatchId == secondMatchId) {
             firstCanonical
         } else {
-            matchHistoryService.findById(secondMatchId)
+            matchHistoryService.findById(clubId, secondMatchId)
         }
         val missing = buildSet {
             if (firstCanonical == null) add(firstMatchId)

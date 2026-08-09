@@ -23,10 +23,10 @@ import org.springframework.stereotype.Service
 class OpponentHistoryService(
     private val matchHistoryService: MatchHistoryService,
 ) {
-    fun listOpponents(): List<OpponentSummary> = groupedMatches().map { (clubId, matches) ->
+    fun listOpponents(clubId: ClubId): List<OpponentSummary> = groupedMatches(clubId).map { (opponentClubId, matches) ->
         val ordered = matches.sortedCanonicalNewestFirst()
         OpponentSummary(
-            clubId = clubId,
+            clubId = opponentClubId,
             displayName = ordered.latestOpponentName() ?: FALLBACK_NAME,
             meetings = ordered.size,
             record = ordered.record(),
@@ -34,8 +34,8 @@ class OpponentHistoryService(
         )
     }.sortedWith(compareByDescending<OpponentSummary> { it.latestMatch.playedAt }.thenBy { it.clubId.value })
 
-    fun findByClubId(clubId: ClubId): OpponentHistory? {
-        val newest = groupedMatches()[clubId]?.sortedCanonicalNewestFirst() ?: return null
+    fun findByClubId(clubId: ClubId, opponentClubId: ClubId): OpponentHistory? {
+        val newest = groupedMatches(clubId)[opponentClubId]?.sortedCanonicalNewestFirst() ?: return null
         val oldest = newest.asReversed()
         val allNames = newest.mapNotNull { it.opponentName() }.toSet()
         val biggestWins = newest.extreme(MatchOutcome.WIN, maximum = true)
@@ -53,7 +53,7 @@ class OpponentHistoryService(
             leaders.forEach { leader -> add(OpponentCriterionEvidence("lider_${leader.type.name.lowercase()}", PLAYER_TIES, leader.value.toString(), newest.map(CanonicalMatch::matchId))) }
         }
         return OpponentHistory(
-            clubId = clubId,
+            clubId = opponentClubId,
             displayName = newest.latestOpponentName() ?: FALLBACK_NAME,
             previousNames = allNames - setOfNotNull(newest.latestOpponentName()),
             periodStart = oldest.first().footballMatch.playedAt,
@@ -65,12 +65,12 @@ class OpponentHistoryService(
             currentRun = current,
             runRecords = runRecords,
             playerLeaders = leaders,
-            evidence = OpponentHistoryEvidence(clubId, oldest.map(CanonicalMatch::matchId), oldest.size, criteria),
+            evidence = OpponentHistoryEvidence(opponentClubId, oldest.map(CanonicalMatch::matchId), oldest.size, criteria),
         )
     }
 
-    private fun groupedMatches(): Map<ClubId, List<CanonicalMatch>> =
-        matchHistoryService.list().groupBy { it.interpretation.result.opponentClub }
+    private fun groupedMatches(clubId: ClubId): Map<ClubId, List<CanonicalMatch>> =
+        matchHistoryService.list(clubId).groupBy { it.interpretation.result.opponentClub }
 
     private fun List<CanonicalMatch>.record() = HeadToHeadRecord(
         meetings = size,

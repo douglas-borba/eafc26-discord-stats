@@ -31,7 +31,6 @@ import com.eafc26.discordstats.history.MatchHistoryQuery
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -51,17 +50,17 @@ class PlayerProfileServiceTest {
 
     @Test
     fun `empty history produces no player profiles`() {
-        whenever(history.list()).thenReturn(emptyList())
+        whenever(history.list(OUR_CLUB)).thenReturn(emptyList())
 
-        assertThat(service.listPlayers()).isEmpty()
+        assertThat(service.listPlayers(OUR_CLUB)).isEmpty()
     }
 
     @Test
     fun `unknown player has no profile`() {
-        whenever(history.list(any<MatchHistoryQuery>())).thenReturn(emptyList())
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = PlayerId("missing")))).thenReturn(emptyList())
 
-        assertThat(service.findById(PlayerId("missing"))).isNull()
-        verify(history).list(MatchHistoryQuery(playerId = PlayerId("missing")))
+        assertThat(service.findById(OUR_CLUB, PlayerId("missing"))).isNull()
+        verify(history).list(OUR_CLUB, MatchHistoryQuery(playerId = PlayerId("missing")))
     }
 
     @Test
@@ -72,9 +71,9 @@ class PlayerProfileServiceTest {
             canonical("m2", "2026-07-02T10:00:00Z", playerId, "Old Name", MatchOutcome.DRAW, "6.0", 0, 2, 1, setOf(AwardType.BAGRE)),
             canonical("m1", "2026-07-01T10:00:00Z", playerId, "Old Name", MatchOutcome.LOSS, null, 1, 0, 0, setOf(AwardType.XERIFE)),
         )
-        whenever(history.list(any<MatchHistoryQuery>())).thenReturn(matches)
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
 
-        val profile = service.findById(playerId)!!
+        val profile = service.findById(OUR_CLUB, playerId)!!
 
         assertThat(profile.displayName).isEqualTo("Current Name")
         assertThat(profile.matchCount).isEqualTo(3)
@@ -110,9 +109,9 @@ class PlayerProfileServiceTest {
                 emptySet(),
             )
         }
-        whenever(history.list(any<MatchHistoryQuery>())).thenReturn(matches)
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
 
-        val profile = service.findById(playerId, recentMatchLimit = 3)!!
+        val profile = service.findById(OUR_CLUB, playerId, recentMatchLimit = 3)!!
 
         assertThat(profile.matchCount).isEqualTo(6)
         assertThat(profile.recentMatches.map { it.matchId.value }).containsExactly("m6", "m5", "m4")
@@ -123,13 +122,33 @@ class PlayerProfileServiceTest {
         val first = canonical("new", "2026-07-03T10:00:00Z", PlayerId("one"), "Ana", MatchOutcome.WIN, "8", 0, 0, 0, emptySet())
         val second = canonical("old", "2026-07-02T10:00:00Z", PlayerId("one"), "Ana Antiga", MatchOutcome.LOSS, "7", 0, 0, 0, emptySet())
         val third = canonical("other", "2026-07-01T10:00:00Z", PlayerId("two"), "Bruno", MatchOutcome.DRAW, "6", 0, 0, 0, emptySet())
-        whenever(history.list()).thenReturn(listOf(first, second, third))
+        whenever(history.list(OUR_CLUB)).thenReturn(listOf(first, second, third))
 
-        val result = service.listPlayers()
+        val result = service.listPlayers(OUR_CLUB)
 
         assertThat(result.map { it.playerId.value }).containsExactly("one", "two")
         assertThat(result.first().displayName).isEqualTo("Ana")
         assertThat(result.first().matchCount).isEqualTo(2)
+    }
+
+    @Test
+    fun `same player ID and name in two clubs never mix profile statistics`() {
+        val otherClub = ClubId("other-club")
+        val playerId = PlayerId("ronaldo")
+        val ourMatch = canonical("ours", "2026-07-03T10:00:00Z", playerId, "Ronaldo", MatchOutcome.WIN, "9.0", 3, 1, 0, setOf(AwardType.CRAQUE))
+        val theirMatch = canonical("theirs", "2026-07-02T10:00:00Z", playerId, "Ronaldo", MatchOutcome.LOSS, "5.0", 0, 0, 1, setOf(AwardType.BAGRE), otherClub)
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(listOf(ourMatch))
+        whenever(history.list(otherClub, MatchHistoryQuery(playerId = playerId))).thenReturn(listOf(theirMatch))
+
+        val ours = service.findById(OUR_CLUB, playerId)!!
+        val theirs = service.findById(otherClub, playerId)!!
+
+        assertThat(ours.goals).isEqualTo(3)
+        assertThat(ours.craques).isEqualTo(1)
+        assertThat(ours.bagres).isZero()
+        assertThat(theirs.goals).isZero()
+        assertThat(theirs.craques).isZero()
+        assertThat(theirs.bagres).isEqualTo(1)
     }
 
     private fun canonical(
@@ -143,6 +162,7 @@ class PlayerProfileServiceTest {
         assists: Int,
         redCards: Int,
         awards: Set<AwardType>,
+        perspectiveClubId: ClubId = OUR_CLUB,
     ): CanonicalMatch {
         val player = PlayerMatchPerformance(
             player = PlayerIdentity(playerId, DisplayName(name), null),
@@ -157,7 +177,7 @@ class PlayerProfileServiceTest {
             eaRecognition = EaRecognition(false),
         )
         val ours = ClubMatchPerformance(
-            ClubIdentity(OUR_CLUB, ClubName("Our FC")),
+            ClubIdentity(perspectiveClubId, ClubName("Our FC")),
             Score(if (outcome == MatchOutcome.WIN) 2 else if (outcome == MatchOutcome.DRAW) 1 else 0),
             null,
             listOf(player),
@@ -175,7 +195,7 @@ class PlayerProfileServiceTest {
             listOf(ours, opponent),
         )
         val result = mock<ResultDecision>()
-        whenever(result.ourClub).thenReturn(OUR_CLUB)
+        whenever(result.ourClub).thenReturn(perspectiveClubId)
         whenever(result.opponentClub).thenReturn(OPPONENT)
         whenever(result.ourScore).thenReturn(ours.score)
         whenever(result.opponentScore).thenReturn(opponent.score)
@@ -196,7 +216,7 @@ class PlayerProfileServiceTest {
         whenever(matchAwards.bagre).thenReturn(bagre)
         whenever(matchAwards.xerife).thenReturn(xerife)
         val interpretation = mock<MatchInterpretation>()
-        whenever(interpretation.perspectiveClubId).thenReturn(OUR_CLUB)
+        whenever(interpretation.perspectiveClubId).thenReturn(perspectiveClubId)
         whenever(interpretation.result).thenReturn(result)
         whenever(interpretation.awards).thenReturn(matchAwards)
         val canonical = mock<CanonicalMatch>()
