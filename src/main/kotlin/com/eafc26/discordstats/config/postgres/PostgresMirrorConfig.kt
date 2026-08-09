@@ -50,10 +50,6 @@ class PostgresMirrorConfig {
         PostgresMonitoredClubRepository(jdbcTemplate)
 
     @Bean
-    fun monitoredClubService(repository: MonitoredClubRepository): MonitoredClubService =
-        MonitoredClubService(repository)
-
-    @Bean
     fun legacyDefaultClubImporter(
         repository: MonitoredClubRepository,
         service: MonitoredClubService,

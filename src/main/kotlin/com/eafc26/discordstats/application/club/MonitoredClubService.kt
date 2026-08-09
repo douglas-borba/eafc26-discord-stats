@@ -9,7 +9,12 @@ class MonitoredClubService(
     private val repository: MonitoredClubRepository,
     private val clock: Clock = Clock.systemUTC(),
 ) {
-    fun register(clubId: ClubId, displayName: ClubName, platform: EaPlatform): MonitoredClub {
+    fun register(
+        clubId: ClubId,
+        displayName: ClubName,
+        platform: EaPlatform,
+        monitoringEnabled: Boolean = true,
+    ): MonitoredClub {
         repository.findById(clubId)?.let { return it }
         val now = Instant.now(clock)
         return repository.save(
@@ -17,7 +22,7 @@ class MonitoredClubService(
                 clubId = clubId,
                 displayName = displayName,
                 platform = platform,
-                monitoringEnabled = true,
+                monitoringEnabled = monitoringEnabled,
                 discordWebhookSecretReference = null,
                 createdAt = now,
                 updatedAt = now,

@@ -4,20 +4,22 @@ import com.eafc26.discordstats.application.club.ClubCatalogService
 import com.eafc26.discordstats.application.club.DefaultClubConfiguration
 import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.club.EaPlatform
+import com.eafc26.discordstats.application.club.MonitoredClub
+import com.eafc26.discordstats.application.club.MonitoredClubRepository
+import com.eafc26.discordstats.application.club.MonitoredClubService
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
 import com.eafc26.discordstats.ea.EaClubsGateway
-import com.eafc26.discordstats.application.club.MonitoredClubRepository
-import com.eafc26.discordstats.application.club.MonitoredClub
-import com.eafc26.discordstats.discord.DiscordDestinationResolver
 import com.eafc26.discordstats.discord.ContextualDiscordDestinationResolver
-import com.eafc26.discordstats.discord.DiscordDestination
+import com.eafc26.discordstats.discord.DiscordDestinationResolver
 import com.eafc26.discordstats.discord.DiscordWebhookSecretResolver
+import com.eafc26.discordstats.discord.DiscordWebhookSecretStore
+import com.eafc26.discordstats.discord.PreferencesDiscordWebhookSecretStore
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import java.time.Instant
 
 @Configuration
@@ -26,6 +28,10 @@ class ClubAdministrationConfig {
     fun clubCatalogService(
         @Qualifier("production") gateway: EaClubsGateway,
     ): ClubCatalogService = ClubCatalogService(gateway)
+
+    @Bean
+    fun monitoredClubService(repository: MonitoredClubRepository): MonitoredClubService =
+        MonitoredClubService(repository)
 
     @Bean
     fun defaultClubProvider(
@@ -66,13 +72,8 @@ class ClubAdministrationConfig {
     )
 
     @Bean
-    fun legacyDiscordWebhookSecretResolver(webhookConfigService: WebhookConfigService) =
-        DiscordWebhookSecretResolver { reference ->
-            if (reference != DefaultClubProvider.LEGACY_WEBHOOK_REFERENCE) return@DiscordWebhookSecretResolver null
-            webhookConfigService.getWebhookUrl()
-                .takeIf(String::isNotBlank)
-                ?.let(::DiscordDestination)
-        }
+    fun discordWebhookSecretStore(webhookConfigService: WebhookConfigService): DiscordWebhookSecretStore =
+        PreferencesDiscordWebhookSecretStore(webhookConfigService)
 }
 
 /** Compatibility repository used only when PostgreSQL club administration is disabled. */

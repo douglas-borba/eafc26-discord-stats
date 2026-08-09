@@ -75,6 +75,15 @@ class SetupRedirectFilterTest {
     }
 
     @Test
+    fun `club administration API is reachable when Discord is not configured`() {
+        whenever(webhookConfigService.isConfigured()).thenReturn(false)
+
+        webClient.get().uri("/api/admin/clubs")
+            .exchange()
+            .expectStatus().isNotFound
+    }
+
+    @Test
     fun `static resources are never redirected to setup`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
 

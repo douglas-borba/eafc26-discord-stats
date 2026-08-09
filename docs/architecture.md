@@ -268,6 +268,21 @@ baselined without an HTTP request. The temporary `legacy:default` secret adapter
 uses `WebhookConfigService` only for the default club, keeping `.env` access out of
 application services and logs.
 
+### Monitored club administration
+
+`ClubAdministrationController` exposes runtime administration under
+`/api/admin/clubs`. It delegates EA search to `ClubCatalogService`, registration
+and configuration to `MonitoredClubService`, and reads the existing club-scoped
+operational holders for status. The API never returns EA DTOs, webhook URLs or
+secret references. Mutable operations retain the global CSRF protection.
+
+Webhook URLs are stored outside `monitored_clubs` by
+`DiscordWebhookSecretStore`; the club row contains only its opaque reference.
+The resolver consumes that reference at publication time. Changes to registration
+or `monitoringEnabled` are visible to `ClubPollingCoordinator` on its next cycle,
+without restart. The compact HTTP contract is documented in
+`docs/admin-clubs-api.md`.
+
 Publication, force-resend and reconciliation services all require or derive an
 unambiguous `ClubId`. Legacy controllers resolve the default club at their boundary.
 The replay runner similarly selects only the default club, applies exclusions inside

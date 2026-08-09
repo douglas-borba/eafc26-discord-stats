@@ -3,6 +3,7 @@ package com.eafc26.discordstats.scheduler
 import com.eafc26.discordstats.application.club.EaPlatform
 import com.eafc26.discordstats.application.club.MonitoredClub
 import com.eafc26.discordstats.application.club.MonitoredClubRepository
+import com.eafc26.discordstats.application.club.MonitoredClubService
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
 import com.eafc26.discordstats.service.AcquisitionResult
@@ -105,6 +106,28 @@ class ClubPollingCoordinatorTest {
         assertThat(status.current(clubA).lastResult).isNotEqualTo(status.current(clubB).lastResult)
     }
 
+    @Test
+    fun `repository changes are observed by the next cycle without restart`() {
+        val acquisition: MatchAcquisitionService = mock()
+        val status = PollingStatusHolder()
+        val repository = MutableRepository()
+        val service = MonitoredClubService(repository, Clock.fixed(fixedNow, ZoneOffset.UTC))
+        val coordinator = ClubPollingCoordinator(repository, acquisition, status, Clock.fixed(fixedNow, ZoneOffset.UTC))
+        whenever(acquisition.acquire(clubA, AcquisitionTrigger.SCHEDULER)).thenReturn(success())
+        whenever(acquisition.acquire(clubB, AcquisitionTrigger.SCHEDULER)).thenReturn(success())
+
+        service.register(clubA, ClubName("Club A"), EaPlatform("common-gen5"), true)
+        assertThat(coordinator.pollEnabledClubs(60_000).clubs.map { it.clubId }).containsExactly(clubA)
+
+        service.register(clubB, ClubName("Club B"), EaPlatform("common-gen5"), false)
+        service.setMonitoring(clubB, true)
+        assertThat(coordinator.pollEnabledClubs(60_000).clubs.map { it.clubId }).containsExactly(clubA, clubB)
+
+        service.setMonitoring(clubB, false)
+        assertThat(coordinator.pollEnabledClubs(60_000).clubs.map { it.clubId }).containsExactly(clubA)
+        verify(acquisition, org.mockito.kotlin.times(1)).acquire(clubB, AcquisitionTrigger.SCHEDULER)
+    }
+
     private fun coordinator(
         clubs: List<MonitoredClub>,
         acquisition: MatchAcquisitionService,
@@ -134,4 +157,12 @@ class ClubPollingCoordinatorTest {
     )
 
     private fun success() = AcquisitionResult.Processed(emptyList(), emptyList(), emptyList())
+
+    private class MutableRepository : MonitoredClubRepository {
+        private val clubs = linkedMapOf<ClubId, MonitoredClub>()
+        override fun save(club: MonitoredClub) = club.also { clubs[it.clubId] = it }
+        override fun findById(clubId: ClubId) = clubs[clubId]
+        override fun findAll() = clubs.values.toList()
+        override fun existsById(clubId: ClubId) = clubId in clubs
+    }
 }

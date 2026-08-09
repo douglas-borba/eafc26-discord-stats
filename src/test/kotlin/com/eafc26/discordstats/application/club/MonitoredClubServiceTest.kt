@@ -26,6 +26,16 @@ class MonitoredClubServiceTest {
     }
 
     @Test
+    fun `registration honors initial monitoring and equal names do not collapse distinct ids`() {
+        val first = service.register(ClubId("100"), ClubName("Same Name"), EaPlatform("common-gen5"), false)
+        val second = service.register(ClubId("200"), ClubName("Same Name"), EaPlatform("common-gen5"), true)
+
+        assertThat(first.monitoringEnabled).isFalse()
+        assertThat(second.monitoringEnabled).isTrue()
+        assertThat(repository.findAll()).containsExactly(first, second)
+    }
+
+    @Test
     fun `register never overwrites an existing administrative configuration`() {
         val original = service.register(ClubId("1104972"), ClubName("Associação BF"), EaPlatform("common-gen5"))
         val configured = service.configureWebhook(original.clubId, DiscordWebhookSecretReference("vault:club-1104972"))
