@@ -5,6 +5,7 @@ import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadat
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.canonical.CanonicalSchemaVersion
 import com.eafc26.discordstats.canonical.EngineVersion
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.jdbc.core.JdbcTemplate
@@ -37,8 +38,7 @@ class PostgresCanonicalMatchRepository(
                  canonical_schema_version, payload, created_at, updated_at,
                  outcome, our_score, opponent_score, our_club_name, opponent_club_name)
             VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (match_id) DO UPDATE SET
-                club_id = EXCLUDED.club_id,
+            ON CONFLICT (club_id, match_id) DO UPDATE SET
                 opponent_club_id = EXCLUDED.opponent_club_id,
                 played_at = EXCLUDED.played_at,
                 match_type = EXCLUDED.match_type,
@@ -74,17 +74,22 @@ class PostgresCanonicalMatchRepository(
         val ourParticipant = match.footballMatch.participants.find { it.club.id.value == perspectiveClubId }
             ?: return
 
-        jdbcTemplate.update("DELETE FROM player_match_stats WHERE match_id = ?", match.matchId.value)
+        jdbcTemplate.update(
+            "DELETE FROM player_match_stats WHERE club_id = ? AND match_id = ?",
+            perspectiveClubId,
+            match.matchId.value,
+        )
 
         ourParticipant.players.forEach { playerPerf ->
             jdbcTemplate.update(
                 """
                 INSERT INTO player_match_stats
-                    (match_id, player_id, platform_name, pro_name, rating,
+                    (club_id, match_id, player_id, platform_name, pro_name, rating,
                      goals, assists, shots, passes_completed, passes_attempted,
                      tackles_completed, tackles_attempted, red_cards, man_of_the_match, played_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent(),
+                perspectiveClubId,
                 match.matchId.value,
                 playerPerf.player.id.value,
                 playerPerf.player.platformName?.value,
@@ -104,22 +109,25 @@ class PostgresCanonicalMatchRepository(
         }
     }
 
-    override fun findById(matchId: MatchId): CanonicalMatch? {
+    override fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch? {
         val results = jdbcTemplate.query(
-            "SELECT payload FROM canonical_matches WHERE match_id = ?",
+            "SELECT payload FROM canonical_matches WHERE club_id = ? AND match_id = ?",
             { rs, _ -> readPayload(rs) },
+            clubId.value,
             matchId.value,
         )
         return results.firstOrNull()
     }
 
-    override fun findAll(): List<CanonicalMatch> {
+    override fun findAll(clubId: ClubId): List<CanonicalMatch> {
         return jdbcTemplate.query(
-            "SELECT payload FROM canonical_matches ORDER BY played_at DESC, match_id ASC",
-        ) { rs, _ -> readPayload(rs) }
+            "SELECT payload FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC",
+            { rs, _ -> readPayload(rs) },
+            clubId.value,
+        )
     }
 
-    override fun metadata(): CanonicalRepositoryMetadata {
+    override fun metadata(clubId: ClubId): CanonicalRepositoryMetadata {
         return jdbcTemplate.queryForObject(
             """
             SELECT
@@ -130,29 +138,32 @@ class PostgresCanonicalMatchRepository(
                 array_agg(DISTINCT canonical_schema_version) AS schema_versions,
                 array_agg(DISTINCT payload->>'engineVersion') AS engine_versions
             FROM canonical_matches
+            WHERE club_id = ?
             """.trimIndent(),
-        ) { rs, _ ->
-            val count = rs.getInt("match_count")
-            val oldest = rs.getTimestamp("oldest")?.toInstant()
-            val newest = rs.getTimestamp("newest")?.toInstant()
-            val lastGenerated = rs.getString("last_generated")?.let(Instant::parse)
-            val schemaVersions = (rs.getArray("schema_versions")?.array as? Array<*>)
-                ?.filterNotNull()
-                ?.map { CanonicalSchemaVersion((it as Number).toInt()) }
-                ?.toSet() ?: emptySet()
-            val engineVersions = (rs.getArray("engine_versions")?.array as? Array<*>)
-                ?.filterNotNull()
-                ?.map { EngineVersion(it.toString()) }
-                ?.toSet() ?: emptySet()
-            CanonicalRepositoryMetadata(
-                matchCount = count,
-                oldestMatchAt = oldest,
-                newestMatchAt = newest,
-                lastGeneratedAt = lastGenerated,
-                schemaVersions = schemaVersions,
-                engineVersions = engineVersions,
-            )
-        }!!
+            { rs, _ ->
+                val count = rs.getInt("match_count")
+                val oldest = rs.getTimestamp("oldest")?.toInstant()
+                val newest = rs.getTimestamp("newest")?.toInstant()
+                val lastGenerated = rs.getString("last_generated")?.let(Instant::parse)
+                val schemaVersions = (rs.getArray("schema_versions")?.array as? Array<*>)
+                    ?.filterNotNull()
+                    ?.map { CanonicalSchemaVersion((it as Number).toInt()) }
+                    ?.toSet() ?: emptySet()
+                val engineVersions = (rs.getArray("engine_versions")?.array as? Array<*>)
+                    ?.filterNotNull()
+                    ?.map { EngineVersion(it.toString()) }
+                    ?.toSet() ?: emptySet()
+                CanonicalRepositoryMetadata(
+                    matchCount = count,
+                    oldestMatchAt = oldest,
+                    newestMatchAt = newest,
+                    lastGeneratedAt = lastGenerated,
+                    schemaVersions = schemaVersions,
+                    engineVersions = engineVersions,
+                )
+            },
+            clubId.value,
+        )!!
     }
 
     private fun readPayload(rs: ResultSet): CanonicalMatch {

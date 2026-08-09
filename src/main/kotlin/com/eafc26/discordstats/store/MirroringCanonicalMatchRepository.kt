@@ -3,6 +3,7 @@ package com.eafc26.discordstats.store
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
 import com.eafc26.discordstats.canonical.CanonicalMatch
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
 import org.slf4j.LoggerFactory
 
@@ -26,9 +27,9 @@ class MirroringCanonicalMatchRepository(
         }
     }
 
-    override fun findById(matchId: MatchId): CanonicalMatch? = primary.findById(matchId)
+    override fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch? = primary.findById(clubId, matchId)
 
-    override fun findAll(): List<CanonicalMatch> = primary.findAll()
+    override fun findAll(clubId: ClubId): List<CanonicalMatch> = primary.findAll(clubId)
 
-    override fun metadata(): CanonicalRepositoryMetadata = primary.metadata()
+    override fun metadata(clubId: ClubId): CanonicalRepositoryMetadata = primary.metadata(clubId)
 }

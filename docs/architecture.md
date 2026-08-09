@@ -187,11 +187,12 @@ duplicate state from entering the stable format.
 
 `CanonicalMatchRepository` supports:
 
-- atomic save or replacement by `MatchId`;
-- lookup by `MatchId`;
-- deterministic listing by match time descending;
-- repository metadata: count, time range, latest generation time and observed
-  schema/engine versions.
+- atomic save or replacement by `(ClubId, MatchId)`, deriving `ClubId` from the
+  canonical perspective;
+- lookup by `(ClubId, MatchId)`;
+- deterministic listing by match time descending within one club;
+- club-scoped repository metadata: count, time range, latest generation time
+  and observed schema/engine versions.
 
 `MatchHistoryService` is the read-only application boundary over that port. It
 returns complete `CanonicalMatch` records without accessing EA or invoking the
@@ -325,11 +326,19 @@ JSON APIs below `/api/opponents`. The legacy `GET /insights` redirects to
 `/opponents`; it has no independent implementation.
 
 `JsonCanonicalMatchRepository` is the initial infrastructure adapter. It stores
-one UTF-8 JSON file per match below
-`Application Support/EAFC26DiscordStats/canonical-matches`. Match IDs are
-URL-safe encoded before becoming filenames. Writes use a sibling temporary file
-and atomic replacement where supported. A malformed record fails explicitly
-instead of silently removing history.
+one UTF-8 JSON file per club perspective below
+`Application Support/EAFC26DiscordStats/clubs/{clubId}/canonical-matches`.
+The canonical identity is `(clubId, matchId)`; match IDs are URL-safe encoded
+before becoming filenames. Writes use a sibling temporary file and atomic
+replacement where supported. A malformed record fails explicitly instead of
+silently removing history.
+
+For compatibility, legacy files under `canonical-matches/` are verified against
+the configured default club and copied into its namespace when first read. The
+legacy source is retained, and conflicting content fails explicitly. PostgreSQL
+uses the same compound identity in `canonical_matches`; `player_match_stats`
+uses `(club_id, match_id, player_id)` and a compound foreign key back to the
+canonical record. Repository reads and metadata always require a `ClubId`.
 
 Development simulations are intentionally not persisted.
 
@@ -344,7 +353,7 @@ not a mirror of an unbounded EA history:
 EA recent league window
   -> deterministic order
   -> CanonicalMatchFactory for every returned match
-  -> atomic save or replacement by MatchId
+  -> atomic save or replacement by (clubId, MatchId)
   -> PublishedMatchStore lookup
   -> Discord delivery for unpublished matches only
 ```

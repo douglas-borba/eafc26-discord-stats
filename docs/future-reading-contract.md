@@ -18,7 +18,7 @@
 
 ### Match Detail
 - Full canonical match by ID
-- **Query**: `SELECT payload FROM canonical_matches WHERE match_id = ?`
+- **Query**: `SELECT payload FROM canonical_matches WHERE club_id = ? AND match_id = ?`
 
 ### Players
 - Aggregated from JSONB payload across matches

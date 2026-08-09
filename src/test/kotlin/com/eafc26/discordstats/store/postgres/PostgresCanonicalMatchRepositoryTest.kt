@@ -14,6 +14,7 @@ import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.store.PostgresCanonicalMatchRepository
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
@@ -66,7 +67,7 @@ class PostgresCanonicalMatchRepositoryTest {
     fun `save and findById roundtrip the complete canonical match`() {
         val canonical = canonicalMatch("match-1", 1_718_500_000L)
         repository.save(canonical)
-        val found = repository.findById(canonical.matchId)
+        val found = repository.findById(OUR_CLUB, canonical.matchId)
         assertThat(found).isEqualTo(canonical)
     }
 
@@ -74,7 +75,7 @@ class PostgresCanonicalMatchRepositoryTest {
     fun `upsert creates on first save`() {
         val canonical = canonicalMatch("new-match", 1_718_500_000L)
         repository.save(canonical)
-        assertThat(repository.findById(canonical.matchId)).isNotNull
+        assertThat(repository.findById(OUR_CLUB, canonical.matchId)).isNotNull
     }
 
     @Test
@@ -84,8 +85,8 @@ class PostgresCanonicalMatchRepositoryTest {
         repository.save(original)
         repository.save(replacement)
 
-        assertThat(repository.findAll()).hasSize(1)
-        assertThat(repository.findById(MatchId("same-id"))!!.generatedAt)
+        assertThat(repository.findAll(OUR_CLUB)).hasSize(1)
+        assertThat(repository.findById(OUR_CLUB, MatchId("same-id"))!!.generatedAt)
             .isEqualTo(replacement.generatedAt)
     }
 
@@ -116,13 +117,13 @@ class PostgresCanonicalMatchRepositoryTest {
         val sameTimeA = canonicalMatch("a", 1_800_000_000L)
         listOf(old, sameTimeB, sameTimeA).forEach(repository::save)
 
-        assertThat(repository.findAll().map { it.matchId.value })
+        assertThat(repository.findAll(OUR_CLUB).map { it.matchId.value })
             .containsExactly("a", "b", "old")
     }
 
     @Test
     fun `findById returns null for missing match`() {
-        assertThat(repository.findById(MatchId("missing"))).isNull()
+        assertThat(repository.findById(OUR_CLUB, MatchId("missing"))).isNull()
     }
 
     @Test
@@ -133,7 +134,7 @@ class PostgresCanonicalMatchRepositoryTest {
         repository.save(old)
         repository.save(recent)
 
-        val metadata = repository.metadata()
+        val metadata = repository.metadata(OUR_CLUB)
 
         assertThat(metadata.matchCount).isEqualTo(2)
         assertThat(metadata.oldestMatchAt).isEqualTo(old.footballMatch.playedAt)
@@ -145,7 +146,7 @@ class PostgresCanonicalMatchRepositoryTest {
 
     @Test
     fun `metadata returns zero counts on empty table`() {
-        val metadata = repository.metadata()
+        val metadata = repository.metadata(OUR_CLUB)
         assertThat(metadata.matchCount).isZero()
         assertThat(metadata.oldestMatchAt).isNull()
         assertThat(metadata.newestMatchAt).isNull()
@@ -157,9 +158,60 @@ class PostgresCanonicalMatchRepositoryTest {
         val match2 = canonicalMatch("match-2", 1_718_600_000L)
         repository.save(match1)
         repository.save(match2)
-        assertThat(repository.findAll()).hasSize(2)
-        assertThat(repository.findById(MatchId("match-1"))).isEqualTo(match1)
-        assertThat(repository.findById(MatchId("match-2"))).isEqualTo(match2)
+        assertThat(repository.findAll(OUR_CLUB)).hasSize(2)
+        assertThat(repository.findById(OUR_CLUB, MatchId("match-1"))).isEqualTo(match1)
+        assertThat(repository.findById(OUR_CLUB, MatchId("match-2"))).isEqualTo(match2)
+    }
+
+    @Test
+    fun `same match ID from two club perspectives remains isolated`() {
+        val otherClub = ClubId("opponent")
+        val ourPerspective = canonicalMatch("shared-match", 1_718_500_000L, OUR_CLUB)
+        val otherPerspective = canonicalMatch("shared-match", 1_718_500_000L, otherClub)
+
+        repository.save(ourPerspective)
+        repository.save(otherPerspective)
+
+        assertThat(repository.findById(OUR_CLUB, MatchId("shared-match"))).isEqualTo(ourPerspective)
+        assertThat(repository.findById(otherClub, MatchId("shared-match"))).isEqualTo(otherPerspective)
+        assertThat(repository.findAll(OUR_CLUB)).containsExactly(ourPerspective)
+        assertThat(repository.findAll(otherClub)).containsExactly(otherPerspective)
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM canonical_matches WHERE match_id = ?",
+            Int::class.java,
+            "shared-match",
+        )).isEqualTo(2)
+        assertThat(jdbcTemplate.queryForList(
+            "SELECT club_id FROM player_match_stats WHERE match_id = ? ORDER BY club_id, player_id",
+            String::class.java,
+            "shared-match",
+        )).containsExactly("opponent", OUR_CLUB.value, OUR_CLUB.value, OUR_CLUB.value)
+        assertThat(jdbcTemplate.queryForList(
+            "SELECT club_id FROM dashboard_match_detail WHERE match_id = ? ORDER BY club_id",
+            String::class.java,
+            "shared-match",
+        )).containsExactly("opponent", OUR_CLUB.value)
+        assertThat(jdbcTemplate.queryForList(
+            "SELECT club_id FROM dashboard_player_stats WHERE match_id = ? ORDER BY club_id, player_id",
+            String::class.java,
+            "shared-match",
+        )).containsExactly("opponent", OUR_CLUB.value, OUR_CLUB.value, OUR_CLUB.value)
+    }
+
+    @Test
+    fun `player stats foreign key requires matching club and match identity`() {
+        repository.save(canonicalMatch("foreign-key-match", 1_718_500_000L))
+
+        assertThatThrownBy {
+            jdbcTemplate.update(
+                """INSERT INTO player_match_stats
+                    (club_id, match_id, player_id, played_at)
+                    VALUES (?, ?, ?, now())""".trimIndent(),
+                "another-club",
+                "foreign-key-match",
+                "foreign-player",
+            )
+        }.hasRootCauseInstanceOf(java.sql.SQLException::class.java)
     }
 
     @Test
@@ -221,7 +273,11 @@ class PostgresCanonicalMatchRepositoryTest {
         assertThat(row["canonical_schema_version"]).isEqualTo(1)
     }
 
-    private fun canonicalMatch(id: String, timestamp: Long): CanonicalMatch {
+    private fun canonicalMatch(
+        id: String,
+        timestamp: Long,
+        perspectiveClubId: ClubId = OUR_CLUB,
+    ): CanonicalMatch {
         val source = MatchResponse(
             matchId = id,
             timestamp = timestamp,
@@ -243,11 +299,14 @@ class PostgresCanonicalMatchRepositoryTest {
                     "mvp" to player("MVP", "9.2", goals = "2", mom = "1"),
                     "defender" to player("Defender", "8.0", tacklesMade = "5", tackleAttempts = "6"),
                     "bagre" to player("Bagre", "5.5"),
-                )
+                ),
+                "opponent" to linkedMapOf(
+                    "opponent-player" to player("Opponent Player", "7.0"),
+                ),
             ),
         )
         val footballMatch = (EaMatchMapper().map(source) as MatchNormalizationResult.Success).match
-        val interpretation = MatchInterpreter().interpret(footballMatch, OUR_CLUB)
+        val interpretation = MatchInterpreter().interpret(footballMatch, perspectiveClubId)
         val stories = MatchStoryExtractor().extract(interpretation)
         return CanonicalMatch.current(footballMatch, interpretation, stories, generatedAt = Instant.parse("2026-07-30T10:00:00Z"))
     }

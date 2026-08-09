@@ -25,6 +25,7 @@ export async function listPlayers(
   let query = supabase
     .from("dashboard_player_stats")
     .select("player_id, platform_name, pro_name, rating, goals, assists, man_of_the_match, red_cards")
+    .eq("club_id", clubId)
     .in("match_id", ids);
 
   if (name) {
@@ -113,6 +114,7 @@ export async function getPlayerProfile(
   const { data, error } = await supabase
     .from("dashboard_player_stats")
     .select("*")
+    .eq("club_id", clubId)
     .eq("player_id", playerId)
     .in("match_id", ids);
   if (error) throw error;
@@ -155,6 +157,7 @@ export async function getPlayerProfile(
   const { data: matchData } = await supabase
     .from("dashboard_matches")
     .select("match_id, played_at, opponent_club_name, our_score, opponent_score, outcome")
+    .eq("club_id", clubId)
     .in("match_id", recentMatchIds)
     .order("played_at", { ascending: false });
 

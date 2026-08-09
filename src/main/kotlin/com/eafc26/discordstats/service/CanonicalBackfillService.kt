@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.service
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.ea.EaApiResult
@@ -17,11 +18,12 @@ class CanonicalBackfillService(
     private val props: AppProperties,
     private val canonicalMatchFactory: CanonicalMatchFactory,
     private val canonicalMatchRepository: CanonicalMatchRepository,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
     fun backfill(): CanonicalBackfillResult {
-        val clubId = props.ea.clubId
-        val before = canonicalMatchRepository.metadata().matchCount
-        val matches = when (val result = gateway.getLatestMatches(clubId)) {
+        val clubId = defaultClubProvider.get().clubId
+        val before = canonicalMatchRepository.metadata(clubId).matchCount
+        val matches = when (val result = gateway.getLatestMatches(clubId.value)) {
             is EaApiResult.Success -> result.data
             EaApiResult.NoMatches -> return CanonicalBackfillResult.Completed(
                 requested = props.ea.maxResultCount,
@@ -44,7 +46,7 @@ class CanonicalBackfillService(
             )
         }
 
-        val proNames = when (val result = gateway.getMembersStats(clubId)) {
+        val proNames = when (val result = gateway.getMembersStats(clubId.value)) {
             is EaApiResult.Success -> result.data
                 .filter { !it.playerName.isNullOrBlank() && !it.proName.isNullOrBlank() }
                 .associate { it.playerName!! to it.proName!! }
@@ -60,8 +62,8 @@ class CanonicalBackfillService(
 
         orderedUnique.forEach { source ->
             try {
-                val canonical = canonicalMatchFactory.create(source, clubId, proNames)
-                val existed = canonicalMatchRepository.findById(canonical.matchId) != null
+                val canonical = canonicalMatchFactory.create(source, clubId.value, proNames)
+                val existed = canonicalMatchRepository.findById(clubId, canonical.matchId) != null
                 canonicalMatchRepository.save(canonical)
                 if (existed) updated++ else created++
             } catch (ex: Exception) {
@@ -81,7 +83,7 @@ class CanonicalBackfillService(
             ignored = matches.size - orderedUnique.size,
             failures = failures,
             before = before,
-            after = canonicalMatchRepository.metadata().matchCount,
+            after = canonicalMatchRepository.metadata(clubId).matchCount,
         )
     }
 }

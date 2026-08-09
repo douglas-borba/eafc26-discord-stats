@@ -35,8 +35,7 @@ class MatchEditorialBackfillService(
     fun backfillForClub(clubId: ClubId, dryRun: Boolean = false): BackfillResult {
         log.info("Starting editorial backfill for club {} (dryRun={})", clubId.value, dryRun)
 
-        val allCanonical = canonicalMatchRepository.findAll()
-            .filter { it.interpretation.perspectiveClubId == clubId }
+        val allCanonical = canonicalMatchRepository.findAll(clubId)
         log.info("Found {} canonical match(es) for club {}", allCanonical.size, clubId.value)
 
         if (allCanonical.isEmpty()) {
@@ -115,8 +114,7 @@ class MatchEditorialBackfillService(
     fun regenerateForClub(clubId: ClubId): BackfillResult {
         log.info("Starting EXPLICIT editorial regeneration for club {}", clubId.value)
 
-        val allCanonical = canonicalMatchRepository.findAll()
-            .filter { it.interpretation.perspectiveClubId == clubId }
+        val allCanonical = canonicalMatchRepository.findAll(clubId)
         log.info("Found {} canonical match(es) for club {}", allCanonical.size, clubId.value)
 
         if (allCanonical.isEmpty()) {

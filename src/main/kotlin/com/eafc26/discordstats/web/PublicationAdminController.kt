@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.web
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.service.DiscordMatchPublicationService
@@ -26,6 +27,7 @@ class PublicationAdminController(
     private val canonicalMatchRepository: CanonicalMatchRepository,
     private val publicationService: DiscordMatchPublicationService,
     private val reconciliationService: PublicationReconciliationService,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
 
     /**
@@ -54,7 +56,7 @@ class PublicationAdminController(
     @PostMapping("/api/publication/{matchId}/force-publish")
     fun forcePublish(@PathVariable matchId: String): Mono<ResponseEntity<Map<String, Any>>> =
         Mono.fromCallable {
-            val canonical = canonicalMatchRepository.findById(MatchId(matchId))
+            val canonical = canonicalMatchRepository.findById(defaultClubProvider.get().clubId, MatchId(matchId))
                 ?: return@fromCallable ResponseEntity.notFound().build<Map<String, Any>>()
 
             val result = publicationService.forcePublish(canonical)

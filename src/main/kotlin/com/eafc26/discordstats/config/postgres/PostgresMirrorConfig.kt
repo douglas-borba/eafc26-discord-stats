@@ -82,7 +82,8 @@ class PostgresMirrorConfig {
     fun postgresSyncService(
         jsonRepository: JsonCanonicalMatchRepository,
         postgresRepository: PostgresCanonicalMatchRepository,
+        defaultClubProvider: DefaultClubProvider,
     ): PostgresSyncService {
-        return PostgresSyncService(jsonRepository, postgresRepository)
+        return PostgresSyncService(jsonRepository, postgresRepository, defaultClubProvider)
     }
 }

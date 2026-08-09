@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.admin
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.config.WebhookConfigService
@@ -52,6 +53,7 @@ class ReplayRecentMatchesRunner(
     private val webhookClient: DiscordWebhookClient,
     private val llmEditorialService: LlmEditorialService,
     private val webhookConfigService: WebhookConfigService,
+    private val defaultClubProvider: DefaultClubProvider,
 ) : CommandLineRunner {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -63,6 +65,7 @@ class ReplayRecentMatchesRunner(
         val specificMatchId = replayConfig.matchId?.trim()
         val limit = replayConfig.matches
         val dryRun = replayConfig.dryRun
+        val clubId = defaultClubProvider.get().clubId
         
         // Parse excluded matchIds
         val excludedIds = replayConfig.excludeMatchIds
@@ -100,11 +103,11 @@ class ReplayRecentMatchesRunner(
         }
 
         val matches = if (specificMatchId != null) {
-            val match = canonicalMatchRepository.findById(MatchId(specificMatchId))
+            val match = canonicalMatchRepository.findById(clubId, MatchId(specificMatchId))
             if (match != null) listOf(match) else emptyList()
         } else {
             // Load all matches, filter excluded, then apply limit
-            canonicalMatchRepository.findAll()
+            canonicalMatchRepository.findAll(clubId)
                 .filter { it.matchId.value !in excludedIds }
                 .take(limit ?: 10)
         }
@@ -223,6 +226,4 @@ class ReplayRecentMatchesRunner(
         log.info("")
     }
 }
-
-
 

@@ -1,6 +1,8 @@
 package com.eafc26.discordstats.service
 
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.support.defaultClubProvider
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
@@ -23,6 +25,7 @@ class PublicationReconciliationServiceTest {
     private lateinit var reconciliationService: PublicationReconciliationService
 
     private val clubId = "42"
+    private val CLUB_ID = ClubId(clubId)
 
     @BeforeEach
     fun setup() {
@@ -33,6 +36,7 @@ class PublicationReconciliationServiceTest {
             canonicalMatchRepository = canonicalRepo,
             store = store,
             publicationService = publicationService,
+            defaultClubProvider = defaultClubProvider(CLUB_ID),
         )
     }
 
@@ -61,7 +65,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `inspects 5 matches by default`() {
             val matches = (1..10).map { canonical("m$it") }
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(emptyMap())
 
             val report = reconciliationService.inspectLatestPublications()
@@ -73,7 +77,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `respects custom limit`() {
             val matches = (1..10).map { canonical("m$it") }
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(emptyMap())
 
             val report = reconciliationService.inspectLatestPublications(limit = 3)
@@ -85,7 +89,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `identifies never attempted matches`() {
             val matches = listOf(canonical("m1"), canonical("m2"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(emptyMap())
 
             val report = reconciliationService.inspectLatestPublications()
@@ -98,7 +102,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `identifies delivered matches`() {
             val matches = listOf(canonical("m1"), canonical("m2"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 "m1" to PublicationRecord("m1", PublicationState.DELIVERED),
                 "m2" to PublicationRecord("m2", PublicationState.DELIVERED),
@@ -114,7 +118,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `identifies uncertain matches`() {
             val matches = listOf(canonical("m1"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 "m1" to PublicationRecord("m1", PublicationState.DELIVERY_UNCERTAIN),
             ))
@@ -129,7 +133,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `identifies failed permanent matches`() {
             val matches = listOf(canonical("m1"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 "m1" to PublicationRecord("m1", PublicationState.FAILED_PERMANENT, lastHttpStatus = 404),
             ))
@@ -145,7 +149,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `identifies delivering matches`() {
             val matches = listOf(canonical("m1"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 "m1" to PublicationRecord("m1", PublicationState.DELIVERING),
             ))
@@ -161,7 +165,7 @@ class PublicationReconciliationServiceTest {
         fun `includes audit metadata in inspection`() {
             val matches = listOf(canonical("m1"))
             val now = Instant.now().epochSecond
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 "m1" to PublicationRecord(
                     matchId = "m1",
@@ -185,7 +189,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `handles mixed states correctly`() {
             val matches = (1..5).map { canonical("m$it") }
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 "m1" to PublicationRecord("m1", PublicationState.DELIVERED),
                 "m2" to PublicationRecord("m2", PublicationState.DELIVERY_UNCERTAIN),
@@ -214,7 +218,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `publishes never attempted matches`() {
             val matches = listOf(canonical("m1"), canonical("m2"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(emptyMap())
             whenever(publicationService.publishIfNeeded(any())).thenReturn(
                 DiscordPublicationResult(PublicationOutcome.PUBLISHED, "m1")
@@ -231,7 +235,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `skips failed permanent matches - requires manual forcePublish`() {
             val matches = listOf(canonical("m1"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 "m1" to PublicationRecord("m1", PublicationState.FAILED_PERMANENT),
             ))
@@ -246,7 +250,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `skips delivered matches`() {
             val matches = listOf(canonical("m1"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 "m1" to PublicationRecord("m1", PublicationState.DELIVERED),
             ))
@@ -261,7 +265,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `skips delivery uncertain matches`() {
             val matches = listOf(canonical("m1"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 "m1" to PublicationRecord("m1", PublicationState.DELIVERY_UNCERTAIN),
             ))
@@ -276,7 +280,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `skips delivering matches`() {
             val matches = listOf(canonical("m1"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 "m1" to PublicationRecord("m1", PublicationState.DELIVERING),
             ))
@@ -291,7 +295,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `records errors when publication fails`() {
             val matches = listOf(canonical("m1"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(emptyMap())
             whenever(publicationService.publishIfNeeded(any())).thenReturn(
                 DiscordPublicationResult(
@@ -313,7 +317,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `handles exceptions during publication`() {
             val matches = listOf(canonical("m1"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(emptyMap())
             whenever(publicationService.publishIfNeeded(any())).thenThrow(
                 RuntimeException("Database error")
@@ -329,7 +333,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `handles mixed results correctly`() {
             val matches = listOf(canonical("m1"), canonical("m2"), canonical("m3"), canonical("m4"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 "m2" to PublicationRecord("m2", PublicationState.DELIVERED), // Skip
                 "m3" to PublicationRecord("m3", PublicationState.DELIVERY_UNCERTAIN), // Skip
@@ -356,7 +360,7 @@ class PublicationReconciliationServiceTest {
 
         @Test
         fun `returns empty result when no matches exist`() {
-            whenever(canonicalRepo.findAll()).thenReturn(emptyList())
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(emptyList())
             whenever(store.loadRecords()).thenReturn(emptyMap())
 
             val result = reconciliationService.autoPublishSafe()
@@ -377,7 +381,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `never auto-publishes uncertain deliveries`() {
             val matches = (1..10).map { canonical("m$it") }
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(
                 matches.associate { it.matchId.value to PublicationRecord(it.matchId.value, PublicationState.DELIVERY_UNCERTAIN) }
             )
@@ -392,7 +396,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `inspection correctly flags unsafe matches`() {
             val matches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 "m1" to PublicationRecord("m1", PublicationState.DELIVERED),
                 "m2" to PublicationRecord("m2", PublicationState.DELIVERY_UNCERTAIN),
@@ -407,7 +411,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `inspection correctly flags safe matches`() {
             val matches = listOf(canonical("m1"), canonical("m2"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 // m1 has no record - safe
                 // m2 has no record - safe
@@ -421,7 +425,7 @@ class PublicationReconciliationServiceTest {
         @Test
         fun `FAILED_PERMANENT is not safe for auto-publish`() {
             val matches = listOf(canonical("m1"))
-            whenever(canonicalRepo.findAll()).thenReturn(matches)
+            whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
                 "m1" to PublicationRecord("m1", PublicationState.FAILED_PERMANENT),
             ))
@@ -432,5 +436,3 @@ class PublicationReconciliationServiceTest {
         }
     }
 }
-
-

@@ -32,7 +32,8 @@ class JsonCanonicalMatchRepositoryTest {
     fun setUp() {
         repository = JsonCanonicalMatchRepository(
             jacksonObjectMapper().findAndRegisterModules(),
-            tempDir.resolve("canonical"),
+            tempDir,
+            OUR_CLUB,
         )
     }
 
@@ -42,15 +43,15 @@ class JsonCanonicalMatchRepositoryTest {
 
         repository.save(canonical)
 
-        assertThat(repository.findById(canonical.matchId)).isEqualTo(canonical)
-        assertThat(Files.list(tempDir.resolve("canonical")).use { it.count() }).isEqualTo(1)
+        assertThat(repository.findById(OUR_CLUB, canonical.matchId)).isEqualTo(canonical)
+        assertThat(Files.list(canonicalDir(OUR_CLUB)).use { it.count() }).isEqualTo(1)
     }
 
     @Test
     fun `stored envelope exposes stable versions and explicit polymorphic kinds`() {
         val canonical = canonicalMatch("schema-contract", 1_718_500_000L)
         repository.save(canonical)
-        val file = Files.list(tempDir.resolve("canonical")).use { it.findFirst().orElseThrow() }
+        val file = Files.list(canonicalDir(OUR_CLUB)).use { it.findFirst().orElseThrow() }
         val json = jacksonObjectMapper().readTree(file.toFile())
 
         assertThat(json["schemaVersion"].asInt()).isEqualTo(1)
@@ -69,8 +70,8 @@ class JsonCanonicalMatchRepositoryTest {
         repository.save(original)
         repository.save(replacement)
 
-        assertThat(repository.findAll()).containsExactly(replacement)
-        assertThat(Files.list(tempDir.resolve("canonical")).use { it.count() }).isEqualTo(1)
+        assertThat(repository.findAll(OUR_CLUB)).containsExactly(replacement)
+        assertThat(Files.list(canonicalDir(OUR_CLUB)).use { it.count() }).isEqualTo(1)
     }
 
     @Test
@@ -80,7 +81,7 @@ class JsonCanonicalMatchRepositoryTest {
         val sameTimeA = canonicalMatch("a", 1_800_000_000L)
         listOf(old, sameTimeB, sameTimeA).forEach(repository::save)
 
-        assertThat(repository.findAll().map { it.matchId.value })
+        assertThat(repository.findAll(OUR_CLUB).map { it.matchId.value })
             .containsExactly("a", "b", "old")
     }
 
@@ -92,7 +93,7 @@ class JsonCanonicalMatchRepositoryTest {
         repository.save(old)
         repository.save(recent)
 
-        val metadata = repository.metadata()
+        val metadata = repository.metadata(OUR_CLUB)
 
         assertThat(metadata.matchCount).isEqualTo(2)
         assertThat(metadata.oldestMatchAt).isEqualTo(old.footballMatch.playedAt)
@@ -104,23 +105,86 @@ class JsonCanonicalMatchRepositoryTest {
 
     @Test
     fun `missing repository is empty`() {
-        assertThat(repository.findById(MatchId("missing"))).isNull()
-        assertThat(repository.findAll()).isEmpty()
-        assertThat(repository.metadata().matchCount).isZero()
+        assertThat(repository.findById(OUR_CLUB, MatchId("missing"))).isNull()
+        assertThat(repository.findAll(OUR_CLUB)).isEmpty()
+        assertThat(repository.metadata(OUR_CLUB).matchCount).isZero()
+    }
+
+    @Test
+    fun `same match ID from two club perspectives is stored and read independently`() {
+        val otherClub = ClubId("opponent")
+        val ourPerspective = canonicalMatch("shared-match", 1_718_500_000L, OUR_CLUB)
+        val otherPerspective = canonicalMatch("shared-match", 1_718_500_000L, otherClub)
+
+        repository.save(ourPerspective)
+        repository.save(otherPerspective)
+
+        assertThat(repository.findById(OUR_CLUB, MatchId("shared-match"))).isEqualTo(ourPerspective)
+        assertThat(repository.findById(otherClub, MatchId("shared-match"))).isEqualTo(otherPerspective)
+        assertThat(repository.findAll(OUR_CLUB)).containsExactly(ourPerspective)
+        assertThat(repository.findAll(otherClub)).containsExactly(otherPerspective)
+        assertThat(Files.list(canonicalDir(OUR_CLUB)).use { it.count() }).isEqualTo(1)
+        assertThat(Files.list(canonicalDir(otherClub)).use { it.count() }).isEqualTo(1)
+    }
+
+    @Test
+    fun `legacy default-club files are copied into namespace without deleting originals`() {
+        val canonical = canonicalMatch("legacy-match", 1_718_500_000L)
+        repository.save(canonical)
+        val namespacedFile = Files.list(canonicalDir(OUR_CLUB)).use { it.findFirst().orElseThrow() }
+        val legacyDir = tempDir.resolve("canonical-matches")
+        Files.createDirectories(legacyDir)
+        val legacyFile = legacyDir.resolve(namespacedFile.fileName)
+        Files.copy(namespacedFile, legacyFile)
+        Files.delete(namespacedFile)
+        repository = JsonCanonicalMatchRepository(
+            jacksonObjectMapper().findAndRegisterModules(),
+            tempDir,
+            OUR_CLUB,
+        )
+
+        assertThat(repository.findAll(OUR_CLUB)).containsExactly(canonical)
+        assertThat(legacyFile).exists()
+        assertThat(Files.list(canonicalDir(OUR_CLUB)).use { it.count() }).isEqualTo(1)
+    }
+
+    @Test
+    fun `updated namespaced content remains authoritative over retained legacy copy`() {
+        val legacy = canonicalMatch("legacy-updated", 1_718_500_000L)
+        repository.save(legacy)
+        val namespacedFile = Files.list(canonicalDir(OUR_CLUB)).use { it.findFirst().orElseThrow() }
+        val legacyDir = tempDir.resolve("canonical-matches")
+        Files.createDirectories(legacyDir)
+        Files.copy(namespacedFile, legacyDir.resolve(namespacedFile.fileName))
+        val updated = legacy.copy(generatedAt = legacy.generatedAt.plusSeconds(60))
+        repository = JsonCanonicalMatchRepository(
+            jacksonObjectMapper().findAndRegisterModules(),
+            tempDir,
+            OUR_CLUB,
+        )
+
+        repository.save(updated)
+
+        assertThat(repository.findById(OUR_CLUB, updated.matchId)).isEqualTo(updated)
+        assertThat(Files.list(legacyDir).use { it.count() }).isEqualTo(1)
     }
 
     @Test
     fun `malformed canonical file fails explicitly`() {
-        val root = tempDir.resolve("canonical")
+        val root = canonicalDir(OUR_CLUB)
         Files.createDirectories(root)
         root.resolve("broken.json").writeText("{not-json}")
 
-        assertThatThrownBy(repository::findAll)
+        assertThatThrownBy { repository.findAll(OUR_CLUB) }
             .isInstanceOf(IllegalStateException::class.java)
             .hasMessageContaining("cannot be read")
     }
 
-    private fun canonicalMatch(id: String, timestamp: Long): CanonicalMatch {
+    private fun canonicalMatch(
+        id: String,
+        timestamp: Long,
+        perspectiveClubId: ClubId = OUR_CLUB,
+    ): CanonicalMatch {
         val source = MatchResponse(
             matchId = id,
             timestamp = timestamp,
@@ -151,7 +215,7 @@ class JsonCanonicalMatchRepositoryTest {
             ),
         )
         val footballMatch = (EaMatchMapper().map(source) as MatchNormalizationResult.Success).match
-        val interpretation = MatchInterpreter().interpret(footballMatch, OUR_CLUB)
+        val interpretation = MatchInterpreter().interpret(footballMatch, perspectiveClubId)
         val stories = MatchStoryExtractor().extract(interpretation)
         return CanonicalMatch.current(
             footballMatch,
@@ -160,6 +224,9 @@ class JsonCanonicalMatchRepositoryTest {
             generatedAt = Instant.parse("2026-07-30T10:00:00Z"),
         )
     }
+
+    private fun canonicalDir(clubId: ClubId): Path =
+        tempDir.resolve("clubs").resolve(clubId.value).resolve("canonical-matches")
 
     private fun player(
         name: String,

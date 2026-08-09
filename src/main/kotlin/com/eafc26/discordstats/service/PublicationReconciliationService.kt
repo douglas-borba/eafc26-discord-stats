@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.service
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.service.DiscordMatchPublicationService
@@ -30,6 +31,7 @@ class PublicationReconciliationService(
     private val canonicalMatchRepository: CanonicalMatchRepository,
     private val store: PublishedMatchStore,
     private val publicationService: DiscordMatchPublicationService,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -42,7 +44,7 @@ class PublicationReconciliationService(
     fun inspectLatestPublications(limit: Int = 5): ReconciliationReport {
         require(limit > 0) { "limit must be positive" }
 
-        val allMatches = canonicalMatchRepository.findAll().take(limit)
+        val allMatches = canonicalMatchRepository.findAll(defaultClubProvider.get().clubId).take(limit)
         val records = store.loadRecords()
 
         val inspections = allMatches.map { match ->
@@ -94,7 +96,7 @@ class PublicationReconciliationService(
      * Returns the number of matches published and any errors encountered.
      */
     fun autoPublishSafe(): AutoPublishResult {
-        val allMatches = canonicalMatchRepository.findAll()
+        val allMatches = canonicalMatchRepository.findAll(defaultClubProvider.get().clubId)
         val records = store.loadRecords()
 
         val published = mutableListOf<String>()

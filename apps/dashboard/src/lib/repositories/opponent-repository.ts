@@ -113,6 +113,7 @@ export async function getOpponentHistory(
   const { data: playerData, error: playerError } = await supabase
     .from("dashboard_player_stats")
     .select("player_id, platform_name, pro_name, goals, assists")
+    .eq("club_id", clubId)
     .in("match_id", matchIds);
 
   if (playerError) throw playerError;
@@ -129,6 +130,7 @@ export async function getOpponentHistory(
   const { data: matchDetails, error: detailsError } = await supabase
     .from("dashboard_match_detail")
     .select("payload")
+    .eq("club_id", clubId)
     .in("match_id", matchIds);
 
   if (detailsError) throw detailsError;

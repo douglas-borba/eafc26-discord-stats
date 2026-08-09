@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.service
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.store.JsonCanonicalMatchRepository
 import org.slf4j.LoggerFactory
@@ -9,6 +10,7 @@ import java.time.Instant
 open class PostgresSyncService(
     private val jsonRepository: JsonCanonicalMatchRepository,
     private val postgresRepository: CanonicalMatchRepository,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -52,7 +54,8 @@ open class PostgresSyncService(
     }
 
     private fun doSync(startNanos: Long): PostgresSyncResult {
-        val allLocal = jsonRepository.findAll()
+        val clubId = defaultClubProvider.get().clubId
+        val allLocal = jsonRepository.findAll(clubId)
         var synced = 0
         val failures = mutableListOf<PostgresSyncFailure>()
 
@@ -67,7 +70,7 @@ open class PostgresSyncService(
         }
 
         val remoteCount = try {
-            postgresRepository.metadata().matchCount
+            postgresRepository.metadata(clubId).matchCount
         } catch (_: Exception) {
             null
         }

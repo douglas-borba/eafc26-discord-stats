@@ -6,6 +6,7 @@ import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.config.EaProperties
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.ClubDetails
@@ -18,6 +19,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import com.eafc26.discordstats.support.defaultClubProvider
 
 class CanonicalBackfillServiceTest {
     private val clubId = "12345"
@@ -36,6 +38,7 @@ class CanonicalBackfillServiceTest {
             props = AppProperties(ea = EaProperties(clubId = clubId, maxResultCount = 20)),
             canonicalMatchFactory = factory,
             canonicalMatchRepository = repository,
+            defaultClubProvider = defaultClubProvider(ClubId(clubId)),
         )
         whenever(gateway.getMembersStats(clubId)).thenReturn(EaApiResult.Success(emptyList()))
     }
@@ -145,18 +148,23 @@ class CanonicalBackfillServiceTest {
             records[match.matchId] = match
         }
 
-        override fun findById(matchId: MatchId): CanonicalMatch? = records[matchId]
+        override fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch? =
+            records[matchId]?.takeIf { it.interpretation.perspectiveClubId == clubId }
 
-        override fun findAll(): List<CanonicalMatch> = records.values.toList()
+        override fun findAll(clubId: ClubId): List<CanonicalMatch> =
+            records.values.filter { it.interpretation.perspectiveClubId == clubId }
 
-        override fun metadata(): CanonicalRepositoryMetadata = CanonicalRepositoryMetadata(
-            matchCount = records.size,
-            oldestMatchAt = records.values.minOfOrNull { it.footballMatch.playedAt },
-            newestMatchAt = records.values.maxOfOrNull { it.footballMatch.playedAt },
-            lastGeneratedAt = records.values.maxOfOrNull { it.generatedAt },
-            schemaVersions = records.values.mapTo(linkedSetOf()) { it.schemaVersion },
-            engineVersions = records.values.mapTo(linkedSetOf()) { it.engineVersion },
-        )
+        override fun metadata(clubId: ClubId): CanonicalRepositoryMetadata =
+            findAll(clubId).let { scoped ->
+                CanonicalRepositoryMetadata(
+                    matchCount = scoped.size,
+                    oldestMatchAt = scoped.minOfOrNull { it.footballMatch.playedAt },
+                    newestMatchAt = scoped.maxOfOrNull { it.footballMatch.playedAt },
+                    lastGeneratedAt = scoped.maxOfOrNull { it.generatedAt },
+                    schemaVersions = scoped.mapTo(linkedSetOf()) { it.schemaVersion },
+                    engineVersions = scoped.mapTo(linkedSetOf()) { it.engineVersion },
+                )
+            }
 
         fun ids(): List<String> = records.keys.map { it.value }
     }

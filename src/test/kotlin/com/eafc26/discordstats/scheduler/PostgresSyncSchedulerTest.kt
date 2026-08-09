@@ -4,6 +4,8 @@ import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.support.defaultClubProvider
 import com.eafc26.discordstats.service.PostgresSyncResult
 import com.eafc26.discordstats.service.PostgresSyncService
 import com.eafc26.discordstats.store.JsonCanonicalMatchRepository
@@ -28,14 +30,15 @@ class PostgresSyncSchedulerTest {
 
         val emptyRepo = object : CanonicalMatchRepository {
             override fun save(match: CanonicalMatch) {}
-            override fun findById(matchId: MatchId) = null
-            override fun findAll() = emptyList<CanonicalMatch>()
-            override fun metadata() = CanonicalRepositoryMetadata(0, null, null, null, emptySet(), emptySet())
+            override fun findById(clubId: ClubId, matchId: MatchId) = null
+            override fun findAll(clubId: ClubId) = emptyList<CanonicalMatch>()
+            override fun metadata(clubId: ClubId) = CanonicalRepositoryMetadata(0, null, null, null, emptySet(), emptySet())
         }
 
         val slowSync = object : PostgresSyncService(
-            JsonCanonicalMatchRepository(jacksonObjectMapper().findAndRegisterModules(), tempDir),
+            JsonCanonicalMatchRepository(jacksonObjectMapper().findAndRegisterModules(), tempDir, CLUB_ID),
             emptyRepo,
+            defaultClubProvider(CLUB_ID),
         ) {
             override fun sync(): PostgresSyncResult {
                 val current = concurrentCalls.incrementAndGet()
@@ -58,5 +61,9 @@ class PostgresSyncSchedulerTest {
         t1.join(5000)
 
         assertThat(maxConcurrent.get()).isEqualTo(1)
+    }
+
+    private companion object {
+        val CLUB_ID = ClubId("club")
     }
 }

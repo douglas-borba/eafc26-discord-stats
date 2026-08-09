@@ -54,19 +54,19 @@ class MirroringCanonicalMatchRepositoryTest {
         primary.store[match.matchId] = match
         mirror.store[match.matchId] = match
 
-        assertThat(repo.findById(MatchId("m1"))).isEqualTo(match)
-        assertThat(repo.findById(MatchId("missing"))).isNull()
+        assertThat(repo.findById(CLUB_ID, MatchId("m1"))).isEqualTo(match)
+        assertThat(repo.findById(CLUB_ID, MatchId("missing"))).isNull()
     }
 
     @Test
     fun `findAll delegates to primary only`() {
         primary.store[MatchId("m1")] = testMatch("m1")
-        assertThat(repo.findAll()).hasSize(1)
+        assertThat(repo.findAll(CLUB_ID)).hasSize(1)
     }
 
     @Test
     fun `metadata delegates to primary only`() {
-        assertThat(repo.metadata().matchCount).isZero()
+        assertThat(repo.metadata(CLUB_ID).matchCount).isZero()
     }
 
     private fun testMatch(id: String): CanonicalMatch {
@@ -100,10 +100,16 @@ class MirroringCanonicalMatchRepositoryTest {
             store[match.matchId] = match
         }
 
-        override fun findById(matchId: MatchId) = store[matchId]
-        override fun findAll() = store.values.toList()
-        override fun metadata() = CanonicalRepositoryMetadata(
-            store.size, null, null, null, emptySet(), emptySet(),
+        override fun findById(clubId: ClubId, matchId: MatchId) =
+            store[matchId]?.takeIf { it.interpretation.perspectiveClubId == clubId }
+        override fun findAll(clubId: ClubId) =
+            store.values.filter { it.interpretation.perspectiveClubId == clubId }
+        override fun metadata(clubId: ClubId) = CanonicalRepositoryMetadata(
+            findAll(clubId).size, null, null, null, emptySet(), emptySet(),
         )
+    }
+
+    private companion object {
+        val CLUB_ID = ClubId("club")
     }
 }

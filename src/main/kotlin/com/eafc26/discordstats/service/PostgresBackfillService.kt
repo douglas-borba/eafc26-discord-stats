@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.service
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.store.JsonCanonicalMatchRepository
 import com.eafc26.discordstats.store.PostgresCanonicalMatchRepository
 import org.slf4j.LoggerFactory
@@ -11,18 +12,20 @@ import org.springframework.stereotype.Service
 class PostgresBackfillService(
     private val jsonRepository: JsonCanonicalMatchRepository,
     private val postgresRepository: PostgresCanonicalMatchRepository,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
     fun backfill(): PostgresBackfillResult {
-        val allMatches = jsonRepository.findAll()
+        val clubId = defaultClubProvider.get().clubId
+        val allMatches = jsonRepository.findAll(clubId)
         var created = 0
         var updated = 0
         val failures = mutableListOf<PostgresBackfillFailure>()
 
         allMatches.forEach { match ->
             try {
-                val existed = postgresRepository.findById(match.matchId) != null
+                val existed = postgresRepository.findById(clubId, match.matchId) != null
                 postgresRepository.save(match)
                 if (existed) updated++ else created++
             } catch (ex: Exception) {

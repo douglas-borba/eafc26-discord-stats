@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.service
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
 import com.eafc26.discordstats.canonical.CanonicalMatch
@@ -16,8 +17,11 @@ import org.springframework.stereotype.Service
 @Service
 class MatchHistoryService(
     private val repository: CanonicalMatchRepository,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
-    fun findById(matchId: MatchId): CanonicalMatch? = repository.findById(matchId)
+    private val clubId get() = defaultClubProvider.get().clubId
+
+    fun findById(matchId: MatchId): CanonicalMatch? = repository.findById(clubId, matchId)
 
     fun list(query: MatchHistoryQuery = MatchHistoryQuery()): List<CanonicalMatch> {
         val comparator = if (query.order == MatchHistoryOrder.NEWEST_FIRST) {
@@ -28,7 +32,7 @@ class MatchHistoryService(
                 .thenBy { it.matchId.value }
         }
 
-        val matches = repository.findAll().asSequence()
+        val matches = repository.findAll(clubId).asSequence()
             .filter {
                 query.fromInclusive == null ||
                     !it.footballMatch.playedAt.isBefore(query.fromInclusive)
@@ -55,5 +59,5 @@ class MatchHistoryService(
     fun latest(limit: Int): List<CanonicalMatch> =
         list(MatchHistoryQuery(order = MatchHistoryOrder.NEWEST_FIRST, limit = limit))
 
-    fun metadata(): CanonicalRepositoryMetadata = repository.metadata()
+    fun metadata(): CanonicalRepositoryMetadata = repository.metadata(clubId)
 }

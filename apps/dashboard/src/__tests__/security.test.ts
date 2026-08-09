@@ -214,6 +214,14 @@ describe("Security: multi-club scoping", () => {
     expect(detailFn).toContain('.eq("club_id", clubId)');
   });
 
+  it("player and opponent queries scope compound match identity by club_id", () => {
+    const playerRepo = readFileSync(join(SRC, "lib/repositories/player-repository.ts"), "utf-8");
+    const opponentRepo = readFileSync(join(SRC, "lib/repositories/opponent-repository.ts"), "utf-8");
+
+    expect(playerRepo.match(/\.eq\("club_id", clubId\)/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(opponentRepo.match(/\.eq\("club_id", clubId\)/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
   it("no hardcoded club id in source", () => {
     for (const { path, content } of allSource) {
       expect(content, `${path} has hardcoded club id`).not.toMatch(/1104972/);

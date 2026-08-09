@@ -16,6 +16,7 @@ import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.scheduler.PostgresSyncScheduler
 import com.eafc26.discordstats.store.JsonCanonicalMatchRepository
 import com.eafc26.discordstats.store.PostgresCanonicalMatchRepository
+import com.eafc26.discordstats.support.defaultClubProvider
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
@@ -74,9 +75,9 @@ class PostgresSyncIntegrationTest {
     @BeforeEach
     fun setUp() {
         val mapper = jacksonObjectMapper().findAndRegisterModules()
-        jsonRepo = JsonCanonicalMatchRepository(mapper, tempDir)
+        jsonRepo = JsonCanonicalMatchRepository(mapper, tempDir, OUR_CLUB)
         pgRepo = PostgresCanonicalMatchRepository(jdbcTemplate, mapper)
-        syncService = PostgresSyncService(jsonRepo, pgRepo)
+        syncService = PostgresSyncService(jsonRepo, pgRepo, defaultClubProvider(OUR_CLUB))
         jdbcTemplate.update("DELETE FROM canonical_matches")
     }
 
@@ -92,8 +93,8 @@ class PostgresSyncIntegrationTest {
         assertThat(result.failures).isEmpty()
         assertThat(result.localCount).isEqualTo(2)
         assertThat(result.remoteCount).isEqualTo(2)
-        assertThat(pgRepo.findById(MatchId("fixture-1"))).isNotNull
-        assertThat(pgRepo.findById(MatchId("fixture-2"))).isNotNull
+        assertThat(pgRepo.findById(OUR_CLUB, MatchId("fixture-1"))).isNotNull
+        assertThat(pgRepo.findById(OUR_CLUB, MatchId("fixture-2"))).isNotNull
     }
 
     @Test
@@ -104,7 +105,7 @@ class PostgresSyncIntegrationTest {
             JdbcTemplate(DriverManagerDataSource("jdbc:postgresql://localhost:1/gone", "x", "x")),
             jacksonObjectMapper().findAndRegisterModules(),
         )
-        val brokenSync = PostgresSyncService(jsonRepo, brokenRepo)
+        val brokenSync = PostgresSyncService(jsonRepo, brokenRepo, defaultClubProvider(OUR_CLUB))
 
         val result = brokenSync.sync()
 
@@ -113,7 +114,7 @@ class PostgresSyncIntegrationTest {
         assertThat(result.failures).isNotEmpty
         assertThat(brokenSync.lastSyncStarted).isNotNull()
         assertThat(brokenSync.lastSyncCompleted).isNotNull()
-        assertThat(jsonRepo.findAll()).hasSize(1)
+        assertThat(jsonRepo.findAll(OUR_CLUB)).hasSize(1)
     }
 
     @Test
@@ -124,7 +125,7 @@ class PostgresSyncIntegrationTest {
             JdbcTemplate(DriverManagerDataSource("jdbc:postgresql://localhost:1/gone", "x", "x")),
             jacksonObjectMapper().findAndRegisterModules(),
         )
-        val brokenSync = PostgresSyncService(jsonRepo, brokenRepo)
+        val brokenSync = PostgresSyncService(jsonRepo, brokenRepo, defaultClubProvider(OUR_CLUB))
         val failResult = brokenSync.sync()
         assertThat(failResult.failures).isNotEmpty
 
@@ -132,7 +133,7 @@ class PostgresSyncIntegrationTest {
 
         assertThat(recoverResult.synced).isEqualTo(1)
         assertThat(recoverResult.failures).isEmpty()
-        assertThat(pgRepo.findById(MatchId("fixture-1"))).isNotNull
+        assertThat(pgRepo.findById(OUR_CLUB, MatchId("fixture-1"))).isNotNull
         assertThat(syncService.lastSyncCompleted).isNotNull()
     }
 
@@ -140,7 +141,7 @@ class PostgresSyncIntegrationTest {
     fun `recovery preserves existing records without duplication`() {
         jsonRepo.save(testMatch("existing-1", 1_700_000_000L))
         syncService.sync()
-        assertThat(pgRepo.findAll()).hasSize(1)
+        assertThat(pgRepo.findAll(OUR_CLUB)).hasSize(1)
 
         jsonRepo.save(testMatch("fixture-new", 1_800_000_000L))
 
@@ -148,13 +149,13 @@ class PostgresSyncIntegrationTest {
             JdbcTemplate(DriverManagerDataSource("jdbc:postgresql://localhost:1/gone", "x", "x")),
             jacksonObjectMapper().findAndRegisterModules(),
         )
-        PostgresSyncService(jsonRepo, brokenRepo).sync()
+        PostgresSyncService(jsonRepo, brokenRepo, defaultClubProvider(OUR_CLUB)).sync()
 
         val recoverResult = syncService.sync()
 
         assertThat(recoverResult.synced).isEqualTo(2)
         assertThat(recoverResult.failures).isEmpty()
-        assertThat(pgRepo.findAll()).hasSize(2)
+        assertThat(pgRepo.findAll(OUR_CLUB)).hasSize(2)
     }
 
     @Test
@@ -163,14 +164,14 @@ class PostgresSyncIntegrationTest {
         jsonRepo.save(testMatch("good-2", 1_800_000_000L))
 
         val failingRepo = PartialFailureRepository(pgRepo, setOf(MatchId("good-1")))
-        val partialSync = PostgresSyncService(jsonRepo, failingRepo)
+        val partialSync = PostgresSyncService(jsonRepo, failingRepo, defaultClubProvider(OUR_CLUB))
 
         val result = partialSync.sync()
 
         assertThat(result.synced).isEqualTo(1)
         assertThat(result.failures).hasSize(1)
         assertThat(result.failures[0].matchId).isEqualTo("good-1")
-        assertThat(pgRepo.findById(MatchId("good-2"))).isNotNull
+        assertThat(pgRepo.findById(OUR_CLUB, MatchId("good-2"))).isNotNull
     }
 
     @Test
@@ -178,13 +179,13 @@ class PostgresSyncIntegrationTest {
         jsonRepo.save(testMatch("recover-me", 1_700_000_000L))
 
         val failingRepo = PartialFailureRepository(pgRepo, setOf(MatchId("recover-me")))
-        PostgresSyncService(jsonRepo, failingRepo).sync()
-        assertThat(pgRepo.findById(MatchId("recover-me"))).isNull()
+        PostgresSyncService(jsonRepo, failingRepo, defaultClubProvider(OUR_CLUB)).sync()
+        assertThat(pgRepo.findById(OUR_CLUB, MatchId("recover-me"))).isNull()
 
         val result = syncService.sync()
         assertThat(result.synced).isEqualTo(1)
         assertThat(result.failures).isEmpty()
-        assertThat(pgRepo.findById(MatchId("recover-me"))).isNotNull
+        assertThat(pgRepo.findById(OUR_CLUB, MatchId("recover-me"))).isNotNull
     }
 
     @Test
@@ -195,7 +196,7 @@ class PostgresSyncIntegrationTest {
         val slowRelease = CountDownLatch(1)
         val concurrentAttempts = AtomicBoolean(false)
 
-        val slowSync = object : PostgresSyncService(jsonRepo, pgRepo) {
+        val slowSync = object : PostgresSyncService(jsonRepo, pgRepo, defaultClubProvider(OUR_CLUB)) {
             override fun sync(): PostgresSyncResult {
                 slowStarted.countDown()
                 slowRelease.await(5, TimeUnit.SECONDS)
@@ -220,7 +221,7 @@ class PostgresSyncIntegrationTest {
         executor.awaitTermination(10, TimeUnit.SECONDS)
 
         assertThat(concurrentAttempts.get()).isTrue()
-        assertThat(pgRepo.findAll()).hasSize(1)
+        assertThat(pgRepo.findAll(OUR_CLUB)).hasSize(1)
     }
 
     @Test
@@ -231,7 +232,7 @@ class PostgresSyncIntegrationTest {
             JdbcTemplate(DriverManagerDataSource("jdbc:postgresql://localhost:1/gone", "x", "x")),
             jacksonObjectMapper().findAndRegisterModules(),
         )
-        val brokenSync = PostgresSyncService(jsonRepo, brokenRepo)
+        val brokenSync = PostgresSyncService(jsonRepo, brokenRepo, defaultClubProvider(OUR_CLUB))
         brokenSync.sync()
 
         val failTime = brokenSync.lastSyncStarted
@@ -250,14 +251,14 @@ class PostgresSyncIntegrationTest {
         jsonRepo.save(testMatch("auto-recover", 1_700_000_000L))
 
         val connectionAvailable = AtomicBoolean(false)
-        val switchableSync = object : PostgresSyncService(jsonRepo, pgRepo) {
+        val switchableSync = object : PostgresSyncService(jsonRepo, pgRepo, defaultClubProvider(OUR_CLUB)) {
             override fun sync(): PostgresSyncResult {
                 return if (!connectionAvailable.get()) {
                     val brokenRepo = PostgresCanonicalMatchRepository(
                         JdbcTemplate(DriverManagerDataSource("jdbc:postgresql://localhost:1/gone", "x", "x")),
                         jacksonObjectMapper().findAndRegisterModules(),
                     )
-                    PostgresSyncService(jsonRepo, brokenRepo).sync()
+                    PostgresSyncService(jsonRepo, brokenRepo, defaultClubProvider(OUR_CLUB)).sync()
                 } else {
                     super.sync()
                 }
@@ -267,11 +268,11 @@ class PostgresSyncIntegrationTest {
         val scheduler = PostgresSyncScheduler(switchableSync)
 
         scheduler.sync()
-        assertThat(pgRepo.findById(MatchId("auto-recover"))).isNull()
+        assertThat(pgRepo.findById(OUR_CLUB, MatchId("auto-recover"))).isNull()
 
         connectionAvailable.set(true)
         scheduler.sync()
-        assertThat(pgRepo.findById(MatchId("auto-recover"))).isNotNull
+        assertThat(pgRepo.findById(OUR_CLUB, MatchId("auto-recover"))).isNotNull
     }
 
     private fun testMatch(id: String, timestamp: Long): CanonicalMatch {
@@ -310,8 +311,8 @@ class PostgresSyncIntegrationTest {
             if (match.matchId in failIds) throw RuntimeException("simulated failure for ${match.matchId.value}")
             delegate.save(match)
         }
-        override fun findById(matchId: MatchId) = delegate.findById(matchId)
-        override fun findAll() = delegate.findAll()
-        override fun metadata() = delegate.metadata()
+        override fun findById(clubId: ClubId, matchId: MatchId) = delegate.findById(clubId, matchId)
+        override fun findAll(clubId: ClubId) = delegate.findAll(clubId)
+        override fun metadata(clubId: ClubId) = delegate.metadata(clubId)
     }
 }

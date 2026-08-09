@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import java.time.Instant
+import com.eafc26.discordstats.support.defaultClubProvider
 
 class PostgresSyncServiceTest {
 
@@ -34,9 +35,9 @@ class PostgresSyncServiceTest {
     @BeforeEach
     fun setUp() {
         val mapper = jacksonObjectMapper().findAndRegisterModules()
-        jsonRepo = JsonCanonicalMatchRepository(mapper, tempDir)
+        jsonRepo = JsonCanonicalMatchRepository(mapper, tempDir, CLUB_ID)
         fakePg = RecordingRepository()
-        syncService = PostgresSyncService(jsonRepo, fakePg)
+        syncService = PostgresSyncService(jsonRepo, fakePg, defaultClubProvider(CLUB_ID))
     }
 
     @Test
@@ -181,8 +182,15 @@ class PostgresSyncServiceTest {
             store[match.matchId] = match
         }
 
-        override fun findById(matchId: MatchId) = store[matchId]
-        override fun findAll() = store.values.toList()
-        override fun metadata() = CanonicalRepositoryMetadata(store.size, null, null, null, emptySet(), emptySet())
+        override fun findById(clubId: ClubId, matchId: MatchId) =
+            store[matchId]?.takeIf { it.interpretation.perspectiveClubId == clubId }
+        override fun findAll(clubId: ClubId) =
+            store.values.filter { it.interpretation.perspectiveClubId == clubId }
+        override fun metadata(clubId: ClubId) =
+            CanonicalRepositoryMetadata(findAll(clubId).size, null, null, null, emptySet(), emptySet())
+    }
+
+    private companion object {
+        val CLUB_ID = ClubId("club")
     }
 }
