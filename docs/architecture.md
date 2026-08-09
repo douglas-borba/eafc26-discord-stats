@@ -79,18 +79,16 @@ state is consulted.
 
 ### EA infrastructure and ACL
 
-The `ea` package owns gateways, browser/HTTP integration, JSON parsing and EA
+The `ea` package owns gateway HTTP integration, JSON parsing and EA
 DTOs. DTO fields may retain EA naming, optionality and string encodings.
 
-`PlaywrightEaClubsGateway` uses one lazily initialized internal Chromium session
-to establish the Akamai browser context and perform EA requests. Chromium is
-headless by default and is closed with its page, context and Playwright runtime
-when a request invalidates the session or Spring shuts down. This lifecycle is
-independent from `DashboardAutoLauncher`, the only component allowed to ask
-macOS to open the user's default browser.
+`NodeEaClubsGateway` calls the authenticated internal service in
+`apps/ea-gateway`. That service performs only EA search, match and member HTTP
+requests, returning payloads already understood by `EaResponseParser`. It owns
+no scheduling, football decisions, persistence or publication.
 
-The Linux container packages the same application and Playwright 1.47 browser
-runtime without introducing another gateway. It binds the web server externally
+The Linux container packages the Spring application and Node gateway as separate
+services. It binds the web server externally
 through `app.web.network-enabled`, persists the existing application-support
 directory in a volume and keeps canonical acquisition, interpretation and
 rendering unchanged. The macOS bundle and container are distribution adapters

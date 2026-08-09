@@ -10,20 +10,20 @@ RUN ./gradlew dependencies --no-daemon
 COPY src ./src
 RUN ./gradlew bootJar --no-daemon
 
-FROM mcr.microsoft.com/playwright/java:v1.47.0-noble
+FROM eclipse-temurin:21-jre-noble
 
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-    APP_WEB_NETWORK_ENABLED=true \
+ENV APP_WEB_NETWORK_ENABLED=true \
     EAFC_DASHBOARD_AUTO_OPEN=false \
     JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=20.0 -XX:+ExitOnOutOfMemoryError"
 
 WORKDIR /app
 COPY --from=build /workspace/build/libs/*.jar /app/app.jar
 
-RUN mkdir -p "/home/pwuser/Library/Application Support/EAFC26DiscordStats" && \
-    chown -R pwuser:pwuser /app /home/pwuser
+RUN useradd --create-home --shell /usr/sbin/nologin eafc && \
+    mkdir -p "/home/eafc/Library/Application Support/EAFC26DiscordStats" && \
+    chown -R eafc:eafc /app /home/eafc
 
-USER pwuser
+USER eafc
 EXPOSE 8080
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \

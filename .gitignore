@@ -1,5 +1,7 @@
 .gradle/
 build/
+apps/ea-gateway/node_modules/
+apps/ea-gateway/dist/
 *.class
 *.jar
 !gradle/wrapper/gradle-wrapper.jar

@@ -31,7 +31,6 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
-    implementation("com.microsoft.playwright:playwright:1.47.0")
     implementation("org.postgresql:postgresql")
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
@@ -268,4 +267,3 @@ tasks.register("rebuildMacApp") {
 tasks.named("macApp") {
     mustRunAfter("clean")
 }
-

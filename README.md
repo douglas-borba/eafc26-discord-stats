@@ -100,16 +100,16 @@ Edit `src/main/resources/application.yml`:
 ```yaml
 app:
   ea:
-    base-url: https://proclubs.ea.com/api/fc
     platform: common-gen5
     club-id: ""         # Your club's numeric ID
     club-name: ""       # Human-readable name (for search)
     match-type: leagueMatch
     max-result-count: 20
-    user-agent: "Mozilla/5.0 ..."  # Change if EA updates bot detection
+    gateway-base-url: http://127.0.0.1:8081
+    gateway-internal-token: ${EA_GATEWAY_INTERNAL_TOKEN:}
 ```
 
-To find your `club-id`, use `EaProClubsClient.searchClubs("Your Club Name")` and note
+To find your `club-id`, use the `search-club` CLI command and note
 the `clubId` in the response.
 
 ### Canonical capture and backfill
@@ -215,27 +215,25 @@ o comando oficial para desenvolvimento.
 Esse fluxo é independente do `.app`; as tasks de empacotamento abaixo continuam
 reservadas para distribuição e validação do bundle.
 
-### Chromium interno da EA
+### EA Gateway
 
-O gateway da EA mantém uma instância interna do Chromium durante a execução para
-estabelecer a sessão Akamai e realizar as consultas. Esse Chromium inicia em modo
-headless por padrão (`app.ea.playwright.headless=true`): não cria janela, não
-aparece no Dock e não abre `proclubs.ea.com` para o usuário. Page, contexto,
-browser e Playwright são encerrados em caso de falha e no desligamento da
-aplicação. O Chromium completo usa o modo headless moderno; o modo legado do
-Playwright 1.47 não preserva a sessão de rede aceita pela EA.
-
-Esse processo é independente do navegador padrão aberto pelo fluxo de
-desenvolvimento ou pelo `.app` para apresentar o Dashboard. Somente o
-`DashboardAutoLauncher` chama o mecanismo `open` do macOS.
-
-Para um diagnóstico local explícito, o Chromium pode ser exibido temporariamente:
+O acesso à EA é isolado em `apps/ea-gateway`, um serviço Node.js/TypeScript que
+usa `fetch` nativo. Inicie-o com `EA_GATEWAY_INTERNAL_TOKEN` e configure o mesmo
+segredo no Spring. O backend usa `EA_GATEWAY_BASE_URL` (por padrão,
+`http://127.0.0.1:8081`) e continua concentrando aquisição, domínio e publicação.
 
 ```bash
-./gradlew bootRun --args='--app.ea.playwright.headless=false'
+cd apps/ea-gateway
+npm install
+npm run build
+EA_GATEWAY_INTERNAL_TOKEN=seu-segredo npm start
 ```
 
-Esse override não deve ser utilizado em produção ou na distribuição normal.
+Em outro terminal, inicie o Spring com o mesmo segredo:
+
+```bash
+EA_GATEWAY_INTERNAL_TOKEN=seu-segredo ./gradlew bootRun
+```
 
 ### Aplicativo nativo para macOS
 
@@ -303,9 +301,8 @@ empacotamento diferentes.
 
 ### Container Linux opcional
 
-A imagem Linux usa Java 21 e a imagem oficial do Playwright Java fixada na mesma
-versão da dependência da aplicação (`1.47.0-noble`). O Chromium permanece
-headless e os browsers já estão presentes em `/ms-playwright`. Este fluxo é
+A imagem Linux usa Java 21 e executa o EA Gateway em um container Node 22
+separado. Este fluxo é
 mantido para validação de portabilidade e implantação futura; ele não substitui
 o desenvolvimento local via `bootRun`.
 
@@ -313,7 +310,7 @@ Pré-requisito: Docker com Compose disponível. Construa e inicie com:
 
 ```bash
 cp .env.example .env
-# Replace both documented placeholder passwords in the ignored .env file.
+# Substitua as senhas e o token interno documentados no arquivo ignorado.
 docker compose up --build -d
 ```
 
@@ -322,20 +319,17 @@ aquisição real da EA com:
 
 ```bash
 curl --fail http://localhost:8080/api/health
-docker compose logs app | grep "EA API response: status=200"
+docker compose logs ea-gateway app
 docker compose exec app ps aux
 ```
 
-O Compose habilita `init`, compartilha IPC com o host conforme recomendado pelo
-Playwright e persiste os dados canônicos no volume `eafc-data`. A variável
+O Compose habilita `init` e persiste os dados canônicos no volume `eafc-data`. A variável
 `APP_WEB_NETWORK_ENABLED=true` limita-se a permitir que o servidor escute a
 interface publicada pelo container; no macOS, a preferência local existente
 continua definindo esse comportamento.
 
 Em produção, a imagem define `JAVA_TOOL_OPTIONS` para limitar o heap da JVM a
-20% da memória disponível no container. Esse orçamento é necessário porque
-Chromium e o driver Node do Playwright compartilham o mesmo limite do cgroup,
-mas não fazem parte do heap Java. O valor pode ser sobrescrito externamente;
+20% da memória disponível no container. O valor pode ser sobrescrito externamente;
 para o serviço completo em um container de 1 GiB, utilize o padrão documentado
 em `.env.example`.
 
@@ -397,7 +391,7 @@ EA → Spring coletor → PostgreSQL remoto → Next.js/Vercel
 
 - O site Spring atual continua existindo temporariamente
 - Vercel não faz aquisição da EA
-- Playwright permanece no coletor
+- O EA Gateway Node permanece junto ao coletor
 - O coletor pode futuramente sair do Mac e ir para Railway/VPS
 - Somente um coletor publica enquanto o estado de publicação não for centralizado
 

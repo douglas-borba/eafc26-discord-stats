@@ -8,15 +8,14 @@ import kotlin.io.path.readText
 class ContainerizationArchitectureTest {
     private val dockerfile = Path.of("Dockerfile").readText()
     private val compose = Path.of("compose.yml").readText()
-    private val build = Path.of("build.gradle.kts").readText()
+    private val gatewayDockerfile = Path.of("apps/ea-gateway/Dockerfile").readText()
 
     @Test
-    fun `container pins the exact Playwright dependency and Java runtime`() {
-        assertThat(build).contains("com.microsoft.playwright:playwright:1.47.0")
+    fun `containers use bounded Java and Node runtimes without a browser`() {
         assertThat(dockerfile)
-            .contains("mcr.microsoft.com/playwright/java:v1.47.0-noble")
             .contains("eclipse-temurin:21-jdk-noble")
-            .contains("PLAYWRIGHT_BROWSERS_PATH=/ms-playwright")
+            .contains("eclipse-temurin:21-jre-noble")
+        assertThat(gatewayDockerfile).contains("node:22-alpine")
     }
 
     @Test
@@ -24,7 +23,7 @@ class ContainerizationArchitectureTest {
         assertThat(dockerfile)
             .contains("APP_WEB_NETWORK_ENABLED=true")
             .contains("EAFC_DASHBOARD_AUTO_OPEN=false")
-            .doesNotContain("headless=false", "PWDEBUG")
+            .doesNotContain("PWDEBUG")
         assertThat(compose)
             .contains("APP_WEB_NETWORK_ENABLED: \"true\"")
             .contains("EAFC_DASHBOARD_AUTO_OPEN: \"false\"")
@@ -34,7 +33,7 @@ class ContainerizationArchitectureTest {
     }
 
     @Test
-    fun `container reserves a bounded JVM share for the Playwright process tree`() {
+    fun `container reserves a bounded JVM share`() {
         assertThat(dockerfile)
             .contains("JAVA_TOOL_OPTIONS=")
             .contains("-XX:MaxRAMPercentage=20.0")
@@ -45,12 +44,12 @@ class ContainerizationArchitectureTest {
     @Test
     fun `container runs non-root with health lifecycle and persistent canonical data`() {
         assertThat(dockerfile)
-            .contains("USER pwuser")
+            .contains("USER eafc")
             .contains("HEALTHCHECK")
             .contains("/api/health")
         assertThat(compose)
             .contains("init: true")
-            .contains("ipc: host")
-            .contains("eafc-data:/home/pwuser/Library/Application Support/EAFC26DiscordStats")
+            .contains("eafc-data:/home/eafc/Library/Application Support/EAFC26DiscordStats")
+            .contains("EA_GATEWAY_BASE_URL: http://ea-gateway:8081")
     }
 }

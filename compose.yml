@@ -1,14 +1,24 @@
 services:
+  ea-gateway:
+    build:
+      context: apps/ea-gateway
+      dockerfile: Dockerfile
+    image: ea-fc-stats-gateway:local
+    environment:
+      EA_GATEWAY_INTERNAL_TOKEN: ${EA_GATEWAY_INTERNAL_TOKEN:?EA_GATEWAY_INTERNAL_TOKEN is required}
+    restart: unless-stopped
+
   app:
     build:
       context: .
       dockerfile: Dockerfile
     image: ea-fc-stats:local
     init: true
-    ipc: host
     ports:
       - "8080:8080"
     environment:
+      EA_GATEWAY_BASE_URL: http://ea-gateway:8081
+      EA_GATEWAY_INTERNAL_TOKEN: ${EA_GATEWAY_INTERNAL_TOKEN:?EA_GATEWAY_INTERNAL_TOKEN is required}
       APP_WEB_NETWORK_ENABLED: "true"
       EAFC_DASHBOARD_AUTO_OPEN: "false"
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=20.0 -XX:+ExitOnOutOfMemoryError}
@@ -21,7 +31,10 @@ services:
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-}
     volumes:
-      - eafc-data:/home/pwuser/Library/Application Support/EAFC26DiscordStats
+      - eafc-data:/home/eafc/Library/Application Support/EAFC26DiscordStats
+    depends_on:
+      ea-gateway:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

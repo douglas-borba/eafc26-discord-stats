@@ -5,28 +5,13 @@ server:
 
 app:
   ea:
-    base-url: https://proclubs.ea.com/api/fc
     platform: common-gen5
     club-id: "1104972"
     club-name: "Associação BF"
     match-type: leagueMatch   # friendlyMatch | leagueMatch | playoffMatch
     max-result-count: 20
-    # EA's endpoint returns 403 without a browser-like User-Agent.
-    # Verified by community projects. Change here if EA updates bot detection.
-    user-agent: >-
-      Mozilla/5.0 (Windows NT 10.0; Win64; x64)
-      AppleWebKit/537.36 (KHTML, like Gecko)
-      Chrome/124.0.0.0 Safari/537.36
-    # Gateway implementation: "playwright" (default) or "webclient"
-    # Playwright uses an internal headless Chromium browser to establish the
-    # Akamai session without displaying or focusing a browser window.
-    client: playwright
-    playwright:
-      headless: true
-      nav-timeout-ms: 30000
-      fetch-timeout-ms: 30000
-      startup-retries: 1
-      initial-page-url: https://proclubs.ea.com
+    gateway-base-url: ${EA_GATEWAY_BASE_URL:http://127.0.0.1:8081}
+    gateway-internal-token: ${EA_GATEWAY_INTERNAL_TOKEN:}
 
   polling:
     enabled: ${EAFC_POLLING_ENABLED:true}
