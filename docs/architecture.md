@@ -136,6 +136,20 @@ The domain has no Spring, Jackson, EA DTO or Discord dependency.
 
 ### Application
 
+`application.club` is the administrative multi-club foundation. The official
+EA `ClubId` is the sole club identity; `MonitoredClub` adds only operational
+configuration. `ClubCatalogService` maps EA search DTOs into
+`ClubSearchCandidate`, while `MonitoredClubService` manages registrations and
+configuration through `MonitoredClubRepository`.
+
+The PostgreSQL `monitored_clubs` table uses `club_id` directly as its primary
+key. Discord configuration is represented only by an opaque secret reference;
+raw webhook URLs are not stored in this table. During Phase 1,
+`DefaultClubProvider` and `LegacyDefaultClubImporter` register the legacy club
+without overwriting an existing administrative record. The acquisition service
+and scheduler deliberately continue to read `app.ea.club-id`, so additional
+registered clubs remain administratively visible but operationally inactive.
+
 `application.interpretation` is the single football decision engine:
 
 - `MatchOutcomeEvaluator`;

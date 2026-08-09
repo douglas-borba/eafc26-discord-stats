@@ -1,10 +1,15 @@
 package com.eafc26.discordstats.config.postgres
 
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.application.club.LegacyDefaultClubImporter
+import com.eafc26.discordstats.application.club.DefaultClubProvider
+import com.eafc26.discordstats.application.club.MonitoredClubRepository
+import com.eafc26.discordstats.application.club.MonitoredClubService
 import com.eafc26.discordstats.store.JsonCanonicalMatchRepository
 import com.eafc26.discordstats.service.PostgresSyncService
 import com.eafc26.discordstats.store.MirroringCanonicalMatchRepository
 import com.eafc26.discordstats.store.PostgresCanonicalMatchRepository
+import com.eafc26.discordstats.store.PostgresMonitoredClubRepository
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.flywaydb.core.Flyway
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -13,6 +18,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
+import org.springframework.boot.ApplicationRunner
 import org.springframework.jdbc.core.JdbcTemplate
 import javax.sql.DataSource
 
@@ -37,6 +43,30 @@ class PostgresMirrorConfig {
         objectMapper: ObjectMapper,
     ): PostgresCanonicalMatchRepository {
         return PostgresCanonicalMatchRepository(jdbcTemplate, objectMapper)
+    }
+
+    @Bean
+    fun monitoredClubRepository(jdbcTemplate: JdbcTemplate): MonitoredClubRepository =
+        PostgresMonitoredClubRepository(jdbcTemplate)
+
+    @Bean
+    fun monitoredClubService(repository: MonitoredClubRepository): MonitoredClubService =
+        MonitoredClubService(repository)
+
+    @Bean
+    fun legacyDefaultClubImporter(
+        repository: MonitoredClubRepository,
+        service: MonitoredClubService,
+        defaultClubProvider: DefaultClubProvider,
+    ): LegacyDefaultClubImporter = LegacyDefaultClubImporter(repository, service, defaultClubProvider)
+
+    @Bean
+    fun legacyDefaultClubImportRunner(
+        flyway: Flyway,
+        importer: LegacyDefaultClubImporter,
+    ): ApplicationRunner = ApplicationRunner {
+        flyway.info()
+        importer.importIfAbsent()
     }
 
     @Bean
