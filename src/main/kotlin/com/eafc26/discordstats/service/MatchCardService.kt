@@ -57,8 +57,8 @@ class MatchCardService(
     /**
      * Returns the publication status for a match.
      */
-    fun getPublicationStatus(matchId: String): PublicationStatus? {
-        val record = store.loadRecords()[matchId] ?: return null
+    fun getPublicationStatus(clubId: ClubId, matchId: String): PublicationStatus? {
+        val record = store.find(clubId, matchId) ?: return null
         return PublicationStatus(
             state = record.state.name,
             attemptCount = record.attemptCount,

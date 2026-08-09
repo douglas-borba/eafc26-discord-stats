@@ -1,6 +1,5 @@
 package com.eafc26.discordstats.discord
 
-import com.eafc26.discordstats.config.WebhookConfigService
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import okhttp3.mockwebserver.MockResponse
@@ -10,8 +9,6 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.mockito.kotlin.mock
-import org.mockito.kotlin.whenever
 import org.springframework.web.reactive.function.client.WebClient
 
 class DiscordWebhookClientTest {
@@ -32,25 +29,24 @@ class DiscordWebhookClientTest {
 
     @Test
     fun `blank webhook URL throws IllegalStateException with clear message`() {
-        val c = makeClient(webhookUrl = "")
-        assertThatThrownBy { c.send(emptyPayload()) }
-            .isInstanceOf(IllegalStateException::class.java)
-            .hasMessageContaining("not configured")
+        assertThatThrownBy { DiscordDestination("") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("must not be blank")
     }
 
     @Test
     fun `successful HTTP 204 response does not throw`() {
         server.enqueue(MockResponse().setResponseCode(204))
-        val c = makeClient(webhookUrl = server.url("/webhook").toString())
-        c.send(emptyPayload())
+        val c = makeClient()
+        c.send(destination(), emptyPayload())
         assertThat(server.takeRequest().method).isEqualTo("POST")
     }
 
     @Test
     fun `HTTP 400 response throws DiscordDeliveryException`() {
         server.enqueue(MockResponse().setResponseCode(400).setBody("Bad Request"))
-        val c = makeClient(webhookUrl = server.url("/webhook").toString())
-        assertThatThrownBy { c.send(emptyPayload()) }
+        val c = makeClient()
+        assertThatThrownBy { c.send(destination(), emptyPayload()) }
             .isInstanceOf(DiscordDeliveryException::class.java)
             .hasMessageContaining("400")
     }
@@ -58,8 +54,8 @@ class DiscordWebhookClientTest {
     @Test
     fun `HTTP 500 response throws DiscordDeliveryException`() {
         server.enqueue(MockResponse().setResponseCode(500).setBody("Internal Server Error"))
-        val c = makeClient(webhookUrl = server.url("/webhook").toString())
-        assertThatThrownBy { c.send(emptyPayload()) }
+        val c = makeClient()
+        assertThatThrownBy { c.send(destination(), emptyPayload()) }
             .isInstanceOf(DiscordDeliveryException::class.java)
             .hasMessageContaining("500")
     }
@@ -67,18 +63,18 @@ class DiscordWebhookClientTest {
     @Test
     fun `request body is valid JSON with Content-Type header`() {
         server.enqueue(MockResponse().setResponseCode(204))
-        val c = makeClient(webhookUrl = server.url("/webhook").toString())
-        c.send(emptyPayload())
+        val c = makeClient()
+        c.send(destination(), emptyPayload())
         val req = server.takeRequest()
         assertThat(req.getHeader("Content-Type")).contains("application/json")
         assertThat(req.body.readUtf8()).contains("embeds")
     }
 
-    private fun makeClient(webhookUrl: String): DiscordWebhookClient {
-        val service = mock<WebhookConfigService>()
-        whenever(service.getWebhookUrl()).thenReturn(webhookUrl)
-        return DiscordWebhookClient(service, om, WebClient.create())
+    private fun makeClient(): DiscordWebhookClient {
+        return DiscordWebhookClient(om, WebClient.create())
     }
+
+    private fun destination() = DiscordDestination(server.url("/webhook").toString())
 
     private fun emptyPayload() = DiscordPayload(embeds = listOf(
         DiscordEmbed(title = "Test", color = 0, fields = emptyList())

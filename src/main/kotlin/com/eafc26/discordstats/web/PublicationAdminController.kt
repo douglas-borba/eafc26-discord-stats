@@ -39,7 +39,7 @@ class PublicationAdminController(
     @PostMapping("/api/publication/{matchId}/resolve-delivered")
     fun resolveAsDelivered(@PathVariable matchId: String): Mono<ResponseEntity<Map<String, Any>>> =
         Mono.fromCallable {
-            store.resolveAsDelivered(matchId)
+            store.resolveAsDelivered(defaultClubProvider.get().clubId, matchId)
             ResponseEntity.ok<Map<String, Any>>(mapOf(
                 "status" to "resolved",
                 "message" to "Partida marcada como publicada"
@@ -83,7 +83,7 @@ class PublicationAdminController(
     @GetMapping("/api/publication/reconcile/inspect")
     fun inspectPublications(): Mono<ResponseEntity<Map<String, Any>>> =
         Mono.fromCallable {
-            val report = reconciliationService.inspectLatestPublications(limit = 5)
+            val report = reconciliationService.inspectLatestPublications(defaultClubProvider.get().clubId, limit = 5)
 
             ResponseEntity.ok<Map<String, Any>>(mapOf(
                 "inspections" to report.inspections.map { inspection ->
@@ -129,7 +129,7 @@ class PublicationAdminController(
     @PostMapping("/api/publication/reconcile/auto-publish")
     fun autoPublishSafe(): Mono<ResponseEntity<Map<String, Any>>> =
         Mono.fromCallable {
-            val result = reconciliationService.autoPublishSafe()
+            val result = reconciliationService.autoPublishSafe(defaultClubProvider.get().clubId)
 
             ResponseEntity.ok<Map<String, Any>>(mapOf(
                 "status" to "completed",

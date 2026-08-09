@@ -153,7 +153,7 @@ class MatchAcquisitionServiceTest {
             val result = service.acquire(AcquisitionTrigger.MANUAL)
 
             assertThat(result).isEqualTo(AcquisitionResult.NoMatches)
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         @Test
@@ -200,8 +200,8 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.published).hasSize(1)
             assertThat(processed.published[0].matchId).isEqualTo("m1")
             assertThat(processed.published[0].summary).contains("Test FC")
-            verify(webhookClient).send(any())
-            verify(store).saveRecord(argThat { matchId == "m1" && state == PublicationState.DELIVERED })
+            verify(webhookClient).send(any(), any())
+            verify(store).saveRecord(clubIdEq(LEGACY_TEST_CLUB), argThat { matchId == "m1" && state == PublicationState.DELIVERED })
             verify(canonicalMatchRepository, atLeastOnce()).save(any())
         }
 
@@ -218,7 +218,7 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.published).isEmpty()
             assertThat(processed.alreadyPublished).hasSize(1)
             assertThat(processed.allSkipped()).isTrue()
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         @Test
@@ -269,7 +269,7 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.published).hasSize(2)
             assertThat(processed.published[0].matchId).isEqualTo("m1") // older first
             assertThat(processed.published[1].matchId).isEqualTo("m2") // newer second
-            verify(webhookClient, times(2)).send(any())
+            verify(webhookClient, times(2)).send(any(), any())
         }
 
         @Test
@@ -284,7 +284,7 @@ class MatchAcquisitionServiceTest {
             val processed = result as AcquisitionResult.Processed
             assertThat(processed.published).hasSize(1)
             assertThat(processed.published[0].matchId).isEqualTo("m2")
-            verify(webhookClient, times(1)).send(any())
+            verify(webhookClient, times(1)).send(any(), any())
         }
 
         @Test
@@ -298,7 +298,7 @@ class MatchAcquisitionServiceTest {
             val processed = result as AcquisitionResult.Processed
             assertThat(processed.published).isEmpty()
             assertThat(processed.alreadyPublished).hasSize(1)
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         @Test
@@ -316,9 +316,9 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.simulatedMatch).isNotNull
             assertThat(processed.simulatedMatch?.matchId).isEqualTo("m1")
             // Discord should NEVER be called
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
             // Persistence (DELIVERING or DELIVERED) should NEVER happen for simulation
-            verify(store, never()).saveRecord(any())
+            verify(store, never()).saveRecord(clubIdEq(LEGACY_TEST_CLUB), any())
         }
     }
 
@@ -342,12 +342,12 @@ class MatchAcquisitionServiceTest {
             // NEW BEHAVIOR: First-run now publishes the latest match
             assertThat(processed.published).hasSize(1)
             assertThat(processed.published[0].matchId).isEqualTo("m1")
-            verify(webhookClient).send(any())
+            verify(webhookClient).send(any(), any())
             // Baseline now uses BASELINED state instead of DELIVERED
             verify(store).saveIds(setOf("m1"))
             // Verify the baseline is BASELINED not DELIVERED
             val captor = argumentCaptor<Set<String>>()
-            verify(store).saveIds(captor.capture())
+            verify(store).saveIds(clubIdEq(LEGACY_TEST_CLUB), captor.capture())
             assertThat(captor.firstValue).containsExactly("m1")
         }
 
@@ -365,7 +365,7 @@ class MatchAcquisitionServiceTest {
             // NEW BEHAVIOR: First-run now publishes the latest match (m2)
             assertThat(processed.published).hasSize(1)
             assertThat(processed.published[0].matchId).isEqualTo("m2")
-            verify(webhookClient).send(any())
+            verify(webhookClient).send(any(), any())
             verify(store).saveIds(setOf("m1", "m2"))
         }
 
@@ -380,7 +380,7 @@ class MatchAcquisitionServiceTest {
             val processed = result as AcquisitionResult.Processed
             assertThat(processed.baselineEstablished).isTrue()
             assertThat(processed.published).isEmpty()
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
             verify(store).saveIds(setOf("m1"))
         }
 
@@ -394,7 +394,7 @@ class MatchAcquisitionServiceTest {
 
             val processed = result as AcquisitionResult.Processed
             assertThat(processed.baselineEstablished).isTrue()
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
             verify(store).saveIds(setOf("m1"))
         }
 
@@ -403,18 +403,18 @@ class MatchAcquisitionServiceTest {
             var records = mutableMapOf<String, PublicationRecord>()
             whenever(store.loadIds()).thenAnswer { records.keys.toSet() }
             whenever(store.loadRecords()).thenAnswer { records.toMap() }
-            whenever(store.saveIds(any())).thenAnswer { invocation ->
-                val ids = invocation.getArgument<Set<String>>(0)
+            whenever(store.saveIds(clubIdEq(LEGACY_TEST_CLUB), any())).thenAnswer { invocation ->
+                val ids = invocation.getArgument<Set<String>>(1)
                 records = ids.associateWith { PublicationRecord(it, PublicationState.DELIVERED) }.toMutableMap()
                 Unit
             }
-            whenever(store.saveRecord(any())).thenAnswer { invocation ->
-                val r = invocation.getArgument<PublicationRecord>(0)
+            whenever(store.saveRecord(clubIdEq(LEGACY_TEST_CLUB), any())).thenAnswer { invocation ->
+                val r = invocation.getArgument<PublicationRecord>(1)
                 records[r.matchId] = r
                 Unit
             }
-            whenever(store.removeRecord(any())).thenAnswer { invocation ->
-                records.remove(invocation.getArgument<String>(0))
+            whenever(store.removeRecord(clubIdEq(LEGACY_TEST_CLUB), any())).thenAnswer { invocation ->
+                records.remove(invocation.getArgument<String>(1))
                 Unit
             }
             whenever(gateway.getLatestMatches(clubId))
@@ -432,7 +432,7 @@ class MatchAcquisitionServiceTest {
             assertThat(records.keys).containsExactlyInAnyOrder("baseline", "new")
             assertThat(records.values.filter { it.state == PublicationState.DELIVERED }.map { it.matchId })
                 .containsExactlyInAnyOrder("baseline", "new")
-            verify(webhookClient, times(1)).send(any())
+            verify(webhookClient, times(1)).send(any(), any())
         }
     }
 
@@ -454,7 +454,7 @@ class MatchAcquisitionServiceTest {
             assertThat(result).isInstanceOf(AcquisitionResult.ForceResent::class.java)
             val resent = result as AcquisitionResult.ForceResent
             assertThat(resent.match.matchId).isEqualTo("m1")
-            verify(webhookClient).send(any())
+            verify(webhookClient).send(any(), any())
         }
 
         @Test
@@ -466,7 +466,7 @@ class MatchAcquisitionServiceTest {
             service.acquire(AcquisitionTrigger.FORCE_RESEND)
 
             // After force-resend, match ID must be persisted as DELIVERED so the scheduler won't re-publish
-            verify(store).saveRecord(argThat { matchId == "m1" && state == PublicationState.DELIVERED })
+            verify(store).saveRecord(clubIdEq(LEGACY_TEST_CLUB), argThat { matchId == "m1" && state == PublicationState.DELIVERED })
         }
 
         @Test
@@ -494,12 +494,12 @@ class MatchAcquisitionServiceTest {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
             stubStore("existing")
-            doThrow(IllegalStateException("Webhook not configured")).whenever(webhookClient).send(any())
+            doThrow(IllegalStateException("Webhook not configured")).whenever(webhookClient).send(any(), any())
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
 
             assertThat(result).isEqualTo(AcquisitionResult.WebhookNotConfigured)
-            verify(store, never()).saveRecord(argThat { state == PublicationState.DELIVERED })
+            verify(store, never()).saveRecord(clubIdEq(LEGACY_TEST_CLUB), argThat { state == PublicationState.DELIVERED })
         }
 
         @Test
@@ -507,7 +507,7 @@ class MatchAcquisitionServiceTest {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
             stubStore("existing")
-            doThrow(DiscordDeliveryException("Rate limited")).whenever(webhookClient).send(any())
+            doThrow(DiscordDeliveryException("Rate limited")).whenever(webhookClient).send(any(), any())
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
 
@@ -515,7 +515,7 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.published).isEmpty()
             assertThat(processed.failed).hasSize(1)
             assertThat(processed.failed[0].reason).contains("Rate limited")
-            verify(store, never()).saveRecord(argThat { state == PublicationState.DELIVERED })
+            verify(store, never()).saveRecord(clubIdEq(LEGACY_TEST_CLUB), argThat { state == PublicationState.DELIVERED })
         }
 
         @Test
@@ -527,7 +527,7 @@ class MatchAcquisitionServiceTest {
 
             // First call fails, second succeeds
             var callCount = 0
-            whenever(webhookClient.send(any())).thenAnswer {
+            whenever(webhookClient.send(any(), any())).thenAnswer {
                 callCount++
                 if (callCount == 1) throw DiscordDeliveryException("Temporary error")
             }
@@ -547,7 +547,7 @@ class MatchAcquisitionServiceTest {
             val m2 = match("m2", ts = 2000)
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(m1, m2)))
             stubStore("existing")
-            doThrow(IllegalStateException("Webhook not configured")).whenever(webhookClient).send(any())
+            doThrow(IllegalStateException("Webhook not configured")).whenever(webhookClient).send(any(), any())
 
             val result = service.acquire(AcquisitionTrigger.SCHEDULER)
 
@@ -568,7 +568,8 @@ class MatchAcquisitionServiceTest {
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
             stubStore("existing")
             // Fail only on DELIVERED writes (not on DELIVERING writes)
-            doThrow(RuntimeException("Disk full")).whenever(store).saveRecord(argThat { state == PublicationState.DELIVERED })
+            doThrow(RuntimeException("Disk full")).whenever(store)
+                .saveRecord(clubIdEq(LEGACY_TEST_CLUB), argThat { state == PublicationState.DELIVERED })
 
             val result = service.acquire(AcquisitionTrigger.MANUAL)
 
@@ -587,7 +588,7 @@ class MatchAcquisitionServiceTest {
             service.acquire(AcquisitionTrigger.SCHEDULER)
 
             // Each match: DELIVERING + DELIVERED = 2 saveRecord calls per match, 4 total
-            verify(store, times(2)).saveRecord(argThat { state == PublicationState.DELIVERED })
+            verify(store, times(2)).saveRecord(clubIdEq(LEGACY_TEST_CLUB), argThat { state == PublicationState.DELIVERED })
         }
     }
 
@@ -713,7 +714,7 @@ class MatchAcquisitionServiceTest {
 
             service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
 
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         @Test
@@ -723,7 +724,7 @@ class MatchAcquisitionServiceTest {
 
             service.acquire(AcquisitionTrigger.DEV_SIMULATOR)
 
-            verify(store, never()).saveRecord(any())
+            verify(store, never()).saveRecord(clubIdEq(LEGACY_TEST_CLUB), any())
         }
 
         @Test
@@ -918,7 +919,7 @@ class MatchAcquisitionServiceTest {
         fun `caches presentation even when Discord delivery fails`() {
             val match = match("m1")
             whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
-            doThrow(DiscordDeliveryException("Rate limited")).whenever(webhookClient).send(any())
+            doThrow(DiscordDeliveryException("Rate limited")).whenever(webhookClient).send(any(), any())
 
             service.acquire(AcquisitionTrigger.MANUAL)
 
@@ -1134,7 +1135,7 @@ class MatchAcquisitionServiceTest {
             // Canonical saves happen before Discord publication
             val order = inOrder(canonicalMatchRepository, webhookClient)
             order.verify(canonicalMatchRepository, times(2)).save(any())
-            order.verify(webhookClient, times(2)).send(any())
+            order.verify(webhookClient, times(2)).send(any(), any())
         }
 
         @Test
@@ -1146,8 +1147,8 @@ class MatchAcquisitionServiceTest {
             service.acquire(AcquisitionTrigger.MANUAL)
 
             verify(canonicalMatchRepository).save(any())
-            verify(webhookClient, never()).send(any())
-            verify(store, never()).saveRecord(argThat { state == PublicationState.DELIVERED })
+            verify(webhookClient, never()).send(any(), any())
+            verify(store, never()).saveRecord(clubIdEq(LEGACY_TEST_CLUB), argThat { state == PublicationState.DELIVERED })
         }
 
         @Test
@@ -1164,7 +1165,7 @@ class MatchAcquisitionServiceTest {
             verify(store).saveIds(setOf("m1", "m2"))
             // NEW BEHAVIOR: First-run now publishes the latest match
             assertThat(result.published).hasSize(1)
-            verify(webhookClient).send(any())
+            verify(webhookClient).send(any(), any())
         }
 
         @Test
@@ -1256,8 +1257,8 @@ class MatchAcquisitionServiceTest {
             service.acquire(AcquisitionTrigger.MANUAL)
 
             // Discord delivery still happened
-            verify(webhookClient).send(any())
-            verify(store).saveRecord(argThat { state == PublicationState.DELIVERED })
+            verify(webhookClient).send(any(), any())
+            verify(store).saveRecord(clubIdEq(LEGACY_TEST_CLUB), argThat { state == PublicationState.DELIVERED })
         }
 
         @Test

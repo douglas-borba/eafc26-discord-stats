@@ -3,10 +3,11 @@ package com.eafc26.discordstats.admin
 import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.config.AppProperties
-import com.eafc26.discordstats.config.WebhookConfigService
 import com.eafc26.discordstats.discord.DiscordRenderer
+import com.eafc26.discordstats.discord.DiscordDestinationResolver
 import com.eafc26.discordstats.discord.DiscordWebhookClient
 import com.eafc26.discordstats.domain.interpretation.AwardType
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.story.StoryContent
 import com.eafc26.discordstats.domain.story.StoryType
@@ -52,7 +53,7 @@ class ReplayRecentMatchesRunner(
     private val discordRenderer: DiscordRenderer,
     private val webhookClient: DiscordWebhookClient,
     private val llmEditorialService: LlmEditorialService,
-    private val webhookConfigService: WebhookConfigService,
+    private val destinationResolver: DiscordDestinationResolver,
     private val defaultClubProvider: DefaultClubProvider,
 ) : CommandLineRunner {
 
@@ -76,6 +77,7 @@ class ReplayRecentMatchesRunner(
             ?: emptySet()
 
         log.info("=====================================")
+        log.info("Club ID: {}", clubId.value)
         if (dryRun) {
             log.info("REPLAY DRY RUN")
         } else {
@@ -102,15 +104,13 @@ class ReplayRecentMatchesRunner(
             log.info("")
         }
 
-        val matches = if (specificMatchId != null) {
-            val match = canonicalMatchRepository.findById(clubId, MatchId(specificMatchId))
-            if (match != null) listOf(match) else emptyList()
-        } else {
-            // Load all matches, filter excluded, then apply limit
-            canonicalMatchRepository.findAll(clubId)
-                .filter { it.matchId.value !in excludedIds }
-                .take(limit ?: 10)
-        }
+        val matches = selectReplayMatches(
+            repository = canonicalMatchRepository,
+            clubId = clubId,
+            specificMatchId = specificMatchId,
+            excludedIds = excludedIds,
+            limit = limit ?: 10,
+        )
 
         if (matches.isEmpty()) {
             if (specificMatchId != null) {
@@ -130,7 +130,11 @@ class ReplayRecentMatchesRunner(
         var sentCount = 0
         var failedCount = 0
         val failures = mutableListOf<String>()
-        val webhookUrl = webhookConfigService.getWebhookUrl()
+        val destination = destinationResolver.resolve(clubId)
+        if (!dryRun && destination == null) {
+            log.info("Replay skipped: clubId={}, destinationConfigured=false", clubId.value)
+            System.exit(0)
+        }
 
         matches.forEachIndexed { index, canonical ->
             val matchId = canonical.matchId.value
@@ -138,7 +142,7 @@ class ReplayRecentMatchesRunner(
 
             try {
                 if (dryRun) {
-                    inspectMatch(canonical, index + 1, matches.size, webhookUrl)
+                    inspectMatch(canonical, index + 1)
                     sentCount++
                 } else {
                     log.info("{} Replaying match: {}", progress, matchId)
@@ -160,7 +164,7 @@ class ReplayRecentMatchesRunner(
                     )
 
                     // Send directly to Discord
-                    webhookClient.send(payload)
+                    webhookClient.send(destination!!, payload)
 
                     log.info("{} ✅ Match {} sent successfully", progress, matchId)
                     sentCount++
@@ -201,8 +205,6 @@ class ReplayRecentMatchesRunner(
     private fun inspectMatch(
         canonical: com.eafc26.discordstats.canonical.CanonicalMatch,
         index: Int,
-        total: Int,
-        webhookUrl: String,
     ) {
         val matchId = canonical.matchId.value
         val footballMatch = canonical.footballMatch
@@ -227,3 +229,16 @@ class ReplayRecentMatchesRunner(
     }
 }
 
+internal fun selectReplayMatches(
+    repository: CanonicalMatchRepository,
+    clubId: ClubId,
+    specificMatchId: String?,
+    excludedIds: Set<String>,
+    limit: Int,
+) = if (specificMatchId != null) {
+    repository.findById(clubId, MatchId(specificMatchId))?.let(::listOf).orEmpty()
+} else {
+    repository.findAll(clubId)
+        .filter { it.matchId.value !in excludedIds }
+        .take(limit)
+}

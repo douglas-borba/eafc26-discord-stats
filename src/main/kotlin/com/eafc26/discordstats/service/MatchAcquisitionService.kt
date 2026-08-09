@@ -236,9 +236,9 @@ class MatchAcquisitionService(
         log.debug("Cached presentation for match {} (version={})", latest.matchId, newVersion)
 
         // First-run: establish baseline without publishing
-        val publishedIds = store.loadIds()
+        val publishedIds = store.loadIds(clubId)
         if (publishedIds.isEmpty()) {
-            return establishBaseline(matches)
+            return establishBaseline(clubId, matches)
         }
 
         // Delegate to centralized publication service (handles dedup + mutex + persistence)
@@ -253,6 +253,11 @@ class MatchAcquisitionService(
                     failed = emptyList(),
                 )
             }
+            PublicationOutcome.SKIPPED_NO_DESTINATION -> AcquisitionResult.Processed(
+                published = emptyList(),
+                alreadyPublished = emptyList(),
+                failed = emptyList(),
+            )
             PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN -> {
                 log.warn("Match {} is DELIVERY_UNCERTAIN — blocked from automatic resend", latest.matchId)
                 AcquisitionResult.Processed(
@@ -371,7 +376,7 @@ class MatchAcquisitionService(
         matches: List<MatchResponse>,
         canonicalByMatchId: Map<String, CanonicalMatch>,
     ): AcquisitionResult {
-        val publishedIds = store.loadIds()
+        val publishedIds = store.loadIds(clubId)
 
         // First-run detection
         if (publishedIds.isEmpty()) {
@@ -430,6 +435,9 @@ class MatchAcquisitionService(
                 }
                 PublicationOutcome.SKIPPED_ALREADY_DELIVERED -> {
                     log.info("Match {} concurrently delivered — skipping", match.matchId)
+                }
+                PublicationOutcome.SKIPPED_NO_DESTINATION -> {
+                    log.info("Discord publication skipped for match {} because the club has no destination", match.matchId)
                 }
                 PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN -> {
                     log.warn("Match {} is DELIVERY_UNCERTAIN — blocked from automatic resend", match.matchId)
@@ -515,7 +523,7 @@ class MatchAcquisitionService(
                     reason.contains("Webhook", ignoreCase = true)) {
                     log.warn("Webhook not configured during first-run")
                     // Still establish baseline even if webhook is not configured
-                    establishBaseline(matches)
+                    establishBaseline(clubId, matches)
                     return AcquisitionResult.WebhookNotConfigured
                 }
                 log.error("Failed to publish latest match during first-run: {}", reason)
@@ -529,7 +537,7 @@ class MatchAcquisitionService(
         // Establish baseline for all matches (including the one we just published)
         // This prevents re-publication of historical matches
         stateHolder.enterPhase(clubId, AcquisitionPhase.PERSISTING, "Estabelecendo baseline...")
-        establishBaseline(matches)
+        establishBaseline(clubId, matches)
 
         log.info("First-run complete: {} published, {} in baseline",
             if (published.isNotEmpty()) 1 else 0, matches.size)
@@ -542,10 +550,10 @@ class MatchAcquisitionService(
         )
     }
 
-    private fun establishBaseline(matches: List<MatchResponse>): AcquisitionResult {
+    private fun establishBaseline(clubId: ClubId, matches: List<MatchResponse>): AcquisitionResult {
         val baselineIds = matches.mapTo(linkedSetOf()) { it.matchId }
         log.info("Publication baseline established with {} match(es); no Discord delivery", baselineIds.size)
-        store.saveIds(baselineIds)
+        store.saveIds(clubId, baselineIds)
         return AcquisitionResult.Processed(
             published = emptyList(),
             alreadyPublished = emptyList(),
@@ -621,6 +629,7 @@ class MatchAcquisitionService(
             PublicationOutcome.SKIPPED_ALREADY_DELIVERED,
             PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN,
             PublicationOutcome.SKIPPED_FAILED_PERMANENT -> error("forcePublish never returns SKIPPED")
+            PublicationOutcome.SKIPPED_NO_DESTINATION -> AcquisitionResult.WebhookNotConfigured
         }
     }
 

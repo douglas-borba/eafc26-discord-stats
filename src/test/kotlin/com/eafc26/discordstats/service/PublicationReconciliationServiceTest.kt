@@ -2,7 +2,6 @@ package com.eafc26.discordstats.service
 
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.domain.match.ClubId
-import com.eafc26.discordstats.support.defaultClubProvider
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
@@ -36,23 +35,55 @@ class PublicationReconciliationServiceTest {
             canonicalMatchRepository = canonicalRepo,
             store = store,
             publicationService = publicationService,
-            defaultClubProvider = defaultClubProvider(CLUB_ID),
         )
     }
 
-    private fun canonical(matchId: String, ourScore: String = "3", oppScore: String = "1"): CanonicalMatch {
+    private fun PublishedMatchStore.loadRecords() = loadRecords(CLUB_ID)
+    private fun PublishedMatchStore.saveRecord(record: PublicationRecord) = saveRecord(CLUB_ID, record)
+    private fun PublicationReconciliationService.inspectLatestPublications(limit: Int = 5) =
+        inspectLatestPublications(CLUB_ID, limit)
+    private fun PublicationReconciliationService.autoPublishSafe() = autoPublishSafe(CLUB_ID)
+
+    private fun canonical(
+        matchId: String,
+        ourScore: String = "3",
+        oppScore: String = "1",
+        perspective: ClubId = CLUB_ID,
+    ): CanonicalMatch {
         return CanonicalMatchFactory().create(
             source = MatchResponse(
                 matchId = matchId,
                 timestamp = System.currentTimeMillis() / 1000,
                 clubs = mapOf(
-                    clubId to ClubMatchEntry(details = ClubDetails(name = "Test FC"), score = ourScore, result = "1"),
+                    perspective.value to ClubMatchEntry(details = ClubDetails(name = "Test FC"), score = ourScore, result = "1"),
                     "opp" to ClubMatchEntry(details = ClubDetails(name = "Rival FC"), score = oppScore, result = "0"),
                 ),
                 players = emptyMap(),
             ),
-            perspectiveClubId = clubId,
+            perspectiveClubId = perspective.value,
         )
+    }
+
+    @Test
+    fun `reconciliation reads canonical matches and publication states only from requested club`() {
+        val clubA = ClubId("club-a")
+        val clubB = ClubId("club-b")
+        whenever(canonicalRepo.findAll(clubA)).thenReturn(listOf(canonical("same", perspective = clubA)))
+        whenever(canonicalRepo.findAll(clubB)).thenReturn(listOf(canonical("same", perspective = clubB)))
+        whenever(store.loadRecords(clubA)).thenReturn(
+            mapOf("same" to PublicationRecord("same", PublicationState.DELIVERED)),
+        )
+        whenever(store.loadRecords(clubB)).thenReturn(
+            mapOf("same" to PublicationRecord("same", PublicationState.FAILED_PERMANENT)),
+        )
+
+        val reportA = reconciliationService.inspectLatestPublications(clubA)
+        val reportB = reconciliationService.inspectLatestPublications(clubB)
+
+        assertThat(reportA.inspections.single().publicationState).isEqualTo(PublicationState.DELIVERED)
+        assertThat(reportB.inspections.single().publicationState).isEqualTo(PublicationState.FAILED_PERMANENT)
+        verify(canonicalRepo).findAll(clubA)
+        verify(canonicalRepo).findAll(clubB)
     }
 
     // =========================================================================

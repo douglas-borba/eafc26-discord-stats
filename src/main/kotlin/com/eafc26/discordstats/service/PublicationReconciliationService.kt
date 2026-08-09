@@ -1,6 +1,5 @@
 package com.eafc26.discordstats.service
 
-import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.service.DiscordMatchPublicationService
@@ -10,6 +9,7 @@ import com.eafc26.discordstats.store.PublishedMatchStore
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Instant
+import com.eafc26.discordstats.domain.match.ClubId
 
 /**
  * Safe administrative reconciliation of publication status.
@@ -31,7 +31,6 @@ class PublicationReconciliationService(
     private val canonicalMatchRepository: CanonicalMatchRepository,
     private val store: PublishedMatchStore,
     private val publicationService: DiscordMatchPublicationService,
-    private val defaultClubProvider: DefaultClubProvider,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -41,11 +40,11 @@ class PublicationReconciliationService(
      * @param limit Maximum number of matches to inspect (default: 5)
      * @return Reconciliation report with detailed status for each match
      */
-    fun inspectLatestPublications(limit: Int = 5): ReconciliationReport {
+    fun inspectLatestPublications(clubId: ClubId, limit: Int = 5): ReconciliationReport {
         require(limit > 0) { "limit must be positive" }
 
-        val allMatches = canonicalMatchRepository.findAll(defaultClubProvider.get().clubId).take(limit)
-        val records = store.loadRecords()
+        val allMatches = canonicalMatchRepository.findAll(clubId).take(limit)
+        val records = store.loadRecords(clubId)
 
         val inspections = allMatches.map { match ->
             val matchId = match.matchId.value
@@ -95,9 +94,9 @@ class PublicationReconciliationService(
      *
      * Returns the number of matches published and any errors encountered.
      */
-    fun autoPublishSafe(): AutoPublishResult {
-        val allMatches = canonicalMatchRepository.findAll(defaultClubProvider.get().clubId)
-        val records = store.loadRecords()
+    fun autoPublishSafe(clubId: ClubId): AutoPublishResult {
+        val allMatches = canonicalMatchRepository.findAll(clubId)
+        val records = store.loadRecords(clubId)
 
         val published = mutableListOf<String>()
         val skipped = mutableListOf<String>()

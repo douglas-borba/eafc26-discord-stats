@@ -146,7 +146,7 @@ class DevSimulatorServiceTest {
             simulatorService.simulateLatest()
 
             // Verify Discord was NEVER called
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         @Test
@@ -156,7 +156,7 @@ class DevSimulatorServiceTest {
             simulatorService.simulateLatest()
 
             // Verify store was NEVER updated
-            verify(publishedMatchStore, never()).saveIds(any())
+            verify(publishedMatchStore, never()).saveIds(clubIdEq(TEST_CLUB), any())
             verify(canonicalMatchRepository, never()).save(any())
         }
 
@@ -168,7 +168,7 @@ class DevSimulatorServiceTest {
             simulatorService.simulateLatest()
 
             // Store should only be read, never written
-            verify(publishedMatchStore, never()).saveIds(any())
+            verify(publishedMatchStore, never()).saveIds(clubIdEq(TEST_CLUB), any())
         }
 
         @Test

@@ -2,10 +2,11 @@
 
 ## Destination
 
-The application has one Discord destination: `EAFC_DISCORD_MATCH_WEBHOOK_URL`.
-It receives the complete match summary, awards and narratives. The variable is
-optional at boot because local development may configure the same destination
-through Setup. Resolution is deterministic:
+Discord is an optional destination per monitored club. The current legacy
+Associação BF adapter resolves `EAFC_DISCORD_MATCH_WEBHOOK_URL`; future secret
+stores plug into the same opaque-reference boundary without exposing raw URLs to
+application services. The legacy variable is optional at boot because local
+development may configure the same destination through Setup. Its resolution is:
 
 1. a non-blank environment value (`ENVIRONMENT`);
 2. the value saved locally (`STORED`);
@@ -22,16 +23,20 @@ not migrated, copied, used or automatically deleted.
 ## Publication baseline and deduplication
 
 `PublishedMatchStore` is the source of truth for Discord publication deduplication.
-It contains delivered `MatchId` values at:
+Its identity is `(ClubId, MatchId)` and each club's WAL records live at:
 
-`~/Library/Application Support/EAFC26DiscordStats/published-matches.json`
+`~/Library/Application Support/EAFC26DiscordStats/clubs/{clubId}/published-matches.json`
+
+The former root file is preserved and imported idempotently into club `1104972`
+on first access. Existing scoped records win collisions, so newer operational
+state cannot be replaced by legacy data.
 
 When this store is empty, the first normal acquisition—scheduler, manual update or
 CLI—records the complete EA window as a baseline and sends nothing to Discord.
 Later cycles publish only MatchIds absent from that baseline, then persist each ID
 after successful delivery. Restarting the same environment therefore does not
-republish a match. Force resend remains the only explicit path that bypasses this
-deduplication and it does not alter the store.
+republish a match. Force resend remains the explicit path that bypasses the
+existing state and records the result in that same club namespace.
 
 Local macOS, Docker and any future deployment use independent filesystems. No
 automatic copy or synchronization occurs between their publication stores. Docker

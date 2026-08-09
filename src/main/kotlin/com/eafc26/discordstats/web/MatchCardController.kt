@@ -33,7 +33,7 @@ class MatchCardController(
             .map { (clubId, result) ->
                 when (result) {
                     is MatchCardService.MatchCardResult.Success -> {
-                        val pubStatus = matchCardService.getPublicationStatus(result.presentation.matchId)
+                        val pubStatus = matchCardService.getPublicationStatus(clubId, result.presentation.matchId)
                         ResponseEntity.ok(MatchCardResponse(
                             status = "success",
                             presentation = result.presentation,

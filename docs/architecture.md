@@ -235,10 +235,31 @@ BF runtime behavior while legacy routes do not yet carry a club context. Control
 resolve that same default only at the web compatibility boundary; application
 services and state holders require an explicit `ClubId`.
 
-Durable Discord delivery state in `PublishedMatchStore`, webhook selection, replay,
-reconciliation and administrative operations remain on their legacy contracts in
-this phase. Their persistence migration belongs to the later publication/configuration
-phases; the in-memory publication lock is already isolated in preparation for it.
+Durable Discord delivery state is also club-scoped. `PublishedMatchStore` requires
+an explicit `ClubId` for every operation and persists records under
+`clubs/{clubId}/published-matches.json`; together with `matchId`, this forms the
+publication identity. Equal MatchIds in different clubs therefore have independent
+WAL states, deduplication and reconciliation.
+
+On first access for Associação BF (`1104972`), the former root
+`published-matches.json` is imported into its scoped store. The migration is
+idempotent, preserves the legacy file, retains states and timestamps, and never
+overwrites an existing scoped record. Legacy v1 string arrays are still upgraded
+to delivery records with their backup behavior preserved.
+
+Discord delivery is optional and contextual. `DiscordDestinationResolver` accepts
+the publication `ClubId`, reads only that club's opaque webhook reference, and
+delegates secret material to `DiscordWebhookSecretResolver`. A club without a
+destination continues acquisition and canonical persistence; its observed match is
+baselined without an HTTP request. The temporary `legacy:default` secret adapter
+uses `WebhookConfigService` only for the default club, keeping `.env` access out of
+application services and logs.
+
+Publication, force-resend and reconciliation services all require or derive an
+unambiguous `ClubId`. Legacy controllers resolve the default club at their boundary.
+The replay runner similarly selects only the default club, applies exclusions inside
+that club and reports the chosen ClubId in dry-run output. It is deliberately not a
+multi-club batch tool. The scheduler remains single-club in this phase.
 
 ### Historical Dashboard
 

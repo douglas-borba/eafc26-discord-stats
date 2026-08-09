@@ -2,6 +2,7 @@ package com.eafc26.discordstats.store
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
+import com.eafc26.discordstats.config.AppDataPaths
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
@@ -19,6 +20,7 @@ class PublishedMatchStoreTest {
 
     private lateinit var store: PublishedMatchStore
     private lateinit var storePath: Path
+    private lateinit var scopedStorePath: Path
     private var originalUserHome: String? = null
 
     @BeforeEach
@@ -26,6 +28,7 @@ class PublishedMatchStoreTest {
         originalUserHome = System.getProperty("user.home")
         System.setProperty("user.home", tempDir.toString())
         storePath = tempDir.resolve("Library/Application Support/EAFC26DiscordStats/published-matches.json")
+        scopedStorePath = AppDataPaths.publicationStoreFile(PublishedMatchStore.LEGACY_ASSOCIATION_BF)
         store = makeStore()
     }
 
@@ -57,8 +60,8 @@ class PublishedMatchStoreTest {
 
     @Test
     fun `loadIds throws IllegalStateException for malformed JSON`() {
-        storePath.parent.toFile().mkdirs()
-        storePath.writeText("{not valid json}")
+        scopedStorePath.parent.toFile().mkdirs()
+        scopedStorePath.writeText("{not valid json}")
         assertThatThrownBy { store.loadIds() }
             .isInstanceOf(IllegalStateException::class.java)
             .hasMessageContaining("malformed JSON")
@@ -188,10 +191,10 @@ class PublishedMatchStoreTest {
 
         @Test
         fun `v1 migration creates backup`() {
-            storePath.parent.toFile().mkdirs()
-            storePath.writeText("""["id1"]""")
-            makeStore()
-            assertThat(storePath.resolveSibling("published-matches.json.v1.bak")).exists()
+            scopedStorePath.parent.toFile().mkdirs()
+            scopedStorePath.writeText("""["id1"]""")
+            makeStore().loadRecords(PublishedMatchStore.LEGACY_ASSOCIATION_BF)
+            assertThat(scopedStorePath.resolveSibling("published-matches.json.v1.bak")).exists()
         }
 
         @Test

@@ -3,10 +3,13 @@ package com.eafc26.discordstats.service
 import com.eafc26.discordstats.config.AppDataPaths
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.discord.DiscordDeliveryException
+import com.eafc26.discordstats.discord.DiscordDestination
+import com.eafc26.discordstats.discord.DiscordDestinationResolver
 import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.discord.DiscordWebhookClient
 import com.eafc26.discordstats.llm.LlmEditorialService
 import com.eafc26.discordstats.llm.LlmProperties
+import com.eafc26.discordstats.llm.EditorialContextBuilder
 import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
@@ -14,6 +17,7 @@ import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.store.PublicationRecord
 import com.eafc26.discordstats.store.PublicationState
 import com.eafc26.discordstats.store.PublishedMatchStore
+import com.eafc26.discordstats.domain.match.ClubId
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -25,6 +29,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argThat
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -57,6 +62,15 @@ class DiscordMatchPublicationServiceTest {
     private var originalUserHome: String? = null
 
     private val clubId = "42"
+    private val CLUB_ID = ClubId(clubId)
+
+    private fun PublishedMatchStore.loadRecords() = loadRecords(CLUB_ID)
+    private fun PublishedMatchStore.loadIds() = loadIds(CLUB_ID)
+    private fun PublishedMatchStore.saveRecord(record: PublicationRecord) = saveRecord(CLUB_ID, record)
+    private fun PublishedMatchStore.saveIds(ids: Set<String>) = saveIds(CLUB_ID, ids)
+    private fun PublishedMatchStore.removeRecord(matchId: String) = removeRecord(CLUB_ID, matchId)
+    private fun PublishedMatchStore.resolveAsDelivered(matchId: String) = resolveAsDelivered(CLUB_ID, matchId)
+    private fun PublishedMatchStore.resolveAsUndelivered(matchId: String) = resolveAsUndelivered(CLUB_ID, matchId)
 
     @BeforeEach
     fun setUp() {
@@ -84,18 +98,97 @@ class DiscordMatchPublicationServiceTest {
     )
 
     private fun canonical(id: String, ourScore: String = "2", oppScore: String = "1") =
+        canonicalFor(CLUB_ID, id, ourScore, oppScore)
+
+    private fun canonicalFor(perspective: ClubId, id: String, ourScore: String = "2", oppScore: String = "1") =
         CanonicalMatchFactory().create(
             source = MatchResponse(
                 matchId = id,
                 timestamp = System.currentTimeMillis() / 1000,
                 clubs = mapOf(
-                    clubId to ClubMatchEntry(details = ClubDetails(name = "Test FC"), score = ourScore, result = "1"),
+                    perspective.value to ClubMatchEntry(details = ClubDetails(name = "Test FC"), score = ourScore, result = "1"),
                     "opp" to ClubMatchEntry(details = ClubDetails(name = "Rival FC"), score = oppScore, result = "0"),
                 ),
                 players = emptyMap(),
             ),
-            perspectiveClubId = clubId,
+            perspectiveClubId = perspective.value,
         )
+
+    private fun serviceWith(resolver: DiscordDestinationResolver) = DiscordMatchPublicationService(
+        store,
+        webhookClient,
+        DiscordRenderer(MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))),
+        LlmEditorialService(EditorialContextBuilder(), null, mock(), LlmProperties(enabled = false)),
+        resolver,
+    )
+
+    @Nested
+    inner class ClubIsolation {
+        private val clubA = ClubId("club-a")
+        private val clubB = ClubId("club-b")
+        private val destinationA = DiscordDestination("https://discord.test/a")
+        private val destinationB = DiscordDestination("https://discord.test/b")
+
+        @Test
+        fun `DELIVERED for club A never blocks same match id for club B and each uses its destination`() {
+            val scoped = serviceWith(DiscordDestinationResolver { club ->
+                when (club) {
+                    clubA -> destinationA
+                    clubB -> destinationB
+                    else -> null
+                }
+            })
+
+            assertThat(scoped.publishIfNeeded(canonicalFor(clubA, "same")).outcome)
+                .isEqualTo(PublicationOutcome.PUBLISHED)
+            assertThat(scoped.publishIfNeeded(canonicalFor(clubB, "same")).outcome)
+                .isEqualTo(PublicationOutcome.PUBLISHED)
+
+            assertThat(store.find(clubA, "same")?.state).isEqualTo(PublicationState.DELIVERED)
+            assertThat(store.find(clubB, "same")?.state).isEqualTo(PublicationState.DELIVERED)
+            val destinations = argumentCaptor<DiscordDestination>()
+            verify(webhookClient, times(2)).send(destinations.capture(), any())
+            assertThat(destinations.allValues).containsExactly(destinationA, destinationB)
+        }
+
+        @Test
+        fun `FAILED_PERMANENT for club A does not affect club B`() {
+            store.saveRecord(clubA, PublicationRecord("same", PublicationState.FAILED_PERMANENT))
+            val scoped = serviceWith(DiscordDestinationResolver { destinationB })
+
+            val result = scoped.publishIfNeeded(canonicalFor(clubB, "same"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            assertThat(store.find(clubA, "same")?.state).isEqualTo(PublicationState.FAILED_PERMANENT)
+            assertThat(store.find(clubB, "same")?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
+        fun `force publish changes only the requested club namespace`() {
+            store.saveRecord(clubA, PublicationRecord("same", PublicationState.FAILED_PERMANENT))
+            store.saveRecord(clubB, PublicationRecord("same", PublicationState.DELIVERY_UNCERTAIN))
+            val scoped = serviceWith(DiscordDestinationResolver { club ->
+                if (club == clubA) destinationA else destinationB
+            })
+
+            val result = scoped.forcePublish(canonicalFor(clubA, "same"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            assertThat(store.find(clubA, "same")?.state).isEqualTo(PublicationState.DELIVERED)
+            assertThat(store.find(clubB, "same")?.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+        }
+
+        @Test
+        fun `club without destination continues and is baselined without HTTP`() {
+            val scoped = serviceWith(DiscordDestinationResolver { null })
+
+            val result = scoped.publishIfNeeded(canonicalFor(clubA, "no-discord"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_NO_DESTINATION)
+            assertThat(store.find(clubA, "no-discord")?.state).isEqualTo(PublicationState.BASELINED)
+            verify(webhookClient, never()).send(any(), any())
+        }
+    }
 
     // =========================================================================
     // WAL pre-send write
@@ -108,7 +201,7 @@ class DiscordMatchPublicationServiceTest {
         fun `DELIVERING is written to store before HTTP call`() {
             // Intercept: capture state at the moment HTTP is called
             var stateAtHttpCall: PublicationState? = null
-            whenever(webhookClient.send(any())).thenAnswer {
+            whenever(webhookClient.send(any(), any())).thenAnswer {
                 stateAtHttpCall = store.loadRecords()["m1"]?.state
                 Unit
             }
@@ -129,19 +222,19 @@ class DiscordMatchPublicationServiceTest {
         fun `failure to persist DELIVERING → zero HTTP calls (FAILED_BEFORE_SEND)`() {
             val failingStore: PublishedMatchStore = mock()
             whenever(failingStore.loadRecords()).thenReturn(emptyMap())
-            doThrow(RuntimeException("disk full")).whenever(failingStore).saveRecord(any())
+            doThrow(RuntimeException("disk full")).whenever(failingStore).saveRecord(clubIdEq(CLUB_ID), any())
             val svc = makeService(failingStore)
 
             val result = svc.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_BEFORE_SEND)
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         @Test
         fun `DELIVERING marker removed when Discord returns explicit HTTP error (safe to retry)`() {
             val httpError = WebClientResponseException.create(429, "Too Many Requests", HttpHeaders.EMPTY, ByteArray(0), null)
-            doThrow(DiscordDeliveryException("rate limited", httpError)).whenever(webhookClient).send(any())
+            doThrow(DiscordDeliveryException("rate limited", httpError)).whenever(webhookClient).send(any(), any())
 
             val result = service.publishIfNeeded(canonical("m1"))
 
@@ -153,7 +246,7 @@ class DiscordMatchPublicationServiceTest {
         @Test
         fun `DELIVERING upgraded to DELIVERY_UNCERTAIN when network error is ambiguous`() {
             val networkError = DiscordDeliveryException("connection reset", java.io.IOException("Connection reset by peer"))
-            doThrow(networkError).whenever(webhookClient).send(any())
+            doThrow(networkError).whenever(webhookClient).send(any(), any())
 
             val result = service.publishIfNeeded(canonical("m1"))
 
@@ -164,7 +257,7 @@ class DiscordMatchPublicationServiceTest {
 
         @Test
         fun `DELIVERING marker removed when webhook not configured`() {
-            doThrow(IllegalStateException("no url")).whenever(webhookClient).send(any())
+            doThrow(IllegalStateException("no url")).whenever(webhookClient).send(any(), any())
 
             service.publishIfNeeded(canonical("m1"))
 
@@ -198,7 +291,7 @@ class DiscordMatchPublicationServiceTest {
             val result = restartedService.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         /**
@@ -218,7 +311,7 @@ class DiscordMatchPublicationServiceTest {
             val result = restartedService.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         @Test
@@ -228,7 +321,7 @@ class DiscordMatchPublicationServiceTest {
             val result = service.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         @Test
@@ -238,7 +331,7 @@ class DiscordMatchPublicationServiceTest {
             val result = service.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
     }
 
@@ -257,7 +350,7 @@ class DiscordMatchPublicationServiceTest {
             val result = service.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         @Test
@@ -268,7 +361,7 @@ class DiscordMatchPublicationServiceTest {
             val result = service.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
-            verify(webhookClient).send(any())
+            verify(webhookClient).send(any(), any())
         }
 
         @Test
@@ -278,7 +371,7 @@ class DiscordMatchPublicationServiceTest {
             val result = service.forcePublish(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
-            verify(webhookClient).send(any())
+            verify(webhookClient).send(any(), any())
             assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERED)
         }
     }
@@ -297,13 +390,13 @@ class DiscordMatchPublicationServiceTest {
             val result = service.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         @Test
         fun `published match is skipped after store reload (restart simulation)`() {
             service.publishIfNeeded(canonical("m1"))
-            verify(webhookClient, times(1)).send(any())
+            verify(webhookClient, times(1)).send(any(), any())
 
             val restartedStore = makeStore()
             val restartedService = makeService(restartedStore)
@@ -311,7 +404,7 @@ class DiscordMatchPublicationServiceTest {
             val result = restartedService.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
-            verify(webhookClient, times(1)).send(any()) // still 1, no extra call
+            verify(webhookClient, times(1)).send(any(), any()) // still 1, no extra call
         }
 
         @Test
@@ -320,7 +413,7 @@ class DiscordMatchPublicationServiceTest {
             val second = service.publishIfNeeded(canonical("m1"))
 
             assertThat(second.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
-            verify(webhookClient, times(1)).send(any())
+            verify(webhookClient, times(1)).send(any(), any())
         }
     }
 
@@ -333,7 +426,7 @@ class DiscordMatchPublicationServiceTest {
 
         @Test
         fun `v1 string-array format is migrated to DELIVERED records`() {
-            val storeFile = AppDataPaths.storeFile
+            val storeFile = AppDataPaths.publicationStoreFile(CLUB_ID)
             storeFile.parent.toFile().mkdirs()
             storeFile.toFile().writeText("""["id1","id2","id3"]""")
 
@@ -347,11 +440,11 @@ class DiscordMatchPublicationServiceTest {
 
         @Test
         fun `migration creates v1 backup file`() {
-            val storeFile = AppDataPaths.storeFile
+            val storeFile = AppDataPaths.publicationStoreFile(CLUB_ID)
             storeFile.parent.toFile().mkdirs()
             storeFile.toFile().writeText("""["old-id"]""")
 
-            makeStore() // triggers migration
+            makeStore().loadRecords(CLUB_ID) // first scoped access triggers migration
 
             val backup = storeFile.resolveSibling("published-matches.json.v1.bak")
             assertThat(backup).exists()
@@ -360,7 +453,7 @@ class DiscordMatchPublicationServiceTest {
 
         @Test
         fun `v1 IDs are considered DELIVERED - scheduler does not republish`() {
-            val storeFile = AppDataPaths.storeFile
+            val storeFile = AppDataPaths.publicationStoreFile(CLUB_ID)
             storeFile.parent.toFile().mkdirs()
             storeFile.toFile().writeText("""["m1","m2"]""")
 
@@ -372,12 +465,12 @@ class DiscordMatchPublicationServiceTest {
 
             assertThat(r1.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
             assertThat(r2.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         @Test
         fun `v2 format is read correctly`() {
-            val storeFile = AppDataPaths.storeFile
+            val storeFile = AppDataPaths.publicationStoreFile(CLUB_ID)
             storeFile.parent.toFile().mkdirs()
             storeFile.toFile().writeText(
                 """[{"matchId":"m1","state":"DELIVERED","updatedAt":1722700000}]"""
@@ -397,13 +490,13 @@ class DiscordMatchPublicationServiceTest {
 
         @Test
         fun `malformed store does not silently publish - throws exception`() {
-            val storeFile = AppDataPaths.storeFile
+            val storeFile = AppDataPaths.publicationStoreFile(CLUB_ID)
             storeFile.parent.toFile().mkdirs()
             storeFile.toFile().writeText("{corrupted!}")
 
             val thrown = runCatching { service.publishIfNeeded(canonical("m1")) }
             assertThat(thrown.isFailure).isTrue()
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
     }
 
@@ -422,7 +515,7 @@ class DiscordMatchPublicationServiceTest {
             val startGun = CountDownLatch(1)
             val allDone = CountDownLatch(10)
 
-            whenever(webhookClient.send(any())).thenAnswer { sendCount.incrementAndGet(); Unit }
+            whenever(webhookClient.send(any(), any())).thenAnswer { sendCount.incrementAndGet(); Unit }
 
             repeat(10) {
                 executor.submit {
@@ -457,7 +550,7 @@ class DiscordMatchPublicationServiceTest {
             val result = service.forcePublish(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
-            verify(webhookClient).send(any())
+            verify(webhookClient).send(any(), any())
         }
 
         @Test
@@ -470,7 +563,7 @@ class DiscordMatchPublicationServiceTest {
         @Test
         fun `forcePublish WAL - DELIVERING written before HTTP`() {
             var stateAtHttp: PublicationState? = null
-            whenever(webhookClient.send(any())).thenAnswer {
+            whenever(webhookClient.send(any(), any())).thenAnswer {
                 stateAtHttp = store.loadRecords()["m1"]?.state
                 Unit
             }
@@ -483,7 +576,7 @@ class DiscordMatchPublicationServiceTest {
         @Test
         fun `forcePublish ambiguous network error upgrades DELIVERING to DELIVERY_UNCERTAIN`() {
             val networkError = DiscordDeliveryException("down", java.net.SocketException("Connection reset"))
-            doThrow(networkError).whenever(webhookClient).send(any())
+            doThrow(networkError).whenever(webhookClient).send(any(), any())
 
             val result = service.forcePublish(canonical("m1"))
 
@@ -494,7 +587,7 @@ class DiscordMatchPublicationServiceTest {
         @Test
         fun `forcePublish HTTP error cleans DELIVERING marker (safe to retry)`() {
             val httpError = WebClientResponseException.create(503, "Service Unavailable", HttpHeaders.EMPTY, ByteArray(0), null)
-            doThrow(DiscordDeliveryException("down", httpError)).whenever(webhookClient).send(any())
+            doThrow(DiscordDeliveryException("down", httpError)).whenever(webhookClient).send(any(), any())
 
             val result = service.forcePublish(canonical("m1"))
 
@@ -509,7 +602,7 @@ class DiscordMatchPublicationServiceTest {
             val schedulerResult = service.publishIfNeeded(canonical("m1"))
 
             assertThat(schedulerResult.outcome).isEqualTo(PublicationOutcome.SKIPPED_ALREADY_DELIVERED)
-            verify(webhookClient, times(1)).send(any())
+            verify(webhookClient, times(1)).send(any(), any())
         }
     }
 
@@ -525,16 +618,16 @@ class DiscordMatchPublicationServiceTest {
             val failingStore: PublishedMatchStore = mock()
             whenever(failingStore.loadRecords()).thenReturn(emptyMap())
             // Allow DELIVERING write, fail only DELIVERED write
-            whenever(failingStore.saveRecord(argThat { state == PublicationState.DELIVERING })).then { }
+            whenever(failingStore.saveRecord(clubIdEq(CLUB_ID), argThat { state == PublicationState.DELIVERING })).then { }
             doThrow(RuntimeException("disk full")).whenever(failingStore)
-                .saveRecord(argThat { state == PublicationState.DELIVERED })
+                .saveRecord(clubIdEq(CLUB_ID), argThat { state == PublicationState.DELIVERED })
             val svc = makeService(failingStore)
 
             val result = svc.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN)
             assertThat(result.delivered).isTrue()
-            verify(webhookClient).send(any())
+            verify(webhookClient).send(any(), any())
         }
     }
 
@@ -550,7 +643,7 @@ class DiscordMatchPublicationServiceTest {
             val result = service.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
-            verify(webhookClient).send(any())
+            verify(webhookClient).send(any(), any())
         }
     }
 
@@ -564,19 +657,19 @@ class DiscordMatchPublicationServiceTest {
         @Test
         fun `timeout (SocketTimeoutException) → FAILED_AMBIGUOUS, DELIVERY_UNCERTAIN`() {
             val timeout = DiscordDeliveryException("Read timed out", SocketTimeoutException("Read timed out"))
-            doThrow(timeout).whenever(webhookClient).send(any())
+            doThrow(timeout).whenever(webhookClient).send(any(), any())
 
             val result = service.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_AMBIGUOUS)
             assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
-            verify(webhookClient).send(any()) // HTTP was attempted
+            verify(webhookClient).send(any(), any()) // HTTP was attempted
         }
 
         @Test
         fun `connection reset (IOException) → FAILED_AMBIGUOUS, DELIVERY_UNCERTAIN`() {
             val reset = DiscordDeliveryException("Connection reset", java.io.IOException("Connection reset by peer"))
-            doThrow(reset).whenever(webhookClient).send(any())
+            doThrow(reset).whenever(webhookClient).send(any(), any())
 
             val result = service.publishIfNeeded(canonical("m1"))
 
@@ -587,7 +680,7 @@ class DiscordMatchPublicationServiceTest {
         @Test
         fun `HTTP 400 from Discord → FAILED_HTTP, DELIVERING removed (retry allowed)`() {
             val http400 = WebClientResponseException.create(400, "Bad Request", HttpHeaders.EMPTY, ByteArray(0), null)
-            doThrow(DiscordDeliveryException("Bad Request", http400)).whenever(webhookClient).send(any())
+            doThrow(DiscordDeliveryException("Bad Request", http400)).whenever(webhookClient).send(any(), any())
 
             val result = service.publishIfNeeded(canonical("m1"))
 
@@ -599,7 +692,7 @@ class DiscordMatchPublicationServiceTest {
         @Test
         fun `HTTP 500 from Discord → FAILED_HTTP, DELIVERING removed (retry allowed)`() {
             val http500 = WebClientResponseException.create(500, "Internal Server Error", HttpHeaders.EMPTY, ByteArray(0), null)
-            doThrow(DiscordDeliveryException("Server Error", http500)).whenever(webhookClient).send(any())
+            doThrow(DiscordDeliveryException("Server Error", http500)).whenever(webhookClient).send(any(), any())
 
             val result = service.publishIfNeeded(canonical("m1"))
 
@@ -610,7 +703,7 @@ class DiscordMatchPublicationServiceTest {
 
         @Test
         fun `failure before connection (webhook not configured) → FAILED_BEFORE_SEND, DELIVERING removed`() {
-            doThrow(IllegalStateException("no url")).whenever(webhookClient).send(any())
+            doThrow(IllegalStateException("no url")).whenever(webhookClient).send(any(), any())
 
             val result = service.publishIfNeeded(canonical("m1"))
 
@@ -630,7 +723,7 @@ class DiscordMatchPublicationServiceTest {
             assertThat(r1.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
             assertThat(r2.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
             assertThat(r3.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         @Test
@@ -642,7 +735,7 @@ class DiscordMatchPublicationServiceTest {
 
             // FAILED_HTTP → httpStatusCode present
             val http422 = WebClientResponseException.create(422, "Unprocessable Entity", HttpHeaders.EMPTY, ByteArray(0), null)
-            doThrow(DiscordDeliveryException("Unprocessable", http422)).whenever(webhookClient).send(any())
+            doThrow(DiscordDeliveryException("Unprocessable", http422)).whenever(webhookClient).send(any(), any())
             val failed = service.publishIfNeeded(canonical("fail"))
             assertThat(failed.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
             assertThat(failed.httpStatusCode).isEqualTo(422)
@@ -676,7 +769,7 @@ class DiscordMatchPublicationServiceTest {
             val svc = makeService(restart3)
             val result = svc.publishIfNeeded(canonical("m1"))
             assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
-            verify(webhookClient, never()).send(any())
+            verify(webhookClient, never()).send(any(), any())
         }
 
         @Test
@@ -692,7 +785,7 @@ class DiscordMatchPublicationServiceTest {
             restarted.resolveAsUndelivered("m1")
             val afterResolve = makeService(restarted).publishIfNeeded(canonical("m1"))
             assertThat(afterResolve.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
-            verify(webhookClient).send(any())
+            verify(webhookClient).send(any(), any())
         }
     }
 
@@ -730,7 +823,7 @@ class DiscordMatchPublicationServiceTest {
             val startGun = CountDownLatch(1)
             val bothDone = CountDownLatch(2)
 
-            whenever(webhookClient.send(any())).thenAnswer {
+            whenever(webhookClient.send(any(), any())).thenAnswer {
                 val c = currentConcurrentSend.incrementAndGet()
                 maxConcurrentSend.updateAndGet { max -> maxOf(max, c) }
                 Thread.sleep(50)
@@ -772,7 +865,7 @@ class DiscordMatchPublicationServiceTest {
             val startGun = CountDownLatch(1)
             val allDone = CountDownLatch(5)
 
-            whenever(webhookClient.send(any())).thenAnswer {
+            whenever(webhookClient.send(any(), any())).thenAnswer {
                 val c = currentConcurrent.incrementAndGet()
                 maxConcurrent.updateAndGet { max -> maxOf(max, c) }
                 Thread.sleep(30)
@@ -804,7 +897,7 @@ class DiscordMatchPublicationServiceTest {
             val executor = Executors.newFixedThreadPool(4)
             val allDone = CountDownLatch(4)
 
-            whenever(webhookClient.send(any())).thenAnswer { Thread.sleep(10); Unit }
+            whenever(webhookClient.send(any(), any())).thenAnswer { Thread.sleep(10); Unit }
 
             repeat(2) {
                 executor.submit {
@@ -836,7 +929,7 @@ class DiscordMatchPublicationServiceTest {
             val startGun = CountDownLatch(1)
             val allDone = CountDownLatch(3)
 
-            whenever(webhookClient.send(any())).thenAnswer {
+            whenever(webhookClient.send(any(), any())).thenAnswer {
                 val c = currentConcurrent.incrementAndGet()
                 maxConcurrent.updateAndGet { max -> maxOf(max, c) }
                 Thread.sleep(80)
@@ -867,7 +960,7 @@ class DiscordMatchPublicationServiceTest {
         @Test
         fun `lock is released when forcePublish throws exception during send`() {
             val networkError = DiscordDeliveryException("crash", java.io.IOException("boom"))
-            doThrow(networkError).whenever(webhookClient).send(any())
+            doThrow(networkError).whenever(webhookClient).send(any(), any())
 
             val result = service.forcePublish(canonical("ex"))
 
