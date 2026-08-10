@@ -10,6 +10,7 @@ import com.eafc26.discordstats.application.club.MonitoredClub
 import com.eafc26.discordstats.application.club.MonitoredClubService
 import com.eafc26.discordstats.config.WebhookConfigService
 import com.eafc26.discordstats.discord.DiscordWebhookSecretStore
+import com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationRepository
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
 import com.eafc26.discordstats.scheduler.PollingStatusHolder
@@ -45,6 +46,7 @@ class ClubAdministrationControllerTest {
     @MockBean private lateinit var latestMatch: LatestMatchHolder
     @MockBean private lateinit var webhookConfigService: WebhookConfigService
     @MockBean private lateinit var defaultClubProvider: DefaultClubProvider
+    @MockBean private lateinit var editorialRepository: MatchEditorialPresentationRepository
 
     private val association = club("1104972", "Associação BF", enabled = true, reference = "legacy:default")
     private val brasil = club("8874106", "BRASIL 2030", enabled = false)
@@ -210,7 +212,7 @@ class ClubAdministrationControllerTest {
         client.mutateWith(csrf()).delete().uri("/api/admin/clubs/999")
             .exchange().expectStatus().isNotFound
 
-        verify(monitoredClubs, never()).remove(any())
+        verify(monitoredClubs, never()).remove(ClubId("999"))
     }
 
     @Test
@@ -218,7 +220,7 @@ class ClubAdministrationControllerTest {
         client.mutateWith(csrf()).delete().uri("/api/admin/clubs/1104972")
             .exchange().expectStatus().isEqualTo(409)
 
-        verify(monitoredClubs, never()).remove(any())
+        verify(monitoredClubs, never()).remove(association.clubId)
     }
 
     @Test

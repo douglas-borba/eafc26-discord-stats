@@ -9,6 +9,7 @@ import com.eafc26.discordstats.application.club.MonitoredClubService
 import com.eafc26.discordstats.discord.DiscordWebhookSecretStore
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
+import com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationRepository
 import com.eafc26.discordstats.scheduler.PollingStatusHolder
 import com.eafc26.discordstats.service.AcquisitionPhase
 import com.eafc26.discordstats.service.AcquisitionStateHolder
@@ -38,6 +39,7 @@ class ClubAdministrationController(
     private val acquisitionState: AcquisitionStateHolder,
     private val latestMatch: LatestMatchHolder,
     private val defaultClubProvider: DefaultClubProvider,
+    private val editorialRepository: MatchEditorialPresentationRepository?,
 ) {
     @GetMapping
     fun list(): List<AdminClubResponse> =
@@ -131,6 +133,26 @@ class ClubAdministrationController(
         val acquisition = acquisitionState.current(club.clubId)
         val polling = pollingStatus.current(club.clubId)
         val latest = latestMatch.presentation(club.clubId)
+
+        var latestMatchId = latest?.matchId
+        var latestMatchTimestamp = latest?.timestamp
+        var lastSuccessAt = acquisition.finishedAt
+            ?.takeIf { acquisition.currentPhase == AcquisitionPhase.COMPLETED }
+            ?.toString()
+
+        if (latestMatchId == null && editorialRepository != null) {
+            try {
+                val persisted = editorialRepository.findByClub(club.clubId, limit = 1).firstOrNull()
+                if (persisted != null) {
+                    latestMatchId = persisted.matchId.value
+                    latestMatchTimestamp = persisted.playedAt.toString()
+                    if (lastSuccessAt == null) {
+                        lastSuccessAt = persisted.updatedAt.toString()
+                    }
+                }
+            } catch (_: Exception) { /* editorial fallback unavailable */ }
+        }
+
         return ClubOperationalStatusResponse(
             clubId = club.clubId.value,
             monitoringEnabled = club.monitoringEnabled,
@@ -141,12 +163,10 @@ class ClubAdministrationController(
                 else -> "IDLE"
             },
             lastPollAt = polling.lastCheck?.toString(),
-            lastSuccessAt = acquisition.finishedAt
-                ?.takeIf { acquisition.currentPhase == AcquisitionPhase.COMPLETED }
-                ?.toString(),
+            lastSuccessAt = lastSuccessAt,
             lastError = acquisition.currentStatus.takeIf { acquisition.currentPhase == AcquisitionPhase.FAILED },
-            latestMatchId = latest?.matchId,
-            latestMatchTimestamp = latest?.timestamp,
+            latestMatchId = latestMatchId,
+            latestMatchTimestamp = latestMatchTimestamp,
             discordConfigured = club.discordWebhookSecretReference != null,
         )
     }

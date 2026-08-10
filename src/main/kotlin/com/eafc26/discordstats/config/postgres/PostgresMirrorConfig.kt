@@ -71,7 +71,10 @@ class PostgresMirrorConfig {
         jsonRepository: JsonCanonicalMatchRepository,
         postgresRepository: PostgresCanonicalMatchRepository,
     ): CanonicalMatchRepository {
-        return MirroringCanonicalMatchRepository(jsonRepository, postgresRepository)
+        return MirroringCanonicalMatchRepository(
+            primary = postgresRepository,
+            secondary = jsonRepository,
+        )
     }
 
     @Bean

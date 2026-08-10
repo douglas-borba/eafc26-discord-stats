@@ -18,7 +18,7 @@ class MatchCardServiceTest {
     fun setUp() {
         latestMatchHolder = LatestMatchHolder()
         store = mock()
-        service = MatchCardService(latestMatchHolder, store)
+        service = MatchCardService(latestMatchHolder, store, null)
     }
 
     // -------------------------------------------------------------------------

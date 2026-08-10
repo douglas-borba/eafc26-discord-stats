@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory
 
 class MirroringCanonicalMatchRepository(
     private val primary: CanonicalMatchRepository,
-    private val mirror: CanonicalMatchRepository,
+    private val secondary: CanonicalMatchRepository,
 ) : CanonicalMatchRepository {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -17,10 +17,10 @@ class MirroringCanonicalMatchRepository(
     override fun save(match: CanonicalMatch) {
         primary.save(match)
         try {
-            mirror.save(match)
+            secondary.save(match)
         } catch (ex: Exception) {
             log.error(
-                "PostgreSQL mirror failed for match {} — local JSON is safe",
+                "Secondary repository failed for match {} — primary is safe",
                 match.matchId.value,
                 ex,
             )
