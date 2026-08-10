@@ -62,6 +62,9 @@ describe("multi-club administration UI", () => {
     expect(source).toContain("clubId: selected.clubId");
     expect(source).toContain("Este clube já está cadastrado.");
     expect(source).toContain("Ativar monitoramento imediatamente");
+    expect(source).toContain("rankCandidates");
+    expect(source).toContain("fallbackPrefix");
+    expect(source).toContain("Não encontramos uma correspondência exata");
   });
 
   it("keeps webhook optional and never attempts to retrieve its current value", () => {

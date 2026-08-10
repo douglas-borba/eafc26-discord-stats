@@ -6,6 +6,7 @@ import { FormEvent, useState } from "react";
 import { ArrowLeft, Search } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import { adminRequest } from "@/lib/admin/browser-client";
+import { fallbackPrefix, rankCandidates } from "@/lib/admin/club-search";
 import type { AdminClub, ClubSearchCandidate } from "@/lib/admin/types";
 import { AdminFeedback } from "./admin-feedback";
 
@@ -19,17 +20,29 @@ export function NewClubForm() {
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [approximate, setApproximate] = useState(false);
 
   async function search(event: FormEvent) {
     event.preventDefault();
-    if (!query.trim()) return;
+    const q = query.trim();
+    if (!q) return;
     setSearching(true);
     setError(null);
     setSelected(null);
+    setApproximate(false);
     try {
-      const found = await adminRequest<ClubSearchCandidate[]>(`/api/admin/clubs/search?query=${encodeURIComponent(query.trim())}`);
-      setResults(found);
-      if (found.length === 0) setError("Nenhum clube encontrado com esse nome.");
+      let found = await adminRequest<ClubSearchCandidate[]>(`/api/admin/clubs/search?query=${encodeURIComponent(q)}`);
+
+      if (found.length === 0) {
+        const prefix = fallbackPrefix(q);
+        if (prefix && prefix !== q.trim().toLowerCase()) {
+          found = await adminRequest<ClubSearchCandidate[]>(`/api/admin/clubs/search?query=${encodeURIComponent(prefix)}`);
+          if (found.length > 0) setApproximate(true);
+        }
+      }
+
+      setResults(rankCandidates(found, q));
+      if (found.length === 0) setError("Nenhum clube encontrado.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Não foi possível buscar clubes.");
       setResults([]);
@@ -90,7 +103,7 @@ export function NewClubForm() {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ex.: BRASIL 2030" className="min-h-10 w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-text-primary outline-none focus:border-accent" />
           </label>
           <button disabled={searching || !query.trim()} className="mt-auto inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-accent-strong px-4 py-2 font-semibold text-white disabled:opacity-50">
-            <Search className="h-4 w-4" /> {searching ? "Buscando…" : "Buscar"}
+            <Search className={`h-4 w-4${searching ? " animate-spin" : ""}`} /> {searching ? "Buscando…" : "Buscar"}
           </button>
         </form>
       </Panel>
@@ -99,7 +112,9 @@ export function NewClubForm() {
 
       {results.length > 0 && (
         <div className="mt-5 space-y-2" aria-label="Resultados da busca">
-          <h2 className="text-sm font-semibold text-text-soft">Selecione o clube correto</h2>
+          <h2 className="text-sm font-semibold text-text-soft">
+            {approximate ? "Não encontramos uma correspondência exata. Veja clubes com nomes semelhantes:" : "Selecione o clube correto"}
+          </h2>
           {results.map((candidate) => (
             <button key={candidate.clubId} type="button" onClick={() => { setSelected(candidate); setError(null); }} className={selected?.clubId === candidate.clubId ? "flex w-full items-center justify-between rounded-lg border border-accent bg-accent/10 p-4 text-left" : "flex w-full items-center justify-between rounded-lg border border-border bg-surface p-4 text-left hover:bg-surface-raised"}>
               <span><strong className="block text-text-primary">{candidate.displayName}</strong><span className="mt-1 block font-mono text-xs text-muted">ClubId {candidate.clubId}</span></span>
