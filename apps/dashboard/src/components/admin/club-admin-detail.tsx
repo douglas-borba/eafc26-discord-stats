@@ -21,7 +21,9 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
     searchParams.get("created") === "1" ? "Clube cadastrado com sucesso." : null,
   );
 
-  const load = useCallback(async () => {
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async (showFeedback = false) => {
     setLoading(true);
     setError(null);
     try {
@@ -31,6 +33,7 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
       ]);
       setClub(clubData);
       setStatus(statusData);
+      if (showFeedback) setSuccess("Status atualizado.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Não foi possível carregar o clube.");
     } finally {
@@ -84,7 +87,7 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
       <Link href="/admin/clubs" className="mb-5 inline-flex items-center gap-1.5 text-sm text-muted hover:text-text-primary"><ArrowLeft className="h-4 w-4" /> Clubes monitorados</Link>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div><h1 className="text-2xl font-semibold text-text-primary">{club.displayName}</h1><p className="mt-1 font-mono text-xs text-muted">ClubId {club.clubId} · {club.platform}</p></div>
-        <button type="button" onClick={() => void load()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm text-text-soft hover:bg-surface-raised"><RefreshCw className="h-4 w-4" /> Atualizar status</button>
+        <button type="button" disabled={refreshing} onClick={() => { setRefreshing(true); void load(true).finally(() => setRefreshing(false)); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm text-text-soft hover:bg-surface-raised disabled:opacity-50"><RefreshCw className={`h-4 w-4${refreshing ? " animate-spin" : ""}`} /> {refreshing ? "Atualizando…" : "Atualizar status"}</button>
       </div>
       <div className="mb-4 space-y-3">{error && <AdminFeedback message={error} />}{success && <AdminFeedback message={success} tone="success" />}</div>
 
