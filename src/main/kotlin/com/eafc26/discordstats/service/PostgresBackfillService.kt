@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.service
 
 import com.eafc26.discordstats.application.club.DefaultClubProvider
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.store.JsonCanonicalMatchRepository
 import com.eafc26.discordstats.store.PostgresCanonicalMatchRepository
 import org.slf4j.LoggerFactory
@@ -17,7 +18,11 @@ class PostgresBackfillService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     fun backfill(): PostgresBackfillResult {
-        val clubId = defaultClubProvider.get().clubId
+        return backfill(defaultClubProvider.get().clubId)
+    }
+
+    /** Legacy adapter above is intentionally limited to the configured default club. */
+    fun backfill(clubId: ClubId): PostgresBackfillResult {
         val allMatches = jsonRepository.findAll(clubId)
         var created = 0
         var updated = 0

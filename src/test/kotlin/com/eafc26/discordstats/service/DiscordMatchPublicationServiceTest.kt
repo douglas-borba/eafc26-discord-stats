@@ -171,7 +171,7 @@ class DiscordMatchPublicationServiceTest {
                 if (club == clubA) destinationA else destinationB
             })
 
-            val result = scoped.forcePublish(canonicalFor(clubA, "same"))
+            val result = scoped.forcePublish(clubA, canonicalFor(clubA, "same"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
             assertThat(store.find(clubA, "same")?.state).isEqualTo(PublicationState.DELIVERED)

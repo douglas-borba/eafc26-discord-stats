@@ -44,9 +44,9 @@ class CliRunner(
 
         when (command) {
             CMD_SEARCH             -> runSearchClub()
-            CMD_MATCHES            -> runLatestMatches()
-            CMD_NOTIFY_LATEST      -> runNotifyLatest()
-            CMD_BACKFILL           -> runCanonicalBackfill()
+            CMD_MATCHES            -> runLatestMatches(args)
+            CMD_NOTIFY_LATEST      -> runNotifyLatest(args)
+            CMD_BACKFILL           -> runCanonicalBackfill(args)
             CMD_BACKFILL_PG        -> runPostgresSync()
             CMD_SYNC_PG            -> runPostgresSync()
             CMD_BACKFILL_EDITORIAL -> runEditorialBackfill(args)
@@ -58,15 +58,11 @@ class CliRunner(
         }
     }
 
-    private fun runCanonicalBackfill() {
-        if (props.ea.clubId.isBlank()) {
-            out.println("ERROR: app.ea.club-id is not set in application.yml")
-            exit(1)
-            return
-        }
+    private fun runCanonicalBackfill(args: ApplicationArguments) {
+        val clubId = resolveClubId(args) ?: return
 
-        out.println("Backfilling canonical ${props.ea.matchType} matches for club-id=${props.ea.clubId} ...")
-        when (val result = canonicalBackfillService.backfill()) {
+        out.println("Backfilling canonical ${props.ea.matchType} matches for club-id=${clubId.value} ...")
+        when (val result = canonicalBackfillService.backfill(clubId)) {
             is CanonicalBackfillResult.Completed -> {
                 out.println("Requested: ${result.requested}")
                 out.println("Returned: ${result.returned}")
@@ -122,16 +118,12 @@ class CliRunner(
         }
     }
 
-    private fun runLatestMatches() {
-        val clubId = props.ea.clubId
-        if (clubId.isBlank()) {
-            out.println("ERROR: app.ea.club-id is not set in application.yml")
-            exit(1)
-        }
+    private fun runLatestMatches(args: ApplicationArguments) {
+        val clubId = resolveClubId(args) ?: return
 
-        out.println("Fetching latest ${props.ea.matchType} matches for club-id=$clubId ...")
+        out.println("Fetching latest ${props.ea.matchType} matches for club-id=${clubId.value} ...")
 
-        when (val result = client.getLatestMatches(clubId)) {
+        when (val result = client.getLatestMatches(clubId.value)) {
             is EaApiResult.Success -> {
                 out.println("Found ${result.data.size} match(es):")
                 result.data.forEach { match ->
@@ -149,7 +141,7 @@ class CliRunner(
                 exit(0)
             }
             EaApiResult.NoMatches -> {
-                out.println("No matches found for club-id=$clubId (matchType=${props.ea.matchType}).")
+                out.println("No matches found for club-id=${clubId.value} (matchType=${props.ea.matchType}).")
                 exit(0)
             }
             is EaApiResult.Unavailable -> {
@@ -171,25 +163,20 @@ class CliRunner(
      * Uses [MatchAcquisitionService.acquire] with [AcquisitionTrigger.CLI].
      * Maps [AcquisitionResult] to CLI-friendly output messages.
      */
-    private fun runNotifyLatest() {
-        val clubId = props.ea.clubId
-        if (clubId.isBlank()) {
-            out.println("ERROR: app.ea.club-id is not set in application.yml")
-            exit(1)
-            return
-        }
+    private fun runNotifyLatest(args: ApplicationArguments) {
+        val clubId = resolveClubId(args) ?: return
 
-        out.println("Fetching latest match for club-id=$clubId ...")
+        out.println("Fetching latest match for club-id=${clubId.value} ...")
 
-        when (val result = acquisitionService.acquire(ClubId(clubId), AcquisitionTrigger.CLI)) {
-            is AcquisitionResult.Processed -> handleProcessedResult(result, clubId)
+        when (val result = acquisitionService.acquire(clubId, AcquisitionTrigger.CLI)) {
+            is AcquisitionResult.Processed -> handleProcessedResult(result, clubId.value)
             is AcquisitionResult.ForceResent -> {
                 // CLI doesn't use force-resend, but handle gracefully
                 out.println("SUCCESS: Match force-resent to Discord. (${result.match.summary})")
                 exit(0)
             }
             AcquisitionResult.NoMatches -> {
-                out.println("No matches found for club-id=$clubId.")
+                out.println("No matches found for club-id=${clubId.value}.")
                 exit(0)
             }
             is AcquisitionResult.EaUnavailable -> {
@@ -256,19 +243,13 @@ class CliRunner(
             exit(1)
             return
         }
-        if (props.ea.clubId.isBlank()) {
-            out.println("ERROR: app.ea.club-id is not set in application.yml")
-            exit(1)
-            return
-        }
-
         val dryRun = args.containsOption("dry-run")
-        val clubId = com.eafc26.discordstats.domain.match.ClubId(props.ea.clubId)
+        val clubId = resolveClubId(args) ?: return
 
         if (dryRun) {
-            out.println("DRY RUN: Editorial backfill for club-id=${props.ea.clubId}")
+            out.println("DRY RUN: Editorial backfill for club-id=${clubId.value}")
         } else {
-            out.println("Backfilling editorial presentations for club-id=${props.ea.clubId} ...")
+            out.println("Backfilling editorial presentations for club-id=${clubId.value} ...")
         }
 
         val result = editorialBackfillService.backfillForClub(clubId, dryRun)
@@ -304,6 +285,22 @@ class CliRunner(
         out.println("Local: ${result.localCount}  Remote: ${result.remoteCount ?: "unavailable"}")
         out.println("Duration: ${result.durationMs}ms")
         exit(if (result.failures.isEmpty()) 0 else 1)
+    }
+
+    /**
+     * --club-id is the multi-club contract. Omitting it is intentionally the
+     * legacy adapter to the configured default club, never a selection of all clubs.
+     */
+    private fun resolveClubId(args: ApplicationArguments): ClubId? {
+        val configured = args.getOptionValues("club-id")?.singleOrNull()?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?: props.ea.clubId.trim().takeIf(String::isNotEmpty)
+        if (configured == null) {
+            out.println("ERROR: specify --club-id or configure app.ea.club-id for the legacy default adapter")
+            exit(1)
+            return null
+        }
+        return ClubId(configured)
     }
 
     companion object {

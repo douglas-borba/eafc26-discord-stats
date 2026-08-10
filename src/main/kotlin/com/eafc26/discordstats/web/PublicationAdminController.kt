@@ -56,10 +56,11 @@ class PublicationAdminController(
     @PostMapping("/api/publication/{matchId}/force-publish")
     fun forcePublish(@PathVariable matchId: String): Mono<ResponseEntity<Map<String, Any>>> =
         Mono.fromCallable {
-            val canonical = canonicalMatchRepository.findById(defaultClubProvider.get().clubId, MatchId(matchId))
+            val clubId = defaultClubProvider.get().clubId
+            val canonical = canonicalMatchRepository.findById(clubId, MatchId(matchId))
                 ?: return@fromCallable ResponseEntity.notFound().build<Map<String, Any>>()
 
-            val result = publicationService.forcePublish(canonical)
+            val result = publicationService.forcePublish(clubId, canonical)
 
             val message = when {
                 result.delivered -> "Partida reenviada com sucesso"

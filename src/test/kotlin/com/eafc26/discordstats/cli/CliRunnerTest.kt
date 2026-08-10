@@ -14,6 +14,7 @@ import com.eafc26.discordstats.service.AcquisitionTrigger
 import com.eafc26.discordstats.service.CanonicalBackfillService
 import com.eafc26.discordstats.service.CanonicalBackfillResult
 import com.eafc26.discordstats.service.MatchAcquisitionService
+import com.eafc26.discordstats.domain.match.ClubId
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -216,7 +217,7 @@ class CliRunnerTest {
     fun `latest-matches with blank club-id - prints config error`() {
         runner(clubId = "").run(args("latest-matches"))
 
-        assertThat(printed()).contains("app.ea.club-id is not set")
+        assertThat(printed()).contains("specify --club-id")
         assertThat(exitCodes).containsExactly(1)
     }
 
@@ -237,7 +238,7 @@ class CliRunnerTest {
 
     @Test
     fun `backfill canonical matches prints complete report and exits successfully`() {
-        whenever(canonicalBackfillService.backfill()).thenReturn(
+        whenever(canonicalBackfillService.backfill(ClubId("12345"))).thenReturn(
             CanonicalBackfillResult.Completed(
                 requested = 20,
                 returned = 10,
@@ -262,7 +263,7 @@ class CliRunnerTest {
             "Canonical matches: 5 -> 10",
         )
         assertThat(exitCodes).containsExactly(0)
-        verify(canonicalBackfillService).backfill()
+        verify(canonicalBackfillService).backfill(ClubId("12345"))
         verify(client, never()).getLatestMatches(org.mockito.kotlin.any())
     }
 
@@ -270,16 +271,16 @@ class CliRunnerTest {
     fun `backfill canonical matches rejects blank club id without executing`() {
         runner(clubId = "").run(args(CliRunner.CMD_BACKFILL))
 
-        assertThat(printed()).contains("app.ea.club-id is not set")
+        assertThat(printed()).contains("specify --club-id")
         assertThat(exitCodes).containsExactly(1)
-        verify(canonicalBackfillService, never()).backfill()
+        verify(canonicalBackfillService, never()).backfill(ClubId("12345"))
     }
 
     //   notify-latest
 
     @Test
     fun `notify-latest Sent - prints success and exits 0`() {
-        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+        whenever(acquisitionService.acquire(ClubId("12345"), AcquisitionTrigger.CLI))
             .thenReturn(AcquisitionResult.Processed(
                 published = listOf(AcquisitionResult.MatchSummary("m1", "Test FC 2 × 0 Opponent")),
                 alreadyPublished = emptyList(),
@@ -296,7 +297,7 @@ class CliRunnerTest {
 
     @Test
     fun `notify-latest AlreadyPublished - prints info and exits 0`() {
-        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+        whenever(acquisitionService.acquire(ClubId("12345"), AcquisitionTrigger.CLI))
             .thenReturn(AcquisitionResult.Processed(
                 published = emptyList(),
                 alreadyPublished = listOf(AcquisitionResult.MatchSummary("m1", "Test FC 2 × 0 Opponent")),
@@ -313,7 +314,7 @@ class CliRunnerTest {
 
     @Test
     fun `notify-latest NoMatches - prints message and exits 0`() {
-        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+        whenever(acquisitionService.acquire(ClubId("12345"), AcquisitionTrigger.CLI))
             .thenReturn(AcquisitionResult.NoMatches)
 
         runner().run(args("notify-latest"))
@@ -324,7 +325,7 @@ class CliRunnerTest {
 
     @Test
     fun `notify-latest EaUnavailable - prints error and exits 1`() {
-        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+        whenever(acquisitionService.acquire(ClubId("12345"), AcquisitionTrigger.CLI))
             .thenReturn(AcquisitionResult.EaUnavailable(503, "Service unavailable"))
 
         runner().run(args("notify-latest"))
@@ -337,7 +338,7 @@ class CliRunnerTest {
 
     @Test
     fun `notify-latest DiscordError - prints error and exits 1`() {
-        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+        whenever(acquisitionService.acquire(ClubId("12345"), AcquisitionTrigger.CLI))
             .thenReturn(AcquisitionResult.Processed(
                 published = emptyList(),
                 alreadyPublished = emptyList(),
@@ -354,7 +355,7 @@ class CliRunnerTest {
 
     @Test
     fun `notify-latest Busy - prints error and exits 1`() {
-        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+        whenever(acquisitionService.acquire(ClubId("12345"), AcquisitionTrigger.CLI))
             .thenReturn(AcquisitionResult.Busy)
 
         runner().run(args("notify-latest"))
@@ -369,14 +370,14 @@ class CliRunnerTest {
     fun `notify-latest blank club-id - does not call service and exits 1`() {
         runner(clubId = "").run(args("notify-latest"))
 
-        verify(acquisitionService, never()).acquire(AcquisitionTrigger.CLI)
-        assertThat(printed()).contains("app.ea.club-id is not set")
+        verify(acquisitionService, never()).acquire(ClubId("12345"), AcquisitionTrigger.CLI)
+        assertThat(printed()).contains("specify --club-id")
         assertThat(exitCodes).containsExactly(1)
     }
 
     @Test
     fun `notify-latest SentPersistenceError - prints success with warning and exits 0`() {
-        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+        whenever(acquisitionService.acquire(ClubId("12345"), AcquisitionTrigger.CLI))
             .thenReturn(AcquisitionResult.Processed(
                 published = listOf(AcquisitionResult.MatchSummary("m1", "Test FC 2 × 0 Opponent", persistedSuccessfully = false)),
                 alreadyPublished = emptyList(),
@@ -394,7 +395,7 @@ class CliRunnerTest {
 
     @Test
     fun `notify-latest WebhookNotConfigured - prints error and exits 1`() {
-        whenever(acquisitionService.acquire(AcquisitionTrigger.CLI))
+        whenever(acquisitionService.acquire(ClubId("12345"), AcquisitionTrigger.CLI))
             .thenReturn(AcquisitionResult.WebhookNotConfigured)
 
         runner().run(args("notify-latest"))
@@ -403,6 +404,19 @@ class CliRunnerTest {
         assertThat(text).contains("ERROR")
         assertThat(text).contains("webhook not configured")
         assertThat(exitCodes).containsExactly(1)
+    }
+
+    @Test
+    fun `explicit club id scopes a CLI backfill to the requested club`() {
+        whenever(canonicalBackfillService.backfill(ClubId("8874106"))).thenReturn(
+            CanonicalBackfillResult.Completed(20, 0, 0, 0, 0, 0, emptyList(), 0, 0)
+        )
+
+        runner().run(args("--club-id=8874106", CliRunner.CMD_BACKFILL))
+
+        verify(canonicalBackfillService).backfill(ClubId("8874106"))
+        verify(canonicalBackfillService, never()).backfill(ClubId("12345"))
+        assertThat(printed()).contains("club-id=8874106")
     }
 
     // -- Helpers --

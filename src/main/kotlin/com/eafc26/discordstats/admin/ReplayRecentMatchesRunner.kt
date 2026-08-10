@@ -66,7 +66,12 @@ class ReplayRecentMatchesRunner(
         val specificMatchId = replayConfig.matchId?.trim()
         val limit = replayConfig.matches
         val dryRun = replayConfig.dryRun
-        val clubId = defaultClubProvider.get().clubId
+        // Omission is the explicitly legacy mode; all new invocations use app.replay.club-id.
+        val clubId = replayConfig.clubId
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?.let(::ClubId)
+            ?: defaultClubProvider.get().clubId
         
         // Parse excluded matchIds
         val excludedIds = replayConfig.excludeMatchIds
@@ -131,9 +136,10 @@ class ReplayRecentMatchesRunner(
         var failedCount = 0
         val failures = mutableListOf<String>()
         val destination = destinationResolver.resolve(clubId)
+        log.info("Discord configured: {}", destination != null)
         if (!dryRun && destination == null) {
-            log.info("Replay skipped: clubId={}, destinationConfigured=false", clubId.value)
-            System.exit(0)
+            log.error("Replay aborted: Discord destination not configured for clubId={}", clubId.value)
+            System.exit(1)
         }
 
         matches.forEachIndexed { index, canonical ->

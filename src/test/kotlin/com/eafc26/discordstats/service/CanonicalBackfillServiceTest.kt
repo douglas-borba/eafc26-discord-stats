@@ -131,6 +131,27 @@ class CanonicalBackfillServiceTest {
         assertThat(result.after).isZero()
     }
 
+    @Test
+    fun `backfill isolates the same match id by club`() {
+        val otherClub = ClubId("8874106")
+        val sameIdForOtherClub = MatchResponse(
+            matchId = "same-match",
+            timestamp = 1,
+            clubs = mapOf(
+                otherClub.value to ClubMatchEntry(details = ClubDetails(name = "Other FC"), score = "1", result = "1"),
+                "opponent" to ClubMatchEntry(details = ClubDetails(name = "Opponent"), score = "0", result = "0"),
+            ),
+            players = emptyMap(),
+        )
+        whenever(gateway.getLatestMatches(otherClub.value)).thenReturn(EaApiResult.Success(listOf(sameIdForOtherClub)))
+        whenever(gateway.getMembersStats(otherClub.value)).thenReturn(EaApiResult.Success(emptyList()))
+
+        service.backfill(otherClub)
+
+        assertThat(repository.findAll(ClubId(clubId))).isEmpty()
+        assertThat(repository.findAll(otherClub)).hasSize(1)
+    }
+
     private fun match(id: String, timestamp: Long = 1): MatchResponse = MatchResponse(
         matchId = id,
         timestamp = timestamp,
@@ -142,14 +163,14 @@ class CanonicalBackfillServiceTest {
     )
 
     private class InMemoryCanonicalRepository : CanonicalMatchRepository {
-        private val records = linkedMapOf<MatchId, CanonicalMatch>()
+        private val records = linkedMapOf<Pair<ClubId, MatchId>, CanonicalMatch>()
 
         override fun save(match: CanonicalMatch) {
-            records[match.matchId] = match
+            records[match.interpretation.perspectiveClubId to match.matchId] = match
         }
 
         override fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch? =
-            records[matchId]?.takeIf { it.interpretation.perspectiveClubId == clubId }
+            records[clubId to matchId]
 
         override fun findAll(clubId: ClubId): List<CanonicalMatch> =
             records.values.filter { it.interpretation.perspectiveClubId == clubId }
@@ -166,6 +187,6 @@ class CanonicalBackfillServiceTest {
                 )
             }
 
-        fun ids(): List<String> = records.keys.map { it.value }
+        fun ids(): List<String> = records.keys.map { it.second.value }
     }
 }

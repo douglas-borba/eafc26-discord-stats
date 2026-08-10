@@ -3,6 +3,7 @@ package com.eafc26.discordstats.service
 import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.config.AppProperties
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.MatchResponse
@@ -20,8 +21,16 @@ class CanonicalBackfillService(
     private val canonicalMatchRepository: CanonicalMatchRepository,
     private val defaultClubProvider: DefaultClubProvider,
 ) {
+    /** Legacy adapter for the single-club command. New callers must pass [ClubId]. */
     fun backfill(): CanonicalBackfillResult {
-        val clubId = defaultClubProvider.get().clubId
+        return backfill(defaultClubProvider.get().clubId)
+    }
+
+    /**
+     * Delivery-free canonical import for exactly one monitored club perspective.
+     * This method never updates publication state, latest-match state or Discord.
+     */
+    fun backfill(clubId: ClubId): CanonicalBackfillResult {
         val before = canonicalMatchRepository.metadata(clubId).matchCount
         val matches = when (val result = gateway.getLatestMatches(clubId.value)) {
             is EaApiResult.Success -> result.data

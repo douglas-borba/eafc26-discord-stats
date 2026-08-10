@@ -126,6 +126,22 @@ changing the Dashboard or modifying published-match IDs, run:
 ./gradlew bootRun --args='backfill-canonical-matches'
 ```
 
+In a multi-club installation, select the operational scope explicitly. The
+omitted form above remains a legacy adapter to the configured default club and
+never iterates through all registered clubs:
+
+```bash
+./gradlew bootRun --args='--club-id=8874106 backfill-canonical-matches'
+./gradlew bootRun --args='--club-id=8874106 notify-latest'
+./gradlew bootRun --args='--club-id=8874106 latest-matches'
+```
+
+Replay is also scoped before it selects matches. Set `EAFC_REPLAY_CLUB_ID` (or
+`app.replay.club-id`) for a non-default club. A dry run never changes canonical
+history, publication state or Discord. A publishing replay without a webhook
+configured for that club exits with a clear error; it never borrows another
+club's webhook.
+
 The command reports requested, returned, processed, created, updated, ignored and
 failed records, plus repository counts before and after execution.
 

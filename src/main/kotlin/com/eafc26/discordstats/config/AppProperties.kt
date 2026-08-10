@@ -52,4 +52,5 @@ data class ReplayProperties(
     val matchId: String? = null,
     val dryRun: Boolean = false,
     val excludeMatchIds: String? = null,
+    val clubId: String? = null,
 )

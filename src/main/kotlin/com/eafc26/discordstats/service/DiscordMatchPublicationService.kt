@@ -141,8 +141,15 @@ class DiscordMatchPublicationService(
     }
 
     fun forcePublish(canonical: CanonicalMatch): DiscordPublicationResult {
+        return forcePublish(canonical.interpretation.perspectiveClubId, canonical)
+    }
+
+    /** Force publication requires the complete `(ClubId, MatchId)` identity. */
+    fun forcePublish(clubId: ClubId, canonical: CanonicalMatch): DiscordPublicationResult {
         val matchId = canonical.matchId.value
-        val clubId = canonical.interpretation.perspectiveClubId
+        require(canonical.interpretation.perspectiveClubId == clubId) {
+            "Canonical match perspective does not belong to requested club"
+        }
         return publicationLocks.withLock(clubId, matchId) {
             val destination = destinationResolver.resolve(clubId)
                 ?: return@withLock DiscordPublicationResult(PublicationOutcome.SKIPPED_NO_DESTINATION, matchId)

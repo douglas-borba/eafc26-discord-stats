@@ -19,6 +19,10 @@ app:
   acquisition:
     enabled: ${EAFC_ACQUISITION_ENABLED:true}
 
+  replay:
+    # Omit to use the explicitly documented legacy default-club adapter.
+    club-id: ${EAFC_REPLAY_CLUB_ID:}
+
   postgres:
     mirror-enabled: ${EAFC_POSTGRES_MIRROR_ENABLED:false}
     sync-enabled: ${EAFC_POSTGRES_SYNC_ENABLED:false}
