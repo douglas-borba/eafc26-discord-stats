@@ -5,6 +5,33 @@ import { resolve } from "node:path";
 const root = resolve(process.cwd(), "src");
 const read = (path: string) => readFileSync(resolve(root, path), "utf8");
 
+describe("admin route group structure", () => {
+  it("login page is outside the protected route group", () => {
+    const login = read("app/admin/login/page.tsx");
+    expect(login).toContain("signInWithOtp");
+    expect(login).toContain('"use client"');
+  });
+
+  it("protected layout lives inside the route group and calls requireAdmin", () => {
+    const layout = read("app/admin/(protected)/layout.tsx");
+    expect(layout).toContain("requireAdmin");
+    expect(layout).toContain('redirect("/admin/login")');
+  });
+
+  it("no layout.tsx exists at the admin root that would guard login", () => {
+    const fs = require("node:fs");
+    expect(fs.existsSync(resolve(root, "app/admin/layout.tsx"))).toBe(false);
+  });
+
+  it("all protected admin pages are inside (protected) and not at admin root", () => {
+    const fs = require("node:fs");
+    expect(fs.existsSync(resolve(root, "app/admin/(protected)/clubs/page.tsx"))).toBe(true);
+    expect(fs.existsSync(resolve(root, "app/admin/(protected)/clubs/new/page.tsx"))).toBe(true);
+    expect(fs.existsSync(resolve(root, "app/admin/(protected)/clubs/[clubId]/page.tsx"))).toBe(true);
+    expect(fs.existsSync(resolve(root, "app/admin/clubs/page.tsx"))).toBe(false);
+  });
+});
+
 describe("multi-club administration UI", () => {
   it("lists operational summaries and supports monitoring changes", () => {
     const source = read("components/admin/club-admin-list.tsx");
@@ -48,9 +75,9 @@ describe("multi-club administration UI", () => {
   });
 
   it("provides admin list create and detail pages without changing sports routes", () => {
-    expect(read("app/admin/clubs/page.tsx")).toContain("ClubAdminList");
-    expect(read("app/admin/clubs/new/page.tsx")).toContain("NewClubForm");
-    expect(read("app/admin/clubs/[clubId]/page.tsx")).toContain("ClubAdminDetail");
+    expect(read("app/admin/(protected)/clubs/page.tsx")).toContain("ClubAdminList");
+    expect(read("app/admin/(protected)/clubs/new/page.tsx")).toContain("NewClubForm");
+    expect(read("app/admin/(protected)/clubs/[clubId]/page.tsx")).toContain("ClubAdminDetail");
     expect(read("components/admin/club-admin-detail.tsx")).toContain("Clube cadastrado com sucesso.");
     expect(read("components/layout/sidebar-nav.tsx")).toContain('href="/admin/clubs"');
   });
