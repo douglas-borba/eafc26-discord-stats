@@ -6,10 +6,21 @@ const root = resolve(process.cwd(), "src");
 const read = (path: string) => readFileSync(resolve(root, path), "utf8");
 
 describe("admin route group structure", () => {
-  it("login page is outside the protected route group", () => {
+  it("login page is outside the protected route group and uses password auth", () => {
     const login = read("app/admin/login/page.tsx");
-    expect(login).toContain("signInWithOtp");
     expect(login).toContain('"use client"');
+    expect(login).toContain("signInWithPassword");
+    expect(login).toContain('type="email"');
+    expect(login).toContain('type="password"');
+    expect(login).not.toContain("signInWithOtp");
+    expect(login).not.toContain("emailRedirectTo");
+    expect(login).not.toContain("magic");
+  });
+
+  it("no auth/callback route exists (magic link removed)", () => {
+    const fs = require("node:fs");
+    expect(fs.existsSync(resolve(root, "app/auth/callback/route.ts"))).toBe(false);
+    expect(fs.existsSync(resolve(root, "app/auth"))).toBe(false);
   });
 
   it("protected layout lives inside the route group and calls requireAdmin", () => {
