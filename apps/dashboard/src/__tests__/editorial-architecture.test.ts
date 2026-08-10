@@ -68,7 +68,7 @@ describe("Editorial Architecture: Supabase Only", () => {
     const overviewPage = readFile("app/clubs/[clubId]/(fullwidth)/overview/page.tsx");
 
     expect(panoramaClient).toContain("fetchAiPanorama(clubId: string)");
-    expect(panoramaClient).toContain("clubId=${encodeURIComponent(clubId)}");
+    expect(panoramaClient).toContain("/api/clubs/${encodeURIComponent(clubId)}/panorama");
     expect(overviewPage).toContain("fetchAiPanorama(clubId)");
   });
 

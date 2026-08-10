@@ -15,11 +15,13 @@ export function OpponentsShell({
   selectedOpponentId,
   history,
   clubId,
+  clubName,
 }: {
   opponents: OpponentSummary[];
   selectedOpponentId: string | null;
   history: OpponentHistory | null;
   clubId: string;
+  clubName: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -73,7 +75,7 @@ export function OpponentsShell({
           Adversários
         </h1>
         <p className="text-muted" style={{ marginTop: 6, fontSize: "0.92rem" }}>
-          O retrospecto da Associação BF contra cada clube que encontrou em campo.
+          O retrospecto do {clubName} contra cada clube que encontrou em campo.
         </p>
       </header>
 
@@ -225,7 +227,7 @@ export function OpponentsShell({
           )}
           <div style={{ padding: "24px 20px" }}>
             {history ? (
-              <OpponentHistoryView history={history} clubId={clubId} />
+              <OpponentHistoryView history={history} clubId={clubId} clubName={clubName} />
             ) : (
               <p className="text-muted" style={{ textAlign: "center", padding: "48px 0", fontSize: 14 }}>
                 Selecione um adversário para ver o histórico.

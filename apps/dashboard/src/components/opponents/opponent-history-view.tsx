@@ -6,7 +6,7 @@ function outcomeLabel(outcome: "WIN" | "DRAW" | "LOSS") {
   return outcome === "WIN" ? "Vitória" : outcome === "DRAW" ? "Empate" : "Derrota";
 }
 
-export function OpponentHistoryView({ history, clubId }: { history: OpponentHistory; clubId: string }) {
+export function OpponentHistoryView({ history, clubId, clubName }: { history: OpponentHistory; clubId: string; clubName: string }) {
   const goalDiff = history.goalsFor - history.goalsAgainst;
   const lastMatch = history.matches[0] ?? null;
   const winRate = history.matchesPlayed > 0
@@ -49,7 +49,7 @@ export function OpponentHistoryView({ history, clubId }: { history: OpponentHist
               margin: 0,
             }}
           >
-            Associação BF &times; {history.clubName ?? history.clubId}
+            {clubName} &times; {history.clubName ?? history.clubId}
           </h2>
           <div className="text-muted" style={{ fontSize: 13, marginTop: 6 }}>
             {history.matchesPlayed} confrontos
@@ -338,7 +338,7 @@ export function OpponentHistoryView({ history, clubId }: { history: OpponentHist
         >
 {`clubId: ${history.clubId}
 confrontos: ${history.matchesPlayed}
-critério: partidas registradas na base da Associação BF`}
+critério: partidas registradas na base do ${clubName}`}
         </pre>
       </details>
 

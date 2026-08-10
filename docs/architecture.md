@@ -227,11 +227,16 @@ contexts receive the same `ClubId` before reading history. This service is the
 sole data boundary for those consumers; it contains no football or presentation
 rules.
 
-Legacy Spring routes that do not yet carry a club identifier resolve the
-Associação BF through `DefaultClubProvider` at the controller boundary and then
-invoke the same club-scoped services. The service layer never performs this
-fallback. The Dashboard panorama request carries its active `clubId`; omitting
-that optional parameter preserves the legacy default-club behavior.
+The definitive sports API is rooted at `/api/clubs/{clubId}` and validates the
+requested identifier against `MonitoredClubRepository` before invoking any
+club-scoped service. History, metadata, player profiles, comparisons, opponents,
+panorama and the latest match all carry that explicit identity. An unknown club
+is `404`; a registered club without matches receives a valid empty contract.
+
+Legacy Spring routes without a club identifier remain temporary adapters. They
+resolve Associação BF through `DefaultClubProvider` only at the controller
+boundary and invoke the same club-scoped services. The service layer never
+performs this fallback.
 
 ### Club-scoped operational state
 
@@ -242,11 +247,9 @@ Consequently, activity or failure for one club cannot overwrite or block another
 club. Publication exclusion uses `(ClubId, MatchId)`, so equal external MatchIds
 from different clubs remain independent.
 
-This isolation does not activate multi-club processing. The scheduler deliberately
-resolves exactly one club through `DefaultClubProvider`, preserving the Associação
-BF runtime behavior while legacy routes do not yet carry a club context. Controllers
-resolve that same default only at the web compatibility boundary; application
-services and state holders require an explicit `ClubId`.
+The scheduler processes enabled monitored clubs through `ClubPollingCoordinator`.
+Controllers resolve a default only at legacy web compatibility boundaries;
+application services and state holders require an explicit `ClubId`.
 
 Durable Discord delivery state is also club-scoped. `PublishedMatchStore` requires
 an explicit `ClubId` for every operation and persists records under
@@ -287,7 +290,7 @@ Publication, force-resend and reconciliation services all require or derive an
 unambiguous `ClubId`. Legacy controllers resolve the default club at their boundary.
 The replay runner similarly selects only the default club, applies exclusions inside
 that club and reports the chosen ClubId in dry-run output. It is deliberately not a
-multi-club batch tool. The scheduler remains single-club in this phase.
+multi-club batch tool.
 
 ### Historical Dashboard
 

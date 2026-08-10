@@ -86,6 +86,11 @@ class PlayerProfileService(
             bagres = awards.countWinner(playerId, AwardType.BAGRE),
             xerifes = awards.countWinner(playerId, AwardType.XERIFE),
             redCards = appearances.sumOf { it.performance.discipline.redCards ?: 0 },
+            shots = appearances.sumOf { it.performance.attacking.shots ?: 0 },
+            passesCompleted = appearances.sumOf { it.performance.passing.completed ?: 0 },
+            passesAttempted = appearances.sumOf { it.performance.passing.attempted ?: 0 },
+            tacklesCompleted = appearances.sumOf { it.performance.defending.tacklesCompleted ?: 0 },
+            tacklesAttempted = appearances.sumOf { it.performance.defending.tacklesAttempted ?: 0 },
             recentMatches = appearances.take(recentMatchLimit).map { it.toProfileMatch(playerId) },
         )
     }

@@ -23,11 +23,13 @@ export function PlayersShell({
   selectedPlayerId,
   profile,
   clubId,
+  clubName,
 }: {
   players: PlayerSummary[];
   selectedPlayerId: string | null;
   profile: PlayerProfile | null;
   clubId: string;
+  clubName: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -66,7 +68,7 @@ export function PlayersShell({
             marginBottom: 4,
           }}
         >
-          EA FC 26 — Associação BF
+          EA FC 26 — {clubName}
         </p>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--color-text-primary)", margin: 0 }}>
           Perfis de Jogadores
@@ -266,7 +268,7 @@ export function PlayersShell({
             </button>
           )}
           {profile ? (
-            <PlayerProfileView profile={profile} clubId={clubId} />
+            <PlayerProfileView profile={profile} clubId={clubId} clubName={clubName} />
           ) : (
             <div
               style={{

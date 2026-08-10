@@ -92,7 +92,7 @@ describe("Security: client components do not import Supabase", () => {
   });
 });
 
-describe("Security: repositories query dashboard views only", () => {
+describe("Security: sports repositories use the scoped Spring API", () => {
   it("no repository queries canonical_matches directly", () => {
     const repos = allSource.filter((f) => f.path.includes("/repositories/"));
     for (const { path, content } of repos) {
@@ -107,22 +107,22 @@ describe("Security: repositories query dashboard views only", () => {
     }
   });
 
-  it("repositories use dashboard_matches view", () => {
+  it("sports repositories use the definitive club API", () => {
     const repos = allSource.filter((f) => f.path.includes("/repositories/"));
-    const usesView = repos.some((f) => f.content.includes('from("dashboard_matches")'));
-    expect(usesView).toBe(true);
+    expect(repos.filter((f) => /match-repository|player-repository|opponent-repository/.test(f.path)).every((f) => f.content.includes("clubPath(clubId"))).toBe(true);
   });
 
-  it("repositories use dashboard_player_stats view", () => {
+  it("sports repositories no longer access Supabase directly", () => {
     const repos = allSource.filter((f) => f.path.includes("/repositories/"));
-    const usesView = repos.some((f) => f.content.includes('from("dashboard_player_stats")'));
-    expect(usesView).toBe(true);
+    for (const repo of repos.filter((f) => /match-repository|player-repository|opponent-repository/.test(f.path))) {
+      expect(repo.content).not.toContain("createServerSupabase");
+    }
   });
 
-  it("match detail uses dashboard_match_detail view (not dashboard_matches)", () => {
+  it("match detail uses compound club and match identity in its path", () => {
     const matchRepo = allSource.find((f) => f.path.includes("/repositories/match-repository"));
     expect(matchRepo).toBeDefined();
-    expect(matchRepo!.content).toContain('from("dashboard_match_detail")');
+    expect(matchRepo!.content).toContain('clubPath(clubId, `/history/matches/${encodeURIComponent(matchId)}`)');
   });
 
   it("dashboard_matches view does not expose payload column", () => {
@@ -207,19 +207,19 @@ describe("Security: multi-club scoping", () => {
     }
   });
 
-  it("match detail query scopes by club_id", () => {
+  it("match detail request scopes by clubId", () => {
     const matchRepo = allSource.find((f) => f.path.includes("/repositories/match-repository"));
     expect(matchRepo).toBeDefined();
     const detailFn = matchRepo!.content.slice(matchRepo!.content.indexOf("getMatchDetail"));
-    expect(detailFn).toContain('.eq("club_id", clubId)');
+    expect(detailFn).toContain("clubPath(clubId");
   });
 
-  it("player and opponent queries scope compound match identity by club_id", () => {
+  it("player and opponent requests scope identity by clubId", () => {
     const playerRepo = readFileSync(join(SRC, "lib/repositories/player-repository.ts"), "utf-8");
     const opponentRepo = readFileSync(join(SRC, "lib/repositories/opponent-repository.ts"), "utf-8");
 
-    expect(playerRepo.match(/\.eq\("club_id", clubId\)/g)?.length).toBeGreaterThanOrEqual(4);
-    expect(opponentRepo.match(/\.eq\("club_id", clubId\)/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(playerRepo).toContain("clubPath(clubId");
+    expect(opponentRepo).toContain("clubPath(clubId");
   });
 
   it("no hardcoded club id in source", () => {

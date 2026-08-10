@@ -7,7 +7,7 @@ const OUTCOME_PILL: Record<"WIN" | "DRAW" | "LOSS", { color: string; bg: string;
   LOSS: { color: "#f85149", bg: "rgba(248,81,73,.12)",  label: "Derrota" },
 };
 
-export function PlayerProfileView({ profile, clubId }: { profile: PlayerProfile; clubId: string }) {
+export function PlayerProfileView({ profile, clubId, clubName }: { profile: PlayerProfile; clubId: string; clubName: string }) {
   const wins = profile.recentMatches.filter((m) => m.outcome === "WIN").length;
   const draws = profile.recentMatches.filter((m) => m.outcome === "DRAW").length;
   const losses = profile.recentMatches.filter((m) => m.outcome === "LOSS").length;
@@ -113,7 +113,7 @@ export function PlayerProfileView({ profile, clubId }: { profile: PlayerProfile;
           <div style={{ display: "grid", gap: 4 }}>
             {profile.recentMatches.map((m) => {
               const pill = OUTCOME_PILL[m.outcome];
-              const ourClub = "Associação BF";
+              const ourClub = clubName;
               const opponent = m.opponentClubName ?? "Adversário";
 
               return (
@@ -203,4 +203,3 @@ function RecordBadge({ outcome, value, suffix }: { outcome: "WIN" | "DRAW" | "LO
     </span>
   );
 }
-

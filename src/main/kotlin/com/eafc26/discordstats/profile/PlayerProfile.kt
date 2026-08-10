@@ -28,6 +28,11 @@ data class PlayerProfile(
     val bagres: Int,
     val xerifes: Int,
     val redCards: Int,
+    val shots: Int = 0,
+    val passesCompleted: Int = 0,
+    val passesAttempted: Int = 0,
+    val tacklesCompleted: Int = 0,
+    val tacklesAttempted: Int = 0,
     val recentMatches: List<PlayerProfileMatch>,
 ) {
     init {

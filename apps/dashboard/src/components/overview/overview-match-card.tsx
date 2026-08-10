@@ -277,7 +277,7 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
 
         {/* Footer */}
         <div className={`card-footer rounded-b-[10px] ${c ? "py-[0.35rem] px-3 text-[0.6rem]" : "py-[0.6rem] px-3 text-[0.7rem]"} text-center text-[#6e7681] bg-black/25 border-t border-[#30363d]`}>
-          EA FC 26 — Associação BF
+          EA FC 26 — {presentation.ourName}
         </div>
       </div>
     </div>

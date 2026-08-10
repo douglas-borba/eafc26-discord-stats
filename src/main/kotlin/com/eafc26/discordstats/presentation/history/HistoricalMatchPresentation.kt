@@ -83,6 +83,7 @@ data class HistoricalPlayer(
     val redCards: Int?,
     val saves: Int?,
     val goalsConceded: Int?,
+    val manOfTheMatch: Boolean,
 )
 
 data class HistoricalAward(
@@ -106,6 +107,8 @@ data class HistoricalStory(
     val facts: List<HistoricalFact>,
     val ruleIds: List<String>,
     val evidenceCount: Int,
+    val structuredData: StoryContent,
+    val involvedPlayerIds: List<String>,
 )
 
 data class HistoricalFact(
@@ -206,6 +209,7 @@ object HistoricalMatchPresenter {
                 redCards = performance.discipline.redCards,
                 saves = performance.goalkeeping?.saves,
                 goalsConceded = performance.goalkeeping?.goalsConceded,
+                manOfTheMatch = performance.eaRecognition.manOfTheMatch == true,
             )
         }
 
@@ -283,6 +287,8 @@ object HistoricalMatchPresenter {
         facts = content.facts(namesById),
         ruleIds = provenance.rules.map { it.id.value },
         evidenceCount = provenance.evidence.size,
+        structuredData = content,
+        involvedPlayerIds = involvedPlayers.map { it.value },
     )
 
     private fun StoryContent.facts(namesById: Map<PlayerId, String>): List<HistoricalFact> =

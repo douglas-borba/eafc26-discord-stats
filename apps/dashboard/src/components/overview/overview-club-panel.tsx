@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { Shield, Circle, Users } from "lucide-react";
+import { Shield, Circle, Users, Swords } from "lucide-react";
 import type { SequenceEditorial } from "@/lib/services/sequence-editorial-service";
 import type { MatchSummaryPresentation } from "@/lib/services/match-card-service";
 
@@ -12,7 +12,7 @@ const navItems = [
   { label: "Visão Geral", href: "overview", icon: Shield },
   { label: "Partidas", href: "matches", icon: Circle },
   { label: "Jogadores", href: "players", icon: Users },
-  // { label: "Adversários", href: "opponents", icon: Swords }, // Temporariamente desabilitado
+  { label: "Adversários", href: "opponents", icon: Swords },
 ];
 
 const resultDotColors = {
@@ -26,6 +26,7 @@ const outcomeColors = { wins: "#3fb950", draws: "#8b949e", losses: "#f85149" } a
 
 interface Props {
   clubId: string;
+  clubName: string;
   editorial: SequenceEditorial;
   presentations: MatchSummaryPresentation[];
 }
@@ -34,7 +35,7 @@ function PanelDivider() {
   return <div className="h-px bg-[#21262d] mx-[-20px] px-0" />;
 }
 
-export function OverviewClubPanel({ clubId, editorial, presentations }: Props) {
+export function OverviewClubPanel({ clubId, clubName, editorial, presentations }: Props) {
   const pathname = usePathname();
   const { stats } = editorial;
   const [hoveredMatch, setHoveredMatch] = useState<number | null>(null);
@@ -55,7 +56,7 @@ export function OverviewClubPanel({ clubId, editorial, presentations }: Props) {
               EA FC STATS
             </span>
             <span className="text-[0.72rem] text-[#6e7681] leading-tight mt-0.5">
-              Associação BF
+              {clubName}
             </span>
           </div>
         </div>

@@ -5,11 +5,13 @@ import { OverviewMatchCarousel } from "@/components/overview/overview-match-caro
 import { getRecentMatchCards } from "@/lib/services/match-card-service";
 import { buildSequenceEditorial } from "@/lib/services/sequence-editorial-service";
 import { fetchAiPanorama } from "@/lib/api/panorama-client";
+import { getClub } from "@/lib/repositories/overview-repository";
 
 export default async function OverviewPage({ params }: { params: Promise<{ clubId: string }> }) {
   const { clubId } = await params;
 
-  const [presentations, aiNarrative] = await Promise.all([
+  const [club, presentations, aiNarrative] = await Promise.all([
+    getClub(clubId),
     getRecentMatchCards(clubId, 10), // 10 for both match cards and editorial analysis
     fetchAiPanorama(clubId),          // Fetch from REST API (validates club-scoped contextKey in backend)
   ]);
@@ -34,6 +36,7 @@ export default async function OverviewPage({ params }: { params: Promise<{ clubI
       <aside className="lg:sticky lg:top-0 lg:h-screen border-r border-[#21262d] bg-[#0d1117] px-5 py-6 overflow-y-auto">
         <OverviewClubPanel
           clubId={clubId}
+          clubName={club.displayName}
           editorial={editorial}
           presentations={presentations}
         />

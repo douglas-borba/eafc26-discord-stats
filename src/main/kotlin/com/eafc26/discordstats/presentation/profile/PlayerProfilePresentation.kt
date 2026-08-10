@@ -46,6 +46,11 @@ data class PlayerProfileView(
     val bagres: Int,
     val xerifes: Int,
     val redCards: Int,
+    val shots: Int,
+    val passesCompleted: Int,
+    val passesAttempted: Int,
+    val tacklesCompleted: Int,
+    val tacklesAttempted: Int,
     val recentMatches: List<PlayerProfileMatchView>,
 )
 
@@ -102,6 +107,11 @@ object PlayerProfilePresenter {
         bagres = profile.bagres,
         xerifes = profile.xerifes,
         redCards = profile.redCards,
+        shots = profile.shots,
+        passesCompleted = profile.passesCompleted,
+        passesAttempted = profile.passesAttempted,
+        tacklesCompleted = profile.tacklesCompleted,
+        tacklesAttempted = profile.tacklesAttempted,
         recentMatches = profile.recentMatches.map { it.presentation(zoneId) },
     )
 

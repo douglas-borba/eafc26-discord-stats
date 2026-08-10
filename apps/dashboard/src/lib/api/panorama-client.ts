@@ -17,7 +17,7 @@ interface PanoramaResponse {
 export async function fetchAiPanorama(clubId: string): Promise<string | null> {
   try {
     const backendUrl = process.env.BACKEND_URL || "http://localhost:8080";
-    const response = await fetch(`${backendUrl}/api/panorama?clubId=${encodeURIComponent(clubId)}`, {
+    const response = await fetch(`${backendUrl}/api/clubs/${encodeURIComponent(clubId)}/panorama`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",

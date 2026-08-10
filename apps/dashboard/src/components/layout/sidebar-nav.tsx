@@ -3,17 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Shield, Circle, Users, Menu, X, Building2 } from "lucide-react";
+import { Shield, Circle, Users, Menu, X, Building2, Swords } from "lucide-react";
 import { useState, useEffect } from "react";
 
 const navItems = [
   { label: "Visão Geral", href: "overview", icon: Shield },
   { label: "Jogadores", href: "players", icon: Users },
   { label: "Partidas", href: "matches", icon: Circle },
-  // { label: "Adversários", href: "opponents", icon: Swords }, // Temporariamente desabilitado
+  { label: "Adversários", href: "opponents", icon: Swords },
 ];
 
-export function SidebarNav({ clubId }: { clubId: string }) {
+export function SidebarNav({ clubId, clubName }: { clubId: string; clubName: string }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -60,6 +60,7 @@ export function SidebarNav({ clubId }: { clubId: string }) {
             <BrandMark />
             <div>
               <span className="font-semibold text-text-primary text-[15px] block leading-tight">EA FC STATS</span>
+              <span className="block max-w-[150px] truncate text-[11px] text-muted">{clubName}</span>
             </div>
           </div>
           <button onClick={() => setMobileOpen(false)} className="p-1 text-muted hover:text-text-primary lg:hidden" aria-label="Fechar menu">
