@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Shield, Circle, Users, Menu, X } from "lucide-react";
+import { Shield, Circle, Users, Menu, X, Building2 } from "lucide-react";
 import { useState, useEffect } from "react";
 
 const navItems = [
@@ -92,6 +92,13 @@ export function SidebarNav({ clubId }: { clubId: string }) {
             })}
           </ul>
         </nav>
+
+        <div className="border-t border-border px-3 py-4">
+          <Link href="/admin/clubs" className="flex items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium text-muted transition-colors hover:bg-surface-raised hover:text-text-primary">
+            <Building2 className="h-[18px] w-[18px]" strokeWidth={1.8} />
+            Administrar clubes
+          </Link>
+        </div>
       </aside>
     </>
   );

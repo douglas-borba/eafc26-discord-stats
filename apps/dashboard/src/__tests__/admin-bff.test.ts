@@ -1,0 +1,153 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GET as listClubs, POST as createClub } from "@/app/api/admin/clubs/route";
+import { GET as searchClubs } from "@/app/api/admin/clubs/search/route";
+import { GET as getClub } from "@/app/api/admin/clubs/[clubId]/route";
+import { PATCH as updateMonitoring } from "@/app/api/admin/clubs/[clubId]/monitoring/route";
+import { PUT as configureDiscord, DELETE as removeDiscord } from "@/app/api/admin/clubs/[clubId]/discord/route";
+import { GET as getStatus } from "@/app/api/admin/clubs/[clubId]/status/route";
+
+const originalBackendUrl = process.env.BACKEND_URL;
+const clubContext = { params: Promise.resolve({ clubId: "8874106" }) };
+
+beforeEach(() => { process.env.BACKEND_URL = "https://spring.example.test/"; });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  if (originalBackendUrl === undefined) delete process.env.BACKEND_URL;
+  else process.env.BACKEND_URL = originalBackendUrl;
+});
+
+const json = (payload: unknown, status = 200, headers: Record<string, string> = {}) =>
+  new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json", ...headers } });
+
+const csrf = () => json([], 200, { "set-cookie": "XSRF-TOKEN=server%2Dtoken; Path=/; SameSite=Lax" });
+
+describe("administrative BFF", () => {
+  it("proxies the deterministic club list without browser credentials", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json([{ clubId: "1104972", discordConfigured: true }]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await listClubs();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual([{ clubId: "1104972", discordConfigured: true }]);
+    expect(fetchMock).toHaveBeenCalledWith("https://spring.example.test/api/admin/clubs", expect.objectContaining({ method: "GET", cache: "no-store" }));
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get("cookie")).toBeNull();
+    expect(headers.get("x-xsrf-token")).toBeNull();
+  });
+
+  it("encodes and proxies EA search", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json([{ clubId: "8874106", displayName: "BRASIL 2030" }]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await searchClubs(new Request("https://dashboard.test/api/admin/clubs/search?query=BRASIL%202030"));
+
+    expect(response.status).toBe(200);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://spring.example.test/api/admin/clubs/search?query=BRASIL%202030");
+  });
+
+  it("creates a club with a server-side Spring CSRF handshake", async () => {
+    const created = { clubId: "8874106", displayName: "BRASIL 2030", discordConfigured: false };
+    const fetchMock = vi.fn().mockResolvedValueOnce(csrf()).mockResolvedValueOnce(json(created));
+    vi.stubGlobal("fetch", fetchMock);
+    const body = JSON.stringify({ clubId: "8874106", displayName: "BRASIL 2030", platform: "common-gen5" });
+
+    const response = await createClub(new Request("https://dashboard.test/api/admin/clubs", { method: "POST", body }));
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const mutation = fetchMock.mock.calls[1];
+    expect(mutation[0]).toBe("https://spring.example.test/api/admin/clubs");
+    expect(mutation[1].method).toBe("POST");
+    expect(mutation[1].body).toBe(body);
+    const headers = mutation[1].headers as Headers;
+    expect(headers.get("X-XSRF-TOKEN")).toBe("server-token");
+    expect(headers.get("Cookie")).toBe("XSRF-TOKEN=server%2Dtoken");
+  });
+
+  it("proxies monitoring with CSRF and encoded club identity", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(csrf()).mockResolvedValueOnce(json({ clubId: "8874106", monitoringEnabled: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await updateMonitoring(new Request("https://dashboard.test", { method: "PATCH", body: '{"enabled":true}' }), clubContext);
+
+    expect(response.status).toBe(200);
+    expect(fetchMock.mock.calls[1][0]).toBe("https://spring.example.test/api/admin/clubs/8874106/monitoring");
+    expect((fetchMock.mock.calls[1][1].headers as Headers).get("X-XSRF-TOKEN")).toBe("server-token");
+  });
+
+  it("configures and removes Discord without exposing its value", async () => {
+    const secretUrl = "https://discord.com/api/webhooks/id/secret-token";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(csrf()).mockResolvedValueOnce(json({ clubId: "8874106", discordConfigured: true, webhookUrl: secretUrl, discordWebhookSecretReference: "opaque" }))
+      .mockResolvedValueOnce(csrf()).mockResolvedValueOnce(json({ clubId: "8874106", discordConfigured: false }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const configured = await configureDiscord(new Request("https://dashboard.test", { method: "PUT", body: JSON.stringify({ webhookUrl: secretUrl }) }), clubContext);
+    const configuredBody = JSON.stringify(await configured.json());
+    const removed = await removeDiscord(new Request("https://dashboard.test", { method: "DELETE" }), clubContext);
+
+    expect(configured.status).toBe(200);
+    expect(configuredBody).not.toContain("secret-token");
+    expect(configuredBody).not.toContain("opaque");
+    expect(removed.status).toBe(200);
+    expect(fetchMock.mock.calls[3][1].method).toBe("DELETE");
+  });
+
+  it("proxies individual club and operational status", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ clubId: "8874106" }))
+      .mockResolvedValueOnce(json({ clubId: "8874106", pollingStatus: "IDLE" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect((await getClub(new Request("https://dashboard.test"), clubContext)).status).toBe(200);
+    expect((await getStatus(new Request("https://dashboard.test"), clubContext)).status).toBe(200);
+    expect(fetchMock.mock.calls[1][0]).toContain("/8874106/status");
+  });
+
+  it.each([
+    [404, "not_found"],
+    [502, "ea_unavailable"],
+  ])("maps backend HTTP %s to a safe functional error", async (status, error) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ stacktrace: "internal", secret: "value" }, status)));
+
+    const response = await getClub(new Request("https://dashboard.test"), clubContext);
+
+    expect(response.status).toBe(status);
+    const body = await response.json();
+    expect(body.error).toBe(error);
+    expect(JSON.stringify(body)).not.toContain("internal");
+  });
+
+  it("returns a safe error when backend is unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("private host failed")));
+
+    const response = await listClubs();
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: "backend_unavailable", message: "Backend indisponível. Tente novamente." });
+  });
+
+  it("does not attempt a request when BACKEND_URL is absent", async () => {
+    delete process.env.BACKEND_URL;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await listClubs();
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ error: "backend_not_configured" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks mutation when Spring does not issue a CSRF cookie", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json([]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await createClub(new Request("https://dashboard.test", { method: "POST", body: "{}" }));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ error: "csrf_unavailable" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+});
