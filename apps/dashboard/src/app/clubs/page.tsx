@@ -30,7 +30,7 @@ export default async function ClubsPage() {
             <Link key={club.clubId} href={`/clubs/${club.clubId}/overview`}>
               <Panel className="hover:border-accent/50 transition-colors cursor-pointer">
                 <p className="text-base font-semibold text-text-primary">{club.clubName ?? club.clubId}</p>
-                <p className="text-sm text-muted mt-1">{club.totalMatches} partidas</p>
+                <p className="text-sm text-muted mt-1">{club.totalMatches > 0 ? `${club.totalMatches} partidas` : "Aguardando primeira partida"}</p>
               </Panel>
             </Link>
           ))}
