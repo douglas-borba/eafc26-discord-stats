@@ -1,8 +1,13 @@
 package com.eafc26.discordstats.web
 
+import com.eafc26.discordstats.application.club.DefaultClubConfiguration
+import com.eafc26.discordstats.application.club.DefaultClubProvider
+import com.eafc26.discordstats.application.club.EaPlatform
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.WebhookConfigService
 import com.eafc26.discordstats.config.WebhookConfigurationSource
+import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.ClubName
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.verify
@@ -27,8 +32,14 @@ class SettingsControllerTest {
     @MockBean
     private lateinit var phraseBank: PhraseBank
 
+    @MockBean
+    private lateinit var defaultClubProvider: DefaultClubProvider
+
     @BeforeEach
     fun setUp() {
+        whenever(defaultClubProvider.get()).thenReturn(
+            DefaultClubConfiguration(ClubId("1104972"), ClubName("Test Club"), EaPlatform("common-gen5"), null)
+        )
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
         whenever(webhookConfigService.isNetworkEnabled()).thenReturn(false)
         whenever(webhookConfigService.logFilePath()).thenReturn("/Users/user/Library/Logs/EAFC26DiscordStats/app.log")

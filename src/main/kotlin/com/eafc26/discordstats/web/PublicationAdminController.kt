@@ -1,66 +1,65 @@
 package com.eafc26.discordstats.web
 
-import com.eafc26.discordstats.application.club.DefaultClubProvider
+import com.eafc26.discordstats.application.club.MonitoredClubRepository
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.service.DiscordMatchPublicationService
 import com.eafc26.discordstats.service.PublicationReconciliationService
 import com.eafc26.discordstats.service.PublicationStateClassifier
 import com.eafc26.discordstats.store.PublishedMatchStore
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.server.ResponseStatusException
 import reactor.core.publisher.Mono
 import reactor.core.scheduler.Schedulers
 
-/**
- * Administrative endpoints for manual publication resolution.
- *
- * These endpoints are used when automatic publication fails or is uncertain.
- * They require explicit user action and are protected by CSRF.
- */
 @RestController
 class PublicationAdminController(
     private val store: PublishedMatchStore,
     private val canonicalMatchRepository: CanonicalMatchRepository,
     private val publicationService: DiscordMatchPublicationService,
     private val reconciliationService: PublicationReconciliationService,
-    private val defaultClubProvider: DefaultClubProvider,
+    private val monitoredClubRepository: MonitoredClubRepository,
 ) {
 
-    /**
-     * Marks a match as delivered without calling Discord.
-     *
-     * Use this when you manually verified that the message reached Discord
-     * and want to mark it as delivered to prevent future resend attempts.
-     */
-    @PostMapping("/api/publication/{matchId}/resolve-delivered")
-    fun resolveAsDelivered(@PathVariable matchId: String): Mono<ResponseEntity<Map<String, Any>>> =
+    private fun requireClub(clubId: String): ClubId {
+        val id = ClubId(clubId)
+        if (!monitoredClubRepository.existsById(id)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "Club not found: $clubId")
+        }
+        return id
+    }
+
+    @PostMapping("/api/admin/clubs/{clubId}/publication/{matchId}/resolve-delivered")
+    fun resolveAsDelivered(
+        @PathVariable clubId: String,
+        @PathVariable matchId: String,
+    ): Mono<ResponseEntity<Map<String, Any>>> =
         Mono.fromCallable {
-            store.resolveAsDelivered(defaultClubProvider.get().clubId, matchId)
+            val club = requireClub(clubId)
+            store.resolveAsDelivered(club, matchId)
             ResponseEntity.ok<Map<String, Any>>(mapOf(
                 "status" to "resolved",
                 "message" to "Partida marcada como publicada"
             ))
         }.subscribeOn(Schedulers.boundedElastic())
 
-    /**
-     * Forces a resend of a match, bypassing deduplication.
-     *
-     * Use this when you manually verified that the message did NOT reach Discord
-     * and want to attempt delivery again. This may cause duplication if the
-     * previous attempt actually succeeded.
-     */
-    @PostMapping("/api/publication/{matchId}/force-publish")
-    fun forcePublish(@PathVariable matchId: String): Mono<ResponseEntity<Map<String, Any>>> =
+    @PostMapping("/api/admin/clubs/{clubId}/publication/{matchId}/force-publish")
+    fun forcePublish(
+        @PathVariable clubId: String,
+        @PathVariable matchId: String,
+    ): Mono<ResponseEntity<Map<String, Any>>> =
         Mono.fromCallable {
-            val clubId = defaultClubProvider.get().clubId
-            val canonical = canonicalMatchRepository.findById(clubId, MatchId(matchId))
+            val club = requireClub(clubId)
+            val canonical = canonicalMatchRepository.findById(club, MatchId(matchId))
                 ?: return@fromCallable ResponseEntity.notFound().build<Map<String, Any>>()
 
-            val result = publicationService.forcePublish(clubId, canonical)
+            val result = publicationService.forcePublish(club, canonical)
 
             val message = when {
                 result.delivered -> "Partida reenviada com sucesso"
@@ -75,16 +74,11 @@ class PublicationAdminController(
             ))
         }.subscribeOn(Schedulers.boundedElastic())
 
-    /**
-     * Inspects the latest matches and their publication states.
-     *
-     * Returns detailed diagnostic information for administrative review.
-     * Default limit is 5 matches as specified in requirements.
-     */
-    @GetMapping("/api/publication/reconcile/inspect")
-    fun inspectPublications(): Mono<ResponseEntity<Map<String, Any>>> =
+    @GetMapping("/api/admin/clubs/{clubId}/publication/reconcile/inspect")
+    fun inspectPublications(@PathVariable clubId: String): Mono<ResponseEntity<Map<String, Any>>> =
         Mono.fromCallable {
-            val report = reconciliationService.inspectLatestPublications(defaultClubProvider.get().clubId, limit = 5)
+            val club = requireClub(clubId)
+            val report = reconciliationService.inspectLatestPublications(club, limit = 5)
 
             ResponseEntity.ok<Map<String, Any>>(mapOf(
                 "inspections" to report.inspections.map { inspection ->
@@ -114,23 +108,16 @@ class PublicationAdminController(
                     "delivering" to report.summary.delivering,
                     "uncertain" to report.summary.uncertain,
                     "failedPermanent" to report.summary.failedPermanent,
+                    "baselined" to report.summary.baselined,
                 ),
             ))
         }.subscribeOn(Schedulers.boundedElastic())
 
-    /**
-     * Automatically publishes all safe matches.
-     *
-     * Safe conditions:
-     * - No publication record exists (never attempted)
-     * - FAILED_PERMANENT (Discord explicitly rejected, safe to retry)
-     *
-     * NEVER auto-publishes DELIVERY_UNCERTAIN matches.
-     */
-    @PostMapping("/api/publication/reconcile/auto-publish")
-    fun autoPublishSafe(): Mono<ResponseEntity<Map<String, Any>>> =
+    @PostMapping("/api/admin/clubs/{clubId}/publication/reconcile/auto-publish")
+    fun autoPublishSafe(@PathVariable clubId: String): Mono<ResponseEntity<Map<String, Any>>> =
         Mono.fromCallable {
-            val result = reconciliationService.autoPublishSafe(defaultClubProvider.get().clubId)
+            val club = requireClub(clubId)
+            val result = reconciliationService.autoPublishSafe(club)
 
             ResponseEntity.ok<Map<String, Any>>(mapOf(
                 "status" to "completed",

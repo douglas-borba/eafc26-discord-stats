@@ -843,6 +843,9 @@
       fetch('/api/settings/info')
         .then(r => r.json())
         .then(info => {
+          if (info.defaultClubId) {
+            window.__defaultClubId = info.defaultClubId;
+          }
           if (info.networkUrl) {
             document.getElementById('network-url').innerHTML =
               '<a href="' + esc(info.networkUrl) + '">' + esc(info.networkUrl) + '</a>';
@@ -1378,7 +1381,7 @@
       btn.innerHTML = '<span class="spinner"></span>';
 
       try {
-        const res = await fetch(`/api/publication/${currentMatchIdForActions}/resolve-delivered`, {
+        const res = await fetch(`/api/admin/clubs/${window.__defaultClubId}/publication/${currentMatchIdForActions}/resolve-delivered`, {
           method: 'POST',
           headers: {
             'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
@@ -1417,7 +1420,7 @@
       btn.innerHTML = '<span class="spinner"></span>';
 
       try {
-        const res = await fetch(`/api/publication/${currentMatchIdForActions}/force-publish`, {
+        const res = await fetch(`/api/admin/clubs/${window.__defaultClubId}/publication/${currentMatchIdForActions}/force-publish`, {
           method: 'POST',
           headers: {
             'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
@@ -1457,7 +1460,7 @@
       status.textContent = '';
 
       try {
-        const res = await fetch('/api/publication/reconcile/inspect');
+        const res = await fetch(`/api/admin/clubs/${window.__defaultClubId}/publication/reconcile/inspect`);
         const data = await res.json();
 
         // Render summary
@@ -1529,7 +1532,7 @@
       const status = document.getElementById('reconciliation-status');
 
       try {
-        const res = await fetch(`/api/publication/${matchId}/resolve-delivered`, {
+        const res = await fetch(`/api/admin/clubs/${window.__defaultClubId}/publication/${matchId}/resolve-delivered`, {
           method: 'POST',
           headers: {
             'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])
@@ -1566,7 +1569,7 @@
       const status = document.getElementById('reconciliation-status');
 
       try {
-        const res = await fetch(`/api/publication/${matchId}/force-publish`, {
+        const res = await fetch(`/api/admin/clubs/${window.__defaultClubId}/publication/${matchId}/force-publish`, {
           method: 'POST',
           headers: {
             'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [,''])[1])

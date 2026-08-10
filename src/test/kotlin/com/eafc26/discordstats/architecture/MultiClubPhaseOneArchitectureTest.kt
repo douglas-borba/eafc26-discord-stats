@@ -38,15 +38,23 @@ class MultiClubPhaseOneArchitectureTest {
     }
 
     @Test
-    fun `legacy administrative routes remain scoped to default club`() {
+    fun `legacy match controller remains scoped to default club`() {
         val matchController = Files.readString(source.resolve("web/MatchController.kt"))
-        val publicationController = Files.readString(source.resolve("web/PublicationAdminController.kt"))
         assertThat(matchController).contains(
             "DefaultClubProvider",
             "acquisitionService.acquire(defaultClubProvider.get().clubId",
         )
-        assertThat(publicationController).contains("DefaultClubProvider", "defaultClubProvider.get().clubId")
         assertThat(matchController).doesNotContain("ClubPollingCoordinator")
-        assertThat(publicationController).doesNotContain("ClubPollingCoordinator")
+    }
+
+    @Test
+    fun `publication admin controller uses explicit club routing`() {
+        val publicationController = Files.readString(source.resolve("web/PublicationAdminController.kt"))
+        assertThat(publicationController).contains(
+            "MonitoredClubRepository",
+            "/api/admin/clubs/{clubId}/publication",
+            "requireClub(clubId)",
+        )
+        assertThat(publicationController).doesNotContain("DefaultClubProvider", "defaultClubProvider")
     }
 }

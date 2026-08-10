@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.web
 
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.WebhookConfigService
 import org.springframework.core.io.ClassPathResource
@@ -17,6 +18,7 @@ import java.net.URI
 class SettingsController(
     private val webhookConfigService: WebhookConfigService,
     private val phraseBank: PhraseBank,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
 
     @GetMapping("/settings", produces = [MediaType.TEXT_HTML_VALUE])
@@ -40,6 +42,7 @@ class SettingsController(
                     put("devMode", devMode)
                     if (networkUrl != null) put("networkUrl", networkUrl)
                     put("logFile", webhookConfigService.logFilePath())
+                    put("defaultClubId", defaultClubProvider.get().clubId.value)
                 }
             )
         }

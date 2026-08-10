@@ -34,7 +34,7 @@ class SecurityConfig(private val adminInternalTokenWebFilter: AdminInternalToken
                 it.pathMatchers(HttpMethod.GET, "/api/health", "/api/clubs/**").permitAll()
                     .pathMatchers("/api/admin/**").authenticated()
                     .pathMatchers("/api/dev/**").denyAll()
-                    .pathMatchers("/api/matches/**", "/api/publication/**", "/api/panorama/regenerate", "/api/settings/**", "/api/setup/**", "/api/application/**", "/settings", "/setup").authenticated()
+                    .pathMatchers("/api/matches/**", "/api/panorama/regenerate", "/api/settings/**", "/api/setup/**", "/api/application/**", "/settings", "/setup").authenticated()
                     .pathMatchers(HttpMethod.GET, "/api/history/**", "/api/player-profiles/**", "/api/opponents/**", "/api/match-card/**", "/api/match-comparisons/**", "/api/panorama", "/api/polling/status").permitAll()
                     .pathMatchers(HttpMethod.GET, "/", "/history", "/players", "/opponents/**", "/compare", "/match-card", "/insights").permitAll()
                     .pathMatchers(HttpMethod.GET, *PublicStaticResources.pathPatterns).permitAll()
