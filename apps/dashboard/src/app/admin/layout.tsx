@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { Building2, ChevronLeft } from "lucide-react";
+import { redirect } from "next/navigation";
+import { requireAdmin } from "@/lib/supabase/auth-server";
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const auth = await requireAdmin();
+  if (auth.kind === "anonymous") redirect("/admin/login");
+  if (auth.kind === "forbidden") return <main className="p-8">Acesso negado.</main>;
+  if (auth.kind === "unavailable") return <main className="p-8">Administração indisponível.</main>;
   return (
     <div className="min-h-screen">
       <header className="border-b border-border bg-surface">

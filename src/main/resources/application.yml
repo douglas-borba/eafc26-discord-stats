@@ -23,6 +23,9 @@ app:
     # Omit to use the explicitly documented legacy default-club adapter.
     club-id: ${EAFC_REPLAY_CLUB_ID:}
 
+  security:
+    admin-internal-token: ${ADMIN_INTERNAL_TOKEN:}
+
   postgres:
     mirror-enabled: ${EAFC_POSTGRES_MIRROR_ENABLED:false}
     sync-enabled: ${EAFC_POSTGRES_SYNC_ENABLED:false}

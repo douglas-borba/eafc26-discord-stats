@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
+vi.mock("@/lib/supabase/auth-server", () => ({ requireAdmin: vi.fn(async () => ({ kind: "allowed" })) }));
 import { GET as listClubs, POST as createClub } from "@/app/api/admin/clubs/route";
 import { GET as searchClubs } from "@/app/api/admin/clubs/search/route";
 import { GET as getClub } from "@/app/api/admin/clubs/[clubId]/route";
@@ -9,7 +11,7 @@ import { GET as getStatus } from "@/app/api/admin/clubs/[clubId]/status/route";
 const originalBackendUrl = process.env.BACKEND_URL;
 const clubContext = { params: Promise.resolve({ clubId: "8874106" }) };
 
-beforeEach(() => { process.env.BACKEND_URL = "https://spring.example.test/"; });
+beforeEach(() => { process.env.BACKEND_URL = "https://spring.example.test/"; process.env.ADMIN_INTERNAL_TOKEN = "test-admin-token"; });
 afterEach(() => {
   vi.unstubAllGlobals();
   if (originalBackendUrl === undefined) delete process.env.BACKEND_URL;

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/supabase/auth-server";
 
 const BACKEND_TIMEOUT_MS = 10_000;
 const MUTATING_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
@@ -9,8 +10,12 @@ type ProxyOptions = {
 };
 
 export async function proxyAdminRequest(path: string, options: ProxyOptions = {}) {
+  const auth = await requireAdmin();
+  if (auth.kind === "anonymous" || auth.kind === "unavailable") return errorResponse(401, "unauthorized", "Autenticação administrativa necessária.");
+  if (auth.kind === "forbidden") return errorResponse(403, "forbidden", "Acesso administrativo não autorizado.");
   const backendUrl = process.env.BACKEND_URL?.trim();
-  if (!backendUrl) {
+  const internalToken = process.env.ADMIN_INTERNAL_TOKEN?.trim();
+  if (!backendUrl || !internalToken) {
     return errorResponse(503, "backend_not_configured", "Backend não configurado.");
   }
 
@@ -19,14 +24,14 @@ export async function proxyAdminRequest(path: string, options: ProxyOptions = {}
 
   try {
     const security = MUTATING_METHODS.has(method)
-      ? await springCsrf(baseUrl)
+      ? await springCsrf(baseUrl, internalToken)
       : undefined;
 
     if (MUTATING_METHODS.has(method) && !security) {
       return errorResponse(503, "csrf_unavailable", "Não foi possível iniciar uma operação segura.");
     }
 
-    const headers = new Headers({ Accept: "application/json" });
+    const headers = new Headers({ Accept: "application/json", Authorization: `Bearer ${internalToken}` });
     if (options.body !== undefined) headers.set("Content-Type", "application/json");
     if (security) {
       headers.set("Cookie", security.cookieHeader);
@@ -47,10 +52,10 @@ export async function proxyAdminRequest(path: string, options: ProxyOptions = {}
   }
 }
 
-async function springCsrf(baseUrl: string) {
+async function springCsrf(baseUrl: string, internalToken: string) {
   const response = await fetch(`${baseUrl}/api/admin/clubs`, {
     method: "GET",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", Authorization: `Bearer ${internalToken}` },
     cache: "no-store",
     signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
   });

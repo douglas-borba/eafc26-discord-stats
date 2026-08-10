@@ -95,6 +95,11 @@ Webhook values are never returned by the configuration APIs or written to logs.
 See [`docs/discord-webhooks.md`](docs/discord-webhooks.md) for local setup,
 precedence, validation and the optional future deployment configuration.
 
+Administrative access in the Dashboard uses Supabase Auth and a server-side
+internal token between the Next.js BFF and Spring. See
+[`docs/admin-security.md`](docs/admin-security.md) for the required deployment
+variables and access matrix.
+
 Edit `src/main/resources/application.yml`:
 
 ```yaml

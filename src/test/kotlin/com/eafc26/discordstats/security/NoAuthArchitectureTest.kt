@@ -32,11 +32,12 @@ class NoAuthArchitectureTest {
     }
 
     @Test
-    fun `security config permits all exchanges without authentication`() {
+    fun `security config keeps sports public and fails closed for administrative routes`() {
         val config = Files.readString(root.resolve("kotlin/com/eafc26/discordstats/security/SecurityConfig.kt"))
-        assertThat(config).contains("pathMatchers(HttpMethod.GET, \"/api/health\").permitAll()")
-        assertThat(config).contains("permitAll")
-        assertThat(config).doesNotContain("PasswordEncoder", "MapReactiveUserDetailsService", "hasRole", "loginPage")
+        assertThat(config).contains("HttpMethod.GET, \"/api/health\"")
+        assertThat(config).contains("pathMatchers(\"/api/admin/**\").authenticated()")
+        assertThat(config).contains("anyExchange().denyAll()")
+        assertThat(config).doesNotContain("PasswordEncoder", "MapReactiveUserDetailsService", "loginPage")
         assertThat(config).contains("formLogin { it.disable() }")
         assertThat(config).contains("logout { it.disable() }")
     }

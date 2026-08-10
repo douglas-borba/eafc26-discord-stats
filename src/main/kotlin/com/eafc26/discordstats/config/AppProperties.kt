@@ -11,6 +11,11 @@ data class AppProperties(
     val postgres: PostgresProperties = PostgresProperties(),
     val acquisition: AcquisitionProperties = AcquisitionProperties(),
     val replay: ReplayProperties = ReplayProperties(),
+    val security: SecurityProperties = SecurityProperties(),
+)
+
+data class SecurityProperties(
+    val adminInternalToken: String = "",
 )
 
 data class PostgresProperties(

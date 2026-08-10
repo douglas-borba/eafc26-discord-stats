@@ -6,6 +6,7 @@ import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity
 import org.springframework.security.config.web.server.ServerHttpSecurity
 import org.springframework.security.web.server.SecurityWebFilterChain
+import org.springframework.security.config.web.server.SecurityWebFiltersOrder
 import org.springframework.security.web.server.csrf.CookieServerCsrfTokenRepository
 import org.springframework.security.web.server.csrf.CsrfToken
 import org.springframework.security.web.server.csrf.ServerCsrfTokenRequestAttributeHandler
@@ -14,7 +15,7 @@ import reactor.core.publisher.Mono
 
 @Configuration
 @EnableWebFluxSecurity
-class SecurityConfig {
+class SecurityConfig(private val adminInternalTokenWebFilter: AdminInternalTokenWebFilter) {
     @Bean
     fun securityWebFilterChain(http: ServerHttpSecurity): SecurityWebFilterChain {
         val csrfRepository = CookieServerCsrfTokenRepository.withHttpOnlyFalse().apply {
@@ -30,9 +31,16 @@ class SecurityConfig {
                     .csrfTokenRequestHandler(ServerCsrfTokenRequestAttributeHandler())
             }
             .authorizeExchange {
-                it.pathMatchers(HttpMethod.GET, "/api/health").permitAll()
-                    .anyExchange().permitAll()
+                it.pathMatchers(HttpMethod.GET, "/api/health", "/api/clubs/**").permitAll()
+                    .pathMatchers("/api/admin/**").authenticated()
+                    .pathMatchers("/api/dev/**").denyAll()
+                    .pathMatchers("/api/matches/**", "/api/publication/**", "/api/panorama/regenerate", "/api/settings/**", "/api/setup/**", "/api/application/**", "/settings", "/setup").authenticated()
+                    .pathMatchers(HttpMethod.GET, "/api/history/**", "/api/player-profiles/**", "/api/opponents/**", "/api/match-card/**", "/api/match-comparisons/**", "/api/panorama", "/api/polling/status").permitAll()
+                    .pathMatchers(HttpMethod.GET, "/", "/history", "/players", "/opponents/**", "/compare", "/match-card", "/insights").permitAll()
+                    .pathMatchers(HttpMethod.GET, *PublicStaticResources.pathPatterns).permitAll()
+                    .anyExchange().denyAll()
             }
+            .addFilterAt(adminInternalTokenWebFilter, SecurityWebFiltersOrder.AUTHENTICATION)
             .formLogin { it.disable() }
             .logout { it.disable() }
             .httpBasic { it.disable() }

@@ -28,10 +28,12 @@ import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.csrf
 import org.springframework.test.web.reactive.server.WebTestClient
+import org.springframework.test.context.TestPropertySource
 import java.time.Instant
 
 @WebFluxTest(ClubAdministrationController::class)
 @Import(SecurityConfig::class)
+@TestPropertySource(properties = ["app.security.admin-internal-token=test-admin-token"])
 class ClubAdministrationControllerTest {
     @Autowired private lateinit var client: WebTestClient
     @MockBean private lateinit var monitoredClubs: MonitoredClubService
@@ -47,6 +49,7 @@ class ClubAdministrationControllerTest {
 
     @BeforeEach
     fun defaults() {
+        client = client.mutate().defaultHeader("Authorization", "Bearer test-admin-token").build()
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
         whenever(monitoredClubs.find(association.clubId)).thenReturn(association)
         whenever(monitoredClubs.find(brasil.clubId)).thenReturn(brasil)

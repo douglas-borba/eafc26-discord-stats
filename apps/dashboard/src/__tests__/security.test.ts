@@ -52,10 +52,13 @@ describe("Security: no service_role references", () => {
   });
 });
 
-describe("Security: no NEXT_PUBLIC_ prefix on Supabase vars", () => {
-  it("no source file uses NEXT_PUBLIC_SUPABASE", () => {
+describe("Security: public Supabase credentials", () => {
+  it("uses NEXT_PUBLIC only for Supabase URL and publishable key", () => {
     for (const { path, content } of allSource) {
-      expect(content, `${path} uses NEXT_PUBLIC_SUPABASE`).not.toMatch(/NEXT_PUBLIC_SUPABASE/);
+      const publicRefs = content.match(/NEXT_PUBLIC_[A-Z0-9_]+/g) ?? [];
+      expect(publicRefs, `${path} exposes an unexpected environment variable`).toEqual(
+        publicRefs.filter((key) => key === "NEXT_PUBLIC_SUPABASE_URL" || key === "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"),
+      );
     }
   });
 });
