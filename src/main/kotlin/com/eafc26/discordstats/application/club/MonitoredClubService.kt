@@ -43,6 +43,12 @@ class MonitoredClubService(
     fun removeWebhook(clubId: ClubId): MonitoredClub =
         update(clubId) { current -> current.copy(discordWebhookSecretReference = null) }
 
+    fun remove(clubId: ClubId): MonitoredClub {
+        val club = repository.findById(clubId) ?: throw NoSuchElementException("Monitored club not found")
+        repository.deleteById(clubId)
+        return club
+    }
+
     private fun update(clubId: ClubId, change: (MonitoredClub) -> MonitoredClub): MonitoredClub {
         val current = repository.findById(clubId) ?: throw NoSuchElementException("Monitored club not found")
         val changed = change(current)

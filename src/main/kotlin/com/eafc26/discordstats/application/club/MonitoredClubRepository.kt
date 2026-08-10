@@ -7,4 +7,5 @@ interface MonitoredClubRepository {
     fun findById(clubId: ClubId): MonitoredClub?
     fun findAll(): List<MonitoredClub>
     fun existsById(clubId: ClubId): Boolean
+    fun deleteById(clubId: ClubId): Boolean
 }

@@ -3,7 +3,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/auth-server", () => ({ requireAdmin: vi.fn(async () => ({ kind: "allowed" })) }));
 import { GET as listClubs, POST as createClub } from "@/app/api/admin/clubs/route";
 import { GET as searchClubs } from "@/app/api/admin/clubs/search/route";
-import { GET as getClub } from "@/app/api/admin/clubs/[clubId]/route";
+import { GET as getClub, DELETE as deleteClub } from "@/app/api/admin/clubs/[clubId]/route";
 import { PATCH as updateMonitoring } from "@/app/api/admin/clubs/[clubId]/monitoring/route";
 import { PUT as configureDiscord, DELETE as removeDiscord } from "@/app/api/admin/clubs/[clubId]/discord/route";
 import { GET as getStatus } from "@/app/api/admin/clubs/[clubId]/status/route";
@@ -105,6 +105,28 @@ describe("administrative BFF", () => {
     expect((await getClub(new Request("https://dashboard.test"), clubContext)).status).toBe(200);
     expect((await getStatus(new Request("https://dashboard.test"), clubContext)).status).toBe(200);
     expect(fetchMock.mock.calls[1][0]).toContain("/8874106/status");
+  });
+
+  it("proxies club deletion and returns 204", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(csrf()).mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await deleteClub(new Request("https://dashboard.test", { method: "DELETE" }), clubContext);
+
+    expect(response.status).toBe(204);
+    expect(fetchMock.mock.calls[1][0]).toBe("https://spring.example.test/api/admin/clubs/8874106");
+    expect(fetchMock.mock.calls[1][1].method).toBe("DELETE");
+  });
+
+  it("maps backend 409 to conflict error for default club", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(csrf()).mockResolvedValueOnce(json({ message: "default club" }, 409));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await deleteClub(new Request("https://dashboard.test", { method: "DELETE" }), clubContext);
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.error).toBe("conflict");
   });
 
   it.each([

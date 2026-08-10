@@ -4,6 +4,7 @@ export interface AdminClub {
   platform: string;
   monitoringEnabled: boolean;
   discordConfigured: boolean;
+  isDefault?: boolean;
 }
 
 export interface ClubSearchCandidate {

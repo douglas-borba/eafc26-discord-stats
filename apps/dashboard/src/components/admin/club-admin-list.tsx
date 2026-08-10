@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Activity, Plus, Settings2 } from "lucide-react";
+import { Plus, Settings2, Trash2 } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import { adminRequest } from "@/lib/admin/browser-client";
 import type { AdminClub, ClubOperationalStatus } from "@/lib/admin/types";
@@ -15,6 +15,7 @@ export function ClubAdminList() {
   const [busyClub, setBusyClub] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<AdminClub | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -36,21 +37,17 @@ export function ClubAdminList() {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function toggleMonitoring(club: AdminClub) {
+  async function removeClub(club: AdminClub) {
     setBusyClub(club.clubId);
     setError(null);
     setSuccess(null);
+    setConfirmRemove(null);
     try {
-      const updated = await adminRequest<AdminClub>(`/api/admin/clubs/${club.clubId}/monitoring`, {
-        method: "PATCH",
-        body: JSON.stringify({ enabled: !club.monitoringEnabled }),
-      });
-      setClubs((current) => current.map((item) => item.clubId === updated.clubId ? updated : item));
-      setSuccess(`${updated.displayName}: monitoramento ${updated.monitoringEnabled ? "ativado" : "desativado"}.`);
-      const status = await adminRequest<ClubOperationalStatus>(`/api/admin/clubs/${club.clubId}/status`);
-      setStatuses((current) => ({ ...current, [club.clubId]: status }));
+      await adminRequest<void>(`/api/admin/clubs/${club.clubId}`, { method: "DELETE" });
+      setClubs((current) => current.filter((item) => item.clubId !== club.clubId));
+      setSuccess(`${club.displayName} foi removido. O histórico de partidas foi preservado.`);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Não foi possível alterar o monitoramento.");
+      setError(reason instanceof Error ? reason.message : "Não foi possível remover o clube.");
     } finally {
       setBusyClub(null);
     }
@@ -74,6 +71,28 @@ export function ClubAdminList() {
         {success && <AdminFeedback message={success} tone="success" />}
       </div>
 
+      {confirmRemove && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Panel className="w-full max-w-md space-y-4">
+            <h2 className="text-lg font-semibold text-text-primary">Remover clube</h2>
+            <p className="text-sm text-text-soft">
+              Tem certeza de que deseja remover <strong>{confirmRemove.displayName}</strong>?
+            </p>
+            <p className="text-sm text-muted">
+              O monitoramento e o webhook serão removidos. O histórico de partidas existente será preservado.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={() => setConfirmRemove(null)} className="min-h-10 flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-soft hover:bg-surface-raised">
+                Cancelar
+              </button>
+              <button type="button" disabled={busyClub === confirmRemove.clubId} onClick={() => void removeClub(confirmRemove)} className="min-h-10 flex-1 rounded-lg bg-loss px-4 py-2 text-sm font-semibold text-white hover:bg-loss/90 disabled:opacity-50">
+                {busyClub === confirmRemove.clubId ? "Removendo…" : "Remover clube"}
+              </button>
+            </div>
+          </Panel>
+        </div>
+      )}
+
       {loading ? (
         <Panel><p role="status" className="text-sm text-muted">Carregando clubes…</p></Panel>
       ) : clubs.length === 0 ? (
@@ -87,7 +106,10 @@ export function ClubAdminList() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h2 className="truncate text-lg font-semibold text-text-primary">{club.displayName}</h2>
-                    <p className="mt-0.5 font-mono text-xs text-muted">ClubId {club.clubId} · {club.platform}</p>
+                    <p className="mt-0.5 font-mono text-xs text-muted">
+                      ClubId {club.clubId} · {club.platform}
+                      {club.isDefault && <span className="ml-2 text-accent">principal</span>}
+                    </p>
                   </div>
                   <span className={club.monitoringEnabled ? "rounded-full bg-win/15 px-2.5 py-1 text-xs font-medium text-win" : "rounded-full bg-surface-raised px-2.5 py-1 text-xs font-medium text-muted"}>
                     {club.monitoringEnabled ? "Ativo" : "Inativo"}
@@ -99,9 +121,11 @@ export function ClubAdminList() {
                   <div className="col-span-2"><dt className="text-xs text-muted">Última atividade</dt><dd className="mt-0.5 text-text-soft">{formatActivity(status)}</dd></div>
                 </dl>
                 <div className="mt-auto flex flex-col gap-2 sm:flex-row">
-                  <button type="button" disabled={busyClub === club.clubId} onClick={() => void toggleMonitoring(club)} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-text-soft hover:bg-surface-raised disabled:opacity-50">
-                    <Activity className="h-4 w-4" /> {busyClub === club.clubId ? "Salvando…" : club.monitoringEnabled ? "Desativar" : "Ativar"}
-                  </button>
+                  {!club.isDefault && (
+                    <button type="button" disabled={busyClub === club.clubId} onClick={() => setConfirmRemove(club)} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-loss/40 px-3 py-2 text-sm font-medium text-loss hover:bg-loss/10 disabled:opacity-50">
+                      <Trash2 className="h-4 w-4" /> {busyClub === club.clubId ? "Removendo…" : "Remover clube"}
+                    </button>
+                  )}
                   <Link href={`/admin/clubs/${club.clubId}`} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-text-soft hover:bg-surface-raised">
                     <Settings2 className="h-4 w-4" /> Detalhes
                   </Link>

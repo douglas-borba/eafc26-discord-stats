@@ -55,6 +55,9 @@ class PostgresMonitoredClubRepository(
             clubId.value,
         ) == true
 
+    override fun deleteById(clubId: ClubId): Boolean =
+        jdbcTemplate.update("DELETE FROM monitored_clubs WHERE club_id = ?", clubId.value) > 0
+
     private fun map(rs: ResultSet) = MonitoredClub(
         clubId = ClubId(rs.getString("club_id")),
         displayName = ClubName(rs.getString("display_name")),

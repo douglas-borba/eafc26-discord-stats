@@ -2,6 +2,7 @@ package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.application.club.ClubCatalogResult
 import com.eafc26.discordstats.application.club.ClubCatalogService
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.club.EaPlatform
 import com.eafc26.discordstats.application.club.MonitoredClub
 import com.eafc26.discordstats.application.club.MonitoredClubService
@@ -14,6 +15,7 @@ import com.eafc26.discordstats.service.AcquisitionStateHolder
 import com.eafc26.discordstats.service.LatestMatchHolder
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -35,6 +37,7 @@ class ClubAdministrationController(
     private val pollingStatus: PollingStatusHolder,
     private val acquisitionState: AcquisitionStateHolder,
     private val latestMatch: LatestMatchHolder,
+    private val defaultClubProvider: DefaultClubProvider,
 ) {
     @GetMapping
     fun list(): List<AdminClubResponse> =
@@ -104,6 +107,24 @@ class ClubAdministrationController(
         return present(updated)
     }
 
+    @DeleteMapping("/{clubId}")
+    fun delete(@PathVariable clubId: String): ResponseEntity<Void> {
+        val club = requireClub(clubId)
+        if (club.clubId == defaultClubProvider.get().clubId) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "O clube principal não pode ser removido enquanto houver dependências legadas.",
+            )
+        }
+        val webhookRef = club.discordWebhookSecretReference
+        if (webhookRef != null) {
+            monitoredClubs.removeWebhook(club.clubId)
+            secretStore.remove(webhookRef)
+        }
+        monitoredClubs.remove(club.clubId)
+        return ResponseEntity.noContent().build()
+    }
+
     @GetMapping("/{clubId}/status")
     fun status(@PathVariable clubId: String): ClubOperationalStatusResponse {
         val club = requireClub(clubId)
@@ -146,6 +167,7 @@ class ClubAdministrationController(
         platform = club.platform.value,
         monitoringEnabled = club.monitoringEnabled,
         discordConfigured = club.discordWebhookSecretReference != null,
+        isDefault = club.clubId == defaultClubProvider.get().clubId,
     )
 }
 
@@ -165,6 +187,7 @@ data class AdminClubResponse(
     val platform: String,
     val monitoringEnabled: Boolean,
     val discordConfigured: Boolean,
+    val isDefault: Boolean = false,
 )
 
 data class ClubSearchResponse(

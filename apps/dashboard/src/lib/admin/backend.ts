@@ -85,8 +85,13 @@ async function safeBackendResponse(response: Response) {
     if (response.status === 400) return errorResponse(400, "validation_error", "Verifique os dados informados.");
     if (response.status === 403) return errorResponse(403, "csrf_error", "A operação segura expirou. Tente novamente.");
     if (response.status === 404) return errorResponse(404, "not_found", "Clube não encontrado.");
+    if (response.status === 409) return errorResponse(409, "conflict", "Este clube não pode ser removido.");
     if (response.status === 502) return errorResponse(502, "ea_unavailable", "A EA está indisponível no momento.");
     return errorResponse(503, "backend_unavailable", "Backend indisponível. Tente novamente.");
+  }
+
+  if (response.status === 204) {
+    return new NextResponse(null, { status: 204 });
   }
 
   const contentType = response.headers.get("content-type") ?? "";

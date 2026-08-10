@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ArrowLeft, RefreshCw, Trash2 } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
@@ -10,6 +10,7 @@ import type { AdminClub, ClubOperationalStatus } from "@/lib/admin/types";
 import { AdminFeedback } from "./admin-feedback";
 
 export function ClubAdminDetail({ clubId }: { clubId: string }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [club, setClub] = useState<AdminClub | null>(null);
   const [status, setStatus] = useState<ClubOperationalStatus | null>(null);
@@ -20,8 +21,8 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
   const [success, setSuccess] = useState<string | null>(
     searchParams.get("created") === "1" ? "Clube cadastrado com sucesso." : null,
   );
-
   const [refreshing, setRefreshing] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const load = useCallback(async (showFeedback = false) => {
     setLoading(true);
@@ -43,16 +44,6 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function toggleMonitoring() {
-    if (!club) return;
-    await mutate(async () => {
-      const updated = await adminRequest<AdminClub>(`/api/admin/clubs/${clubId}/monitoring`, {
-        method: "PATCH", body: JSON.stringify({ enabled: !club.monitoringEnabled }),
-      });
-      setSuccess(`Monitoramento ${updated.monitoringEnabled ? "ativado" : "desativado"}.`);
-    });
-  }
-
   async function saveWebhook(event: FormEvent) {
     event.preventDefault();
     if (!webhookUrl.trim()) { setError("Informe uma nova URL de webhook."); return; }
@@ -72,6 +63,20 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
     });
   }
 
+  async function removeClub() {
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    setConfirmRemove(false);
+    try {
+      await adminRequest<void>(`/api/admin/clubs/${clubId}`, { method: "DELETE" });
+      router.push("/admin/clubs?removed=1");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Não foi possível remover o clube.");
+      setBusy(false);
+    }
+  }
+
   async function mutate(operation: () => Promise<void>) {
     setBusy(true); setError(null); setSuccess(null);
     try { await operation(); await load(); }
@@ -86,10 +91,38 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
     <section>
       <Link href="/admin/clubs" className="mb-5 inline-flex items-center gap-1.5 text-sm text-muted hover:text-text-primary"><ArrowLeft className="h-4 w-4" /> Clubes monitorados</Link>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div><h1 className="text-2xl font-semibold text-text-primary">{club.displayName}</h1><p className="mt-1 font-mono text-xs text-muted">ClubId {club.clubId} · {club.platform}</p></div>
+        <div>
+          <h1 className="text-2xl font-semibold text-text-primary">{club.displayName}</h1>
+          <p className="mt-1 font-mono text-xs text-muted">
+            ClubId {club.clubId} · {club.platform}
+            {club.isDefault && <span className="ml-2 text-accent">principal</span>}
+          </p>
+        </div>
         <button type="button" disabled={refreshing} onClick={() => { setRefreshing(true); void load(true).finally(() => setRefreshing(false)); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm text-text-soft hover:bg-surface-raised disabled:opacity-50"><RefreshCw className={`h-4 w-4${refreshing ? " animate-spin" : ""}`} /> {refreshing ? "Atualizando…" : "Atualizar status"}</button>
       </div>
       <div className="mb-4 space-y-3">{error && <AdminFeedback message={error} />}{success && <AdminFeedback message={success} tone="success" />}</div>
+
+      {confirmRemove && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Panel className="w-full max-w-md space-y-4">
+            <h2 className="text-lg font-semibold text-text-primary">Remover clube</h2>
+            <p className="text-sm text-text-soft">
+              Tem certeza de que deseja remover <strong>{club.displayName}</strong>?
+            </p>
+            <p className="text-sm text-muted">
+              O monitoramento e o webhook serão removidos. O histórico de partidas existente será preservado.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={() => setConfirmRemove(false)} className="min-h-10 flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-soft hover:bg-surface-raised">
+                Cancelar
+              </button>
+              <button type="button" disabled={busy} onClick={() => void removeClub()} className="min-h-10 flex-1 rounded-lg bg-loss px-4 py-2 text-sm font-semibold text-white hover:bg-loss/90 disabled:opacity-50">
+                {busy ? "Removendo…" : "Remover clube"}
+              </button>
+            </div>
+          </Panel>
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel>
@@ -102,9 +135,6 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
             <Status label="Última partida" value={status?.latestMatchId ?? "—"} />
             <Status label="Erro recente" value={status?.lastError ?? "Nenhum"} />
           </dl>
-          <button type="button" disabled={busy} onClick={() => void toggleMonitoring()} className="mt-5 min-h-10 w-full rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-soft hover:bg-surface-raised disabled:opacity-50">
-            {busy ? "Salvando…" : club.monitoringEnabled ? "Desativar monitoramento" : "Ativar monitoramento"}
-          </button>
         </Panel>
 
         <Panel>
@@ -118,6 +148,16 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
           <p className="mt-4 text-xs text-muted">O webhook atual nunca é exibido. Para trocar, informe uma nova URL.</p>
         </Panel>
       </div>
+
+      {!club.isDefault && (
+        <Panel className="mt-6 border-loss/30">
+          <h2 className="font-semibold text-loss">Zona de perigo</h2>
+          <p className="mt-1 text-sm text-muted">A remoção exclui o clube do monitoramento. O histórico de partidas e estatísticas existentes serão preservados.</p>
+          <button type="button" disabled={busy} onClick={() => setConfirmRemove(true)} className="mt-4 inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-loss px-4 py-2 text-sm font-semibold text-white hover:bg-loss/90 disabled:opacity-50">
+            <Trash2 className="h-4 w-4" /> {busy ? "Removendo…" : "Remover clube"}
+          </button>
+        </Panel>
+      )}
     </section>
   );
 }

@@ -144,6 +144,7 @@ class ClubPollingCoordinatorTest {
         override fun findById(clubId: ClubId) = clubs.firstOrNull { it.clubId == clubId }
         override fun findAll() = clubs
         override fun existsById(clubId: ClubId) = clubs.any { it.clubId == clubId }
+        override fun deleteById(clubId: ClubId) = false
     }
 
     private fun club(id: ClubId, enabled: Boolean) = MonitoredClub(
@@ -164,5 +165,6 @@ class ClubPollingCoordinatorTest {
         override fun findById(clubId: ClubId) = clubs[clubId]
         override fun findAll() = clubs.values.toList()
         override fun existsById(clubId: ClubId) = clubId in clubs
+        override fun deleteById(clubId: ClubId) = clubs.remove(clubId) != null
     }
 }

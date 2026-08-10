@@ -44,12 +44,13 @@ describe("admin route group structure", () => {
 });
 
 describe("multi-club administration UI", () => {
-  it("lists operational summaries and supports monitoring changes", () => {
+  it("lists operational summaries and supports club removal", () => {
     const source = read("components/admin/club-admin-list.tsx");
     expect(source).toContain("/api/admin/clubs");
     expect(source).toContain("/status");
     expect(source).toContain("monitoringEnabled");
-    expect(source).toContain('method: "PATCH"');
+    expect(source).toContain('method: "DELETE"');
+    expect(source).toContain("Remover clube");
     expect(source).toContain("Discord");
     expect(source).toContain("Última atividade");
   });

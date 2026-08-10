@@ -3,6 +3,7 @@ package com.eafc26.discordstats.web
 import com.eafc26.discordstats.application.club.ClubCatalogResult
 import com.eafc26.discordstats.application.club.ClubCatalogService
 import com.eafc26.discordstats.application.club.ClubSearchCandidate
+import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.club.DiscordWebhookSecretReference
 import com.eafc26.discordstats.application.club.EaPlatform
 import com.eafc26.discordstats.application.club.MonitoredClub
@@ -43,6 +44,7 @@ class ClubAdministrationControllerTest {
     @MockBean private lateinit var acquisitionState: AcquisitionStateHolder
     @MockBean private lateinit var latestMatch: LatestMatchHolder
     @MockBean private lateinit var webhookConfigService: WebhookConfigService
+    @MockBean private lateinit var defaultClubProvider: DefaultClubProvider
 
     private val association = club("1104972", "Associação BF", enabled = true, reference = "legacy:default")
     private val brasil = club("8874106", "BRASIL 2030", enabled = false)
@@ -51,6 +53,14 @@ class ClubAdministrationControllerTest {
     fun defaults() {
         client = client.mutate().defaultHeader("Authorization", "Bearer test-admin-token").build()
         whenever(webhookConfigService.isConfigured()).thenReturn(true)
+        whenever(defaultClubProvider.get()).thenReturn(
+            com.eafc26.discordstats.application.club.DefaultClubConfiguration(
+                clubId = association.clubId,
+                displayName = association.displayName,
+                platform = association.platform,
+                webhookSecretReference = association.discordWebhookSecretReference,
+            ),
+        )
         whenever(monitoredClubs.find(association.clubId)).thenReturn(association)
         whenever(monitoredClubs.find(brasil.clubId)).thenReturn(brasil)
     }
@@ -183,6 +193,49 @@ class ClubAdministrationControllerTest {
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(mapOf("clubId" to "8874106", "displayName" to "BRASIL 2030", "platform" to "common-gen5"))
             .exchange().expectStatus().isOk
+    }
+
+    @Test
+    fun `delete existing non-default club returns 204`() {
+        whenever(monitoredClubs.remove(brasil.clubId)).thenReturn(brasil)
+
+        client.mutateWith(csrf()).delete().uri("/api/admin/clubs/8874106")
+            .exchange().expectStatus().isNoContent
+
+        verify(monitoredClubs).remove(brasil.clubId)
+    }
+
+    @Test
+    fun `delete unknown club returns 404`() {
+        client.mutateWith(csrf()).delete().uri("/api/admin/clubs/999")
+            .exchange().expectStatus().isNotFound
+
+        verify(monitoredClubs, never()).remove(any())
+    }
+
+    @Test
+    fun `delete default club returns 409`() {
+        client.mutateWith(csrf()).delete().uri("/api/admin/clubs/1104972")
+            .exchange().expectStatus().isEqualTo(409)
+
+        verify(monitoredClubs, never()).remove(any())
+    }
+
+    @Test
+    fun `delete club with webhook removes secret before deleting club`() {
+        val reference = DiscordWebhookSecretReference("preferences:club:8874106")
+        val configured = brasil.copy(discordWebhookSecretReference = reference)
+        whenever(monitoredClubs.find(brasil.clubId)).thenReturn(configured)
+        whenever(monitoredClubs.removeWebhook(brasil.clubId)).thenReturn(brasil)
+        whenever(monitoredClubs.remove(brasil.clubId)).thenReturn(brasil)
+
+        client.mutateWith(csrf()).delete().uri("/api/admin/clubs/8874106")
+            .exchange().expectStatus().isNoContent
+
+        val inOrder = org.mockito.Mockito.inOrder(monitoredClubs, secretStore)
+        inOrder.verify(monitoredClubs).removeWebhook(brasil.clubId)
+        inOrder.verify(secretStore).remove(reference)
+        inOrder.verify(monitoredClubs).remove(brasil.clubId)
     }
 
     private fun club(id: String, name: String, enabled: Boolean, reference: String? = null) = MonitoredClub(

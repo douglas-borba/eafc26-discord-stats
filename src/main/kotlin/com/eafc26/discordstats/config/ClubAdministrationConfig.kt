@@ -84,6 +84,7 @@ private class LegacyLocalMonitoredClubRepository(initialClub: MonitoredClub) : M
     override fun findById(clubId: ClubId): MonitoredClub? = clubs[clubId]
     override fun findAll(): List<MonitoredClub> = clubs.values.toList()
     override fun existsById(clubId: ClubId): Boolean = clubId in clubs
+    override fun deleteById(clubId: ClubId): Boolean = clubs.remove(clubId) != null
 }
 
 /** Temporary infrastructure adapter around the legacy single-club configuration. */
