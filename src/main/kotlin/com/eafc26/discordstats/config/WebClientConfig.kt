@@ -3,6 +3,10 @@ package com.eafc26.discordstats.config
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.http.client.reactive.ReactorClientHttpConnector
+import reactor.netty.http.client.HttpClient
+import io.netty.channel.ChannelOption
+import java.time.Duration
 
 @Configuration
 class WebClientConfig {
@@ -14,5 +18,8 @@ class WebClientConfig {
             .baseUrl(props.ea.gatewayBaseUrl)
             .defaultHeader("Accept", "application/json")
             .defaultHeader("Authorization", "Bearer ${props.ea.gatewayInternalToken}")
+            .clientConnector(ReactorClientHttpConnector(HttpClient.create()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000)
+                .responseTimeout(Duration.ofSeconds(30))))
             .build()
 }

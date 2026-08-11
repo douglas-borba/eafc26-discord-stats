@@ -56,5 +56,24 @@ class NodeEaClubsGatewayTest {
         assertThat((result as EaApiResult.Unavailable).statusCode).isEqualTo(502)
     }
 
+    @Test fun `HTTP 200 with invalid JSON becomes UnexpectedPayload`() {
+        server.enqueue(MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json").setBody("not-valid-json"))
+        val result = gateway.getLatestMatches("1104972")
+        assertThat(result).isInstanceOf(EaApiResult.UnexpectedPayload::class.java)
+    }
+
+    @Test fun `HTTP 200 with valid JSON array is parsed successfully`() {
+        server.enqueue(MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json").setBody("[]"))
+        val result = gateway.getLatestMatches("1104972")
+        assertThat(result).isEqualTo(EaApiResult.NoMatches)
+    }
+
+    @Test fun `invalid JSON is unexpected payload without retry`() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("not-json"))
+
+        assertThat(gateway.getLatestMatches("1104972")).isInstanceOf(EaApiResult.UnexpectedPayload::class.java)
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
     private fun fixture(name: String) = checkNotNull(javaClass.getResource("/fixtures/$name")).readText()
 }
