@@ -40,6 +40,7 @@ private fun singleClubRepository(clubId: ClubId) = object : MonitoredClubReposit
     override fun findById(clubId: ClubId) = club.takeIf { it.clubId == clubId }
     override fun findAll() = listOf(club)
     override fun existsById(clubId: ClubId) = club.clubId == clubId
+    override fun deleteById(clubId: ClubId) = false
 }
 
 internal val PollingStatusHolder.intervalSeconds get() = current(TEST_CLUB).intervalSeconds

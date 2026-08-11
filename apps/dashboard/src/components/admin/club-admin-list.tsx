@@ -112,7 +112,8 @@ export function ClubAdminList() {
                       {club.isDefault && <span className="ml-2 text-accent">principal</span>}
                     </p>
                   </div>
-                  <span className={club.monitoringEnabled ? "rounded-full bg-win/15 px-2.5 py-1 text-xs font-medium text-win" : "rounded-full bg-surface-raised px-2.5 py-1 text-xs font-medium text-muted"}>
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${healthBadgeColor(status?.healthIndicator)}`}>
+                    <span className={`h-2 w-2 rounded-full ${healthDotColor(status?.healthIndicator)}`} />
                     {club.monitoringEnabled ? "Ativo" : "Inativo"}
                   </span>
                 </div>
@@ -160,4 +161,22 @@ function formatActivity(status?: ClubOperationalStatus) {
   const value = status?.lastSuccessAt ?? status?.lastPollAt;
   if (!value) return "Nenhuma atividade registrada";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+}
+
+function healthBadgeColor(indicator?: string) {
+  switch (indicator) {
+    case "healthy": return "bg-win/15 text-win";
+    case "warning": return "bg-yellow-500/15 text-yellow-400";
+    case "error": return "bg-loss/15 text-loss";
+    default: return "bg-surface-raised text-muted";
+  }
+}
+
+function healthDotColor(indicator?: string) {
+  switch (indicator) {
+    case "healthy": return "bg-win";
+    case "warning": return "bg-yellow-400";
+    case "error": return "bg-loss";
+    default: return "bg-muted";
+  }
 }

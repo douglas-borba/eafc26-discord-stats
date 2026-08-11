@@ -14,6 +14,10 @@ import com.eafc26.discordstats.scheduler.PollingStatusHolder
 import com.eafc26.discordstats.service.AcquisitionPhase
 import com.eafc26.discordstats.service.AcquisitionStateHolder
 import com.eafc26.discordstats.service.LatestMatchHolder
+import com.eafc26.discordstats.store.EventStatus
+import com.eafc26.discordstats.store.OperationalEventRepository
+import com.eafc26.discordstats.store.PublicationStateStore
+import com.eafc26.discordstats.store.PublicationState
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -40,6 +44,8 @@ class ClubAdministrationController(
     private val latestMatch: LatestMatchHolder,
     private val defaultClubProvider: DefaultClubProvider,
     private val editorialRepository: MatchEditorialPresentationRepository?,
+    private val eventRepository: OperationalEventRepository? = null,
+    private val publicationStore: PublicationStateStore? = null,
 ) {
     @GetMapping
     fun list(): List<AdminClubResponse> =
@@ -139,6 +145,8 @@ class ClubAdministrationController(
         var lastSuccessAt = acquisition.finishedAt
             ?.takeIf { acquisition.currentPhase == AcquisitionPhase.COMPLETED }
             ?.toString()
+        var lastPollAt = polling.lastCheck?.toString()
+        var lastError = acquisition.currentStatus.takeIf { acquisition.currentPhase == AcquisitionPhase.FAILED }
 
         if (latestMatchId == null && editorialRepository != null) {
             try {
@@ -153,6 +161,55 @@ class ClubAdministrationController(
             } catch (_: Exception) { /* editorial fallback unavailable */ }
         }
 
+        // Fall back to persisted operational events when in-memory state has nothing.
+        if ((lastPollAt == null || lastSuccessAt == null || lastError == null) && eventRepository != null) {
+            try {
+                if (lastPollAt == null) {
+                    eventRepository.findLatestByClubAndType(club.clubId, "POLLING")?.let {
+                        lastPollAt = it.createdAt.toString()
+                    }
+                }
+                if (lastSuccessAt == null) {
+                    eventRepository.findByClub(club.clubId, limit = 50)
+                        .firstOrNull { it.eventType == "ACQUISITION" && it.status == EventStatus.SUCCESS }
+                        ?.let { lastSuccessAt = it.createdAt.toString() }
+                }
+                if (lastError == null) {
+                    eventRepository.findByClub(club.clubId, limit = 50)
+                        .firstOrNull { it.status == EventStatus.FAILURE }
+                        ?.let { lastError = it.message }
+                }
+            } catch (_: Exception) { /* event fallback unavailable */ }
+        }
+
+        var lastDiscordSuccess: String? = null
+        var lastDiscordError: String? = null
+        if (eventRepository != null) {
+            try {
+                val discordEvents = eventRepository.findByClub(club.clubId, limit = 50)
+                    .filter { it.eventType == "DISCORD" }
+                lastDiscordSuccess = discordEvents.firstOrNull { it.status == EventStatus.SUCCESS }?.createdAt?.toString()
+                lastDiscordError = discordEvents.firstOrNull { it.status == EventStatus.FAILURE }?.message
+            } catch (_: Exception) { /* discord event fallback unavailable */ }
+        }
+
+        val hasUncertainOrPermanentFailure = publicationStore?.let { pubStore ->
+            try {
+                pubStore.loadRecords(club.clubId).values.any {
+                    it.state == PublicationState.DELIVERY_UNCERTAIN || it.state == PublicationState.FAILED_PERMANENT || it.state == PublicationState.FAILED_TRANSIENT
+                }
+            } catch (_: Exception) {
+                false
+            }
+        } ?: false
+
+        val healthIndicator = when {
+            lastPollAt == null && latestMatchId == null -> "idle"
+            lastError != null -> "error"
+            hasUncertainOrPermanentFailure -> "warning"
+            else -> "healthy"
+        }
+
         return ClubOperationalStatusResponse(
             clubId = club.clubId.value,
             monitoringEnabled = club.monitoringEnabled,
@@ -162,12 +219,15 @@ class ClubAdministrationController(
                 polling.running -> "RUNNING"
                 else -> "IDLE"
             },
-            lastPollAt = polling.lastCheck?.toString(),
+            lastPollAt = lastPollAt,
             lastSuccessAt = lastSuccessAt,
-            lastError = acquisition.currentStatus.takeIf { acquisition.currentPhase == AcquisitionPhase.FAILED },
+            lastError = lastError,
             latestMatchId = latestMatchId,
             latestMatchTimestamp = latestMatchTimestamp,
             discordConfigured = club.discordWebhookSecretReference != null,
+            lastDiscordSuccess = lastDiscordSuccess,
+            lastDiscordError = lastDiscordError,
+            healthIndicator = healthIndicator,
         )
     }
 
@@ -228,4 +288,7 @@ data class ClubOperationalStatusResponse(
     val latestMatchId: String?,
     val latestMatchTimestamp: String?,
     val discordConfigured: Boolean,
+    val lastDiscordSuccess: String? = null,
+    val lastDiscordError: String? = null,
+    val healthIndicator: String = "idle",
 )

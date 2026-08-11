@@ -10,6 +10,10 @@ import com.eafc26.discordstats.service.PostgresSyncService
 import com.eafc26.discordstats.store.MirroringCanonicalMatchRepository
 import com.eafc26.discordstats.store.PostgresCanonicalMatchRepository
 import com.eafc26.discordstats.store.PostgresMonitoredClubRepository
+import com.eafc26.discordstats.store.PostgresPublishedMatchStore
+import com.eafc26.discordstats.store.PublicationStateStore
+import com.eafc26.discordstats.store.OperationalEventRepository
+import com.eafc26.discordstats.service.OperationalEventRecorder
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.flywaydb.core.Flyway
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -84,5 +88,30 @@ class PostgresMirrorConfig {
         defaultClubProvider: DefaultClubProvider,
     ): PostgresSyncService {
         return PostgresSyncService(jsonRepository, postgresRepository, defaultClubProvider)
+    }
+
+    @Bean
+    fun operationalEventRepository(jdbcTemplate: JdbcTemplate): OperationalEventRepository =
+        OperationalEventRepository(jdbcTemplate)
+
+    @Bean
+    fun operationalEventRecorder(operationalEventRepository: OperationalEventRepository): OperationalEventRecorder =
+        OperationalEventRecorder(operationalEventRepository)
+
+    @Bean
+    fun postgresPublishedMatchStoreImpl(jdbcTemplate: JdbcTemplate): PostgresPublishedMatchStore =
+        PostgresPublishedMatchStore(jdbcTemplate)
+
+    @Bean
+    @Primary
+    fun publicationStateStore(store: PostgresPublishedMatchStore): PublicationStateStore = store
+
+    @Bean
+    fun publicationStateUpgradeRunner(
+        flyway: Flyway,
+        store: PostgresPublishedMatchStore,
+    ): ApplicationRunner = ApplicationRunner {
+        flyway.info()
+        store.upgradeDeliveringRecords()
     }
 }

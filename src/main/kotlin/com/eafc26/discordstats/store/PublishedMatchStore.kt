@@ -28,19 +28,19 @@ import kotlin.io.path.readText
  * its records win and only missing legacy MatchIds are imported.
  */
 @Component
-class PublishedMatchStore(private val objectMapper: ObjectMapper) {
+class PublishedMatchStore(private val objectMapper: ObjectMapper) : PublicationStateStore {
     private val log = LoggerFactory.getLogger(javaClass)
     private val storeLock = ReentrantLock()
     private val initializedClubs = mutableSetOf<ClubId>()
 
-    fun loadRecords(clubId: ClubId): Map<String, PublicationRecord> = storeLock.withLock {
+    override fun loadRecords(clubId: ClubId): Map<String, PublicationRecord> = storeLock.withLock {
         ensureInitialized(clubId)
         loadRecordsInternal(pathFor(clubId))
     }
 
-    fun find(clubId: ClubId, matchId: String): PublicationRecord? = loadRecords(clubId)[matchId]
+    override fun find(clubId: ClubId, matchId: String): PublicationRecord? = loadRecords(clubId)[matchId]
 
-    fun saveRecord(clubId: ClubId, record: PublicationRecord) = storeLock.withLock {
+    override fun saveRecord(clubId: ClubId, record: PublicationRecord) = storeLock.withLock {
         ensureInitialized(clubId)
         val path = pathFor(clubId)
         val updated = loadRecordsInternal(path).toMutableMap()
@@ -49,7 +49,7 @@ class PublishedMatchStore(private val objectMapper: ObjectMapper) {
         log.debug("Saved publication record: clubId={}, matchId={}, state={}", clubId.value, record.matchId, record.state)
     }
 
-    fun removeRecord(clubId: ClubId, matchId: String) = storeLock.withLock {
+    override fun removeRecord(clubId: ClubId, matchId: String) = storeLock.withLock {
         ensureInitialized(clubId)
         val path = pathFor(clubId)
         val current = loadRecordsInternal(path).toMutableMap()
@@ -59,7 +59,7 @@ class PublishedMatchStore(private val objectMapper: ObjectMapper) {
         }
     }
 
-    fun resolveAsDelivered(clubId: ClubId, matchId: String) = storeLock.withLock {
+    override fun resolveAsDelivered(clubId: ClubId, matchId: String) = storeLock.withLock {
         ensureInitialized(clubId)
         val path = pathFor(clubId)
         val current = loadRecordsInternal(path).toMutableMap()
@@ -70,18 +70,18 @@ class PublishedMatchStore(private val objectMapper: ObjectMapper) {
         log.info("Publication resolved as DELIVERED: clubId={}, matchId={}", clubId.value, matchId)
     }
 
-    fun resolveAsUndelivered(clubId: ClubId, matchId: String) = removeRecord(clubId, matchId)
+    override fun resolveAsUndelivered(clubId: ClubId, matchId: String) = removeRecord(clubId, matchId)
 
-    fun loadIds(clubId: ClubId): Set<String> = loadRecords(clubId).keys
+    override fun loadIds(clubId: ClubId): Set<String> = loadRecords(clubId).keys
 
-    fun saveIds(clubId: ClubId, ids: Set<String>) = storeLock.withLock {
+    override fun saveIds(clubId: ClubId, ids: Set<String>) = storeLock.withLock {
         ensureInitialized(clubId)
-        val records = ids.sorted().map { PublicationRecord(it, PublicationState.BASELINED) }
+        val records = ids.sorted().map { PublicationRecord(it, PublicationState.BASELINED, baselineReason = BaselineReason.FIRST_RUN) }
         saveAllRecordsAtomic(pathFor(clubId), records)
         log.debug("Publication baseline saved: clubId={}, count={}", clubId.value, ids.size)
     }
 
-    fun metadata(clubId: ClubId): PublicationStoreMetadata {
+    override fun metadata(clubId: ClubId): PublicationStoreMetadata {
         val records = loadRecords(clubId).values
         return PublicationStoreMetadata(
             clubId = clubId,

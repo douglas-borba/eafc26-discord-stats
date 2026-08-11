@@ -7,12 +7,14 @@ import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.service.DiscordMatchPublicationService
 import com.eafc26.discordstats.service.PublicationReconciliationService
 import com.eafc26.discordstats.service.PublicationStateClassifier
-import com.eafc26.discordstats.store.PublishedMatchStore
+import com.eafc26.discordstats.store.OperationalEventRepository
+import com.eafc26.discordstats.store.PublicationStateStore
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import reactor.core.publisher.Mono
@@ -20,11 +22,12 @@ import reactor.core.scheduler.Schedulers
 
 @RestController
 class PublicationAdminController(
-    private val store: PublishedMatchStore,
+    private val store: PublicationStateStore,
     private val canonicalMatchRepository: CanonicalMatchRepository,
     private val publicationService: DiscordMatchPublicationService,
     private val reconciliationService: PublicationReconciliationService,
     private val monitoredClubRepository: MonitoredClubRepository,
+    private val eventRepository: OperationalEventRepository? = null,
 ) {
 
     private fun requireClub(clubId: String): ClubId {
@@ -108,6 +111,7 @@ class PublicationAdminController(
                     "delivering" to report.summary.delivering,
                     "uncertain" to report.summary.uncertain,
                     "failedPermanent" to report.summary.failedPermanent,
+                    "failedTransient" to report.summary.failedTransient,
                     "baselined" to report.summary.baselined,
                 ),
             ))
@@ -141,6 +145,52 @@ class PublicationAdminController(
                         "Todas as tentativas falharam (${result.errorCount})"
                     else ->
                         "Nenhuma partida segura para publicar automaticamente"
+                },
+            ))
+        }.subscribeOn(Schedulers.boundedElastic())
+
+    @GetMapping("/api/admin/clubs/{clubId}/events")
+    fun events(
+        @PathVariable clubId: String,
+        @RequestParam(defaultValue = "50") limit: Int,
+    ): Mono<ResponseEntity<Map<String, Any>>> =
+        Mono.fromCallable {
+            val club = requireClub(clubId)
+            val events = eventRepository?.findByClub(club, limit) ?: emptyList()
+            ResponseEntity.ok<Map<String, Any>>(mapOf(
+                "events" to events.map { event ->
+                    mapOf(
+                        "id" to event.id,
+                        "matchId" to event.matchId,
+                        "eventType" to event.eventType,
+                        "phase" to event.phase,
+                        "status" to event.status.name,
+                        "message" to event.message,
+                        "errorCode" to event.errorCode,
+                        "durationMs" to event.durationMs,
+                        "createdAt" to event.createdAt.toString(),
+                    )
+                },
+            ))
+        }.subscribeOn(Schedulers.boundedElastic())
+
+    @GetMapping("/api/admin/clubs/{clubId}/publication/history")
+    fun publicationHistory(@PathVariable clubId: String): Mono<ResponseEntity<Map<String, Any>>> =
+        Mono.fromCallable {
+            val club = requireClub(clubId)
+            val records = store.loadRecords(club).values.sortedByDescending { it.updatedAt }
+            ResponseEntity.ok<Map<String, Any>>(mapOf(
+                "records" to records.map { record ->
+                    mapOf(
+                        "matchId" to record.matchId,
+                        "state" to record.state.name,
+                        "updatedAt" to record.updatedAt,
+                        "attemptCount" to record.attemptCount,
+                        "lastAttemptAt" to record.lastAttemptAt,
+                        "lastError" to record.lastError,
+                        "lastHttpStatus" to record.lastHttpStatus,
+                        "baselineReason" to record.baselineReason?.name,
+                    )
                 },
             ))
         }.subscribeOn(Schedulers.boundedElastic())

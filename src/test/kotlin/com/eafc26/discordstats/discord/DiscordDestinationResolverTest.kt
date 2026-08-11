@@ -67,6 +67,7 @@ class DiscordDestinationResolverTest {
         override fun findById(clubId: ClubId) = clubs[clubId]
         override fun findAll() = clubs.values.toList()
         override fun existsById(clubId: ClubId) = clubId in clubs
+        override fun deleteById(clubId: ClubId) = false
     }
 
     private fun defaultProvider(clubId: ClubId, reference: DiscordWebhookSecretReference?) =

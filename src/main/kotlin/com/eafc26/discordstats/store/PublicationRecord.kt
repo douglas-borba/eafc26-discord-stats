@@ -6,14 +6,15 @@ package com.eafc26.discordstats.store
  * The state machine follows a Write-Ahead Log (WAL) pattern:
  *
  * ```
- *  (not in store)
+ *  (not in store) ──or── FAILED_TRANSIENT (retry)
  *       │
  *       ▼  lock + write before HTTP
  *   DELIVERING ──── crash / die ──► DELIVERY_UNCERTAIN (after restart)
  *       │
- *       │  HTTP 2xx confirmed
- *       ▼
- *   DELIVERED
+ *       ├── HTTP 2xx ──► DELIVERED
+ *       ├── HTTP 404/410/4xx permanent ──► FAILED_PERMANENT
+ *       ├── HTTP 429/5xx transient ──► FAILED_TRANSIENT (auto-retry next cycle)
+ *       └── network error (ambiguous) ──► DELIVERY_UNCERTAIN
  * ```
  *
  * State semantics:
@@ -42,7 +43,14 @@ data class PublicationRecord(
     val lastError: String? = null,
     /** Last HTTP status code received (if any). */
     val lastHttpStatus: Int? = null,
+    /** Why this match was baselined (only meaningful when state == BASELINED). */
+    val baselineReason: BaselineReason? = null,
 )
+
+enum class BaselineReason {
+    FIRST_RUN,
+    NO_DESTINATION,
+}
 
 enum class PublicationState {
     /** Pre-send write-ahead marker. Persisted BEFORE the HTTP call. */
@@ -64,6 +72,13 @@ enum class PublicationState {
      * Requires correction before manual resend.
      */
     FAILED_PERMANENT,
+
+    /**
+     * Delivery failed with a transient error (429, 5xx, pre-send persistence).
+     * The message was NOT delivered. Automatic retry is allowed on the next cycle.
+     * Attempt metadata (count, error, HTTP status) is preserved for diagnostics.
+     */
+    FAILED_TRANSIENT,
 
     /**
      * Match is part of the initial baseline (historical window).

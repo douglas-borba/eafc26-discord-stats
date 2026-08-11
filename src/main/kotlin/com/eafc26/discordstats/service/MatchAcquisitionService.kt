@@ -10,7 +10,8 @@ import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.llm.LlmEditorialService
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationService
-import com.eafc26.discordstats.store.PublishedMatchStore
+import com.eafc26.discordstats.store.PublicationState
+import com.eafc26.discordstats.store.PublicationStateStore
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
@@ -43,7 +44,7 @@ import org.springframework.stereotype.Service
 @Service
 class MatchAcquisitionService(
     @Qualifier("production") private val defaultGateway: EaClubsGateway,
-    private val store: PublishedMatchStore,
+    private val store: PublicationStateStore,
     private val publicationService: DiscordMatchPublicationService,
     private val props: AppProperties,
     private val stateHolder: AcquisitionStateHolder,
@@ -53,6 +54,7 @@ class MatchAcquisitionService(
     private val canonicalMatchFactory: CanonicalMatchFactory,
     private val editorialPresentationService: MatchEditorialPresentationService?,
     private val llmEditorialService: LlmEditorialService,
+    private val eventRecorder: OperationalEventRecorder? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
@@ -73,11 +75,16 @@ class MatchAcquisitionService(
         val result = lock.tryRun(clubId) {
             val executionId = stateHolder.start(clubId, trigger)
             log.debug("Acquisition started: executionId={}, trigger={}", executionId, trigger)
+            eventRecorder?.acquisitionStarted(clubId, trigger.name)
+            val startedAtMs = System.currentTimeMillis()
             try {
-                executeAcquisition(clubId, trigger, gateway)
+                val outcome = executeAcquisition(clubId, trigger, gateway)
+                eventRecorder?.acquisitionCompleted(clubId, System.currentTimeMillis() - startedAtMs)
+                outcome
             } catch (ex: Exception) {
                 log.error("Unexpected error during acquisition", ex)
                 stateHolder.fail(clubId, ex.message ?: "Unknown error", "Erro inesperado na aquisição.")
+                eventRecorder?.acquisitionFailed(clubId, stateHolder.current(clubId).currentPhase.name, ex.message)
                 throw ex
             }
         }
@@ -104,9 +111,14 @@ class MatchAcquisitionService(
         stateHolder.enterPhase(clubId, AcquisitionPhase.FETCHING, "Consultando a EA...")
 
         // Step 1: Fetch matches from EA
+        val eaFetchStartedAtMs = System.currentTimeMillis()
         val matches = when (val result = gateway.getLatestMatches(clubId.value)) {
-            is EaApiResult.Success -> result.data
+            is EaApiResult.Success -> {
+                eventRecorder?.eaSuccess(clubId, System.currentTimeMillis() - eaFetchStartedAtMs)
+                result.data
+            }
             EaApiResult.NoMatches -> {
+                eventRecorder?.eaSuccess(clubId, System.currentTimeMillis() - eaFetchStartedAtMs)
                 log.info("No matches found for club-id={}", clubId)
                 stateHolder.complete(clubId, "Nenhuma partida encontrada.")
                 return AcquisitionResult.NoMatches
@@ -114,11 +126,13 @@ class MatchAcquisitionService(
             is EaApiResult.Unavailable -> {
                 log.warn("EA API unavailable (HTTP {}): {}", result.statusCode, result.message)
                 stateHolder.fail(clubId, "EA API unavailable: ${result.message}", "EA indisponível. Nova tentativa em breve.")
+                eventRecorder?.eaUnavailable(clubId, result.statusCode, result.message)
                 return AcquisitionResult.EaUnavailable(result.statusCode, result.message)
             }
             is EaApiResult.UnexpectedPayload -> {
                 log.error("EA API returned unexpected payload", result.cause)
                 stateHolder.fail(clubId, "Unexpected payload: ${result.cause.message}", "EA indisponível. Nova tentativa em breve.")
+                eventRecorder?.eaUnavailable(clubId, 0, result.cause.message)
                 return AcquisitionResult.EaUnavailable(0, result.cause.message ?: "Unexpected payload")
             }
         }
@@ -161,18 +175,23 @@ class MatchAcquisitionService(
             canonicalByMatchId.values.forEach { canonical ->
                 // Step 1: Save canonical match (always first)
                 canonicalMatchRepository.save(canonical)
+                eventRecorder?.canonicalPersisted(clubId, canonical.matchId.value)
 
                 try {
                     editorialPresentationService?.generateAndPersist(canonical)
+                    eventRecorder?.editorialSuccess(clubId, canonical.matchId.value)
                 } catch (ex: Exception) {
                     log.error("Editorial presentation failed for match {}: {}", canonical.matchId.value, ex.message)
+                    eventRecorder?.editorialFailed(clubId, canonical.matchId.value, ex.message)
                 }
             }
             canonicalByMatchId.values.lastOrNull()?.let { latest ->
                 try {
                     llmEditorialService.generateAndPersistPanorama(latest)
+                    eventRecorder?.panoramaSuccess(clubId, latest.matchId.value)
                 } catch (ex: Exception) {
                     log.error("LLM panorama generation failed: {}", ex.message)
+                    eventRecorder?.panoramaFailed(clubId, latest.matchId.value, ex.message)
                 }
             }
         }
@@ -376,10 +395,10 @@ class MatchAcquisitionService(
         matches: List<MatchResponse>,
         canonicalByMatchId: Map<String, CanonicalMatch>,
     ): AcquisitionResult {
-        val publishedIds = store.loadIds(clubId)
+        val allRecords = store.loadRecords(clubId)
 
         // First-run detection
-        if (publishedIds.isEmpty()) {
+        if (allRecords.isEmpty()) {
             return handleFirstRun(clubId, matches, canonicalByMatchId)
         }
 
@@ -394,9 +413,12 @@ class MatchAcquisitionService(
             log.debug("Cached presentation for match {} (version={})", latestMatch.matchId, newVersion)
         }
 
-        // Find new matches to publish
+        // Find matches eligible for publication: new ones + FAILED_TRANSIENT retries
         val newMatches = matches
-            .filter { it.matchId !in publishedIds }
+            .filter { match ->
+                val record = allRecords[match.matchId]
+                record == null || record.state == PublicationState.FAILED_TRANSIENT
+            }
             .sortedBy { it.timestamp }
 
         if (newMatches.isEmpty()) {

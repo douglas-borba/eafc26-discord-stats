@@ -172,6 +172,7 @@ class PublicationAdminControllerTest {
                 delivering = 0,
                 uncertain = 0,
                 failedPermanent = 0,
+                failedTransient = 0,
                 baselined = 0,
             ),
         )

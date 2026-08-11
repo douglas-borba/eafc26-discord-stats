@@ -232,15 +232,15 @@ class DiscordMatchPublicationServiceTest {
         }
 
         @Test
-        fun `DELIVERING marker removed when Discord returns explicit HTTP error (safe to retry)`() {
+        fun `DELIVERING becomes FAILED_TRANSIENT when Discord returns transient HTTP error`() {
             val httpError = WebClientResponseException.create(429, "Too Many Requests", HttpHeaders.EMPTY, ByteArray(0), null)
             doThrow(DiscordDeliveryException("rate limited", httpError)).whenever(webhookClient).send(any(), any())
 
             val result = service.publishIfNeeded(canonical("m1"))
 
-            // Explicit HTTP response: Discord confirmed non-delivery → DELIVERING removed → retry allowed
             assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
-            assertThat(store.loadRecords()).doesNotContainKey("m1")
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.FAILED_TRANSIENT)
+            assertThat(store.loadRecords()["m1"]?.lastHttpStatus).isEqualTo(429)
         }
 
         @Test
@@ -256,12 +256,12 @@ class DiscordMatchPublicationServiceTest {
         }
 
         @Test
-        fun `DELIVERING marker removed when webhook not configured`() {
+        fun `DELIVERING becomes FAILED_TRANSIENT when webhook not configured`() {
             doThrow(IllegalStateException("no url")).whenever(webhookClient).send(any(), any())
 
             service.publishIfNeeded(canonical("m1"))
 
-            assertThat(store.loadRecords()).doesNotContainKey("m1")
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.FAILED_TRANSIENT)
         }
     }
 
@@ -585,14 +585,14 @@ class DiscordMatchPublicationServiceTest {
         }
 
         @Test
-        fun `forcePublish HTTP error cleans DELIVERING marker (safe to retry)`() {
+        fun `forcePublish HTTP error persists as FAILED_TRANSIENT`() {
             val httpError = WebClientResponseException.create(503, "Service Unavailable", HttpHeaders.EMPTY, ByteArray(0), null)
             doThrow(DiscordDeliveryException("down", httpError)).whenever(webhookClient).send(any(), any())
 
             val result = service.forcePublish(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
-            assertThat(store.loadRecords()).doesNotContainKey("m1")
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.FAILED_TRANSIENT)
         }
 
         @Test
@@ -678,7 +678,7 @@ class DiscordMatchPublicationServiceTest {
         }
 
         @Test
-        fun `HTTP 400 from Discord → FAILED_HTTP, DELIVERING removed (retry allowed)`() {
+        fun `HTTP 400 from Discord → FAILED_PERMANENT`() {
             val http400 = WebClientResponseException.create(400, "Bad Request", HttpHeaders.EMPTY, ByteArray(0), null)
             doThrow(DiscordDeliveryException("Bad Request", http400)).whenever(webhookClient).send(any(), any())
 
@@ -686,11 +686,11 @@ class DiscordMatchPublicationServiceTest {
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
             assertThat(result.httpStatusCode).isEqualTo(400)
-            assertThat(store.loadRecords()).doesNotContainKey("m1") // marker removed → retry safe
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.FAILED_PERMANENT)
         }
 
         @Test
-        fun `HTTP 500 from Discord → FAILED_HTTP, DELIVERING removed (retry allowed)`() {
+        fun `HTTP 500 from Discord → FAILED_TRANSIENT`() {
             val http500 = WebClientResponseException.create(500, "Internal Server Error", HttpHeaders.EMPTY, ByteArray(0), null)
             doThrow(DiscordDeliveryException("Server Error", http500)).whenever(webhookClient).send(any(), any())
 
@@ -698,17 +698,17 @@ class DiscordMatchPublicationServiceTest {
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
             assertThat(result.httpStatusCode).isEqualTo(500)
-            assertThat(store.loadRecords()).doesNotContainKey("m1")
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.FAILED_TRANSIENT)
         }
 
         @Test
-        fun `failure before connection (webhook not configured) → FAILED_BEFORE_SEND, DELIVERING removed`() {
+        fun `failure before connection (webhook not configured) → FAILED_TRANSIENT`() {
             doThrow(IllegalStateException("no url")).whenever(webhookClient).send(any(), any())
 
             val result = service.publishIfNeeded(canonical("m1"))
 
             assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_BEFORE_SEND)
-            assertThat(store.loadRecords()).doesNotContainKey("m1")
+            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.FAILED_TRANSIENT)
         }
 
         @Test

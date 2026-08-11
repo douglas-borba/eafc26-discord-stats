@@ -8,9 +8,10 @@ import com.eafc26.discordstats.discord.DiscordDestinationResolver
 import com.eafc26.discordstats.discord.DiscordWebhookClient
 import com.eafc26.discordstats.llm.LlmEditorialService
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.store.BaselineReason
 import com.eafc26.discordstats.store.PublicationRecord
 import com.eafc26.discordstats.store.PublicationState
-import com.eafc26.discordstats.store.PublishedMatchStore
+import com.eafc26.discordstats.store.PublicationStateStore
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClientResponseException
@@ -44,12 +45,13 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
  */
 @Service
 class DiscordMatchPublicationService(
-    private val store: PublishedMatchStore,
+    private val store: PublicationStateStore,
     private val webhookClient: DiscordWebhookClient,
     private val discordRenderer: DiscordRenderer,
     private val llmEditorialService: LlmEditorialService,
     private val destinationResolver: DiscordDestinationResolver,
     private val publicationLocks: PublicationLockRegistry = PublicationLockRegistry(),
+    private val eventRecorder: OperationalEventRecorder? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -61,6 +63,7 @@ class DiscordMatchPublicationService(
             when (existing?.state) {
                 PublicationState.DELIVERED -> {
                     log.info("Match {} already DELIVERED — skipping", matchId)
+                    eventRecorder?.discordSkipped(clubId, matchId, "ALREADY_DELIVERED")
                     return@withLock DiscordPublicationResult(PublicationOutcome.SKIPPED_ALREADY_DELIVERED, matchId)
                 }
                 PublicationState.DELIVERY_UNCERTAIN -> {
@@ -69,6 +72,7 @@ class DiscordMatchPublicationService(
                             "Administrative resolution required (resolveAsDelivered / resolveAsUndelivered).",
                         matchId,
                     )
+                    eventRecorder?.discordSkipped(clubId, matchId, "DELIVERY_UNCERTAIN")
                     return@withLock DiscordPublicationResult(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN, matchId)
                 }
                 PublicationState.FAILED_PERMANENT -> {
@@ -77,62 +81,84 @@ class DiscordMatchPublicationService(
                             "Correction and manual resend required.",
                         matchId,
                     )
+                    eventRecorder?.discordSkipped(clubId, matchId, "FAILED_PERMANENT")
                     return@withLock DiscordPublicationResult(PublicationOutcome.SKIPPED_FAILED_PERMANENT, matchId)
                 }
                 PublicationState.DELIVERING -> {
                     log.warn("Match {} found in DELIVERING state within session — treating as DELIVERY_UNCERTAIN", matchId)
+                    eventRecorder?.discordSkipped(clubId, matchId, "DELIVERING_IN_SESSION")
                     return@withLock DiscordPublicationResult(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN, matchId)
                 }
                 PublicationState.BASELINED -> {
                     log.info("Match {} is BASELINED (never published) — blocking automatic publication", matchId)
+                    eventRecorder?.discordSkipped(clubId, matchId, "BASELINED")
                     return@withLock DiscordPublicationResult(PublicationOutcome.SKIPPED_ALREADY_DELIVERED, matchId)
+                }
+                PublicationState.FAILED_TRANSIENT -> {
+                    log.info("Match {} has FAILED_TRANSIENT (attempt #{}) — retrying", matchId, existing.attemptCount)
                 }
                 null -> { /* not in store → proceed */ }
             }
 
             val destination = destinationResolver.resolve(clubId)
             if (destination == null) {
-                store.saveRecord(clubId, PublicationRecord(matchId, PublicationState.BASELINED))
+                store.saveRecord(clubId, PublicationRecord(matchId, PublicationState.BASELINED, baselineReason = BaselineReason.NO_DESTINATION))
                 log.info("Discord publication skipped: clubId={}, matchId={}, destinationConfigured=false", clubId.value, matchId)
+                eventRecorder?.discordSkipped(clubId, matchId, "NO_DESTINATION")
                 return@withLock DiscordPublicationResult(PublicationOutcome.SKIPPED_NO_DESTINATION, matchId)
             }
 
+            val previousAttemptCount = existing?.attemptCount ?: 0
+            val nowEpoch = java.time.Instant.now().epochSecond
+
             // WAL: persist DELIVERING BEFORE HTTP
             try {
-                store.saveRecord(clubId, PublicationRecord(matchId, PublicationState.DELIVERING))
+                store.saveRecord(clubId, PublicationRecord(
+                    matchId, PublicationState.DELIVERING,
+                    attemptCount = previousAttemptCount + 1,
+                    lastAttemptAt = nowEpoch,
+                ))
             } catch (ex: Exception) {
                 log.error(
                     "Cannot persist DELIVERING state for match {} — aborting to prevent ambiguous delivery. Error: {}",
                     matchId, ex.message,
                 )
+                safePersistFailure(clubId, matchId, PublicationState.FAILED_TRANSIENT,
+                    previousAttemptCount + 1, nowEpoch, "Pre-send persistence failed: ${ex.message}", null)
+                eventRecorder?.discordFailed(clubId, matchId, null, "Pre-send persistence failed: ${ex.message}")
                 return@withLock DiscordPublicationResult(
                     PublicationOutcome.FAILED_BEFORE_SEND, matchId,
                     errorMessage = "Pre-send persistence failed: ${ex.message}",
                 )
             }
+            eventRecorder?.discordAttempt(clubId, matchId)
 
             return@withLock when (val send = trySend(canonical, matchId, destination)) {
                 is SendOutcome.Success -> persistDelivered(clubId, matchId)
                 is SendOutcome.FailedBeforeSend -> {
-                    safeRemoveDelivering(clubId, matchId)
+                    safePersistFailure(clubId, matchId, PublicationState.FAILED_TRANSIENT,
+                        previousAttemptCount + 1, nowEpoch, send.message, null)
+                    eventRecorder?.discordFailed(clubId, matchId, null, send.message)
                     DiscordPublicationResult(PublicationOutcome.FAILED_BEFORE_SEND, matchId,
                         errorMessage = send.message)
                 }
                 is SendOutcome.FailedHttpExplicit -> {
-                    // Discord returned an explicit non-2xx: definitively not delivered
-                    log.warn("Discord HTTP {} for match {}: {}", send.statusCode, matchId, send.message)
-                    safeRemoveDelivering(clubId, matchId)
+                    val failState = classifyHttpFailureState(send.statusCode)
+                    log.warn("Discord HTTP {} for match {}: {} → {}", send.statusCode, matchId, send.message, failState)
+                    safePersistFailure(clubId, matchId, failState,
+                        previousAttemptCount + 1, nowEpoch, "HTTP ${send.statusCode}: ${send.message}", send.statusCode)
+                    eventRecorder?.discordFailed(clubId, matchId, send.statusCode, send.message)
                     DiscordPublicationResult(PublicationOutcome.FAILED_HTTP, matchId,
                         errorMessage = "HTTP ${send.statusCode}: ${send.message}",
                         httpStatusCode = send.statusCode)
                 }
                 is SendOutcome.Ambiguous -> {
-                    // Network error after request was potentially sent — upgrade DELIVERING → DELIVERY_UNCERTAIN
                     log.warn(
                         "Match {} delivery AMBIGUOUS after network error — saving DELIVERY_UNCERTAIN. Error: {}",
                         matchId, send.message,
                     )
                     safeUpgradeToUncertain(clubId, matchId)
+                    eventRecorder?.discordUncertain(clubId, matchId, send.message)
                     DiscordPublicationResult(PublicationOutcome.FAILED_AMBIGUOUS, matchId,
                         errorMessage = send.message)
                 }
@@ -153,24 +179,37 @@ class DiscordMatchPublicationService(
         return publicationLocks.withLock(clubId, matchId) {
             val destination = destinationResolver.resolve(clubId)
                 ?: return@withLock DiscordPublicationResult(PublicationOutcome.SKIPPED_NO_DESTINATION, matchId)
+            val existing = store.find(clubId, matchId)
+            val previousAttemptCount = existing?.attemptCount ?: 0
+            val nowEpoch = java.time.Instant.now().epochSecond
             try {
-                store.saveRecord(clubId, PublicationRecord(matchId, PublicationState.DELIVERING))
+                store.saveRecord(clubId, PublicationRecord(
+                    matchId, PublicationState.DELIVERING,
+                    attemptCount = previousAttemptCount + 1,
+                    lastAttemptAt = nowEpoch,
+                ))
             } catch (ex: Exception) {
                 log.error("Cannot persist DELIVERING for force-resend of match {}: {}", matchId, ex.message)
                 return@withLock DiscordPublicationResult(PublicationOutcome.FAILED_BEFORE_SEND, matchId,
                     errorMessage = "Pre-send persistence failed: ${ex.message}")
             }
+            eventRecorder?.discordAttempt(clubId, matchId)
 
             return@withLock when (val send = trySend(canonical, matchId, destination)) {
                 is SendOutcome.Success -> persistDelivered(clubId, matchId)
                 is SendOutcome.FailedBeforeSend -> {
-                    safeRemoveDelivering(clubId, matchId)
+                    safePersistFailure(clubId, matchId, PublicationState.FAILED_TRANSIENT,
+                        previousAttemptCount + 1, nowEpoch, send.message, null)
+                    eventRecorder?.discordFailed(clubId, matchId, null, send.message)
                     DiscordPublicationResult(PublicationOutcome.FAILED_BEFORE_SEND, matchId,
                         errorMessage = send.message)
                 }
                 is SendOutcome.FailedHttpExplicit -> {
-                    log.warn("Force-resend HTTP {} for match {}: {}", send.statusCode, matchId, send.message)
-                    safeRemoveDelivering(clubId, matchId)
+                    val failState = classifyHttpFailureState(send.statusCode)
+                    log.warn("Force-resend HTTP {} for match {}: {} → {}", send.statusCode, matchId, send.message, failState)
+                    safePersistFailure(clubId, matchId, failState,
+                        previousAttemptCount + 1, nowEpoch, "HTTP ${send.statusCode}: ${send.message}", send.statusCode)
+                    eventRecorder?.discordFailed(clubId, matchId, send.statusCode, send.message)
                     DiscordPublicationResult(PublicationOutcome.FAILED_HTTP, matchId,
                         errorMessage = "HTTP ${send.statusCode}: ${send.message}",
                         httpStatusCode = send.statusCode)
@@ -178,6 +217,7 @@ class DiscordMatchPublicationService(
                 is SendOutcome.Ambiguous -> {
                     log.warn("Force-resend of match {} AMBIGUOUS: {}", matchId, send.message)
                     safeUpgradeToUncertain(clubId, matchId)
+                    eventRecorder?.discordUncertain(clubId, matchId, send.message)
                     DiscordPublicationResult(PublicationOutcome.FAILED_AMBIGUOUS, matchId,
                         errorMessage = send.message)
                 }
@@ -196,6 +236,7 @@ class DiscordMatchPublicationService(
         return try {
             store.saveRecord(clubId, PublicationRecord(matchId, PublicationState.DELIVERED))
             log.info("Discord publication delivered: clubId={}, matchId={}", clubId.value, matchId)
+            eventRecorder?.discordSuccess(clubId, matchId)
             DiscordPublicationResult(PublicationOutcome.PUBLISHED, matchId)
         } catch (ex: Exception) {
             log.error(
@@ -265,11 +306,32 @@ class DiscordMatchPublicationService(
         }
     }
 
-    private fun safeRemoveDelivering(clubId: ClubId, matchId: String) {
+    private fun classifyHttpFailureState(statusCode: Int): PublicationState =
+        when (statusCode) {
+            400, 401, 403, 404, 405, 410, 413 -> PublicationState.FAILED_PERMANENT
+            else -> PublicationState.FAILED_TRANSIENT
+        }
+
+    private fun safePersistFailure(
+        clubId: ClubId,
+        matchId: String,
+        state: PublicationState,
+        attemptCount: Int,
+        lastAttemptAt: Long,
+        errorMessage: String?,
+        httpStatus: Int?,
+    ) {
         try {
-            store.removeRecord(clubId, matchId)
+            store.saveRecord(clubId, PublicationRecord(
+                matchId = matchId,
+                state = state,
+                attemptCount = attemptCount,
+                lastAttemptAt = lastAttemptAt,
+                lastError = errorMessage,
+                lastHttpStatus = httpStatus,
+            ))
         } catch (ex: Exception) {
-            log.warn("Could not remove DELIVERING marker for match {} after failure: {}", matchId, ex.message)
+            log.warn("Could not persist {} for match {} after failure: {}", state, matchId, ex.message)
         }
     }
 

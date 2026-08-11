@@ -5,6 +5,7 @@ import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.service.AcquisitionResult
 import com.eafc26.discordstats.service.AcquisitionTrigger
 import com.eafc26.discordstats.service.MatchAcquisitionService
+import com.eafc26.discordstats.service.OperationalEventRecorder
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.time.Clock
@@ -17,6 +18,7 @@ class ClubPollingCoordinator(
     private val acquisitionService: MatchAcquisitionService,
     private val statusHolder: PollingStatusHolder,
     private val clock: Clock = Clock.systemUTC(),
+    private val eventRecorder: OperationalEventRecorder? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -51,17 +53,20 @@ class ClubPollingCoordinator(
             )
         }
         log.info("Club polling started: clubId={}", clubId.value)
+        eventRecorder?.pollingStarted(clubId)
 
         return try {
             val result = acquisitionService.acquire(clubId, AcquisitionTrigger.SCHEDULER)
             statusHolder.update(clubId) { it.copy(lastResult = statusMessage(result), running = false) }
             log.info("Club polling completed: clubId={}, result={}", clubId.value, result::class.simpleName)
+            eventRecorder?.pollingCompleted(clubId, java.time.Duration.between(startedAt, Instant.now(clock)).toMillis())
             ClubPollingResult(clubId, result, failed = result.isFailure())
         } catch (ex: Exception) {
             statusHolder.update(clubId) {
                 it.copy(lastResult = "Falha inesperada. Nova tentativa em 1 minuto.", running = false)
             }
             log.error("Club polling failed: clubId={}, errorType={}", clubId.value, ex::class.simpleName)
+            eventRecorder?.pollingFailed(clubId, java.time.Duration.between(startedAt, Instant.now(clock)).toMillis(), ex.message)
             ClubPollingResult(clubId, result = null, failed = true)
         }
     }

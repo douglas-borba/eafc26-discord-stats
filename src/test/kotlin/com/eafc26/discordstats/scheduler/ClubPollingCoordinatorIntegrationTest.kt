@@ -121,6 +121,7 @@ class ClubPollingCoordinatorIntegrationTest {
         override fun findById(clubId: ClubId) = clubs.firstOrNull { it.clubId == clubId }
         override fun findAll() = clubs
         override fun existsById(clubId: ClubId) = clubs.any { it.clubId == clubId }
+        override fun deleteById(clubId: ClubId) = false
     }
 
     private fun monitored(clubId: ClubId) = MonitoredClub(

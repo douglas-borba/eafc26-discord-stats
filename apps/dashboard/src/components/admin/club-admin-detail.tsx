@@ -8,6 +8,7 @@ import { Panel } from "@/components/ui/panel";
 import { adminRequest } from "@/lib/admin/browser-client";
 import type { AdminClub, ClubOperationalStatus } from "@/lib/admin/types";
 import { AdminFeedback } from "./admin-feedback";
+import { ClubEventTimeline } from "./club-event-timeline";
 
 export function ClubAdminDetail({ clubId }: { clubId: string }) {
   const router = useRouter();
@@ -24,6 +25,7 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
   const [refreshing, setRefreshing] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showEvents, setShowEvents] = useState(false);
 
   const load = useCallback(async (showFeedback = false) => {
     setLoading(true);
@@ -92,12 +94,15 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
     <section>
       <Link href="/admin/clubs" className="mb-5 inline-flex items-center gap-1.5 text-sm text-muted hover:text-text-primary"><ArrowLeft className="h-4 w-4" /> Clubes monitorados</Link>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-text-primary">{club.displayName}</h1>
-          <p className="mt-1 font-mono text-xs text-muted">
-            ClubId {club.clubId} · {club.platform}
-            {club.isDefault && <span className="ml-2 text-accent">principal</span>}
-          </p>
+        <div className="flex items-center gap-3">
+          {status && <HealthDot indicator={status.healthIndicator} />}
+          <div>
+            <h1 className="text-2xl font-semibold text-text-primary">{club.displayName}</h1>
+            <p className="mt-1 font-mono text-xs text-muted">
+              ClubId {club.clubId} · {club.platform}
+              {club.isDefault && <span className="ml-2 text-accent">principal</span>}
+            </p>
+          </div>
         </div>
         <div className="flex gap-2">
           <a href={`/${clubId}`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm text-text-soft hover:bg-surface-raised">
@@ -148,15 +153,21 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
             <Status label="Monitoramento" value={club.monitoringEnabled ? "Ativo" : "Inativo"} />
             <Status label="Polling" value={status?.pollingStatus ?? "—"} />
             <Status label="Aquisição" value={status?.acquisitionStatus ?? "—"} />
+            <Status label="Último polling" value={formatDate(status?.lastPollAt)} />
             <Status label="Último sucesso" value={formatDate(status?.lastSuccessAt)} />
             <Status label="Última partida" value={status?.latestMatchId ?? "—"} />
-            <Status label="Erro recente" value={status?.lastError ?? "Nenhum"} />
+            <Status label="Erro recente" value={status?.lastError ?? "Nenhum"} tone={status?.lastError ? "error" : undefined} />
+            <Status label="Saúde" value={healthLabel(status?.healthIndicator)} tone={status?.healthIndicator === "error" ? "error" : status?.healthIndicator === "warning" ? "warning" : undefined} />
           </dl>
         </Panel>
 
         <Panel>
           <h2 className="font-semibold text-text-primary">Discord</h2>
           <p className="mt-1 text-sm text-muted">Status: {club.discordConfigured ? "Configurado" : "Não configurado"}</p>
+          <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+            <Status label="Último envio OK" value={formatDate(status?.lastDiscordSuccess)} />
+            <Status label="Último erro Discord" value={status?.lastDiscordError ?? "Nenhum"} tone={status?.lastDiscordError ? "error" : undefined} />
+          </dl>
           <form onSubmit={saveWebhook} className="mt-4 space-y-3">
             <label className="block"><span className="mb-1.5 block text-sm text-text-soft">Nova URL de webhook</span><input type="url" value={webhookUrl} onChange={(event) => setWebhookUrl(event.target.value)} placeholder="https://discord.com/api/webhooks/…" className="min-h-10 w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-text-primary outline-none focus:border-accent" /></label>
             <button disabled={busy || !webhookUrl.trim()} className="min-h-10 w-full rounded-lg bg-accent-strong px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{club.discordConfigured ? "Substituir webhook" : "Configurar webhook"}</button>
@@ -164,6 +175,17 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
           {club.discordConfigured && <button type="button" disabled={busy} onClick={() => void removeWebhook()} className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-loss/40 px-4 py-2 text-sm font-medium text-loss hover:bg-loss/10 disabled:opacity-50"><Trash2 className="h-4 w-4" /> Remover webhook</button>}
           <p className="mt-4 text-xs text-muted">O webhook atual nunca é exibido. Para trocar, informe uma nova URL.</p>
         </Panel>
+      </div>
+
+      <div className="mt-6">
+        <button
+          type="button"
+          onClick={() => setShowEvents((v) => !v)}
+          className="mb-4 text-sm font-medium text-accent hover:text-accent/80"
+        >
+          {showEvents ? "Ocultar eventos" : "Mostrar timeline de eventos"}
+        </button>
+        {showEvents && <ClubEventTimeline clubId={clubId} />}
       </div>
 
       {!club.isDefault && (
@@ -179,5 +201,26 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
   );
 }
 
-function Status({ label, value }: { label: string; value: string }) { return <div><dt className="text-xs text-muted">{label}</dt><dd className="mt-1 break-words text-text-soft">{value}</dd></div>; }
-function formatDate(value?: string | null) { return value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—"; }
+function HealthDot({ indicator }: { indicator: string }) {
+  const color = { healthy: "bg-win", warning: "bg-yellow-400", error: "bg-loss", idle: "bg-muted" }[indicator] ?? "bg-muted";
+  return <span className={`h-3 w-3 rounded-full ${color}`} title={healthLabel(indicator)} />;
+}
+
+function Status({ label, value, tone }: { label: string; value: string; tone?: "error" | "warning" }) {
+  const cls = tone === "error" ? "text-loss" : tone === "warning" ? "text-yellow-400" : "text-text-soft";
+  return <div><dt className="text-xs text-muted">{label}</dt><dd className={`mt-1 break-words ${cls}`}>{value}</dd></div>;
+}
+
+function healthLabel(indicator?: string) {
+  switch (indicator) {
+    case "healthy": return "Saudável";
+    case "warning": return "Atenção";
+    case "error": return "Erro";
+    case "idle": return "Inativo";
+    default: return "—";
+  }
+}
+
+function formatDate(value?: string | null) {
+  return value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—";
+}

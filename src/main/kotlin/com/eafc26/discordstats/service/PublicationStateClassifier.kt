@@ -29,6 +29,7 @@ object PublicationStateClassifier {
     fun isSafeToAutoPublish(state: PublicationState?): Boolean {
         return when (state) {
             null -> true // Never attempted - safe to try
+            PublicationState.FAILED_TRANSIENT -> true // Transient failure - retry allowed
             PublicationState.DELIVERED -> false // Already delivered
             PublicationState.DELIVERING -> false // Ambiguous (should be upgraded to UNCERTAIN)
             PublicationState.DELIVERY_UNCERTAIN -> false // Requires manual resolution
@@ -77,6 +78,13 @@ object PublicationStateClassifier {
                 cssClass = "failed-permanent",
                 color = "#f85149",
                 requiresAction = true,
+            )
+            PublicationState.FAILED_TRANSIENT -> PublicationStateDisplay(
+                icon = "🔄",
+                label = "Falha transitória (retry pendente)",
+                cssClass = "failed-transient",
+                color = "#f0883e",
+                requiresAction = false,
             )
             PublicationState.BASELINED -> PublicationStateDisplay(
                 icon = "📚",

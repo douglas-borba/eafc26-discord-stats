@@ -5,7 +5,7 @@ import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.service.DiscordMatchPublicationService
 import com.eafc26.discordstats.store.PublicationRecord
 import com.eafc26.discordstats.store.PublicationState
-import com.eafc26.discordstats.store.PublishedMatchStore
+import com.eafc26.discordstats.store.PublicationStateStore
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -29,7 +29,7 @@ import com.eafc26.discordstats.domain.match.ClubId
 @Service
 class PublicationReconciliationService(
     private val canonicalMatchRepository: CanonicalMatchRepository,
-    private val store: PublishedMatchStore,
+    private val store: PublicationStateStore,
     private val publicationService: DiscordMatchPublicationService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -76,6 +76,7 @@ class PublicationReconciliationService(
             delivering = inspections.count { it.publicationState == PublicationState.DELIVERING },
             uncertain = inspections.count { it.publicationState == PublicationState.DELIVERY_UNCERTAIN },
             failedPermanent = inspections.count { it.publicationState == PublicationState.FAILED_PERMANENT },
+            failedTransient = inspections.count { it.publicationState == PublicationState.FAILED_TRANSIENT },
             baselined = inspections.count { it.publicationState == PublicationState.BASELINED },
         )
 
@@ -172,6 +173,7 @@ data class ReconciliationSummary(
     val delivering: Int,
     val uncertain: Int,
     val failedPermanent: Int,
+    val failedTransient: Int,
     val baselined: Int,
 )
 

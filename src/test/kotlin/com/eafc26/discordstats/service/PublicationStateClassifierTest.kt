@@ -34,11 +34,11 @@ class PublicationStateClassifierTest {
     }
 
     @Test
-    fun `only null and never FAILED_PERMANENT are safe for auto-publish`() {
-        val safeStates = PublicationState.values().filter { 
+    fun `only FAILED_TRANSIENT is safe for auto-publish among existing states`() {
+        val safeStates = PublicationState.values().filter {
             PublicationStateClassifier.isSafeToAutoPublish(it)
         }
-        assertThat(safeStates).isEmpty()
+        assertThat(safeStates).containsExactly(PublicationState.FAILED_TRANSIENT)
     }
 
     @Test
