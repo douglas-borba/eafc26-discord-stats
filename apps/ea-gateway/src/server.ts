@@ -38,9 +38,22 @@ function classifyError(error: unknown): { kind: string; detail: string } {
   return { kind: "exception", detail: `${error.name}: ${msg}` };
 }
 
+const EA_HEADERS: Record<string, string> = {
+  Accept: "application/json",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  Origin: "https://www.ea.com",
+  Referer: "https://www.ea.com/",
+};
+
 async function eaJson(url: URL, config: GatewayConfig): Promise<unknown> {
-  const response = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(config.timeoutMs) });
-  if (!response.ok) throw new Error(`EA_HTTP_${response.status}`);
+  const response = await fetch(url, { headers: EA_HEADERS, signal: AbortSignal.timeout(config.timeoutMs) });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    const preview = body.slice(0, 200);
+    console.error(`[upstream] HTTP ${response.status} from ${url.pathname}${url.search}${preview ? ` body=${preview}` : ""}`);
+    throw new Error(`EA_HTTP_${response.status}`);
+  }
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) throw new Error("EA_INVALID_CONTENT_TYPE");
   return response.json();
