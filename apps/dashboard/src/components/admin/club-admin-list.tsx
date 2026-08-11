@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Settings2, Trash2 } from "lucide-react";
+import { Plus, Settings2, Trash2, ExternalLink, Copy, Check } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import { adminRequest } from "@/lib/admin/browser-client";
 import type { AdminClub, ClubOperationalStatus } from "@/lib/admin/types";
@@ -16,6 +16,7 @@ export function ClubAdminList() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<AdminClub | null>(null);
+  const [copiedClub, setCopiedClub] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,6 +130,22 @@ export function ClubAdminList() {
                   <Link href={`/admin/clubs/${club.clubId}`} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-text-soft hover:bg-surface-raised">
                     <Settings2 className="h-4 w-4" /> Detalhes
                   </Link>
+                </div>
+                <div className="flex gap-2">
+                  <a href={`/${club.clubId}`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-9 flex-1 items-center justify-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-soft hover:bg-surface-raised">
+                    <ExternalLink className="h-3.5 w-3.5" /> Abrir dashboard
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(`${window.location.origin}/${club.clubId}`);
+                      setCopiedClub(club.clubId);
+                      setTimeout(() => setCopiedClub((prev) => prev === club.clubId ? null : prev), 2000);
+                    }}
+                    className="inline-flex min-h-9 flex-1 items-center justify-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-soft hover:bg-surface-raised"
+                  >
+                    {copiedClub === club.clubId ? <><Check className="h-3.5 w-3.5 text-win" /> Link copiado.</> : <><Copy className="h-3.5 w-3.5" /> Copiar link</>}
+                  </button>
                 </div>
               </Panel>
             );

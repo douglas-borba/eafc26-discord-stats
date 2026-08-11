@@ -229,7 +229,7 @@ describe("UX: Overview completeness", () => {
   const page = readFile("app/clubs/[clubId]/(fullwidth)/overview/page.tsx");
 
   it("fetches recent match cards", () => {
-    expect(page).toContain("getRecentMatchCards");
+    expect(page).toContain("getOverviewCards");
     expect(page).toContain("clubId");
     expect(page).toContain("presentations");
   });

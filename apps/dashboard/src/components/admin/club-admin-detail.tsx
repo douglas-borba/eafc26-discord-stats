@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { ArrowLeft, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, RefreshCw, Trash2, ExternalLink, Copy, Check } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import { adminRequest } from "@/lib/admin/browser-client";
 import type { AdminClub, ClubOperationalStatus } from "@/lib/admin/types";
@@ -23,6 +23,7 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
   );
   const [refreshing, setRefreshing] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async (showFeedback = false) => {
     setLoading(true);
@@ -98,7 +99,23 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
             {club.isDefault && <span className="ml-2 text-accent">principal</span>}
           </p>
         </div>
-        <button type="button" disabled={refreshing} onClick={() => { setRefreshing(true); void load(true).finally(() => setRefreshing(false)); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm text-text-soft hover:bg-surface-raised disabled:opacity-50"><RefreshCw className={`h-4 w-4${refreshing ? " animate-spin" : ""}`} /> {refreshing ? "Atualizando…" : "Atualizar status"}</button>
+        <div className="flex gap-2">
+          <a href={`/${clubId}`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm text-text-soft hover:bg-surface-raised">
+            <ExternalLink className="h-4 w-4" /> Abrir dashboard
+          </a>
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard.writeText(`${window.location.origin}/${clubId}`);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm text-text-soft hover:bg-surface-raised"
+          >
+            {copied ? <><Check className="h-4 w-4 text-win" /> Link copiado.</> : <><Copy className="h-4 w-4" /> Copiar link</>}
+          </button>
+          <button type="button" disabled={refreshing} onClick={() => { setRefreshing(true); void load(true).finally(() => setRefreshing(false)); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm text-text-soft hover:bg-surface-raised disabled:opacity-50"><RefreshCw className={`h-4 w-4${refreshing ? " animate-spin" : ""}`} /> {refreshing ? "Atualizando…" : "Atualizar status"}</button>
+        </div>
       </div>
       <div className="mb-4 space-y-3">{error && <AdminFeedback message={error} />}{success && <AdminFeedback message={success} tone="success" />}</div>
 

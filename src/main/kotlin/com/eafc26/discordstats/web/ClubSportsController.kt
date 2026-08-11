@@ -152,10 +152,3 @@ class ClubSportsController(
 data class SportsClubResponse(val clubId: String, val displayName: String, val platform: String, val monitoringEnabled: Boolean)
 data class SportsPlayerListResponse(val status: String, val players: List<com.eafc26.discordstats.presentation.profile.PlayerProfileView>)
 
-@RestController
-class PublicClubCatalogController(private val monitoredClubs: MonitoredClubService) {
-    @GetMapping("/api/clubs", produces = [MediaType.APPLICATION_JSON_VALUE])
-    fun list(): List<SportsClubResponse> = monitoredClubs.list().sortedBy { it.displayName.value.lowercase() }.map {
-        SportsClubResponse(it.clubId.value, it.displayName.value, it.platform.value, it.monitoringEnabled)
-    }
-}

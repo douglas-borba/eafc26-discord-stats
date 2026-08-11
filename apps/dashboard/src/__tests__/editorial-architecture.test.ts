@@ -38,11 +38,9 @@ describe("Editorial Architecture: Zero Business Logic", () => {
     // No longer queries raw match tables - uses editorial read model exclusively
   });
 
-  it("service is minimal and focused", () => {
+  it("service includes presentation model and merge logic", () => {
     const lines = matchCardService.split("\n").length;
-    // Service includes TypeScript interfaces for the presentation model
-    // Actual logic is under 20 lines (just fetch from Supabase)
-    expect(lines).toBeLessThan(200);
+    expect(lines).toBeLessThan(300);
   });
 });
 
@@ -53,10 +51,9 @@ describe("Editorial Architecture: Supabase Only", () => {
     expect(matchCardService).toContain("createServerSupabase");
   });
 
-  it("does not call Spring Boot API", () => {
-    expect(matchCardService).not.toContain('fetch("/api');
-    expect(matchCardService).not.toContain("localhost");
-    expect(matchCardService).not.toContain("BACKEND_API_URL");
+  it("uses Spring API for canonical match list (source of truth)", () => {
+    expect(matchCardService).toContain("fetchSports");
+    expect(matchCardService).toContain("/history/matches");
   });
 
   it("filters by clubId", () => {

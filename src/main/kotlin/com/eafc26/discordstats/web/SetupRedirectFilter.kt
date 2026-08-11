@@ -14,7 +14,7 @@ import java.net.URI
  * Redirects all requests to /setup when the Discord webhook has not yet been configured.
  *
  * Pass-through paths (always allowed regardless of setup state):
- *   /setup, /api/setup/..., /api/admin/clubs/..., /api/clubs/..., /api/health
+ *   /setup, /api/setup/..., /api/admin/clubs/..., /api/clubs/{id}/..., /api/health
  */
 @Component
 class SetupRedirectFilter(private val webhookConfigService: WebhookConfigService) : WebFilter {
@@ -36,7 +36,6 @@ class SetupRedirectFilter(private val webhookConfigService: WebhookConfigService
         path == "/setup" ||
         PublicStaticResources.contains(path) ||
         path.startsWith("/api/setup") ||
-        path == "/api/clubs" ||
         path == "/api/admin/clubs" ||
         path.startsWith("/api/admin/clubs/") ||
         path.startsWith("/api/clubs/") ||

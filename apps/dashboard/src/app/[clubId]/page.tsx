@@ -1,15 +1,13 @@
 import { notFound } from "next/navigation";
 import { getClub } from "@/lib/repositories/overview-repository";
 import { SportsApiNotFound, SportsApiUnavailable } from "@/lib/api/sports-client";
+import OverviewPage from "@/app/clubs/[clubId]/(fullwidth)/overview/page";
 
-export default async function ClubLayout({
-  children,
-  params,
-}: {
-  children: React.ReactNode;
-  params: Promise<{ clubId: string }>;
-}) {
+export const dynamic = "force-dynamic";
+
+export default async function PublicClubPage({ params }: { params: Promise<{ clubId: string }> }) {
   const { clubId } = await params;
+  if (!/^\d+$/.test(clubId)) notFound();
   try {
     await getClub(clubId);
   } catch (error) {
@@ -27,5 +25,5 @@ export default async function ClubLayout({
     }
     throw error;
   }
-  return <>{children}</>;
+  return <OverviewPage params={params} />;
 }

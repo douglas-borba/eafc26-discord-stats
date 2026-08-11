@@ -193,3 +193,73 @@ export async function getRecentMatchCards(
     .map((row) => row.presentation as MatchSummaryPresentation | null)
     .filter((p): p is MatchSummaryPresentation => p != null);
 }
+
+type CanonicalMatchSummary = {
+  matchId: string;
+  playedAt: string;
+  dateLabel: string;
+  competition: string | null;
+  ourClub: { id: string; name: string; score: number };
+  opponentClub: { id: string; name: string; score: number };
+  outcome: { code: "WIN" | "DRAW" | "LOSS"; label: string; icon: string };
+};
+
+type CanonicalMatchList = { matches: CanonicalMatchSummary[] };
+
+const OUTCOME_META: Record<string, { emoji: string; label: string; color: number }> = {
+  WIN: { emoji: "✅", label: "Vitória", color: 0x3fb950 },
+  DRAW: { emoji: "🤝", label: "Empate", color: 0xd29922 },
+  LOSS: { emoji: "❌", label: "Derrota", color: 0xf85149 },
+};
+
+function canonicalToBasicPresentation(m: CanonicalMatchSummary): MatchSummaryPresentation {
+  const meta = OUTCOME_META[m.outcome.code] ?? OUTCOME_META.DRAW;
+  return {
+    ourName: m.ourClub.name,
+    oppName: m.opponentClub.name,
+    ourScore: m.ourClub.score,
+    oppScore: m.opponentClub.score,
+    outcome: { emoji: meta.emoji, label: meta.label, color: meta.color, type: m.outcome.code },
+    date: m.dateLabel,
+    timestamp: m.playedAt,
+    matchId: m.matchId,
+    goals: null,
+    assists: null,
+    highlights: null,
+    craque: null,
+    offensiveNarratives: [],
+    bagre: null,
+    redCard: null,
+    xerife: null,
+    passePrecisao: null,
+    correioExtraviado: null,
+    muralha: null,
+  };
+}
+
+export async function getOverviewCards(
+  clubId: string,
+  limit: number = 10,
+): Promise<MatchSummaryPresentation[]> {
+  const { clubPath, fetchSports } = await import("@/lib/api/sports-client");
+  const canonical = await fetchSports<CanonicalMatchList>(clubPath(clubId, "/history/matches"));
+  const matches = canonical.matches.slice(0, limit);
+  if (matches.length === 0) return [];
+
+  const matchIds = matches.map((m) => m.matchId);
+  const supabase = createServerSupabase();
+  const { data: editorialRows } = await supabase
+    .from("dashboard_editorial_presentations")
+    .select("match_id, presentation")
+    .eq("club_id", clubId)
+    .in("match_id", matchIds);
+
+  const editorialMap = new Map<string, MatchSummaryPresentation>();
+  if (editorialRows) {
+    for (const row of editorialRows) {
+      if (row.presentation) editorialMap.set(row.match_id as string, row.presentation as MatchSummaryPresentation);
+    }
+  }
+
+  return matches.map((m) => editorialMap.get(m.matchId) ?? canonicalToBasicPresentation(m));
+}

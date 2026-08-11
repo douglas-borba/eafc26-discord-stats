@@ -1,9 +1,9 @@
-import { clubPath, fetchSports } from "@/lib/api/sports-client";
+import { clubPath, fetchSports, fetchSportsInternal } from "@/lib/api/sports-client";
 import type { ClubSummary } from "@/lib/domain/types";
 
 type Club={clubId:string;displayName:string;monitoringEnabled:boolean};
 export async function listClubs():Promise<ClubSummary[]>{
-  const clubs=await fetchSports<Club[]>("/api/clubs");
+  const clubs=await fetchSportsInternal<Club[]>("/api/admin/clubs");
   return Promise.all(clubs.map(async club=>{
     try {
       const metadata=await fetchSports<{matchCount:number}>(clubPath(club.clubId,"/history/metadata"));

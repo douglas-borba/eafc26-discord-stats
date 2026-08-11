@@ -291,7 +291,7 @@ describe("Overview page composition", () => {
     const page = readFileSync(join(SRC, "app/clubs/[clubId]/(fullwidth)/overview/page.tsx"), "utf-8");
     expect(page).toContain("OverviewClubPanel");
     expect(page).toMatch(/OverviewMatchCard|OverviewMatchCarousel/);
-    expect(page).toContain("getRecentMatchCards");
+    expect(page).toContain("getOverviewCards");
     expect(page).toContain("buildSequenceEditorial");
   });
 
@@ -315,12 +315,11 @@ describe("Overview page composition", () => {
   });
 });
 
-describe("match-card-service exports getRecentMatchCards", () => {
+describe("match-card-service exports getOverviewCards", () => {
   it("function exists in source", () => {
     const source = readFileSync(join(SRC, "lib/services/match-card-service.ts"), "utf-8");
-    expect(source).toContain("export async function getRecentMatchCards");
+    expect(source).toContain("export async function getOverviewCards");
     expect(source).toContain("club_id");
-    expect(source).toContain("played_at");
-    expect(source).toContain(".limit(limit)");
+    expect(source).toContain("fetchSports");
   });
 });
