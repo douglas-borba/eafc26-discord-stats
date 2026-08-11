@@ -92,11 +92,30 @@ class PublishedMatchStoreTest {
     }
 
     @Test
-    fun `saveIds overwrites previous contents`() {
+    fun `saveIds adds missing baseline IDs without removing existing records`() {
         store.saveIds(setOf("old"))
         store.saveIds(setOf("new1", "new2"))
-        assertThat(store.loadIds()).containsExactlyInAnyOrder("new1", "new2")
-        assertThat(store.loadIds()).doesNotContain("old")
+        assertThat(store.loadIds()).containsExactlyInAnyOrder("old", "new1", "new2")
+    }
+
+    @Test
+    fun `saveIds never overwrites an existing publication state`() {
+        val preservedStates = listOf(
+            PublicationState.DELIVERED,
+            PublicationState.FAILED_TRANSIENT,
+            PublicationState.FAILED_PERMANENT,
+            PublicationState.DELIVERY_UNCERTAIN,
+        )
+        preservedStates.forEachIndexed { index, state ->
+            store.saveRecord(PublicationRecord("existing-$index", state))
+        }
+
+        store.saveIds(preservedStates.indices.mapTo(linkedSetOf()) { "existing-$it" } + "new")
+
+        preservedStates.forEachIndexed { index, state ->
+            assertThat(store.loadRecords()["existing-$index"]!!.state).isEqualTo(state)
+        }
+        assertThat(store.loadRecords()["new"]!!.state).isEqualTo(PublicationState.BASELINED)
     }
 
     // =========================================================================

@@ -76,8 +76,12 @@ class PublishedMatchStore(private val objectMapper: ObjectMapper) : PublicationS
 
     override fun saveIds(clubId: ClubId, ids: Set<String>) = storeLock.withLock {
         ensureInitialized(clubId)
-        val records = ids.sorted().map { PublicationRecord(it, PublicationState.BASELINED, baselineReason = BaselineReason.FIRST_RUN) }
-        saveAllRecordsAtomic(pathFor(clubId), records)
+        val path = pathFor(clubId)
+        val records = loadRecordsInternal(path).toMutableMap()
+        ids.sorted().forEach { matchId ->
+            records.putIfAbsent(matchId, PublicationRecord(matchId, PublicationState.BASELINED, baselineReason = BaselineReason.FIRST_RUN))
+        }
+        saveAllRecordsAtomic(path, records.values.toList())
         log.debug("Publication baseline saved: clubId={}, count={}", clubId.value, ids.size)
     }
 

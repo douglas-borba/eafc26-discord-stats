@@ -7,6 +7,7 @@ import { GET as getClub, DELETE as deleteClub } from "@/app/api/admin/clubs/[clu
 import { PATCH as updateMonitoring } from "@/app/api/admin/clubs/[clubId]/monitoring/route";
 import { PUT as configureDiscord, DELETE as removeDiscord } from "@/app/api/admin/clubs/[clubId]/discord/route";
 import { GET as getStatus } from "@/app/api/admin/clubs/[clubId]/status/route";
+import { GET as getSystemHealth } from "@/app/api/admin/system/health/route";
 
 const originalBackendUrl = process.env.BACKEND_URL;
 const clubContext = { params: Promise.resolve({ clubId: "8874106" }) };
@@ -150,6 +151,19 @@ describe("administrative BFF", () => {
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({ error: "backend_unavailable", message: "Backend indisponível. Tente novamente." });
+  });
+
+  it("preserves a degraded health response instead of treating it as backend unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({
+      overall: "DEGRADED",
+      application: { status: "UP" },
+      eaGateway: { status: "DOWN" },
+    })));
+
+    const response = await getSystemHealth();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ overall: "DEGRADED", eaGateway: { status: "DOWN" } });
   });
 
   it("does not attempt a request when BACKEND_URL is absent", async () => {

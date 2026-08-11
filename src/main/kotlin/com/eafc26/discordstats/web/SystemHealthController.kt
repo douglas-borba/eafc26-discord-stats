@@ -2,11 +2,8 @@ package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.application.club.MonitoredClubRepository
 import com.eafc26.discordstats.config.AppProperties
-import com.eafc26.discordstats.ea.EaApiResult
-import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.scheduler.MatchPollingScheduler
 import com.eafc26.discordstats.scheduler.PollingStatusHolder
-import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.web.bind.annotation.GetMapping
@@ -19,7 +16,7 @@ import java.time.Instant
 @RequestMapping("/api/admin/system", produces = [MediaType.APPLICATION_JSON_VALUE])
 class SystemHealthController(
     private val jdbcTemplate: JdbcTemplate?,
-    @Qualifier("production") private val eaGateway: EaClubsGateway,
+    private val eaGatewayHealthProbe: EaGatewayHealthProbe,
     private val pollingStatusHolder: PollingStatusHolder,
     private val monitoredClubRepository: MonitoredClubRepository,
     private val props: AppProperties,
@@ -28,11 +25,14 @@ class SystemHealthController(
 
     @GetMapping("/health")
     fun health(): Map<String, Any> {
-        return mapOf(
+        val components = mapOf(
             "application" to applicationHealth(),
             "postgres" to postgresHealth(),
             "eaGateway" to eaGatewayHealth(),
             "scheduler" to schedulerHealth(),
+        )
+        return components + mapOf(
+            "overall" to overallStatus(components),
             "build" to buildInfo(),
         )
     }
@@ -60,25 +60,10 @@ class SystemHealthController(
         }
     }
 
-    private fun eaGatewayHealth(): Map<String, Any> {
-        return try {
-            when (val result = eaGateway.searchClubs("__health_check_ping__")) {
-                is EaApiResult.Success -> mapOf("status" to "UP")
-                EaApiResult.NoMatches -> mapOf("status" to "UP")
-                is EaApiResult.Unavailable -> mapOf(
-                    "status" to if (result.statusCode >= 500) "EA_UPSTREAM_DOWN" else "GATEWAY_DOWN",
-                    "statusCode" to result.statusCode,
-                    "message" to result.message,
-                )
-                is EaApiResult.UnexpectedPayload -> mapOf(
-                    "status" to "UP",
-                    "note" to "Unexpected payload shape: ${result.cause.message}",
-                )
-            }
-        } catch (ex: Exception) {
-            mapOf("status" to "GATEWAY_DOWN", "error" to (ex.message ?: "Unknown error"))
-        }
-    }
+    private fun eaGatewayHealth(): Map<String, Any> = eaGatewayHealthProbe.check()
+
+    private fun overallStatus(components: Map<String, Map<String, Any>>): String =
+        if (components.values.all { it["status"] in setOf("UP", "HEALTHY", "NO_CLUBS") }) "UP" else "DEGRADED"
 
     private fun schedulerHealth(): Map<String, Any> {
         val enabledClubs = monitoredClubRepository.findAll().filter { it.monitoringEnabled }

@@ -146,6 +146,26 @@ class PostgresPublishedMatchStoreTest {
     }
 
     @Test
+    fun `saveIds uses insert only semantics and preserves existing publication states`() {
+        val preservedStates = listOf(
+            PublicationState.DELIVERED,
+            PublicationState.FAILED_TRANSIENT,
+            PublicationState.FAILED_PERMANENT,
+            PublicationState.DELIVERY_UNCERTAIN,
+        )
+        preservedStates.forEachIndexed { index, state ->
+            store.saveRecord(CLUB_A, PublicationRecord("existing-$index", state))
+        }
+
+        store.saveIds(CLUB_A, preservedStates.indices.mapTo(linkedSetOf()) { "existing-$it" } + "new")
+
+        preservedStates.forEachIndexed { index, state ->
+            assertThat(store.find(CLUB_A, "existing-$index")!!.state).isEqualTo(state)
+        }
+        assertThat(store.find(CLUB_A, "new")!!.state).isEqualTo(PublicationState.BASELINED)
+    }
+
+    @Test
     fun `metadata counts states correctly`() {
         store.saveRecord(CLUB_A, PublicationRecord("m1", PublicationState.DELIVERED))
         store.saveRecord(CLUB_A, PublicationRecord("m2", PublicationState.DELIVERED))

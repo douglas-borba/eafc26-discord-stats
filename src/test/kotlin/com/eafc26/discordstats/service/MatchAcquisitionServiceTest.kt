@@ -38,6 +38,8 @@ import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import org.springframework.http.HttpHeaders
+import org.springframework.web.reactive.function.client.WebClientResponseException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -343,12 +345,13 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.published).hasSize(1)
             assertThat(processed.published[0].matchId).isEqualTo("m1")
             verify(webhookClient).send(any(), any())
+            verify(store).saveRecord(clubIdEq(LEGACY_TEST_CLUB), argThat { matchId == "m1" && state == PublicationState.DELIVERED })
             // Baseline now uses BASELINED state instead of DELIVERED
-            verify(store).saveIds(setOf("m1"))
-            // Verify the baseline is BASELINED not DELIVERED
+            verify(store).saveIds(emptySet())
+            // The latest keeps the DELIVERED state written by publication.
             val captor = argumentCaptor<Set<String>>()
             verify(store).saveIds(clubIdEq(LEGACY_TEST_CLUB), captor.capture())
-            assertThat(captor.firstValue).containsExactly("m1")
+            assertThat(captor.firstValue).isEmpty()
         }
 
         @Test
@@ -366,7 +369,7 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.published).hasSize(1)
             assertThat(processed.published[0].matchId).isEqualTo("m2")
             verify(webhookClient).send(any(), any())
-            verify(store).saveIds(setOf("m1", "m2"))
+            verify(store).saveIds(setOf("m1"))
         }
 
         @Test
@@ -433,6 +436,74 @@ class MatchAcquisitionServiceTest {
             assertThat(records.values.filter { it.state == PublicationState.DELIVERED }.map { it.matchId })
                 .containsExactlyInAnyOrder("baseline", "new")
             verify(webhookClient, times(1)).send(any(), any())
+        }
+
+        @Test
+        fun `first-run preserves a transient failure on latest while baselining only older matches`() {
+            val older = match("older", ts = 1000)
+            val latest = match("latest", ts = 2000)
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(older, latest)))
+            doThrow(DiscordDeliveryException("Discord 500", WebClientResponseException.create(500, "Server Error", HttpHeaders.EMPTY, ByteArray(0), null)))
+                .whenever(webhookClient).send(any(), any())
+
+            service.acquire(AcquisitionTrigger.SCHEDULER)
+
+            verify(store).saveRecord(clubIdEq(LEGACY_TEST_CLUB), argThat { matchId == "latest" && state == PublicationState.FAILED_TRANSIENT })
+            verify(store).saveIds(setOf("older"))
+        }
+
+        @Test
+        fun `first-run preserves a permanent failure on latest while baselining only older matches`() {
+            val older = match("older", ts = 1000)
+            val latest = match("latest", ts = 2000)
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(older, latest)))
+            doThrow(DiscordDeliveryException("Discord 403", WebClientResponseException.create(403, "Forbidden", HttpHeaders.EMPTY, ByteArray(0), null)))
+                .whenever(webhookClient).send(any(), any())
+
+            service.acquire(AcquisitionTrigger.SCHEDULER)
+
+            verify(store).saveRecord(clubIdEq(LEGACY_TEST_CLUB), argThat { matchId == "latest" && state == PublicationState.FAILED_PERMANENT })
+            verify(store).saveIds(setOf("older"))
+        }
+
+        @Test
+        fun `first-run preserves an uncertain delivery on latest while baselining only older matches`() {
+            val older = match("older", ts = 1000)
+            val latest = match("latest", ts = 2000)
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(older, latest)))
+            doThrow(DiscordDeliveryException("Network timeout")).whenever(webhookClient).send(any(), any())
+
+            service.acquire(AcquisitionTrigger.SCHEDULER)
+
+            verify(store).saveRecord(clubIdEq(LEGACY_TEST_CLUB), argThat { matchId == "latest" && state == PublicationState.DELIVERY_UNCERTAIN })
+            verify(store).saveIds(setOf("older"))
+        }
+
+        @Test
+        fun `second polling never republishes a delivered first-run latest`() {
+            val match = match("latest")
+            val records = mutableMapOf<String, PublicationRecord>()
+            whenever(store.loadIds()).thenAnswer { records.keys.toSet() }
+            whenever(store.loadRecords()).thenAnswer { records.toMap() }
+            whenever(store.find(clubIdEq(LEGACY_TEST_CLUB), any())).thenAnswer { records[it.getArgument<String>(1)] }
+            whenever(store.saveRecord(clubIdEq(LEGACY_TEST_CLUB), any())).thenAnswer {
+                val record = it.getArgument<PublicationRecord>(1)
+                records[record.matchId] = record
+                Unit
+            }
+            whenever(store.saveIds(clubIdEq(LEGACY_TEST_CLUB), any())).thenAnswer {
+                it.getArgument<Set<String>>(1).forEach { matchId ->
+                    records.putIfAbsent(matchId, PublicationRecord(matchId, PublicationState.BASELINED))
+                }
+                Unit
+            }
+            whenever(gateway.getLatestMatches(clubId)).thenReturn(EaApiResult.Success(listOf(match)))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER)
+            service.acquire(AcquisitionTrigger.SCHEDULER)
+
+            verify(webhookClient, times(1)).send(any(), any())
+            assertThat(records["latest"]!!.state).isEqualTo(PublicationState.DELIVERED)
         }
     }
 
@@ -1162,7 +1233,7 @@ class MatchAcquisitionServiceTest {
 
             assertThat(result.baselineEstablished).isTrue()
             verify(canonicalMatchRepository, times(2)).save(any())
-            verify(store).saveIds(setOf("m1", "m2"))
+            verify(store).saveIds(setOf("m1"))
             // NEW BEHAVIOR: First-run now publishes the latest match
             assertThat(result.published).hasSize(1)
             verify(webhookClient).send(any(), any())

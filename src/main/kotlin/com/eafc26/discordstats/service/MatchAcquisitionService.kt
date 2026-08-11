@@ -545,7 +545,7 @@ class MatchAcquisitionService(
                     reason.contains("Webhook", ignoreCase = true)) {
                     log.warn("Webhook not configured during first-run")
                     // Still establish baseline even if webhook is not configured
-                    establishBaseline(clubId, matches)
+                    establishBaseline(clubId, matches.filterNot { it.matchId == latestMatch.matchId })
                     return AcquisitionResult.WebhookNotConfigured
                 }
                 log.error("Failed to publish latest match during first-run: {}", reason)
@@ -562,10 +562,10 @@ class MatchAcquisitionService(
             }
         }
 
-        // Establish baseline for all matches (including the one we just published)
-        // This prevents re-publication of historical matches
+        // Baseline only older matches. The latest record must retain the exact state
+        // produced by publication (DELIVERED, failure, or DELIVERY_UNCERTAIN).
         stateHolder.enterPhase(clubId, AcquisitionPhase.PERSISTING, "Estabelecendo baseline...")
-        establishBaseline(clubId, matches)
+        establishBaseline(clubId, matches.filterNot { it.matchId == latestMatch.matchId })
 
         log.info("First-run complete: {} published, {} in baseline",
             if (published.isNotEmpty()) 1 else 0, matches.size)

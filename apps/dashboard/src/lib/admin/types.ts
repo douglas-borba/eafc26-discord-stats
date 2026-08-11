@@ -31,6 +31,7 @@ export interface ClubOperationalStatus {
 }
 
 export interface SystemHealth {
+  overall?: "UP" | "DEGRADED";
   application: { status: string; startedAt: string; uptimeSeconds: number };
   postgres: { status: string; latencyMs?: number; error?: string };
   eaGateway: { status: string; latencyMs?: number; statusCode?: number; message?: string; error?: string };

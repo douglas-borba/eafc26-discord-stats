@@ -13,6 +13,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 @Component
 @Qualifier("production")
 class NodeEaClubsGateway(
+    @Qualifier("eaGatewayWebClient")
     private val eaGatewayWebClient: WebClient,
     private val props: AppProperties,
     private val parser: EaResponseParser,

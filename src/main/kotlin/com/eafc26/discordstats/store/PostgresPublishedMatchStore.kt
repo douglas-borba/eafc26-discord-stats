@@ -107,7 +107,18 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
 
     override fun saveIds(clubId: ClubId, ids: Set<String>) {
         ids.sorted().forEach { matchId ->
-            saveRecord(clubId, PublicationRecord(matchId, PublicationState.BASELINED, baselineReason = BaselineReason.FIRST_RUN))
+            jdbcTemplate.update(
+                """
+                INSERT INTO discord_publication_state
+                    (club_id, match_id, state, attempt_count, baseline_reason, updated_at)
+                VALUES (?, ?, ?, 0, ?, now())
+                ON CONFLICT (club_id, match_id) DO NOTHING
+                """.trimIndent(),
+                clubId.value,
+                matchId,
+                PublicationState.BASELINED.name,
+                BaselineReason.FIRST_RUN.name,
+            )
         }
         log.debug("Publication baseline saved (postgres): clubId={}, count={}", clubId.value, ids.size)
     }
