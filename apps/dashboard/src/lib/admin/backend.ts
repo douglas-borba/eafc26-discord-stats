@@ -21,6 +21,7 @@ export async function proxyAdminRequest(path: string, options: ProxyOptions = {}
 
   const method = (options.method ?? "GET").toUpperCase();
   const baseUrl = backendUrl.replace(/\/$/, "");
+  const startedAt = Date.now();
 
   try {
     const security = MUTATING_METHODS.has(method)
@@ -46,9 +47,11 @@ export async function proxyAdminRequest(path: string, options: ProxyOptions = {}
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
 
-    return safeBackendResponse(response);
-  } catch {
-    return errorResponse(503, "backend_unavailable", "Backend indisponível. Tente novamente.");
+    return safeBackendResponse(response, path, elapsedMs(startedAt));
+  } catch (error) {
+    const classification = isTimeout(error) ? "backend_timeout" : "backend_unreachable";
+    logBackendFailure(path, classification, elapsedMs(startedAt));
+    return errorResponse(503, classification, "Backend indisponível. Tente novamente.");
   }
 }
 
@@ -80,14 +83,22 @@ function getSetCookies(headers: Headers): string[] {
   return combined.split(/,(?=\s*[A-Za-z0-9_-]+=)/).map((value) => value.trim());
 }
 
-async function safeBackendResponse(response: Response) {
+async function safeBackendResponse(response: Response, path: string, durationMs: number) {
   if (!response.ok) {
     if (response.status === 400) return errorResponse(400, "validation_error", "Verifique os dados informados.");
-    if (response.status === 403) return errorResponse(403, "csrf_error", "A operação segura expirou. Tente novamente.");
     if (response.status === 404) return errorResponse(404, "not_found", "Clube não encontrado.");
     if (response.status === 409) return errorResponse(409, "conflict", "Este clube não pode ser removido.");
     if (response.status === 502) return errorResponse(502, "ea_unavailable", "A EA está indisponível no momento.");
-    return errorResponse(503, "backend_unavailable", "Backend indisponível. Tente novamente.");
+    if (response.status === 401 || response.status === 403) {
+      logBackendFailure(path, "backend_auth_error", durationMs, response.status);
+      return errorResponse(502, "backend_auth_error", "A administração não está disponível no momento.");
+    }
+    if (response.status >= 500) {
+      logBackendFailure(path, "backend_error", durationMs, response.status);
+      return errorResponse(503, "backend_error", "Backend indisponível. Tente novamente.");
+    }
+    logBackendFailure(path, "backend_error", durationMs, response.status);
+    return errorResponse(502, "backend_error", "Backend indisponível. Tente novamente.");
   }
 
   if (response.status === 204) {
@@ -96,11 +107,30 @@ async function safeBackendResponse(response: Response) {
 
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {
-    return errorResponse(503, "invalid_backend_response", "Resposta inválida do backend.");
+    logBackendFailure(path, "invalid_backend_response", durationMs, response.status);
+    return errorResponse(502, "invalid_backend_response", "Resposta inválida do backend.");
   }
 
-  const payload = sanitize(await response.json());
-  return NextResponse.json(payload, { status: response.status });
+  try {
+    const payload = sanitize(await response.json());
+    return NextResponse.json(payload, { status: response.status });
+  } catch {
+    logBackendFailure(path, "invalid_backend_response", durationMs, response.status);
+    return errorResponse(502, "invalid_backend_response", "Resposta inválida do backend.");
+  }
+}
+
+function isTimeout(error: unknown): boolean {
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+}
+
+function elapsedMs(startedAt: number): number {
+  return Date.now() - startedAt;
+}
+
+function logBackendFailure(path: string, classification: string, durationMs: number, status?: number) {
+  const pathname = new URL(path, "http://admin-bff.internal").pathname;
+  console.warn("Admin BFF backend failure", { path: pathname, classification, status, durationMs });
 }
 
 function sanitize(value: unknown): unknown {

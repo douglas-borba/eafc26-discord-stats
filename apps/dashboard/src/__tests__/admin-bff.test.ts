@@ -144,13 +144,13 @@ describe("administrative BFF", () => {
     expect(JSON.stringify(body)).not.toContain("internal");
   });
 
-  it("returns a safe error when backend is unavailable", async () => {
+  it("classifies network failures separately", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("private host failed")));
 
     const response = await listClubs();
 
     expect(response.status).toBe(503);
-    await expect(response.json()).resolves.toEqual({ error: "backend_unavailable", message: "Backend indisponível. Tente novamente." });
+    await expect(response.json()).resolves.toEqual({ error: "backend_unreachable", message: "Backend indisponível. Tente novamente." });
   });
 
   it("preserves a degraded health response instead of treating it as backend unavailable", async () => {
@@ -164,6 +164,51 @@ describe("administrative BFF", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ overall: "DEGRADED", eaGateway: { status: "DOWN" } });
+  });
+
+  it("preserves an UP health response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ overall: "UP", application: { status: "UP" } })));
+
+    const response = await getSystemHealth();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ overall: "UP" });
+  });
+
+  it.each([401, 403])("classifies Spring HTTP %s as an internal authentication failure", async (status) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({}, status)));
+
+    const response = await getSystemHealth();
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toMatchObject({ error: "backend_auth_error" });
+  });
+
+  it("classifies Spring HTTP 500 as a backend error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({}, 500)));
+
+    const response = await getSystemHealth();
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ error: "backend_error" });
+  });
+
+  it("classifies timeouts separately from network failures", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(Object.assign(new Error("timed out"), { name: "TimeoutError" })));
+
+    const response = await getSystemHealth();
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ error: "backend_timeout" });
+  });
+
+  it("rejects a non JSON Spring response without exposing its body", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html>setup</html>", { status: 200, headers: { "content-type": "text/html" } })));
+
+    const response = await getSystemHealth();
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toMatchObject({ error: "invalid_backend_response" });
   });
 
   it("does not attempt a request when BACKEND_URL is absent", async () => {

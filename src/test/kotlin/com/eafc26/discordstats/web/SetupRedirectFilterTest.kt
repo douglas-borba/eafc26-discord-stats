@@ -84,6 +84,16 @@ class SetupRedirectFilterTest {
     }
 
     @Test
+    fun `administrative system health is reachable when Discord is not configured`() {
+        whenever(webhookConfigService.isConfigured()).thenReturn(false)
+
+        webClient.get().uri("/api/admin/system/health")
+            .exchange()
+            .expectStatus().isNotFound
+            .expectHeader().doesNotExist("Location")
+    }
+
+    @Test
     fun `static resources are never redirected to setup`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
 

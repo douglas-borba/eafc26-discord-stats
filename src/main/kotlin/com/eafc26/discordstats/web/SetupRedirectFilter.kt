@@ -38,6 +38,7 @@ class SetupRedirectFilter(private val webhookConfigService: WebhookConfigService
         path.startsWith("/api/setup") ||
         path == "/api/admin/clubs" ||
         path.startsWith("/api/admin/clubs/") ||
+        path == "/api/admin/system/health" ||
         path.startsWith("/api/clubs/") ||
         path == "/api/health"
 }
