@@ -39,11 +39,12 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
   return (
     <div className={c ? "" : "max-w-[420px] mx-auto px-3"}>
       <div
-        className={`match-card match-summary-card rounded-[10px] match-card-elevated ${isLatest ? "match-card-featured" : ""}`}
+        className={`match-card match-summary-card overflow-hidden rounded-[10px] border border-border bg-surface match-card-elevated ${isLatest ? "match-card-featured" : ""}`}
+        style={{ background: "linear-gradient(160deg, #1a1f26 0%, #161b22 50%, #12161c 100%)" }}
       >
         {/* Header with vertical ribbon */}
         <div
-          className="card-header grid rounded-t-[10px]"
+          className="card-header grid w-full overflow-hidden rounded-t-[10px]"
           style={{
             gridTemplateColumns: c ? "26px 1fr" : "32px 1fr",
             background: "linear-gradient(135deg, rgba(88, 166, 255, 0.08), transparent)",
@@ -67,7 +68,7 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
           </div>
 
           {/* Score area */}
-          <div className={`${c ? "py-3 px-3" : "py-4 px-4"} text-center`}>
+          <div className={`${c ? "py-3 px-3" : "py-4 px-4"} min-w-0 text-center`}>
             <div className={`card-score-row flex items-center justify-center ${c ? "gap-2" : "gap-3"}`}>
               <div className={`card-team-name ${c ? "text-[0.78rem] max-w-[90px]" : "text-[0.85rem] max-w-[110px]"} font-medium text-[#e6edf3] text-center leading-[1.2]`}>
                 {presentation.ourName}

@@ -1,189 +1,358 @@
 import type { Metadata } from "next";
-import { BarChart3, ChevronRight, CircleCheck, Goal, Shield, Trophy, Users } from "lucide-react";
+import Image from "next/image";
+import "./landing.css";
 
 export const metadata: Metadata = {
   title: "FC Stats | Estatísticas para EA SPORTS FC Clubs",
-  description: "Dashboard automático de estatísticas, desempenho e partidas para clubes de EA SPORTS FC.",
+  description:
+    "Dashboard automático de estatísticas, desempenho e partidas para clubes de EA SPORTS FC.",
   openGraph: {
     title: "FC Stats | Estatísticas para EA SPORTS FC Clubs",
-    description: "Dashboard automático de estatísticas, desempenho e partidas para clubes de EA SPORTS FC.",
+    description:
+      "Dashboard automático de estatísticas, desempenho e partidas para clubes de EA SPORTS FC.",
     type: "website",
   },
 };
 
-const features = [
-  {
-    icon: BarChart3,
-    title: "Estatísticas automáticas",
-    text: "Resultados, gols, assistências, notas e desempenho dos jogadores atualizados automaticamente.",
-  },
-  {
-    icon: Trophy,
-    title: "Destaques das partidas",
-    text: "Craque, melhores desempenhos e acontecimentos importantes de cada jogo.",
-  },
-  {
-    icon: Users,
-    title: "Histórico e evolução",
-    text: "Acompanhe partidas, adversários, jogadores e a evolução do clube ao longo do tempo.",
-  },
-  {
-    icon: Goal,
-    title: "Integração com Discord",
-    text: "Terminou a partida? O resumo pode ser publicado automaticamente no Discord do clube.",
-  },
-];
-
 export default function Home() {
   return (
-    <main className="min-h-screen overflow-hidden bg-bg text-text-primary">
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5 sm:px-8">
-        <a href="#inicio" className="flex items-center gap-2 font-semibold tracking-tight" aria-label="FC Stats, início">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-strong text-sm font-bold text-white">FC</span>
-          <span>STATS</span>
-        </a>
-        <nav aria-label="Navegação principal" className="hidden items-center gap-7 text-sm text-muted md:flex">
-          <a href="#recursos" className="transition-colors hover:text-text-primary">Recursos</a>
-          <a href="#como-funciona" className="transition-colors hover:text-text-primary">Como funciona</a>
-          <a href="#contato" className="transition-colors hover:text-text-primary">Contato</a>
-        </nav>
-        <a href="#contato" className="rounded-lg border border-accent/60 px-3.5 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/10">
-          Quero acompanhar meu clube
-        </a>
-      </header>
-
-      <section id="inicio" className="relative mx-auto max-w-6xl px-5 pb-20 pt-14 sm:px-8 sm:pb-28 sm:pt-20">
-        <div className="absolute inset-x-1/4 top-0 -z-0 h-72 rounded-full bg-accent/10 blur-3xl" />
-        <div className="relative grid items-center gap-12 lg:grid-cols-[1fr_0.9fr]">
-          <div>
-            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-surface/80 px-3 py-1.5 text-xs font-medium text-text-soft">
-              <span className="h-1.5 w-1.5 rounded-full bg-win" /> Para clubes de EA SPORTS FC
-            </p>
-            <h1 className="max-w-xl text-4xl font-semibold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl">
-              Seu Pro Clubs.<br />Seus números.<br /><span className="text-accent">Sua história.</span>
-            </h1>
-            <p className="mt-6 max-w-xl text-base leading-7 text-text-soft sm:text-lg">
-              Estatísticas, desempenho e destaques do seu clube no EA SPORTS FC, atualizados automaticamente após cada partida.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <a href="#contato" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-accent-strong px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent">
-                Quero acompanhar meu clube <ChevronRight className="h-4 w-4" />
-              </a>
-              <a href="#como-funciona" className="inline-flex min-h-11 items-center rounded-lg border border-border px-5 py-2.5 text-sm font-medium text-text-soft transition-colors hover:bg-surface-raised">
-                Ver como funciona
-              </a>
-            </div>
-          </div>
-          <DashboardPreview />
-        </div>
-      </section>
-
-      <section id="recursos" className="border-y border-border bg-surface/40">
-        <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8">
-          <div className="max-w-2xl">
-            <p className="text-sm font-semibold text-accent">TUDO EM UM SÓ LUGAR</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Acompanhe o que acontece dentro de campo.</h2>
-          </div>
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {features.map(({ icon: Icon, title, text }) => (
-              <article key={title} className="rounded-xl border border-border bg-surface p-5 shadow-card">
-                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/10 text-accent"><Icon className="h-5 w-5" /></span>
-                <h3 className="mt-5 font-semibold">{title}</h3>
-                <p className="mt-2 text-sm leading-6 text-muted">{text}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="como-funciona" className="mx-auto max-w-6xl px-5 py-20 sm:px-8">
-        <div className="grid gap-10 lg:grid-cols-[0.8fr_1fr] lg:items-start">
-          <div>
-            <p className="text-sm font-semibold text-accent">COMO FUNCIONA</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Seu clube joga. A história fica registrada.</h2>
-            <p className="mt-4 max-w-md leading-7 text-muted">Uma experiência simples para transformar cada partida em acompanhamento real para o seu elenco.</p>
-          </div>
-          <ol className="space-y-3">
-            {[
-              ["1", "Cadastramos o clube", "Encontramos o clube correto e preparamos o acompanhamento."],
-              ["2", "As partidas são monitoradas", "Os resultados e atuações passam a fazer parte do histórico."],
-              ["3", "Dashboard e Discord atualizados", "O time acompanha cada capítulo da temporada no lugar certo."],
-            ].map(([step, title, text]) => (
-              <li key={step} className="flex gap-4 rounded-xl border border-border bg-surface p-5">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-strong text-sm font-bold text-white">{step}</span>
-                <div><h3 className="font-semibold">{title}</h3><p className="mt-1 text-sm leading-6 text-muted">{text}</p></div>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-
-      <section className="border-y border-border bg-surface/40">
-        <div className="mx-auto grid max-w-6xl gap-10 px-5 py-20 sm:px-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
-          <div>
-            <p className="text-sm font-semibold text-accent">UMA VISÃO QUE FAZ SENTIDO</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Mais do que números: o contexto de cada partida.</h2>
-            <p className="mt-4 max-w-md leading-7 text-muted">Placar, momentos, protagonistas e desempenho do elenco apresentados em uma leitura clara.</p>
-            <ul className="mt-6 space-y-3 text-sm text-text-soft">
-              {["Resultados e últimas partidas", "Desempenho do elenco", "Destaques que explicam o jogo"].map((item) => (
-                <li key={item} className="flex items-center gap-2"><CircleCheck className="h-4 w-4 text-win" /> {item}</li>
-              ))}
-            </ul>
-          </div>
-          <DashboardPreview compact />
-        </div>
-      </section>
-
-      <section id="contato" className="mx-auto max-w-6xl px-5 py-20 sm:px-8">
-        <div className="rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/15 via-surface to-surface p-8 sm:p-12">
-          <Shield className="h-7 w-7 text-accent" />
-          <h2 className="mt-5 max-w-xl text-3xl font-semibold tracking-tight sm:text-4xl">Seu clube também pode ter um dashboard assim.</h2>
-          <p className="mt-4 max-w-xl leading-7 text-text-soft">Vamos preparar uma visão feita para acompanhar a jornada do seu elenco.</p>
-          <a href="#inicio" className="mt-7 inline-flex min-h-11 items-center gap-2 rounded-lg bg-accent-strong px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent">
-            Quero acompanhar meu clube <ChevronRight className="h-4 w-4" />
-          </a>
-        </div>
-      </section>
-
-      <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-5 py-8 text-xs text-muted sm:flex-row sm:items-center sm:justify-between sm:px-8">
-          <div><span className="font-semibold text-text-soft">FC STATS</span><span className="mx-2">·</span>Estatísticas para clubes de EA SPORTS FC</div>
-          <div>© {new Date().getFullYear()} FC Stats · EA SPORTS e EA SPORTS FC são marcas da Electronic Arts. Este projeto não é afiliado ou endossado pela Electronic Arts.</div>
-        </div>
-      </footer>
+    <main className="landing">
+      <Header />
+      <Hero />
+      <Benefits />
+      <HowItWorks />
+      <MatchCardShowcase />
+      <FinalCTA />
+      <Footer />
     </main>
   );
 }
 
-function DashboardPreview({ compact = false }: { compact?: boolean }) {
+function Header() {
   return (
-    <div className={`relative rounded-2xl border border-border bg-[#11161e] p-3 shadow-card-featured ${compact ? "max-w-2xl" : "lg:translate-y-2"}`} aria-label="Prévia ilustrativa do dashboard">
-      <div className="flex items-center justify-between border-b border-border px-2 pb-3 text-xs text-muted"><span className="font-semibold text-text-soft">FC STATS</span><span>Visão Geral</span></div>
-      <div className="grid gap-3 p-2 pt-4 sm:grid-cols-[1.15fr_0.85fr]">
-        <div className="rounded-xl border border-border bg-surface p-4">
-          <p className="text-xs text-muted">ÚLTIMA PARTIDA</p>
-          <div className="mt-4 flex items-center justify-between gap-3 text-center">
-            <span className="text-sm font-semibold">Meu Clube</span>
-            <strong className="text-3xl tracking-tight">3 <span className="text-muted">×</span> 1</strong>
-            <span className="text-sm font-semibold">Adversário</span>
+    <header className="landing-header">
+      <a href="#inicio" className="landing-logo" aria-label="FC Stats, início">
+        <span className="landing-logo-mark">FC</span>
+        <span className="landing-logo-text">STATS</span>
+      </a>
+      <nav aria-label="Navegação principal" className="landing-nav">
+        <a href="#recursos">Recursos</a>
+        <a href="#como-funciona">Como funciona</a>
+      </nav>
+      <a href="#contato" className="landing-header-cta">
+        Quero acompanhar meu clube
+      </a>
+    </header>
+  );
+}
+
+function Hero() {
+  return (
+    <section id="inicio" className="landing-hero">
+      <div className="landing-hero-glow" aria-hidden="true" />
+      <div className="landing-hero-grid">
+        <div className="landing-hero-copy">
+          <h1 className="landing-h1">
+            Seu Pro Clubs.
+            <br />
+            Seus números.
+            <br />
+            <span className="landing-h1-accent">Sua história.</span>
+          </h1>
+          <p className="landing-hero-sub">
+            Estatísticas, desempenho e destaques do seu clube no EA SPORTS FC,
+            atualizados automaticamente após cada partida.
+          </p>
+          <div className="landing-hero-actions">
+            <a href="#contato" className="landing-btn-primary">
+              Quero acompanhar meu clube
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M6 3l5 5-5 5"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </a>
+            <a href="#como-funciona" className="landing-btn-ghost">
+              Ver como funciona
+            </a>
           </div>
-          <div className="mt-4 rounded-lg bg-win/10 px-3 py-2 text-center text-xs font-medium text-win">Vitória · atuação coletiva consistente</div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <PreviewStat label="Aproveitamento" value="67%" />
-          <PreviewStat label="Partidas" value="24" />
-          <PreviewStat label="Gols" value="58" />
-          <PreviewStat label="Média" value="7.4" />
+        <div className="landing-hero-preview" aria-label="Prévia ilustrativa do dashboard">
+          <ProductMockup />
         </div>
       </div>
-      <div className="grid gap-3 p-2 sm:grid-cols-2">
-        <div className="rounded-xl border border-border bg-surface p-4"><p className="text-xs text-muted">DESTAQUE DA PARTIDA</p><p className="mt-3 flex items-center gap-2 font-semibold"><span className="text-highlight">★</span> Craque</p><p className="mt-1 text-sm text-muted">Fez a diferença no resultado.</p></div>
-        <div className="rounded-xl border border-border bg-surface p-4"><p className="text-xs text-muted">ÚLTIMAS PARTIDAS</p><div className="mt-3 flex gap-1.5">{["V", "V", "E", "D", "V"].map((outcome, index) => <span key={`${outcome}-${index}`} className={`flex h-6 w-6 items-center justify-center rounded text-xs font-bold ${outcome === "V" ? "bg-win/20 text-win" : outcome === "E" ? "bg-draw/20 text-draw" : "bg-loss/20 text-loss"}`}>{outcome}</span>)}</div><p className="mt-2 text-sm text-muted">Histórico recente do clube</p></div>
+    </section>
+  );
+}
+
+function ProductMockup() {
+  return (
+    <div className="mockup">
+      <div className="mockup-header">
+        <span className="mockup-brand">FC STATS</span>
+        <span className="mockup-club-name">CLUBE EXEMPLO</span>
+      </div>
+
+      <div className="mockup-match">
+        <div className="mockup-match-label">ÚLTIMA PARTIDA</div>
+        <div className="mockup-score-row">
+          <span className="mockup-team">Clube Exemplo</span>
+          <div className="mockup-score">
+            <span className="mockup-score-num">4</span>
+            <span className="mockup-score-sep">×</span>
+            <span className="mockup-score-num mockup-score-opp">2</span>
+          </div>
+          <span className="mockup-team">Adversário</span>
+        </div>
+        <div className="mockup-result-badge">Vitória</div>
+      </div>
+
+      <div className="mockup-stats-row">
+        <div className="mockup-stat">
+          <span className="mockup-stat-value">68%</span>
+          <span className="mockup-stat-label">Aproveitamento</span>
+        </div>
+        <div className="mockup-stat">
+          <span className="mockup-stat-value mockup-stat-record">
+            <span className="mockup-w">12V</span>
+            <span className="mockup-d">3E</span>
+            <span className="mockup-l">5D</span>
+          </span>
+          <span className="mockup-stat-label">Campanha</span>
+        </div>
+      </div>
+
+      <div className="mockup-highlights">
+        <div className="mockup-highlight">
+          <div className="mockup-hl-header">
+            <span className="mockup-hl-icon">★</span>
+            <span className="mockup-hl-title">Craque</span>
+          </div>
+          <span className="mockup-hl-name">Jogador 10</span>
+          <span className="mockup-hl-rating">9.1</span>
+        </div>
+        <div className="mockup-highlight">
+          <div className="mockup-hl-header">
+            <span className="mockup-hl-icon">⚽</span>
+            <span className="mockup-hl-title">Artilheiro</span>
+          </div>
+          <span className="mockup-hl-name">Jogador 9</span>
+          <span className="mockup-hl-rating">18 gols</span>
+        </div>
+      </div>
+
+      <div className="mockup-form-row">
+        {["V", "V", "D", "V", "V"].map((r, i) => (
+          <span
+            key={i}
+            className={`mockup-form-pip ${r === "V" ? "mockup-pip-w" : r === "E" ? "mockup-pip-d" : "mockup-pip-l"}`}
+          >
+            {r}
+          </span>
+        ))}
       </div>
     </div>
   );
 }
 
-function PreviewStat({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-xl border border-border bg-surface p-3"><p className="text-[11px] text-muted">{label}</p><p className="mt-1 text-lg font-semibold">{value}</p></div>;
+function Benefits() {
+  return (
+    <section id="recursos" className="landing-benefits">
+      <div className="landing-section-inner">
+        <div className="landing-benefits-header">
+          <h2 className="landing-h2">
+            Tudo que acontece em campo,
+            <br />
+            <span className="landing-h2-accent">registrado automaticamente.</span>
+          </h2>
+        </div>
+        <div className="landing-benefits-grid">
+          <BenefitItem
+            title="Estatísticas automáticas"
+            text="Resultados, gols, assistências, notas e desempenho atualizados após as partidas."
+            icon={
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 3v18h18" />
+                <path d="M7 16l4-8 4 4 5-9" />
+              </svg>
+            }
+          />
+          <BenefitItem
+            title="Destaques das partidas"
+            text="Craque, Bagre e os principais acontecimentos de cada jogo."
+            icon={
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+            }
+          />
+          <BenefitItem
+            title="Histórico e evolução"
+            text="Acompanhe partidas, adversários, jogadores e a evolução do clube."
+            icon={
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+            }
+          />
+          <BenefitItem
+            title="Discord"
+            text="Os resultados e destaques chegam ao Discord do clube sem trabalho manual."
+            icon={
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" />
+              </svg>
+            }
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function BenefitItem({
+  title,
+  text,
+  icon,
+}: {
+  title: string;
+  text: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="landing-benefit">
+      <div className="landing-benefit-icon">{icon}</div>
+      <h3 className="landing-benefit-title">{title}</h3>
+      <p className="landing-benefit-text">{text}</p>
+    </div>
+  );
+}
+
+function HowItWorks() {
+  const steps = [
+    { num: "1", title: "Cadastramos seu clube", text: "Encontramos o clube e preparamos o acompanhamento." },
+    { num: "2", title: "Vocês jogam normalmente", text: "Sem configurar nada, sem lembrar de gravar." },
+    { num: "3", title: "O FC Stats acompanha as partidas", text: "Resultados e atuações registrados automaticamente." },
+    { num: "4", title: "Dashboard e Discord atualizados", text: "O time acompanha cada capítulo da temporada." },
+  ];
+  return (
+    <section id="como-funciona" className="landing-how">
+      <div className="landing-section-inner">
+        <h2 className="landing-h2 landing-how-title">Como funciona</h2>
+        <p className="landing-how-sub">
+          Seu clube joga. A história fica registrada.
+        </p>
+        <div className="landing-steps">
+          {steps.map((s, i) => (
+            <div key={s.num} className="landing-step">
+              <div className="landing-step-num">{s.num}</div>
+              <h3 className="landing-step-title">{s.title}</h3>
+              <p className="landing-step-text">{s.text}</p>
+              {i < steps.length - 1 && (
+                <div className="landing-step-connector" aria-hidden="true" />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MatchCardShowcase() {
+  return (
+    <section className="landing-showcase">
+      <div className="landing-section-inner landing-showcase-inner">
+        <div className="landing-showcase-copy">
+          <h2 className="landing-h2">
+            Da partida
+            <br />
+            <span className="landing-h2-accent">para o Discord.</span>
+          </h2>
+          <p className="landing-showcase-text">
+            Depois do jogo, o FC Stats transforma o resultado em um resumo
+            completo — placar, gols, assistências, destaques individuais,
+            craque da partida e insights automáticos — publicado direto
+            no canal do Discord do clube.
+          </p>
+          <p className="landing-showcase-label">
+            Partida real processada pelo FC Stats.
+          </p>
+        </div>
+        <div className="landing-showcase-card">
+          <div className="landing-showcase-frame">
+            <Image
+              src="/landing/batista-flores-match-card.png"
+              alt="Match card real gerado pelo FC Stats — Associação BF 4 × 2 JardimHelenaFC"
+              width={420}
+              height={898}
+              className="landing-showcase-img"
+              priority={false}
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FinalCTA() {
+  return (
+    <section id="contato" className="landing-final-cta">
+      <div className="landing-section-inner">
+        <div className="landing-final-cta-box">
+          <h2 className="landing-h2 landing-final-cta-title">
+            Seu clube também pode ter uma história contada em números.
+          </h2>
+          <a href="#inicio" className="landing-btn-primary landing-btn-lg">
+            Quero acompanhar meu clube
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M6 3l5 5-5 5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="landing-footer">
+      <div className="landing-section-inner landing-footer-inner">
+        <div className="landing-footer-brand">
+          <span className="landing-logo-mark landing-logo-mark-sm">FC</span>
+          <span className="landing-logo-text">STATS</span>
+        </div>
+        <p className="landing-footer-legal">
+          © {new Date().getFullYear()} FC Stats · EA SPORTS e EA SPORTS FC são
+          marcas da Electronic Arts. Este projeto não é afiliado ou endossado
+          pela Electronic Arts.
+        </p>
+      </div>
+    </footer>
+  );
 }
