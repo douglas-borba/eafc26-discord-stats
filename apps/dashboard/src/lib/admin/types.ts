@@ -37,6 +37,7 @@ export interface AdminOperationResponse {
   message?: string;
   durationMs?: number;
   latencyMs?: number;
+  window?: number;
   matchesReturned?: number;
   newMatches?: number;
   errorCode?: string | number;

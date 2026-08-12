@@ -40,7 +40,8 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
   const [matchesError, setMatchesError] = useState<string | null>(null);
   const [confirmPublication, setConfirmPublication] = useState<AdminMatchSummary | null>(null);
   const [sendingMatchId, setSendingMatchId] = useState<string | null>(null);
-  const [operation, setOperation] = useState<"poll" | "ea" | "discord" | null>(null);
+  const [operationsInFlight, setOperationsInFlight] = useState<Partial<Record<OperationKind, boolean>>>({});
+  const [operationFeedback, setOperationFeedback] = useState<Partial<Record<OperationKind, OperationFeedback>>>({});
 
   const load = useCallback(async (showFeedback = false) => {
     setLoading(true);
@@ -145,17 +146,22 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
     }
   }
 
-  async function runOperation(kind: "poll" | "ea" | "discord") {
-    setOperation(kind); setError(null); setSuccess(null);
+  async function runOperation(kind: OperationKind) {
+    setOperationsInFlight((current) => ({ ...current, [kind]: true }));
     try {
       const path = kind === "poll" ? "poll" : kind === "ea" ? "ea/test" : "discord/test";
       const result = await adminRequest<AdminOperationResponse>(`/api/admin/clubs/${clubId}/${path}`, { method: "POST" });
       if (result.status === "failed") throw new Error(result.message ?? "A operação não foi concluída.");
-      setSuccess(kind === "poll" ? "Polling concluído." : kind === "ea" ? "Teste da EA concluído." : "Teste do Discord concluído.");
+      setOperationFeedback((current) => ({ ...current, [kind]: operationResultFeedback(kind, result) }));
       if (kind === "poll") void load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Não foi possível concluir a operação.");
-    } finally { setOperation(null); }
+      setOperationFeedback((current) => ({
+        ...current,
+        [kind]: { tone: "error", message: reason instanceof Error ? reason.message : "Não foi possível concluir a operação." },
+      }));
+    } finally {
+      setOperationsInFlight((current) => ({ ...current, [kind]: false }));
+    }
   }
 
   if (loading && !club) return <Panel><p role="status" className="text-muted">Carregando clube…</p></Panel>;
@@ -268,15 +274,28 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
         <h2 className="font-semibold text-text-primary">Operações</h2>
         <p className="mt-1 text-sm text-muted">Execute verificações pontuais deste clube. O polling usa o mesmo pipeline seguro do monitoramento.</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <button type="button" disabled={operation === "poll"} onClick={() => void runOperation("poll")} className="min-h-10 rounded-lg bg-accent-strong px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-            {operation === "poll" ? "Executando…" : "Executar polling agora"}
-          </button>
-          <button type="button" disabled={operation === "ea"} onClick={() => void runOperation("ea")} className="min-h-10 rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-soft hover:bg-surface-raised disabled:opacity-50">
-            {operation === "ea" ? "Testando…" : "Testar EA"}
-          </button>
-          <button type="button" disabled={operation === "discord"} onClick={() => void runOperation("discord")} className="min-h-10 rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-soft hover:bg-surface-raised disabled:opacity-50">
-            {operation === "discord" ? "Testando…" : "Testar Discord"}
-          </button>
+          <OperationAction
+            loading={operationsInFlight.poll === true}
+            feedback={operationFeedback.poll}
+            idleLabel="Executar polling agora"
+            loadingLabel="Executando…"
+            onClick={() => void runOperation("poll")}
+            primary
+          />
+          <OperationAction
+            loading={operationsInFlight.ea === true}
+            feedback={operationFeedback.ea}
+            idleLabel="Testar EA"
+            loadingLabel="Testando EA…"
+            onClick={() => void runOperation("ea")}
+          />
+          <OperationAction
+            loading={operationsInFlight.discord === true}
+            feedback={operationFeedback.discord}
+            idleLabel="Testar Discord"
+            loadingLabel="Testando Discord…"
+            onClick={() => void runOperation("discord")}
+          />
         </div>
       </Panel>
 
@@ -365,4 +384,63 @@ function healthLabel(indicator?: string) {
 
 function formatDate(value?: string | null) {
   return value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—";
+}
+
+type OperationKind = "poll" | "ea" | "discord";
+type OperationFeedback = { tone: "success" | "error" | "warning"; message: string };
+
+function OperationAction({
+  loading,
+  feedback,
+  idleLabel,
+  loadingLabel,
+  onClick,
+  primary = false,
+}: {
+  loading: boolean;
+  feedback?: OperationFeedback;
+  idleLabel: string;
+  loadingLabel: string;
+  onClick: () => void;
+  primary?: boolean;
+}) {
+  const buttonStyle = primary
+    ? "bg-accent-strong text-white"
+    : "border border-border text-text-soft hover:bg-surface-raised";
+  const feedbackStyle = feedback?.tone === "error"
+    ? "text-loss"
+    : feedback?.tone === "warning"
+      ? "text-yellow-400"
+      : "text-win";
+
+  return (
+    <div className="min-w-0">
+      <button type="button" disabled={loading} onClick={onClick} className={`min-h-10 w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 ${buttonStyle}`}>
+        {loading ? loadingLabel : idleLabel}
+      </button>
+      {feedback && <p role="status" className={`mt-2 text-xs leading-5 ${feedbackStyle}`}>{feedback.message}</p>}
+    </div>
+  );
+}
+
+function operationResultFeedback(kind: OperationKind, result: AdminOperationResponse): OperationFeedback {
+  if (result.status === "busy") {
+    return { tone: "warning", message: result.message ?? "Um polling já está em andamento." };
+  }
+
+  if (kind === "discord") return { tone: "success", message: "Mensagem de teste entregue com sucesso." };
+  if (kind === "ea") {
+    const details = [
+      result.latencyMs === undefined ? null : `${result.latencyMs} ms`,
+      result.window === undefined ? null : `janela ${result.window}`,
+      result.matchesReturned === undefined ? null : `${result.matchesReturned} ${result.matchesReturned === 1 ? "partida observada" : "partidas observadas"}`,
+    ].filter((detail): detail is string => detail !== null);
+    return { tone: "success", message: details.length ? `EA disponível · ${details.join(" · ")}` : "EA disponível." };
+  }
+
+  const details = [
+    result.durationMs === undefined ? null : `${result.durationMs} ms`,
+    result.newMatches === undefined ? null : result.newMatches === 0 ? "Nenhuma partida nova" : `${result.newMatches} ${result.newMatches === 1 ? "nova partida processada" : "novas partidas processadas"}`,
+  ].filter((detail): detail is string => detail !== null);
+  return { tone: "success", message: details.length ? `Polling concluído em ${details.join(" · ")}.` : "Polling concluído." };
 }

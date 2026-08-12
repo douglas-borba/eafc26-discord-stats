@@ -29,15 +29,25 @@ describe("admin route group structure", () => {
     expect(layout).toContain('redirect("/admin/login")');
   });
 
-  it("keeps explicit operational controls scoped to the current club without automatic requests", () => {
+  it("keeps explicit operational controls scoped to the current club with isolated local feedback", () => {
     const detail = read("components/admin/club-admin-detail.tsx");
     expect(detail).toContain("Executar polling agora");
     expect(detail).toContain("Testar EA");
     expect(detail).toContain("Testar Discord");
     expect(detail).toContain("/api/admin/clubs/${clubId}/${path}");
-    expect(detail).toContain('operation === "poll" ? "Executando…"');
-    expect(detail).toContain("Polling concluído.");
+    expect(detail).toContain('loadingLabel="Executando…"');
+    expect(detail).toContain('loadingLabel="Testando EA…"');
+    expect(detail).toContain('loadingLabel="Testando Discord…"');
+    expect(detail).toContain("Polling concluído em");
+    expect(detail).toContain("EA disponível");
+    expect(detail).toContain("Mensagem de teste entregue com sucesso.");
+    expect(detail).toContain("operationFeedback");
+    expect(detail).toContain("operationsInFlight");
+    expect(detail).toContain("operationsInFlight.ea === true");
+    expect(detail).toContain("operationsInFlight.discord === true");
+    expect(detail).toContain('result.status === "busy"');
     expect(detail).toContain("Não foi possível concluir a operação.");
+    expect(detail).not.toContain('setSuccess(kind === "poll"');
   });
 
   it("no layout.tsx exists at the admin root that would guard login", () => {
