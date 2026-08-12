@@ -34,6 +34,8 @@ app:
   discord:
     # Environment values take precedence over the local /setup fallback.
     match-webhook-url: ${EAFC_DISCORD_MATCH_WEBHOOK_URL:}
+    # Required only when PostgreSQL-backed per-club webhook secrets are enabled.
+    secret-encryption-key: ${EAFC_DISCORD_SECRET_ENCRYPTION_KEY:}
 
   llm:
     enabled: ${EAFC_LLM_ENABLED:false}

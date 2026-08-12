@@ -118,7 +118,7 @@ export function ClubAdminList() {
                   </span>
                 </div>
                 <dl className="grid grid-cols-2 gap-3 text-sm">
-                  <div><dt className="text-xs text-muted">Discord</dt><dd className="mt-0.5 text-text-soft">{club.discordConfigured ? "Configurado" : "Não configurado"}</dd></div>
+                  <div><dt className="text-xs text-muted">Discord</dt><dd className="mt-0.5 text-text-soft">{discordStatusLabel(club)}</dd></div>
                   <div><dt className="text-xs text-muted">Operação</dt><dd className="mt-0.5 text-text-soft">{status ? `${status.pollingStatus} · ${status.acquisitionStatus}` : "Carregando…"}</dd></div>
                   <div className="col-span-2"><dt className="text-xs text-muted">Última atividade</dt><dd className="mt-0.5 text-text-soft">{formatActivity(status)}</dd></div>
                 </dl>
@@ -155,6 +155,12 @@ export function ClubAdminList() {
       )}
     </section>
   );
+}
+
+function discordStatusLabel(club: AdminClub) {
+  if (club.discordConfigured) return "Configurado";
+  if (club.discordReferencePresent) return "Reconfiguração necessária";
+  return "Não configurado";
 }
 
 function formatActivity(status?: ClubOperationalStatus) {

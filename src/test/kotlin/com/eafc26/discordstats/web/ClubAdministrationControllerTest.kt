@@ -19,8 +19,8 @@ import com.eafc26.discordstats.service.AcquisitionStateHolder
 import com.eafc26.discordstats.service.LatestMatchHolder
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.mockito.kotlin.any
 import org.mockito.kotlin.never
+import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
@@ -65,6 +65,7 @@ class ClubAdministrationControllerTest {
         )
         whenever(monitoredClubs.find(association.clubId)).thenReturn(association)
         whenever(monitoredClubs.find(brasil.clubId)).thenReturn(brasil)
+        whenever(secretStore.resolve(association.discordWebhookSecretReference!!)).thenReturn(mock())
     }
 
     @Test
@@ -140,6 +141,7 @@ class ClubAdministrationControllerTest {
         val url = "https://discord.com/api/webhooks/123/token-secret"
         val reference = DiscordWebhookSecretReference("preferences:club:8874106")
         whenever(secretStore.store(brasil.clubId, url)).thenReturn(reference)
+        whenever(secretStore.resolve(reference)).thenReturn(mock())
         whenever(monitoredClubs.configureWebhook(brasil.clubId, reference))
             .thenReturn(brasil.copy(discordWebhookSecretReference = reference))
 
@@ -152,6 +154,63 @@ class ClubAdministrationControllerTest {
         assert(body.contains("\"discordConfigured\":true"))
         assert(!body.contains("token-secret"))
         assert(!body.contains(reference.value))
+    }
+
+    @Test
+    fun `dangling webhook reference is reported as requiring reconfiguration without exposing it`() {
+        val dangling = brasil.copy(discordWebhookSecretReference = DiscordWebhookSecretReference("postgres:club:8874106:missing"))
+        whenever(monitoredClubs.find(brasil.clubId)).thenReturn(dangling)
+        whenever(secretStore.resolve(dangling.discordWebhookSecretReference!!)).thenReturn(null)
+
+        val body = client.get().uri("/api/admin/clubs/8874106").exchange().expectStatus().isOk
+            .expectBody(String::class.java).returnResult().responseBody.orEmpty()
+
+        assert(body.contains("\"discordConfigured\":false"))
+        assert(body.contains("\"discordReferencePresent\":true"))
+        assert(body.contains("\"discordDestinationResolvable\":false"))
+        assert(!body.contains("postgres:club"))
+    }
+
+    @Test
+    fun `failed replacement verification preserves the existing webhook reference`() {
+        val previous = DiscordWebhookSecretReference("postgres:club:8874106:old")
+        val fresh = DiscordWebhookSecretReference("postgres:club:8874106:new")
+        val configured = brasil.copy(discordWebhookSecretReference = previous)
+        whenever(monitoredClubs.find(brasil.clubId)).thenReturn(configured)
+        whenever(secretStore.store(brasil.clubId, "https://discord.com/api/webhooks/123/new-token")).thenReturn(fresh)
+        whenever(secretStore.resolve(fresh)).thenReturn(null)
+
+        client.mutateWith(csrf()).put().uri("/api/admin/clubs/8874106/discord")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(mapOf("webhookUrl" to "https://discord.com/api/webhooks/123/new-token"))
+            .exchange().expectStatus().is5xxServerError
+
+        verify(monitoredClubs, never()).configureWebhook(brasil.clubId, fresh)
+        verify(secretStore).remove(fresh)
+        verify(secretStore, never()).remove(previous)
+    }
+
+    @Test
+    fun `replacement verifies new destination before changing club reference and then removes old secret`() {
+        val previous = DiscordWebhookSecretReference("postgres:club:8874106:old")
+        val fresh = DiscordWebhookSecretReference("postgres:club:8874106:new")
+        val configured = brasil.copy(discordWebhookSecretReference = previous)
+        val updated = configured.copy(discordWebhookSecretReference = fresh)
+        val url = "https://discord.com/api/webhooks/123/new-token"
+        whenever(monitoredClubs.find(brasil.clubId)).thenReturn(configured)
+        whenever(secretStore.store(brasil.clubId, url)).thenReturn(fresh)
+        whenever(secretStore.resolve(fresh)).thenReturn(mock())
+        whenever(monitoredClubs.configureWebhook(brasil.clubId, fresh)).thenReturn(updated)
+
+        client.mutateWith(csrf()).put().uri("/api/admin/clubs/8874106/discord")
+            .contentType(MediaType.APPLICATION_JSON).bodyValue(mapOf("webhookUrl" to url))
+            .exchange().expectStatus().isOk
+
+        val inOrder = org.mockito.Mockito.inOrder(secretStore, monitoredClubs)
+        inOrder.verify(secretStore).store(brasil.clubId, url)
+        inOrder.verify(secretStore).resolve(fresh)
+        inOrder.verify(monitoredClubs).configureWebhook(brasil.clubId, fresh)
+        inOrder.verify(secretStore).remove(previous)
     }
 
     @Test

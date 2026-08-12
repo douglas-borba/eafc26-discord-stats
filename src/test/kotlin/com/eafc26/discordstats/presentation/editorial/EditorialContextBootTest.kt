@@ -15,6 +15,7 @@ import java.time.Clock
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = [
         "app.postgres.mirror-enabled=true",
+        "app.discord.secret-encryption-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
         "app.polling.enabled=false",
         "eafc.dashboard.auto-open=false",
     ],

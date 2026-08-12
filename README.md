@@ -95,6 +95,11 @@ Webhook values are never returned by the configuration APIs or written to logs.
 See [`docs/discord-webhooks.md`](docs/discord-webhooks.md) for local setup,
 precedence, validation and the optional future deployment configuration.
 
+When PostgreSQL club administration is enabled, configure
+`EAFC_DISCORD_SECRET_ENCRYPTION_KEY` as a Base64-encoded 32-byte AES-256 key.
+It encrypts durable per-club Discord webhook URLs in PostgreSQL and must remain
+stable between deployments.
+
 Administrative access in the Dashboard uses Supabase Auth and a server-side
 internal token between the Next.js BFF and Spring. See
 [`docs/admin-security.md`](docs/admin-security.md) for the required deployment

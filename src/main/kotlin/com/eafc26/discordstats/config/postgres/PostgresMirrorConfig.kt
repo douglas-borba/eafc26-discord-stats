@@ -5,6 +5,11 @@ import com.eafc26.discordstats.application.club.LegacyDefaultClubImporter
 import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.club.MonitoredClubRepository
 import com.eafc26.discordstats.application.club.MonitoredClubService
+import com.eafc26.discordstats.config.AppProperties
+import com.eafc26.discordstats.config.WebhookConfigService
+import com.eafc26.discordstats.discord.DiscordWebhookSecretStore
+import com.eafc26.discordstats.discord.PostgresDiscordWebhookSecretStore
+import com.eafc26.discordstats.discord.WebhookSecretCryptography
 import com.eafc26.discordstats.store.JsonCanonicalMatchRepository
 import com.eafc26.discordstats.service.PostgresSyncService
 import com.eafc26.discordstats.store.MirroringCanonicalMatchRepository
@@ -30,6 +35,17 @@ import javax.sql.DataSource
 @ConditionalOnProperty(name = ["app.postgres.mirror-enabled"], havingValue = "true")
 @Import(DataSourceAutoConfiguration::class)
 class PostgresMirrorConfig {
+
+    @Bean
+    fun discordWebhookSecretStore(
+        jdbcTemplate: JdbcTemplate,
+        webhookConfigService: WebhookConfigService,
+        properties: AppProperties,
+    ): DiscordWebhookSecretStore = PostgresDiscordWebhookSecretStore(
+        jdbcTemplate = jdbcTemplate,
+        webhookConfigService = webhookConfigService,
+        cryptography = WebhookSecretCryptography.fromBase64(properties.discord.secretEncryptionKey),
+    )
 
     @Bean
     fun flyway(dataSource: DataSource): Flyway {

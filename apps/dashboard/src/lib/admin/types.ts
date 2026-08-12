@@ -4,6 +4,8 @@ export interface AdminClub {
   platform: string;
   monitoringEnabled: boolean;
   discordConfigured: boolean;
+  discordReferencePresent?: boolean;
+  discordDestinationResolvable?: boolean;
   isDefault?: boolean;
 }
 

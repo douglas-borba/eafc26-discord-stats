@@ -2,11 +2,16 @@
 
 ## Destination
 
-Discord is an optional destination per monitored club. The current legacy
-Associação BF adapter resolves `EAFC_DISCORD_MATCH_WEBHOOK_URL`; future secret
-stores plug into the same opaque-reference boundary without exposing raw URLs to
-application services. The legacy variable is optional at boot because local
-development may configure the same destination through Setup. Its resolution is:
+Discord is an optional destination per monitored club. With PostgreSQL enabled,
+each configured destination is stored in `discord_webhook_secrets`, separate from
+the club row, encrypted with AES-256-GCM. The club row holds only an opaque
+reference. The encryption key is `EAFC_DISCORD_SECRET_ENCRYPTION_KEY`, encoded as
+Base64 for exactly 32 bytes; it is required whenever
+`EAFC_POSTGRES_MIRROR_ENABLED=true` and must remain stable across deploys.
+
+Without PostgreSQL, the local adapter resolves
+`EAFC_DISCORD_MATCH_WEBHOOK_URL`; local development may configure the same
+destination through Setup. Its resolution is:
 
 1. a non-blank environment value (`ENVIRONMENT`);
 2. the value saved locally (`STORED`);
@@ -44,7 +49,9 @@ persists the Application Support directory through the `eafc-data` volume.
 
 ## Railway (future deployment)
 
-Railway is not the active development environment. If deployment resumes, define
-`EAFC_DISCORD_MATCH_WEBHOOK_URL` and mount persistent storage for the Application
-Support directory. A new empty volume safely establishes a baseline without
-publishing the existing EA window.
+Railway is not the active development environment. If deployment resumes with
+PostgreSQL, set `EAFC_DISCORD_SECRET_ENCRYPTION_KEY`; the database stores durable,
+ciphertext-only per-club destinations. Do not rotate or lose this key without a
+planned secret migration. Existing `preferences:club:*` references whose local
+secret has already disappeared are intentionally shown as requiring
+reconfiguration; no webhook is guessed or copied automatically.

@@ -32,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
+import org.slf4j.LoggerFactory
 
 @RestController
 @RequestMapping("/api/admin/clubs", produces = [MediaType.APPLICATION_JSON_VALUE])
@@ -97,14 +98,21 @@ class ClubAdministrationController(
         } catch (ex: IllegalArgumentException) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid Discord webhook")
         }
-        return try {
-            val updated = monitoredClubs.configureWebhook(club.clubId, reference)
-            club.discordWebhookSecretReference?.takeIf { it != reference }?.let(secretStore::remove)
-            present(updated)
+        if (secretStore.resolve(reference) == null) {
+            secretStore.remove(reference)
+            throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Discord webhook could not be persisted")
+        }
+        val updated = try {
+            monitoredClubs.configureWebhook(club.clubId, reference)
         } catch (ex: Exception) {
             secretStore.remove(reference)
             throw ex
         }
+        club.discordWebhookSecretReference?.takeIf { it != reference }?.let { previous ->
+            runCatching { secretStore.remove(previous) }
+                .onFailure { logger.warn("Previous Discord webhook secret could not be removed after replacement") }
+        }
+        return present(updated)
     }
 
     @DeleteMapping("/{clubId}/discord")
@@ -224,7 +232,7 @@ class ClubAdministrationController(
             lastError = lastError,
             latestMatchId = latestMatchId,
             latestMatchTimestamp = latestMatchTimestamp,
-            discordConfigured = club.discordWebhookSecretReference != null,
+            discordConfigured = isDiscordDestinationResolvable(club),
             lastDiscordSuccess = lastDiscordSuccess,
             lastDiscordError = lastDiscordError,
             healthIndicator = healthIndicator,
@@ -241,14 +249,27 @@ class ClubAdministrationController(
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Monitored club not found")
     }
 
-    private fun present(club: MonitoredClub) = AdminClubResponse(
+    private fun present(club: MonitoredClub): AdminClubResponse {
+        val referencePresent = club.discordWebhookSecretReference != null
+        val destinationResolvable = isDiscordDestinationResolvable(club)
+        return AdminClubResponse(
         clubId = club.clubId.value,
         displayName = club.displayName.value,
         platform = club.platform.value,
         monitoringEnabled = club.monitoringEnabled,
-        discordConfigured = club.discordWebhookSecretReference != null,
+        discordConfigured = destinationResolvable,
+        discordReferencePresent = referencePresent,
+        discordDestinationResolvable = destinationResolvable,
         isDefault = club.clubId == defaultClubProvider.get().clubId,
-    )
+        )
+    }
+
+    private fun isDiscordDestinationResolvable(club: MonitoredClub): Boolean =
+        club.discordWebhookSecretReference?.let(secretStore::resolve) != null
+
+    companion object {
+        private val logger = LoggerFactory.getLogger(ClubAdministrationController::class.java)
+    }
 }
 
 data class RegisterClubRequest(
@@ -267,6 +288,8 @@ data class AdminClubResponse(
     val platform: String,
     val monitoringEnabled: Boolean,
     val discordConfigured: Boolean,
+    val discordReferencePresent: Boolean = false,
+    val discordDestinationResolvable: Boolean = false,
     val isDefault: Boolean = false,
 )
 

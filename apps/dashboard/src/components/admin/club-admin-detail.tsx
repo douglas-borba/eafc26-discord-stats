@@ -163,7 +163,7 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
 
         <Panel>
           <h2 className="font-semibold text-text-primary">Discord</h2>
-          <p className="mt-1 text-sm text-muted">Status: {club.discordConfigured ? "Configurado" : "Não configurado"}</p>
+          <p className="mt-1 text-sm text-muted">Status: {discordStatusLabel(club)}</p>
           <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
             <Status label="Último envio OK" value={formatDate(status?.lastDiscordSuccess)} />
             <Status label="Último erro Discord" value={status?.lastDiscordError ?? "Nenhum"} tone={status?.lastDiscordError ? "error" : undefined} />
@@ -199,6 +199,12 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
       )}
     </section>
   );
+}
+
+function discordStatusLabel(club: AdminClub) {
+  if (club.discordConfigured) return "Configurado e disponível";
+  if (club.discordReferencePresent) return "Precisa ser reconfigurado";
+  return "Não configurado";
 }
 
 function HealthDot({ indicator }: { indicator: string }) {

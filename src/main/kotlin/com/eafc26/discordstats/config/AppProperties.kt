@@ -39,6 +39,7 @@ data class PollingProperties(
 
 data class DiscordProperties(
     val matchWebhookUrl: String = "",
+    val secretEncryptionKey: String = "",
 )
 
 data class EaProperties(

@@ -72,6 +72,11 @@ class ClubAdministrationConfig {
     )
 
     @Bean
+    @ConditionalOnProperty(
+        name = ["app.postgres.mirror-enabled"],
+        havingValue = "false",
+        matchIfMissing = true,
+    )
     fun discordWebhookSecretStore(webhookConfigService: WebhookConfigService): DiscordWebhookSecretStore =
         PreferencesDiscordWebhookSecretStore(webhookConfigService)
 }
