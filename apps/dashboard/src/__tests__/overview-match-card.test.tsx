@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { OverviewMatchCard } from "@/components/overview/overview-match-card";
+import { OverviewMatchCarousel } from "@/components/overview/overview-match-carousel";
 import type { MatchSummaryPresentation } from "@/lib/services/match-card-service";
 
 const basePresentation: MatchSummaryPresentation = {
@@ -39,9 +40,11 @@ describe("OverviewMatchCard", () => {
   ] as const)("renders a clipped header and the %s ribbon", (type, label, ribbonColor) => {
     const html = render({ ...basePresentation, outcome: { ...basePresentation.outcome, type, label } });
 
-    expect(html).toContain("match-summary-card overflow-hidden rounded-[10px] border border-border bg-surface");
+    expect(html).toContain("match-summary-card w-full min-w-0 overflow-hidden rounded-[10px] border border-border bg-surface");
     expect(html).toContain("card-header grid w-full overflow-hidden rounded-t-[10px]");
     expect(html).toContain(`background:${ribbonColor}`);
+    expect(html).toContain("rgba(22, 27, 34, 0.98) 100%");
+    expect(html).not.toContain("rgba(88, 166, 255, 0.08), transparent");
     expect(html).toContain(label);
   });
 
@@ -71,7 +74,17 @@ describe("OverviewMatchCard", () => {
 
     expect(rich).toContain("PASSE PRECISÃO");
     expect(rich).toContain("CORREIO EXTRAVIADO");
-    expect(sparse).toContain("match-summary-card overflow-hidden");
+    expect(sparse).toContain("match-summary-card w-full min-w-0 overflow-hidden");
     expect(sparse).not.toContain("GOLS");
+  });
+
+  it("reserves both carousel control columns before and after pagination", () => {
+    const html = renderToStaticMarkup(
+      <OverviewMatchCarousel presentations={[basePresentation, { ...basePresentation, matchId: "two" }, { ...basePresentation, matchId: "three" }, { ...basePresentation, matchId: "four" }]} />,
+    );
+
+    expect((html.match(/w-12 shrink-0/g) ?? [])).toHaveLength(2);
+    expect(html).toContain("min-w-0 flex-1 overflow-hidden");
+    expect(html).toContain("grid w-full min-w-0 grid-cols-1");
   });
 });

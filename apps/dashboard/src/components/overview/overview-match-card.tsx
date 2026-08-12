@@ -37,9 +37,9 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
   const nameLg = c ? "text-[0.88rem]" : "text-[0.95rem]";
 
   return (
-    <div className={c ? "" : "max-w-[420px] mx-auto px-3"}>
+    <div className={c ? "w-full min-w-0" : "w-full min-w-0 max-w-[420px] mx-auto px-3"}>
       <div
-        className={`match-card match-summary-card overflow-hidden rounded-[10px] border border-border bg-surface match-card-elevated ${isLatest ? "match-card-featured" : ""}`}
+        className={`match-card match-summary-card w-full min-w-0 overflow-hidden rounded-[10px] border border-border bg-surface match-card-elevated ${isLatest ? "match-card-featured" : ""}`}
         style={{ background: "linear-gradient(160deg, #1a1f26 0%, #161b22 50%, #12161c 100%)" }}
       >
         {/* Header with vertical ribbon */}
@@ -47,7 +47,7 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
           className="card-header grid w-full overflow-hidden rounded-t-[10px]"
           style={{
             gridTemplateColumns: c ? "26px 1fr" : "32px 1fr",
-            background: "linear-gradient(135deg, rgba(88, 166, 255, 0.08), transparent)",
+            background: "linear-gradient(135deg, rgba(88, 166, 255, 0.08) 0%, rgba(22, 27, 34, 0.98) 100%)",
           }}
         >
           {/* Ribbon */}

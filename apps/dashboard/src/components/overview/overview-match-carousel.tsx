@@ -44,21 +44,23 @@ export function OverviewMatchCarousel({ presentations }: Props) {
       <div className="hidden md:block relative">
         <div className="flex items-center gap-3 p-5 lg:p-6">
           {/* Left arrow */}
-          {canGoBack && (
-            <button
-              onClick={handlePrevious}
-              disabled={isTransitioning}
-              className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-[#21262d]/90 border border-[#30363d] hover:bg-[#30363d] hover:scale-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all backdrop-blur-sm shadow-lg z-10"
-              aria-label="Página anterior"
-            >
-              <ChevronLeft className="w-6 h-6 text-[#e6edf3]" />
-            </button>
-          )}
+          <div className="w-12 shrink-0">
+            {canGoBack && (
+              <button
+                onClick={handlePrevious}
+                disabled={isTransitioning}
+                className="flex items-center justify-center w-12 h-12 rounded-full bg-[#21262d]/90 border border-[#30363d] hover:bg-[#30363d] hover:scale-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all backdrop-blur-sm shadow-lg z-10"
+                aria-label="Página anterior"
+              >
+                <ChevronLeft className="w-6 h-6 text-[#e6edf3]" />
+              </button>
+            )}
+          </div>
 
           {/* Cards container with slide animation */}
-          <div className="flex-1 overflow-hidden">
+          <div className="min-w-0 flex-1 overflow-hidden">
             <div
-              className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 transition-transform duration-400 ease-in-out"
+              className="grid w-full min-w-0 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 transition-transform duration-400 ease-in-out"
               style={{
                 transform: `translateX(0)`,
               }}
@@ -75,16 +77,18 @@ export function OverviewMatchCarousel({ presentations }: Props) {
           </div>
 
           {/* Right arrow */}
-          {canGoForward && (
-            <button
-              onClick={handleNext}
-              disabled={isTransitioning}
-              className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-[#21262d]/90 border border-[#30363d] hover:bg-[#30363d] hover:scale-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all backdrop-blur-sm shadow-lg z-10"
-              aria-label="Próxima página"
-            >
-              <ChevronRight className="w-6 h-6 text-[#e6edf3]" />
-            </button>
-          )}
+          <div className="w-12 shrink-0">
+            {canGoForward && (
+              <button
+                onClick={handleNext}
+                disabled={isTransitioning}
+                className="flex items-center justify-center w-12 h-12 rounded-full bg-[#21262d]/90 border border-[#30363d] hover:bg-[#30363d] hover:scale-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all backdrop-blur-sm shadow-lg z-10"
+                aria-label="Próxima página"
+              >
+                <ChevronRight className="w-6 h-6 text-[#e6edf3]" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -102,4 +106,3 @@ export function OverviewMatchCarousel({ presentations }: Props) {
     </>
   );
 }
-
