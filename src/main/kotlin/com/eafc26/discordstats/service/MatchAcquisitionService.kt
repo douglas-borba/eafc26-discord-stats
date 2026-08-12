@@ -16,12 +16,14 @@ import com.eafc26.discordstats.store.PublicationStateStore
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Single acquisition pipeline for match data.
  *
  * This service is the sole orchestrator for all match acquisition flows:
  * - Scheduler polling
+ * - Administrative polling
  * - Manual web button
  * - CLI commands
  * - Development simulator
@@ -61,6 +63,14 @@ class MatchAcquisitionService(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
+    private val fetchMetrics = ConcurrentHashMap<ClubId, AcquisitionFetchMetrics>()
+
+    /**
+     * Read-only diagnostics for an acquisition that has just completed. This is
+     * intentionally scoped by club and is used only by the administrative poll
+     * response; canonical_matches remains the source of truth for acquired data.
+     */
+    fun lastFetchMetrics(clubId: ClubId): AcquisitionFetchMetrics? = fetchMetrics[clubId]
 
     /**
      * Executes the acquisition pipeline.
@@ -76,6 +86,7 @@ class MatchAcquisitionService(
         gateway: EaClubsGateway = defaultGateway,
     ): AcquisitionResult {
         val result = lock.tryRun(clubId) {
+            fetchMetrics.remove(clubId)
             val executionId = stateHolder.start(clubId, trigger)
             log.debug("Acquisition started: executionId={}, trigger={}", executionId, trigger)
             eventRecorder?.acquisitionStarted(clubId, trigger.name)
@@ -119,6 +130,10 @@ class MatchAcquisitionService(
         val synchronization = fetchMatches(clubId, trigger, gateway)
         val matches = when (val result = synchronization.result) {
             is EaApiResult.Success -> {
+                fetchMetrics[clubId] = AcquisitionFetchMetrics(
+                    matchesReturned = synchronization.matchesReturned ?: result.data.size,
+                    newMatches = result.data.size,
+                )
                 eventRecorder?.eaSuccess(
                     clubId,
                     System.currentTimeMillis() - eaFetchStartedAtMs,
@@ -127,6 +142,7 @@ class MatchAcquisitionService(
                 result.data
             }
             EaApiResult.NoMatches -> {
+                fetchMetrics[clubId] = AcquisitionFetchMetrics(matchesReturned = 0, newMatches = 0)
                 eventRecorder?.eaSuccess(clubId, System.currentTimeMillis() - eaFetchStartedAtMs)
                 log.info("No matches found for club-id={}", clubId)
                 stateHolder.complete(clubId, "Nenhuma partida encontrada.")
@@ -214,7 +230,7 @@ class MatchAcquisitionService(
         val result = when (trigger) {
             AcquisitionTrigger.FORCE_RESEND -> processForceResend(clubId, matches, canonicalByMatchId)
             AcquisitionTrigger.MANUAL, AcquisitionTrigger.CLI -> processLatestOnly(clubId, matches, canonicalByMatchId)
-            AcquisitionTrigger.SCHEDULER -> processAllNew(clubId, matches, canonicalByMatchId)
+            AcquisitionTrigger.SCHEDULER, AcquisitionTrigger.ADMIN_POLL -> processAllNew(clubId, matches, canonicalByMatchId)
             AcquisitionTrigger.DEV_SIMULATOR -> processSimulation(clubId, matches, canonicalByMatchId)
         }
 
@@ -246,15 +262,15 @@ class MatchAcquisitionService(
     }
 
     /**
-     * Scheduler-only bounded synchronization. The canonical collection is the
-     * acquisition checkpoint; publication state deliberately plays no role here.
+     * Bounded synchronization for scheduler and administrative polling. The canonical
+     * collection is the acquisition checkpoint; publication state deliberately plays no role here.
      */
     private fun fetchMatches(
         clubId: ClubId,
         trigger: AcquisitionTrigger,
         gateway: EaClubsGateway,
     ): SynchronizationFetch {
-        if (trigger != AcquisitionTrigger.SCHEDULER || gateway !is WindowedEaClubsGateway) {
+        if ((trigger != AcquisitionTrigger.SCHEDULER && trigger != AcquisitionTrigger.ADMIN_POLL) || gateway !is WindowedEaClubsGateway) {
             return SynchronizationFetch(gateway.getLatestMatches(clubId.value), null, null)
         }
 
@@ -314,6 +330,11 @@ class MatchAcquisitionService(
         val result: EaApiResult<List<MatchResponse>>,
         val diagnostics: String?,
         val matchesReturned: Int?,
+    )
+
+    data class AcquisitionFetchMetrics(
+        val matchesReturned: Int,
+        val newMatches: Int,
     )
 
     // -------------------------------------------------------------------------

@@ -33,6 +33,7 @@ export async function proxyAdminRequest(path: string, options: ProxyOptions = {}
     }
 
     const headers = new Headers({ Accept: "application/json", Authorization: `Bearer ${internalToken}` });
+    headers.set("X-Admin-Identity", auth.email);
     if (options.body !== undefined) headers.set("Content-Type", "application/json");
     if (security) {
       headers.set("Cookie", security.cookieHeader);

@@ -21,6 +21,7 @@ import com.eafc26.discordstats.service.PublicationReconciliationService
 import com.eafc26.discordstats.service.ReconciliationReport
 import com.eafc26.discordstats.service.ReconciliationSummary
 import com.eafc26.discordstats.store.PublishedMatchStore
+import com.eafc26.discordstats.store.AdminAuditLogRepository
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyInt
@@ -50,6 +51,7 @@ class PublicationAdminControllerTest {
     @MockBean private lateinit var reconciliationService: PublicationReconciliationService
     @MockBean private lateinit var monitoredClubRepository: MonitoredClubRepository
     @MockBean private lateinit var webhookConfigService: WebhookConfigService
+    @MockBean private lateinit var auditLog: AdminAuditLogRepository
 
     private val clubA = "1104972"
     private val matchId = "match-001"
@@ -126,6 +128,10 @@ class PublicationAdminControllerTest {
             .expectBody()
             .jsonPath("$.status").isEqualTo("success")
             .jsonPath("$.outcome").isEqualTo("PUBLISHED")
+
+        val audit = Mockito.inOrder(auditLog)
+        audit.verify(auditLog).record("nextjs-admin-bff", "FORCE_PUBLISH", ClubId(clubA), matchId, "START", null)
+        audit.verify(auditLog).record("nextjs-admin-bff", "FORCE_PUBLISH", ClubId(clubA), matchId, "SUCCESS", null)
     }
 
     @Test
@@ -135,6 +141,34 @@ class PublicationAdminControllerTest {
         client.mutateWith(csrf())
             .post().uri("/api/admin/clubs/$clubA/publication/nonexistent/force-publish")
             .exchange().expectStatus().isNotFound
+    }
+
+    @Test
+    fun `force-publish does not begin delivery when durable audit is unavailable`() {
+        Mockito.doThrow(IllegalStateException("database unavailable"))
+            .`when`(auditLog).record("nextjs-admin-bff", "FORCE_PUBLISH", ClubId(clubA), matchId, "START", null)
+
+        client.mutateWith(csrf())
+            .post().uri("/api/admin/clubs/$clubA/publication/$matchId/force-publish")
+            .exchange().expectStatus().isEqualTo(503)
+
+        verify(publicationService, never()).forcePublish(anyClubId(), org.mockito.kotlin.any())
+    }
+
+    @Test
+    fun `force-publish records failure when delivery throws`() {
+        val match = canonical(matchId, clubA)
+        Mockito.doReturn(match).`when`(canonicalMatchRepository).findById(anyClubId(), anyMatchId())
+        Mockito.doThrow(IllegalStateException("Discord unavailable"))
+            .`when`(publicationService).forcePublish(anyClubId(), org.mockito.kotlin.any())
+
+        client.mutateWith(csrf())
+            .post().uri("/api/admin/clubs/$clubA/publication/$matchId/force-publish")
+            .exchange().expectStatus().is5xxServerError
+
+        val audit = Mockito.inOrder(auditLog)
+        audit.verify(auditLog).record("nextjs-admin-bff", "FORCE_PUBLISH", ClubId(clubA), matchId, "START", null)
+        audit.verify(auditLog).record("nextjs-admin-bff", "FORCE_PUBLISH", ClubId(clubA), matchId, "FAILURE", "IllegalStateException")
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.eafc26.discordstats.service.DiscordMatchPublicationService
 import com.eafc26.discordstats.service.PublicationReconciliationService
 import com.eafc26.discordstats.service.PublicationStateClassifier
 import com.eafc26.discordstats.store.OperationalEventRepository
+import com.eafc26.discordstats.store.AdminAuditLogRepository
 import com.eafc26.discordstats.store.PublicationStateStore
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -15,8 +16,10 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
+import org.slf4j.LoggerFactory
 import reactor.core.publisher.Mono
 import reactor.core.scheduler.Schedulers
 
@@ -28,7 +31,9 @@ class PublicationAdminController(
     private val reconciliationService: PublicationReconciliationService,
     private val monitoredClubRepository: MonitoredClubRepository,
     private val eventRepository: OperationalEventRepository? = null,
+    private val auditLog: AdminAuditLogRepository? = null,
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
 
     private fun requireClub(clubId: String): ClubId {
         val id = ClubId(clubId)
@@ -56,19 +61,38 @@ class PublicationAdminController(
     fun forcePublish(
         @PathVariable clubId: String,
         @PathVariable matchId: String,
+        @RequestHeader("X-Admin-Identity", defaultValue = "nextjs-admin-bff") admin: String,
     ): Mono<ResponseEntity<Map<String, Any>>> =
         Mono.fromCallable {
             val club = requireClub(clubId)
+            val audit = startAudit(admin, "FORCE_PUBLISH", club, matchId)
             val canonical = canonicalMatchRepository.findById(club, MatchId(matchId))
-                ?: return@fromCallable ResponseEntity.notFound().build<Map<String, Any>>()
+                ?: run {
+                    completeAudit(audit, admin, "FORCE_PUBLISH", club, matchId, result = "NOT_FOUND")
+                    return@fromCallable ResponseEntity.notFound().build<Map<String, Any>>()
+                }
 
-            val result = publicationService.forcePublish(club, canonical)
+            val result = try {
+                publicationService.forcePublish(club, canonical)
+            } catch (ex: Exception) {
+                completeAudit(
+                    audit, admin, "FORCE_PUBLISH", club, matchId,
+                    result = "FAILURE", errorCode = ex::class.simpleName,
+                )
+                throw ex
+            }
 
             val message = when {
                 result.delivered -> "Partida reenviada com sucesso"
                 result.errorMessage != null -> "Falha ao reenviar: ${result.errorMessage}"
                 else -> "Falha ao reenviar"
             }
+            completeAudit(
+                audit,
+                admin, "FORCE_PUBLISH", club, matchId,
+                result = if (result.delivered) "SUCCESS" else "FAILURE",
+                errorCode = if (result.delivered) null else result.outcome.name,
+            )
 
             ResponseEntity.ok<Map<String, Any>>(mapOf(
                 "status" to if (result.delivered) "success" else "failed",
@@ -76,6 +100,34 @@ class PublicationAdminController(
                 "outcome" to result.outcome.name,
             ))
         }.subscribeOn(Schedulers.boundedElastic())
+
+    private fun startAudit(admin: String, action: String, club: ClubId, matchId: String): AdminAuditLogRepository {
+        val audit = auditLog ?: throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Admin audit is unavailable")
+        persistAudit(audit, admin, action, club, matchId, result = "START", operationMayHaveRun = false)
+        return audit
+    }
+
+    private fun completeAudit(audit: AdminAuditLogRepository, admin: String, action: String, club: ClubId, matchId: String, result: String, errorCode: String? = null) =
+        persistAudit(audit, admin, action, club, matchId, result, errorCode, operationMayHaveRun = true)
+
+    private fun persistAudit(
+        audit: AdminAuditLogRepository,
+        admin: String,
+        action: String,
+        club: ClubId,
+        matchId: String,
+        result: String,
+        errorCode: String? = null,
+        operationMayHaveRun: Boolean,
+    ) {
+        try {
+            audit.record(admin, action, club, matchId, result, errorCode)
+        } catch (ex: Exception) {
+            log.error("Admin audit persistence failed: action={}, clubId={}, matchId={}, result={}, errorType={}", action, club.value, matchId, result, ex::class.simpleName)
+            val reason = if (operationMayHaveRun) "Administrative operation must be verified" else "Administrative operation was not started"
+            throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, reason)
+        }
+    }
 
     @GetMapping("/api/admin/clubs/{clubId}/publication/reconcile/inspect")
     fun inspectPublications(@PathVariable clubId: String): Mono<ResponseEntity<Map<String, Any>>> =

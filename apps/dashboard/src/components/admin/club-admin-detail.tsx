@@ -13,6 +13,7 @@ import type {
   AdminPublicationHistoryResponse,
   ClubOperationalStatus,
   ForcePublishResponse,
+  AdminOperationResponse,
   PublicationHistoryRecord,
 } from "@/lib/admin/types";
 import { AdminFeedback } from "./admin-feedback";
@@ -39,6 +40,7 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
   const [matchesError, setMatchesError] = useState<string | null>(null);
   const [confirmPublication, setConfirmPublication] = useState<AdminMatchSummary | null>(null);
   const [sendingMatchId, setSendingMatchId] = useState<string | null>(null);
+  const [operation, setOperation] = useState<"poll" | "ea" | "discord" | null>(null);
 
   const load = useCallback(async (showFeedback = false) => {
     setLoading(true);
@@ -141,6 +143,19 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
     } finally {
       setSendingMatchId(null);
     }
+  }
+
+  async function runOperation(kind: "poll" | "ea" | "discord") {
+    setOperation(kind); setError(null); setSuccess(null);
+    try {
+      const path = kind === "poll" ? "poll" : kind === "ea" ? "ea/test" : "discord/test";
+      const result = await adminRequest<AdminOperationResponse>(`/api/admin/clubs/${clubId}/${path}`, { method: "POST" });
+      if (result.status === "failed") throw new Error(result.message ?? "A operação não foi concluída.");
+      setSuccess(kind === "poll" ? "Polling concluído." : kind === "ea" ? "Teste da EA concluído." : "Teste do Discord concluído.");
+      if (kind === "poll") void load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Não foi possível concluir a operação.");
+    } finally { setOperation(null); }
   }
 
   if (loading && !club) return <Panel><p role="status" className="text-muted">Carregando clube…</p></Panel>;
@@ -248,6 +263,22 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
           <p className="mt-4 text-xs text-muted">O webhook atual nunca é exibido. Para trocar, informe uma nova URL.</p>
         </Panel>
       </div>
+
+      <Panel className="mt-6">
+        <h2 className="font-semibold text-text-primary">Operações</h2>
+        <p className="mt-1 text-sm text-muted">Execute verificações pontuais deste clube. O polling usa o mesmo pipeline seguro do monitoramento.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <button type="button" disabled={operation === "poll"} onClick={() => void runOperation("poll")} className="min-h-10 rounded-lg bg-accent-strong px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+            {operation === "poll" ? "Executando…" : "Executar polling agora"}
+          </button>
+          <button type="button" disabled={operation === "ea"} onClick={() => void runOperation("ea")} className="min-h-10 rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-soft hover:bg-surface-raised disabled:opacity-50">
+            {operation === "ea" ? "Testando…" : "Testar EA"}
+          </button>
+          <button type="button" disabled={operation === "discord"} onClick={() => void runOperation("discord")} className="min-h-10 rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-soft hover:bg-surface-raised disabled:opacity-50">
+            {operation === "discord" ? "Testando…" : "Testar Discord"}
+          </button>
+        </div>
+      </Panel>
 
       <Panel className="mt-6">
         <h2 className="font-semibold text-text-primary">Últimas partidas</h2>

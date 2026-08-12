@@ -208,6 +208,37 @@ class MatchAcquisitionServiceTest {
         }
 
         @Test
+        fun `poll diagnostics distinguish EA window size from newly acquired matches`() {
+            val checkpoint = match("known", 100)
+            val new = match("new", 200)
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(listOf(knownCanonical(checkpoint)))
+            stubStore("existing")
+            val windowed = WindowedGateway(listOf(new, checkpoint))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(service.lastFetchMetrics(LEGACY_TEST_CLUB))
+                .isEqualTo(MatchAcquisitionService.AcquisitionFetchMetrics(matchesReturned = 2, newMatches = 1))
+        }
+
+        @Test
+        fun `admin poll retains incremental synchronization semantics and records its own origin`() {
+            val checkpoint = match("known", 100)
+            val new = match("new", 200)
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(listOf(knownCanonical(checkpoint)))
+            stubStore("existing")
+            val windowed = WindowedGateway(listOf(new, checkpoint))
+
+            service.acquire(AcquisitionTrigger.ADMIN_POLL, windowed)
+
+            assertThat(windowed.windows).containsExactly(5)
+            assertThat(stateHolder.current().trigger).isEqualTo(AcquisitionTrigger.ADMIN_POLL)
+            val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
+            verify(canonicalMatchRepository).save(saved.capture())
+            assertThat(saved.firstValue.matchId.value).isEqualTo("new")
+        }
+
+        @Test
         fun `league checkpoint stops expansion while newer playoff matches are acquired`() {
             val leagueCheckpoint = match("league-checkpoint", 100, matchType = "leagueMatch")
             val playoffNew = match("playoff-new", 200, matchType = "playoffMatch")
@@ -982,7 +1013,7 @@ class MatchAcquisitionServiceTest {
             actionStarted.await(1, TimeUnit.SECONDS)
 
             // Try second acquisition
-            val result = service.acquire(AcquisitionTrigger.MANUAL)
+            val result = service.acquire(AcquisitionTrigger.ADMIN_POLL)
 
             assertThat(result).isEqualTo(AcquisitionResult.Busy)
 

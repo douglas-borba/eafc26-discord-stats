@@ -18,6 +18,7 @@ import com.eafc26.discordstats.store.PostgresMonitoredClubRepository
 import com.eafc26.discordstats.store.PostgresPublishedMatchStore
 import com.eafc26.discordstats.store.PublicationStateStore
 import com.eafc26.discordstats.store.OperationalEventRepository
+import com.eafc26.discordstats.store.AdminAuditLogRepository
 import com.eafc26.discordstats.service.OperationalEventRecorder
 import com.eafc26.discordstats.service.SynchronizationGapStore
 import com.eafc26.discordstats.store.PostgresSynchronizationGapStore
@@ -111,6 +112,10 @@ class PostgresMirrorConfig {
     @Bean
     fun operationalEventRepository(jdbcTemplate: JdbcTemplate): OperationalEventRepository =
         OperationalEventRepository(jdbcTemplate)
+
+    @Bean
+    fun adminAuditLogRepository(jdbcTemplate: JdbcTemplate): AdminAuditLogRepository =
+        AdminAuditLogRepository(jdbcTemplate)
 
     @Bean
     fun operationalEventRecorder(operationalEventRepository: OperationalEventRepository): OperationalEventRecorder =

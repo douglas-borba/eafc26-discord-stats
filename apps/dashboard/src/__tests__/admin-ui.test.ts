@@ -29,6 +29,17 @@ describe("admin route group structure", () => {
     expect(layout).toContain('redirect("/admin/login")');
   });
 
+  it("keeps explicit operational controls scoped to the current club without automatic requests", () => {
+    const detail = read("components/admin/club-admin-detail.tsx");
+    expect(detail).toContain("Executar polling agora");
+    expect(detail).toContain("Testar EA");
+    expect(detail).toContain("Testar Discord");
+    expect(detail).toContain("/api/admin/clubs/${clubId}/${path}");
+    expect(detail).toContain('operation === "poll" ? "Executando…"');
+    expect(detail).toContain("Polling concluído.");
+    expect(detail).toContain("Não foi possível concluir a operação.");
+  });
+
   it("no layout.tsx exists at the admin root that would guard login", () => {
     const fs = require("node:fs");
     expect(fs.existsSync(resolve(root, "app/admin/layout.tsx"))).toBe(false);

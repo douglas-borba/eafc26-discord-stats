@@ -29,6 +29,6 @@ export async function requireAdmin() {
     const client = await createAuthServerClient();
     const { data: { user } } = await client.auth.getUser();
     if (!user) return { kind: "anonymous" as const };
-    return user.email?.toLowerCase() === allowedEmail ? { kind: "allowed" as const, client } : { kind: "forbidden" as const, client };
+    return user.email?.toLowerCase() === allowedEmail ? { kind: "allowed" as const, client, email: allowedEmail } : { kind: "forbidden" as const, client };
   } catch { return { kind: "unavailable" as const }; }
 }

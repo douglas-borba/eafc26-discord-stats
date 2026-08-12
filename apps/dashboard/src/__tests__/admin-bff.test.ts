@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/supabase/auth-server", () => ({ requireAdmin: vi.fn(async () => ({ kind: "allowed" })) }));
+vi.mock("@/lib/supabase/auth-server", () => ({ requireAdmin: vi.fn(async () => ({ kind: "allowed", email: "admin@example.com" })) }));
 import { requireAdmin } from "@/lib/supabase/auth-server";
 import { GET as listClubs, POST as createClub } from "@/app/api/admin/clubs/route";
 import { GET as searchClubs } from "@/app/api/admin/clubs/search/route";
@@ -10,6 +10,9 @@ import { PUT as configureDiscord, DELETE as removeDiscord } from "@/app/api/admi
 import { GET as getStatus } from "@/app/api/admin/clubs/[clubId]/status/route";
 import { GET as getSystemHealth } from "@/app/api/admin/system/health/route";
 import { POST as forcePublish } from "@/app/api/admin/clubs/[clubId]/publication/[matchId]/force-publish/route";
+import { POST as poll } from "@/app/api/admin/clubs/[clubId]/poll/route";
+import { POST as testEa } from "@/app/api/admin/clubs/[clubId]/ea/test/route";
+import { POST as testDiscord } from "@/app/api/admin/clubs/[clubId]/discord/test/route";
 
 const originalBackendUrl = process.env.BACKEND_URL;
 const clubContext = { params: Promise.resolve({ clubId: "8874106" }) };
@@ -138,6 +141,24 @@ describe("administrative BFF", () => {
     const headers = fetchMock.mock.calls[1][1].headers as Headers;
     expect(headers.get("X-XSRF-TOKEN")).toBe("server-token");
     expect(headers.get("Authorization")).toBe("Bearer test-admin-token");
+    expect(headers.get("X-Admin-Identity")).toBe("admin@example.com");
+  });
+
+  it.each([
+    ["poll", poll, "/api/admin/clubs/8874106/poll"],
+    ["EA test", testEa, "/api/admin/clubs/8874106/ea/test"],
+    ["Discord test", testDiscord, "/api/admin/clubs/8874106/discord/test"],
+  ])("proxies %s through the authenticated server-side CSRF flow", async (_, handler, path) => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(csrf()).mockResolvedValueOnce(json({ status: "success" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await handler(new Request("https://dashboard.test", { method: "POST" }), clubContext);
+
+    expect(response.status).toBe(200);
+    expect(fetchMock.mock.calls[1][0]).toBe(`https://spring.example.test${path}`);
+    const headers = fetchMock.mock.calls[1][1].headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer test-admin-token");
+    expect(headers.get("X-XSRF-TOKEN")).toBe("server-token");
   });
 
   it("rejects force-publish before contacting Spring when the caller is not an admin", async () => {
@@ -146,6 +167,21 @@ describe("administrative BFF", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await forcePublish(new Request("https://dashboard.test", { method: "POST" }), publicationContext);
+
+    expect(response.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["poll", poll],
+    ["EA test", testEa],
+    ["Discord test", testDiscord],
+  ])("rejects %s before contacting Spring when the caller is not an admin", async (_, handler) => {
+    vi.mocked(requireAdmin).mockResolvedValueOnce({ kind: "anonymous" });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await handler(new Request("https://dashboard.test", { method: "POST" }), clubContext);
 
     expect(response.status).toBe(401);
     expect(fetchMock).not.toHaveBeenCalled();

@@ -5,6 +5,7 @@ package com.eafc26.discordstats.service
  *
  * The trigger determines processing behavior:
  * - [SCHEDULER]: Processes all new matches since last check
+ * - [ADMIN_POLL]: Same incremental processing as [SCHEDULER], initiated explicitly by an administrator
  * - [MANUAL]: Processes only the latest match
  * - [CLI]: Processes only the latest match
  * - [DEV_SIMULATOR]: Processes all matches but is web-only (no Discord delivery)
@@ -15,6 +16,7 @@ package com.eafc26.discordstats.service
  */
 enum class AcquisitionTrigger {
     SCHEDULER,
+    ADMIN_POLL,
     MANUAL,
     CLI,
     DEV_SIMULATOR,

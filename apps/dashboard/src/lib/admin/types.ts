@@ -32,6 +32,17 @@ export interface ForcePublishResponse {
   outcome: string;
 }
 
+export interface AdminOperationResponse {
+  status: "success" | "failed" | "busy";
+  message?: string;
+  durationMs?: number;
+  latencyMs?: number;
+  matchesReturned?: number;
+  newMatches?: number;
+  errorCode?: string | number;
+  httpStatus?: number | null;
+}
+
 export interface ClubSearchCandidate {
   clubId: string;
   displayName: string;

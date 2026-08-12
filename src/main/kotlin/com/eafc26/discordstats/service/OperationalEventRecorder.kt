@@ -45,6 +45,21 @@ class OperationalEventRecorder(private val repository: OperationalEventRepositor
         record(OperationalEvent(clubId = clubId, eventType = "EA_FETCH", phase = "CHECKPOINT_MISSING", status = EventStatus.WARNING,
             message = "window=$window matchesReturned=$matchesReturned checkpointFound=false"))
 
+    fun adminPollStarted(clubId: ClubId) =
+        record(OperationalEvent(clubId = clubId, eventType = "ADMIN_POLL", phase = "START", status = EventStatus.INFO))
+
+    fun adminPollCompleted(clubId: ClubId, durationMs: Long) =
+        record(OperationalEvent(clubId = clubId, eventType = "ADMIN_POLL", phase = "SUCCESS", status = EventStatus.SUCCESS, durationMs = durationMs))
+
+    fun adminPollFailed(clubId: ClubId, errorCode: String?, message: String?) =
+        record(OperationalEvent(clubId = clubId, eventType = "ADMIN_POLL", phase = "FAILURE", status = EventStatus.FAILURE, errorCode = errorCode, message = message))
+
+    fun eaTest(clubId: ClubId, success: Boolean, durationMs: Long, message: String? = null, errorCode: String? = null) =
+        record(OperationalEvent(clubId = clubId, eventType = "EA_TEST", phase = if (success) "SUCCESS" else "FAILURE", status = if (success) EventStatus.SUCCESS else EventStatus.FAILURE, durationMs = durationMs, message = message, errorCode = errorCode))
+
+    fun discordTest(clubId: ClubId, success: Boolean, durationMs: Long, message: String? = null, errorCode: String? = null) =
+        record(OperationalEvent(clubId = clubId, eventType = "DISCORD_TEST", phase = if (success) "SUCCESS" else "FAILURE", status = if (success) EventStatus.SUCCESS else EventStatus.FAILURE, durationMs = durationMs, message = message, errorCode = errorCode))
+
     fun acquisitionStarted(clubId: ClubId, trigger: String) =
         record(OperationalEvent(clubId = clubId, eventType = "ACQUISITION", phase = "START", status = EventStatus.INFO, message = "Trigger: $trigger"))
 
