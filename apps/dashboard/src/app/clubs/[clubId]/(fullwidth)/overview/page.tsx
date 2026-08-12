@@ -7,6 +7,7 @@ import { buildSequenceEditorial } from "@/lib/services/sequence-editorial-servic
 import { fetchAiPanorama } from "@/lib/api/panorama-client";
 import { getClub } from "@/lib/repositories/overview-repository";
 import { SportsApiUnavailable } from "@/lib/api/sports-client";
+import { TrialNotice } from "@/components/club/trial-notice";
 
 export default async function OverviewPage({ params }: { params: Promise<{ clubId: string }> }) {
   const { clubId } = await params;
@@ -33,7 +34,7 @@ export default async function OverviewPage({ params }: { params: Promise<{ clubI
     }
 
     return (
-      <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] min-h-screen">
+      <><TrialNotice status={club.accessStatus} count={club.trialMatchesCount} limit={club.trialLimit} /><div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] min-h-screen">
         <aside className="lg:sticky lg:top-0 lg:h-screen border-r border-[#21262d] bg-[#0d1117] px-5 py-6 overflow-y-auto">
           <OverviewClubPanel
             clubId={clubId}
@@ -43,7 +44,7 @@ export default async function OverviewPage({ params }: { params: Promise<{ clubI
           />
         </aside>
         <OverviewMatchCarousel presentations={presentations} />
-      </div>
+      </div></>
     );
   } catch (error) {
     if (error instanceof SportsApiUnavailable) {

@@ -29,7 +29,7 @@ class ClubPollingCoordinator(
                 it.copy(enabled = false, running = false, nextCheck = null)
             }
         }
-        val clubs = registered.filter { it.monitoringEnabled }
+        val clubs = registered.filter { it.monitoringEnabled && it.accessStatus.participatesInAutomaticMonitoring() }
 
         log.info("Club polling cycle started: enabledClubs={}", clubs.size)
         val results = clubs.map { club -> pollClub(club.clubId, intervalMs) }

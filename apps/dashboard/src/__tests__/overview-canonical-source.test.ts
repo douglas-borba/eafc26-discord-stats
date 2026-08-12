@@ -11,7 +11,7 @@ describe("overview uses canonical_matches as source of truth", () => {
 
   describe("getOverviewCards merges canonical + editorial", () => {
     it("fetches canonical matches from Spring API first", () => {
-      expect(matchCardService).toContain('fetchSports<CanonicalMatchList>(clubPath(clubId, "/history/matches"))');
+      expect(matchCardService).toContain('fetchSports<CanonicalMatchList>(clubPath(clubId, "/overview/matches"))');
     });
 
     it("fetches editorial presentations from Supabase keyed by match_id", () => {

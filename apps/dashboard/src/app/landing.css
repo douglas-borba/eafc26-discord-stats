@@ -747,6 +747,11 @@
   margin: 0 auto 2rem;
 }
 
+.landing-trial-form { display:flex; flex-direction:column; gap:.75rem; max-width:420px; margin:0 auto; }
+.landing-trial-form input { width:100%; border:1px solid var(--ld-border); border-radius:.6rem; background:var(--ld-bg); color:var(--ld-text); padding:.8rem .9rem; }
+.landing-trial-form p,.landing-trial-feedback { font-size:.78rem; color:var(--ld-text-muted); margin:0; }
+.landing-trial-success { color:#3fb950; }
+
 /* --- Footer --- */
 .landing-footer {
   border-top: 1px solid var(--ld-border);

@@ -13,7 +13,7 @@ export default async function SidebarLayout({
 
   return (
     <div className="lg:grid lg:grid-cols-[248px_minmax(0,1fr)] min-h-screen">
-      <SidebarNav clubId={clubId} clubName={club.displayName} />
+      <SidebarNav clubId={clubId} clubName={club.displayName} restricted={club.accessStatus !== "ACTIVE"} />
       <main className="pt-16 lg:pt-0">
         <div className="p-4 lg:p-[26px] max-w-[1480px] mx-auto">
           {children}

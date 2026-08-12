@@ -10,7 +10,9 @@ import org.springframework.security.config.web.server.SecurityWebFiltersOrder
 import org.springframework.security.web.server.csrf.CookieServerCsrfTokenRepository
 import org.springframework.security.web.server.csrf.CsrfToken
 import org.springframework.security.web.server.csrf.ServerCsrfTokenRequestAttributeHandler
+import org.springframework.security.web.server.csrf.CsrfWebFilter
 import org.springframework.web.server.WebFilter
+import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher
 import reactor.core.publisher.Mono
 
 @Configuration
@@ -29,9 +31,16 @@ class SecurityConfig(private val adminInternalTokenWebFilter: AdminInternalToken
             .csrf {
                 it.csrfTokenRepository(csrfRepository)
                     .csrfTokenRequestHandler(ServerCsrfTokenRequestAttributeHandler())
+                    // The public trial-interest form has no authenticated session to protect.
+                    .requireCsrfProtectionMatcher(ServerWebExchangeMatcher { exchange ->
+                        if (exchange.request.method == HttpMethod.POST && exchange.request.path.value() == "/api/trial-requests") {
+                            ServerWebExchangeMatcher.MatchResult.notMatch()
+                        } else CsrfWebFilter.DEFAULT_CSRF_MATCHER.matches(exchange)
+                    })
             }
             .authorizeExchange {
                 it.pathMatchers(HttpMethod.GET, "/api/health", "/api/clubs/**").permitAll()
+                    .pathMatchers(HttpMethod.POST, "/api/trial-requests").permitAll()
                     .pathMatchers("/api/admin/**").authenticated()
                     .pathMatchers("/api/dev/**").denyAll()
                     .pathMatchers("/api/matches/**", "/api/panorama/regenerate", "/api/settings/**", "/api/setup/**", "/api/application/**", "/settings", "/setup").authenticated()

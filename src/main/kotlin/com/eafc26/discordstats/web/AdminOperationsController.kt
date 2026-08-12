@@ -14,6 +14,7 @@ import com.eafc26.discordstats.service.AcquisitionTrigger
 import com.eafc26.discordstats.service.MatchAcquisitionService
 import com.eafc26.discordstats.service.OperationalEventRecorder
 import com.eafc26.discordstats.store.AdminAuditLogRepository
+import com.eafc26.discordstats.application.club.TrialService
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -36,6 +37,7 @@ class AdminOperationsController(
     private val discordClient: DiscordWebhookClient,
     private val eventRecorder: OperationalEventRecorder? = null,
     private val auditLog: AdminAuditLogRepository? = null,
+    private val trials: org.springframework.beans.factory.ObjectProvider<TrialService>? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -45,6 +47,9 @@ class AdminOperationsController(
         @RequestHeader("X-Admin-Identity", defaultValue = "nextjs-admin-bff") admin: String,
     ): Mono<ResponseEntity<Map<String, Any?>>> = Mono.fromCallable {
         val club = requireClub(clubId)
+        if (trials?.ifAvailable?.isExpired(club) == true) {
+            return@fromCallable ResponseEntity.ok(mapOf<String, Any?>("status" to "trial_expired", "message" to "O teste gratuito deste clube terminou."))
+        }
         val audit = startAudit(admin, "ADMIN_POLL", club)
         val started = System.currentTimeMillis()
         eventRecorder?.adminPollStarted(club)

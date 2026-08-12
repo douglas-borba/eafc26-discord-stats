@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Shield, Circle, Users, Menu, X, Building2, Swords } from "lucide-react";
+import { Shield, Circle, Users, Menu, X, Building2, Swords, Lock } from "lucide-react";
 import { useState, useEffect } from "react";
 
 const navItems = [
@@ -13,7 +13,7 @@ const navItems = [
   { label: "Adversários", href: "opponents", icon: Swords },
 ];
 
-export function SidebarNav({ clubId, clubName }: { clubId: string; clubName: string }) {
+export function SidebarNav({ clubId, clubName, restricted = false }: { clubId: string; clubName: string; restricted?: boolean }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -86,7 +86,7 @@ export function SidebarNav({ clubId, clubName }: { clubId: string; clubName: str
                     )}
                   >
                     <Icon className="w-[18px] h-[18px]" strokeWidth={1.8} />
-                    {label}
+                    {label}{restricted && href !== "overview" && <Lock className="ml-auto h-3.5 w-3.5" aria-label="Disponível no plano completo" />}
                   </Link>
                 </li>
               );

@@ -2,6 +2,9 @@ package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.application.club.MonitoredClub
 import com.eafc26.discordstats.application.club.MonitoredClubService
+import com.eafc26.discordstats.application.club.ClubAccessPolicy
+import com.eafc26.discordstats.application.club.ClubDashboardCapability
+import com.eafc26.discordstats.application.club.TrialService
 import com.eafc26.discordstats.comparison.MatchComparisonResult
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
@@ -46,15 +49,29 @@ class ClubSportsController(
     private val comparisons: MatchComparisonService,
     private val cards: MatchCardService,
     private val editorial: LlmEditorialService,
+    private val accessPolicy: ClubAccessPolicy,
+    private val trials: org.springframework.beans.factory.ObjectProvider<TrialService>? = null,
 ) {
     @GetMapping
     fun club(@PathVariable clubId: String): SportsClubResponse = requireClub(clubId).let {
-        SportsClubResponse(it.clubId.value, it.displayName.value, it.platform.value, it.monitoringEnabled)
+        val progress = trials?.ifAvailable?.progress(it)
+        SportsClubResponse(it.clubId.value, it.displayName.value, it.platform.value, it.monitoringEnabled, it.accessStatus.name, progress?.countedMatches, progress?.limit)
     }
 
     @GetMapping("/history/matches")
-    fun matches(@PathVariable clubId: String): HistoricalMatchListResponse = scope(clubId) { id ->
+    fun matches(@PathVariable clubId: String): HistoricalMatchListResponse = scope(clubId, ClubDashboardCapability.MATCHES) { id ->
         val matches = history.list(id)
+        HistoricalMatchListResponse(
+            status = if (matches.isEmpty()) "empty" else "success",
+            matches = matches.map(HistoricalMatchPresenter::summary),
+            metadata = HistoricalMatchPresenter.metadata(history.metadata(id)),
+        )
+    }
+
+    /** Deliberately shallow public feed used by the Overview, including trials. */
+    @GetMapping("/overview/matches")
+    fun overviewMatches(@PathVariable clubId: String): HistoricalMatchListResponse = scope(clubId, ClubDashboardCapability.OVERVIEW) { id ->
+        val matches = history.list(id).take(10)
         HistoricalMatchListResponse(
             status = if (matches.isEmpty()) "empty" else "success",
             matches = matches.map(HistoricalMatchPresenter::summary),
@@ -64,7 +81,7 @@ class ClubSportsController(
 
     @GetMapping("/history/matches/{matchId}")
     fun match(@PathVariable clubId: String, @PathVariable matchId: String): ResponseEntity<HistoricalMatchDetailResponse> =
-        scope(clubId) { id ->
+        scope(clubId, ClubDashboardCapability.MATCHES) { id ->
             history.findById(id, MatchId(matchId))?.let {
                 ResponseEntity.ok(HistoricalMatchDetailResponse("success", HistoricalMatchPresenter.detail(it)))
             } ?: ResponseEntity.status(HttpStatus.NOT_FOUND).body(
@@ -74,30 +91,30 @@ class ClubSportsController(
 
     @GetMapping("/history/metadata")
     fun metadata(@PathVariable clubId: String): HistoricalRepositoryMetadata =
-        scope(clubId) { HistoricalMatchPresenter.metadata(history.metadata(it)) }
+        scope(clubId, ClubDashboardCapability.MATCHES) { HistoricalMatchPresenter.metadata(history.metadata(it)) }
 
     @GetMapping("/players")
-    fun players(@PathVariable clubId: String): SportsPlayerListResponse = scope(clubId) { id ->
+    fun players(@PathVariable clubId: String): SportsPlayerListResponse = scope(clubId, ClubDashboardCapability.PLAYERS) { id ->
         val result = players.listPlayers(id).mapNotNull { players.findById(id, it.playerId) }.map(PlayerProfilePresenter::profile)
         SportsPlayerListResponse(if (result.isEmpty()) "empty" else "success", result)
     }
 
     @GetMapping("/players/{playerId}")
     fun player(@PathVariable clubId: String, @PathVariable playerId: String): ResponseEntity<PlayerProfileResponse> =
-        scope(clubId) { id ->
+        scope(clubId, ClubDashboardCapability.PLAYERS) { id ->
             players.findById(id, PlayerId(playerId))?.let {
                 ResponseEntity.ok(PlayerProfileResponse("success", PlayerProfilePresenter.profile(it)))
             } ?: ResponseEntity.status(HttpStatus.NOT_FOUND).body(PlayerProfileResponse("not_found", message = "Jogador não encontrado no histórico."))
         }
 
     @GetMapping("/opponents")
-    fun opponents(@PathVariable clubId: String): OpponentIndexResponse = scope(clubId) { id ->
+    fun opponents(@PathVariable clubId: String): OpponentIndexResponse = scope(clubId, ClubDashboardCapability.OPPONENTS) { id ->
         OpponentHistoryPresenter.index(opponents.listOpponents(id))
     }
 
     @GetMapping("/opponents/{opponentId}")
     fun opponent(@PathVariable clubId: String, @PathVariable opponentId: String): ResponseEntity<OpponentDetailResponse> =
-        scope(clubId) { id ->
+        scope(clubId, ClubDashboardCapability.OPPONENTS) { id ->
             opponents.findByClubId(id, ClubId(opponentId))?.let {
                 ResponseEntity.ok(OpponentHistoryPresenter.detail(it))
             } ?: ResponseEntity.status(HttpStatus.NOT_FOUND).body(OpponentDetailResponse("not_found", message = "Adversário não encontrado."))
@@ -108,7 +125,7 @@ class ClubSportsController(
         @PathVariable clubId: String,
         @RequestParam(required = false) firstMatchId: String?,
         @RequestParam(required = false) secondMatchId: String?,
-    ): ResponseEntity<Any> = scope(clubId) { id ->
+    ): ResponseEntity<Any> = scope(clubId, ClubDashboardCapability.MATCHES) { id ->
         if (firstMatchId == null && secondMatchId == null) {
             val options = comparisons.listOptions(id)
             return@scope ResponseEntity.ok(MatchComparisonOptionsResponse(if (options.isEmpty()) "empty" else "success", options.map(MatchComparisonPresenter::option)))
@@ -123,13 +140,13 @@ class ClubSportsController(
     }
 
     @GetMapping("/panorama")
-    fun panorama(@PathVariable clubId: String): PanoramaResponse = scope(clubId) { id ->
+    fun panorama(@PathVariable clubId: String): PanoramaResponse = scope(clubId, ClubDashboardCapability.OVERVIEW) { id ->
         val text = editorial.getPersistedPanorama(id)
         PanoramaResponse(if (text == null) "unavailable" else "success", text)
     }
 
     @GetMapping("/latest-match")
-    fun latest(@PathVariable clubId: String): MatchCardResponse = scope(clubId) { id ->
+    fun latest(@PathVariable clubId: String): MatchCardResponse = scope(clubId, ClubDashboardCapability.OVERVIEW) { id ->
         when (val result = cards.getLatestMatchCard(id)) {
             is MatchCardService.MatchCardResult.Success -> MatchCardResponse(
                 status = "success", presentation = result.presentation, version = cards.version(id), simulated = result.simulated,
@@ -146,9 +163,22 @@ class ClubSportsController(
         return monitoredClubs.find(id) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Monitored club not found")
     }
 
-    private fun <T> scope(raw: String, block: (ClubId) -> T): T = block(requireClub(raw).clubId)
+    private fun <T> scope(raw: String, capability: ClubDashboardCapability, block: (ClubId) -> T): T {
+        val club = requireClub(raw)
+        if (!accessPolicy.permits(club.clubId, capability)) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "This dashboard area is available in the complete FC Stats plan")
+        }
+        return block(club.clubId)
+    }
 }
 
-data class SportsClubResponse(val clubId: String, val displayName: String, val platform: String, val monitoringEnabled: Boolean)
+data class SportsClubResponse(
+    val clubId: String,
+    val displayName: String,
+    val platform: String,
+    val monitoringEnabled: Boolean,
+    val accessStatus: String = "ACTIVE",
+    val trialMatchesCount: Int? = null,
+    val trialLimit: Int? = null,
+)
 data class SportsPlayerListResponse(val status: String, val players: List<com.eafc26.discordstats.presentation.profile.PlayerProfileView>)
-

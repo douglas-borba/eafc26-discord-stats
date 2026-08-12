@@ -242,7 +242,7 @@ export async function getOverviewCards(
   limit: number = 10,
 ): Promise<MatchSummaryPresentation[]> {
   const { clubPath, fetchSports } = await import("@/lib/api/sports-client");
-  const canonical = await fetchSports<CanonicalMatchList>(clubPath(clubId, "/history/matches"));
+  const canonical = await fetchSports<CanonicalMatchList>(clubPath(clubId, "/overview/matches"));
   const matches = canonical.matches.slice(0, limit);
   if (matches.length === 0) return [];
 

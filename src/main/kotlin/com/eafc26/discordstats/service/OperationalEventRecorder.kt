@@ -98,4 +98,13 @@ class OperationalEventRecorder(private val repository: OperationalEventRepositor
 
     fun discordSkipped(clubId: ClubId, matchId: String, reason: String) =
         record(OperationalEvent(clubId = clubId, matchId = matchId, eventType = "DISCORD", phase = "SKIPPED", status = EventStatus.INFO, message = reason))
+
+    fun trialApproved(clubId: ClubId) =
+        record(OperationalEvent(clubId = clubId, eventType = "TRIAL", phase = "APPROVED", status = EventStatus.INFO))
+
+    fun trialMatchCounted(clubId: ClubId, matchId: String, count: Int, limit: Int) =
+        record(OperationalEvent(clubId = clubId, matchId = matchId, eventType = "TRIAL", phase = "MATCH_COUNTED", status = EventStatus.SUCCESS, message = "count=$count limit=$limit"))
+
+    fun trialExpired(clubId: ClubId, count: Int, limit: Int) =
+        record(OperationalEvent(clubId = clubId, eventType = "TRIAL", phase = "EXPIRED", status = EventStatus.INFO, message = "count=$count limit=$limit"))
 }

@@ -2,6 +2,8 @@ export const dynamic = "force-dynamic";
 
 import { getMatches, getMatch } from "@/lib/services/match-service";
 import { MatchesShell } from "@/components/matches/matches-shell";
+import { getClub } from "@/lib/repositories/overview-repository";
+import { UpgradePrompt } from "@/components/club/trial-notice";
 
 export default async function MatchesPage({
   params,
@@ -12,6 +14,8 @@ export default async function MatchesPage({
 }) {
   const { clubId } = await params;
   const { match: selectedMatchId } = await searchParams;
+  const club = await getClub(clubId);
+  if (club.accessStatus !== "ACTIVE") return <UpgradePrompt />;
   const result = await getMatches(clubId, 0, 50);
 
   const effectiveMatchId = selectedMatchId ?? result.content[0]?.matchId ?? null;

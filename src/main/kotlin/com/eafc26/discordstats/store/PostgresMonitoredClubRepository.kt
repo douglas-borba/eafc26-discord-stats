@@ -4,6 +4,7 @@ import com.eafc26.discordstats.application.club.DiscordWebhookSecretReference
 import com.eafc26.discordstats.application.club.EaPlatform
 import com.eafc26.discordstats.application.club.MonitoredClub
 import com.eafc26.discordstats.application.club.MonitoredClubRepository
+import com.eafc26.discordstats.application.club.ClubAccessStatus
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
 import org.springframework.jdbc.core.JdbcTemplate
@@ -18,13 +19,16 @@ class PostgresMonitoredClubRepository(
             """
             INSERT INTO monitored_clubs
                 (club_id, display_name, platform, monitoring_enabled,
-                 discord_webhook_secret_ref, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                 discord_webhook_secret_ref, access_status, trial_limit, trial_started_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (club_id) DO UPDATE SET
                 display_name = EXCLUDED.display_name,
                 platform = EXCLUDED.platform,
                 monitoring_enabled = EXCLUDED.monitoring_enabled,
                 discord_webhook_secret_ref = EXCLUDED.discord_webhook_secret_ref,
+                access_status = EXCLUDED.access_status,
+                trial_limit = EXCLUDED.trial_limit,
+                trial_started_at = EXCLUDED.trial_started_at,
                 updated_at = EXCLUDED.updated_at
             """.trimIndent(),
             club.clubId.value,
@@ -32,6 +36,9 @@ class PostgresMonitoredClubRepository(
             club.platform.value,
             club.monitoringEnabled,
             club.discordWebhookSecretReference?.value,
+            club.accessStatus.name,
+            club.trialLimit,
+            club.trialStartedAt?.let(Timestamp::from),
             Timestamp.from(club.createdAt),
             Timestamp.from(club.updatedAt),
         )
@@ -65,6 +72,9 @@ class PostgresMonitoredClubRepository(
         monitoringEnabled = rs.getBoolean("monitoring_enabled"),
         discordWebhookSecretReference = rs.getString("discord_webhook_secret_ref")
             ?.let(::DiscordWebhookSecretReference),
+        accessStatus = ClubAccessStatus.valueOf(rs.getString("access_status") ?: ClubAccessStatus.ACTIVE.name),
+        trialLimit = rs.getObject("trial_limit") as? Int,
+        trialStartedAt = rs.getTimestamp("trial_started_at")?.toInstant(),
         createdAt = rs.getTimestamp("created_at").toInstant(),
         updatedAt = rs.getTimestamp("updated_at").toInstant(),
     )

@@ -1,8 +1,10 @@
 package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.application.club.EaPlatform
+import com.eafc26.discordstats.application.club.ClubAccessPolicy
 import com.eafc26.discordstats.application.club.MonitoredClub
 import com.eafc26.discordstats.application.club.MonitoredClubService
+import com.eafc26.discordstats.application.club.ClubAccessStatus
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
@@ -31,7 +33,7 @@ class ClubSportsControllerTest {
     private val comparisons: MatchComparisonService = mock()
     private val cards: MatchCardService = mock()
     private val editorial: LlmEditorialService = mock()
-    private val controller = ClubSportsController(clubs, history, players, opponents, comparisons, cards, editorial)
+    private val controller = ClubSportsController(clubs, history, players, opponents, comparisons, cards, editorial, ClubAccessPolicy(clubs))
 
     @Test
     fun `registered clubs are independently scoped and may have empty history`() {
@@ -60,6 +62,25 @@ class ClubSportsControllerTest {
             .isInstanceOf(ResponseStatusException::class.java)
             .extracting("statusCode.value").isEqualTo(404)
         verify(history, never()).list(ClubId("999999999"))
+    }
+
+    @Test
+    fun `trial allows overview but denies deeper dashboard areas`() {
+        val trial = club("1104972", "Trial").copy(accessStatus = ClubAccessStatus.TRIAL, trialLimit = 3)
+        whenever(clubs.find(trial.clubId)).thenReturn(trial)
+        whenever(history.list(trial.clubId)).thenReturn(emptyList())
+        whenever(history.metadata(trial.clubId)).thenReturn(metadata())
+
+        assertThat(controller.overviewMatches(trial.clubId.value).status).isEqualTo("empty")
+        assertThatThrownBy { controller.matches(trial.clubId.value) }
+            .isInstanceOf(ResponseStatusException::class.java)
+            .extracting("statusCode.value").isEqualTo(403)
+        assertThatThrownBy { controller.players(trial.clubId.value) }
+            .isInstanceOf(ResponseStatusException::class.java)
+            .extracting("statusCode.value").isEqualTo(403)
+        assertThatThrownBy { controller.opponents(trial.clubId.value) }
+            .isInstanceOf(ResponseStatusException::class.java)
+            .extracting("statusCode.value").isEqualTo(403)
     }
 
     @Test

@@ -33,4 +33,17 @@ data class MonitoredClub(
     val discordWebhookSecretReference: DiscordWebhookSecretReference?,
     val createdAt: Instant,
     val updatedAt: Instant,
+    /** Commercial access is deliberately independent from technical monitoring. */
+    val accessStatus: ClubAccessStatus = ClubAccessStatus.ACTIVE,
+    val trialLimit: Int? = null,
+    val trialStartedAt: Instant? = null,
 )
+
+enum class ClubAccessStatus {
+    TRIAL,
+    ACTIVE,
+    TRIAL_EXPIRED;
+
+    fun participatesInAutomaticMonitoring(): Boolean = this != TRIAL_EXPIRED
+    fun permitsDashboardDepth(): Boolean = this == ACTIVE
+}

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import "./landing.css";
+import { TrialRequestForm } from "@/components/landing/trial-request-form";
 
 export const metadata: Metadata = {
   title: "FC Stats | Estatísticas para EA SPORTS FC Clubs",
@@ -39,8 +40,8 @@ function Header() {
         <a href="#recursos">Recursos</a>
         <a href="#como-funciona">Como funciona</a>
       </nav>
-      <a href="#contato" className="landing-header-cta">
-        Quero acompanhar meu clube
+      <a href="#teste" className="landing-header-cta">
+        Testar grátis
       </a>
     </header>
   );
@@ -64,8 +65,8 @@ function Hero() {
             atualizados automaticamente após cada partida.
           </p>
           <div className="landing-hero-actions">
-            <a href="#contato" className="landing-btn-primary">
-              Quero acompanhar meu clube
+            <a href="#teste" className="landing-btn-primary">
+              Testar grátis por 3 partidas
               <svg
                 width="16"
                 height="16"
@@ -309,30 +310,14 @@ function MatchCardShowcase() {
 
 function FinalCTA() {
   return (
-    <section id="contato" className="landing-final-cta">
+    <section id="teste" className="landing-final-cta">
       <div className="landing-section-inner">
         <div className="landing-final-cta-box">
           <h2 className="landing-h2 landing-final-cta-title">
             Seu clube também pode ter uma história contada em números.
           </h2>
-          <a href="#inicio" className="landing-btn-primary landing-btn-lg">
-            Quero acompanhar meu clube
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M6 3l5 5-5 5"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </a>
+          <p className="landing-hero-sub">Jogue normalmente e acompanhe as próximas 3 partidas do seu clube.</p>
+          <TrialRequestForm />
         </div>
       </div>
     </section>

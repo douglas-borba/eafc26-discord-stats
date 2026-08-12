@@ -53,7 +53,7 @@ describe("Editorial Architecture: Supabase Only", () => {
 
   it("uses Spring API for canonical match list (source of truth)", () => {
     expect(matchCardService).toContain("fetchSports");
-    expect(matchCardService).toContain("/history/matches");
+    expect(matchCardService).toContain("/overview/matches");
   });
 
   it("filters by clubId", () => {

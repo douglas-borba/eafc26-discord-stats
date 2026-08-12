@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { getOpponents, getOpponent } from "@/lib/services/opponent-service";
 import { OpponentsShell } from "@/components/opponents/opponents-shell";
 import { getClub } from "@/lib/repositories/overview-repository";
+import { UpgradePrompt } from "@/components/club/trial-notice";
 
 export default async function OpponentsPage({
   params,
@@ -13,7 +14,9 @@ export default async function OpponentsPage({
 }) {
   const { clubId } = await params;
   const { opponent: selectedOpponentId } = await searchParams;
-  const [club, result] = await Promise.all([getClub(clubId), getOpponents(clubId, 0, 100)]);
+  const club = await getClub(clubId);
+  if (club.accessStatus !== "ACTIVE") return <UpgradePrompt />;
+  const result = await getOpponents(clubId, 0, 100);
 
   const effectiveOpponentId = selectedOpponentId ?? result.content[0]?.clubId ?? null;
   const history = effectiveOpponentId ? await getOpponent(clubId, effectiveOpponentId) : null;

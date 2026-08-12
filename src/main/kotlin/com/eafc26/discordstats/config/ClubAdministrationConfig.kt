@@ -7,6 +7,7 @@ import com.eafc26.discordstats.application.club.EaPlatform
 import com.eafc26.discordstats.application.club.MonitoredClub
 import com.eafc26.discordstats.application.club.MonitoredClubRepository
 import com.eafc26.discordstats.application.club.MonitoredClubService
+import com.eafc26.discordstats.application.club.ClubAccessPolicy
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
 import com.eafc26.discordstats.ea.EaClubsGateway
@@ -32,6 +33,10 @@ class ClubAdministrationConfig {
     @Bean
     fun monitoredClubService(repository: MonitoredClubRepository): MonitoredClubService =
         MonitoredClubService(repository)
+
+    @Bean
+    fun clubAccessPolicy(service: MonitoredClubService): ClubAccessPolicy = ClubAccessPolicy(service)
+
 
     @Bean
     fun defaultClubProvider(
