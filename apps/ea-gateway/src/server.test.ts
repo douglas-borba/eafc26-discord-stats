@@ -92,6 +92,15 @@ test("matches merge, deduplicate and order league and playoff", async () => {
   assert.deepEqual((await response.json() as Array<{ matchId: string }>).map(it => it.matchId), ["new", "same", "old"]);
 });
 
+test("matches forwards a bounded maxResultCount to both EA competition requests", async () => {
+  const ea = await fixture(url => {
+    assert.equal(url.searchParams.get("maxResultCount"), "5");
+    return { body: "[]" };
+  });
+  const response = await fetch(`${await gateway(ea)}/ea/clubs/1104972/matches?maxResultCount=5`, { headers: auth });
+  assert.equal(response.status, 200);
+});
+
 test("members forwards and returns the EA members envelope", async () => {
   const ea = await fixture(url => {
     assert.equal(url.pathname, "/members/stats");

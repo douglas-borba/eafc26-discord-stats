@@ -17,7 +17,7 @@ class NodeEaClubsGateway(
     private val eaGatewayWebClient: WebClient,
     private val props: AppProperties,
     private val parser: EaResponseParser,
-) : EaClubsGateway {
+) : WindowedEaClubsGateway {
     private val log = LoggerFactory.getLogger(javaClass)
 
     override fun searchClubs(clubName: String) = request(
@@ -25,8 +25,10 @@ class NodeEaClubsGateway(
         parser::parseSearch,
     ) { eaGatewayWebClient.get().uri { builder -> builder.path("/ea/clubs/search").queryParam("name", clubName).queryParam("platform", props.ea.platform).build() } }
 
-    override fun getLatestMatches(clubId: String) = request(
-        "/ea/clubs/${encode(clubId)}/matches?platform=${encode(props.ea.platform)}&maxResultCount=${props.ea.maxResultCount}",
+    override fun getLatestMatches(clubId: String) = getLatestMatches(clubId, props.ea.maxResultCount)
+
+    override fun getLatestMatches(clubId: String, maxResultCount: Int) = request(
+        "/ea/clubs/${encode(clubId)}/matches?platform=${encode(props.ea.platform)}&maxResultCount=$maxResultCount",
         parser::parseMatches,
     )
 

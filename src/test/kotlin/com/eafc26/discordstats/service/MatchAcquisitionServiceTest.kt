@@ -13,11 +13,13 @@ import com.eafc26.discordstats.llm.LlmEditorialService
 import com.eafc26.discordstats.llm.LlmProperties
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
+import com.eafc26.discordstats.ea.WindowedEaClubsGateway
 import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.MemberStats
 import com.eafc26.discordstats.ea.model.PlayerEntry
+import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.store.PublicationRecord
 import com.eafc26.discordstats.store.PublicationState
@@ -56,6 +58,7 @@ class MatchAcquisitionServiceTest {
     private lateinit var service: MatchAcquisitionService
     private lateinit var canonicalMatchRepository: CanonicalMatchRepository
     private lateinit var editorialPresentationService: com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationService
+    private lateinit var synchronizationGapStore: InMemorySynchronizationGapStore
 
     private val clubId = "12345"
 
@@ -85,6 +88,7 @@ class MatchAcquisitionServiceTest {
             CanonicalMatchFactory(),
             editorialPresentationService,
             LlmEditorialService(EditorialContextBuilder(), null, mock(), LlmProperties(enabled = false)),
+            synchronizationGapStore = synchronizationGapStore,
         )
     }
 
@@ -98,6 +102,7 @@ class MatchAcquisitionServiceTest {
         matchSummaryBuilder = MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))  // Use real instance
         canonicalMatchRepository = mock()
         editorialPresentationService = mock()
+        synchronizationGapStore = InMemorySynchronizationGapStore()
         service = makeService()
         stubStore()  // default: empty store = first run
     }
@@ -123,11 +128,14 @@ class MatchAcquisitionServiceTest {
         ts: Long = System.currentTimeMillis() / 1000,
         ourScore: String = "2",
         oppScore: String = "1",
+        ownerClubId: String = clubId,
+        matchType: String? = null,
     ): MatchResponse = MatchResponse(
         matchId = id,
         timestamp = ts,
+        matchType = matchType,
         clubs = mapOf(
-            clubId to ClubMatchEntry(
+            ownerClubId to ClubMatchEntry(
                 details = ClubDetails(name = "Test FC"),
                 score = ourScore,
                 result = "1",
@@ -140,6 +148,291 @@ class MatchAcquisitionServiceTest {
         ),
         players = emptyMap(),
     )
+
+    private fun knownCanonical(response: MatchResponse, ownerClubId: String = clubId) =
+        CanonicalMatchFactory().create(response, ownerClubId, emptyMap())
+
+    private class WindowedGateway(private vararg val responses: List<MatchResponse>) : WindowedEaClubsGateway {
+        val windows = mutableListOf<Int>()
+        val clubIds = mutableListOf<String>()
+        private var index = 0
+        override fun searchClubs(clubName: String) = EaApiResult.Success(emptyList<com.eafc26.discordstats.ea.model.ClubSearchResult>())
+        override fun getLatestMatches(clubId: String): EaApiResult<List<MatchResponse>> = error("window is required")
+        override fun getLatestMatches(clubId: String, maxResultCount: Int): EaApiResult<List<MatchResponse>> {
+            clubIds += clubId
+            windows += maxResultCount
+            return EaApiResult.Success(responses.getOrElse(index++) { emptyList() })
+        }
+    }
+
+    @Nested
+    inner class IncrementalSchedulerSynchronization {
+        @Test
+        fun `canonical empty preserves first run window semantics`() {
+            val latest = match("latest", 200)
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(emptyList())
+            val windowed = WindowedGateway(listOf(latest))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(windowed.windows).containsExactly(20)
+        }
+
+        @Test
+        fun `first run retains league and playoff matches from the combined window`() {
+            val league = match("league", 100, matchType = "leagueMatch")
+            val playoff = match("playoff", 200, matchType = "playoffMatch")
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(emptyList())
+            val windowed = WindowedGateway(listOf(playoff, league))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(windowed.windows).containsExactly(20)
+            verify(canonicalMatchRepository, times(2)).save(any())
+        }
+
+        @Test
+        fun `checkpoint in initial window processes only the new match`() {
+            val checkpoint = match("known", 100)
+            val new = match("new", 200)
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(listOf(knownCanonical(checkpoint)))
+            stubStore("existing")
+            val windowed = WindowedGateway(listOf(new, checkpoint))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(windowed.windows).containsExactly(5)
+            val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
+            verify(canonicalMatchRepository).save(saved.capture())
+            assertThat(saved.firstValue.matchId.value).isEqualTo("new")
+        }
+
+        @Test
+        fun `league checkpoint stops expansion while newer playoff matches are acquired`() {
+            val leagueCheckpoint = match("league-checkpoint", 100, matchType = "leagueMatch")
+            val playoffNew = match("playoff-new", 200, matchType = "playoffMatch")
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB)))
+                .thenReturn(listOf(knownCanonical(leagueCheckpoint)))
+            stubStore("existing")
+            val windowed = WindowedGateway(listOf(playoffNew, leagueCheckpoint))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(windowed.windows).containsExactly(5)
+            val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
+            verify(canonicalMatchRepository).save(saved.capture())
+            assertThat(saved.firstValue.matchId.value).isEqualTo("playoff-new")
+        }
+
+        @Test
+        fun `playoff checkpoint stops expansion while newer league matches are acquired`() {
+            val playoffCheckpoint = match("playoff-checkpoint", 100, matchType = "playoffMatch")
+            val leagueNew = match("league-new", 200, matchType = "leagueMatch")
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB)))
+                .thenReturn(listOf(knownCanonical(playoffCheckpoint)))
+            stubStore("existing")
+            val windowed = WindowedGateway(listOf(leagueNew, playoffCheckpoint))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(windowed.windows).containsExactly(5)
+            val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
+            verify(canonicalMatchRepository).save(saved.capture())
+            assertThat(saved.firstValue.matchId.value).isEqualTo("league-new")
+        }
+
+        @Test
+        fun `mixed league and playoff matches above checkpoint are processed chronologically`() {
+            val checkpoint = match("league-checkpoint", 100, matchType = "leagueMatch")
+            val playoffNew = match("playoff-new", 200, matchType = "playoffMatch")
+            val leagueNew = match("league-new", 300, matchType = "leagueMatch")
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB)))
+                .thenReturn(listOf(knownCanonical(checkpoint)))
+            stubStore("existing")
+            val windowed = WindowedGateway(listOf(leagueNew, checkpoint, playoffNew))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
+            verify(canonicalMatchRepository, times(2)).save(saved.capture())
+            assertThat(saved.allValues.map { it.matchId.value }).containsExactly("playoff-new", "league-new")
+        }
+
+        @Test
+        fun `league playoff league alternation keeps the same operational frontier`() {
+            val leagueCheckpoint = match("league-checkpoint", 100, matchType = "leagueMatch")
+            val playoff = match("playoff", 200, matchType = "playoffMatch")
+            val league = match("league", 300, matchType = "leagueMatch")
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(
+                listOf(knownCanonical(leagueCheckpoint)),
+                listOf(knownCanonical(playoff), knownCanonical(leagueCheckpoint)),
+            )
+            stubStore("existing")
+            val windowed = WindowedGateway(
+                listOf(playoff, leagueCheckpoint),
+                listOf(league, playoff),
+            )
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(windowed.windows).containsExactly(5, 5)
+            val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
+            verify(canonicalMatchRepository, times(2)).save(saved.capture())
+            assertThat(saved.allValues.map { it.matchId.value }).containsExactly("playoff", "league")
+        }
+
+        @Test
+        fun `known-only initial window returns zero new without reprocessing canonical even when publication previously failed`() {
+            val checkpoint = match("known", 100)
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(listOf(knownCanonical(checkpoint)))
+            whenever(store.loadRecords(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(
+                mapOf("known" to PublicationRecord("known", PublicationState.FAILED_TRANSIENT)),
+            )
+            val windowed = WindowedGateway(listOf(checkpoint))
+
+            val result = service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(result).isInstanceOf(AcquisitionResult.Processed::class.java)
+            assertThat(windowed.windows).containsExactly(5)
+            verify(canonicalMatchRepository, never()).save(any())
+            verify(editorialPresentationService, never()).generateAndPersist(any())
+        }
+
+        @Test
+        fun `checkpoint absence expands until found and stops`() {
+            val checkpoint = match("known", 100)
+            val new = match("new", 200)
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(listOf(knownCanonical(checkpoint)))
+            stubStore("existing")
+            val windowed = WindowedGateway(listOf(new), listOf(new, checkpoint))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(windowed.windows).containsExactly(5, 10)
+            verify(canonicalMatchRepository, times(1)).save(any())
+        }
+
+        @Test
+        fun `checkpoint missing at maximum window is bounded and deduplicated`() {
+            val old = match("known", 1)
+            val new = match("new", 200)
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(listOf(knownCanonical(old)))
+            stubStore("existing")
+            val windowed = WindowedGateway(listOf(new), listOf(new), listOf(new, new))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(windowed.windows).containsExactly(5, 10, 20)
+            verify(canonicalMatchRepository, times(1)).save(any())
+        }
+
+        @Test
+        fun `historical gap remains open while later polls use the advanced operational checkpoint`() {
+            val anchor = match("A", 100)
+            val d = match("D", 400)
+            val e = match("E", 500)
+            val f = match("F", 600)
+            val g = match("G", 700)
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(
+                listOf(knownCanonical(anchor)),
+                listOf(
+                    knownCanonical(g), knownCanonical(f), knownCanonical(e), knownCanonical(d), knownCanonical(anchor),
+                ),
+            )
+            stubStore("existing")
+            val windowed = WindowedGateway(
+                listOf(d, e, f, g), listOf(d, e, f, g), listOf(d, e, f, g),
+                listOf(e, f, g),
+            )
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(windowed.windows).containsExactly(5, 10, 20, 5)
+            verify(canonicalMatchRepository, times(4)).save(any())
+            val gap = synchronizationGapStore.findOpen(LEGACY_TEST_CLUB)
+            assertThat(gap).isNotNull
+            assertThat(gap!!.anchorMatchId).isEqualTo("A")
+            assertThat(gap.firstObservableMatchId).isEqualTo("D")
+        }
+
+        @Test
+        fun `new match advances the operational frontier without closing the historical gap`() {
+            val anchor = match("A", 100)
+            val d = match("D", 400)
+            val e = match("E", 500)
+            val f = match("F", 600)
+            val g = match("G", 700)
+            val h = match("H", 800)
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(
+                listOf(knownCanonical(anchor)),
+                listOf(knownCanonical(g), knownCanonical(f), knownCanonical(e), knownCanonical(d), knownCanonical(anchor)),
+            )
+            stubStore("existing")
+            val windowed = WindowedGateway(
+                listOf(d, e, f, g), listOf(d, e, f, g), listOf(d, e, f, g),
+                listOf(h, g, f, e),
+            )
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(windowed.windows).containsExactly(5, 10, 20, 5)
+            val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
+            verify(canonicalMatchRepository, times(5)).save(saved.capture())
+            assertThat(saved.allValues.map { it.matchId.value }).containsExactly("D", "E", "F", "G", "H")
+            assertThat(synchronizationGapStore.findOpen(LEGACY_TEST_CLUB)).isNotNull
+        }
+
+        @Test
+        fun `unexpected EA order is persisted chronologically and failed publication state does not refetch canonical`() {
+            val checkpoint = match("known", 50)
+            val older = match("older", 100)
+            val newer = match("newer", 200)
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(listOf(knownCanonical(checkpoint)))
+            stubStore("existing")
+            val windowed = WindowedGateway(listOf(newer, checkpoint, older))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
+            verify(canonicalMatchRepository, times(2)).save(saved.capture())
+            assertThat(saved.allValues.map { it.matchId.value }).containsExactly("older", "newer")
+        }
+
+        @Test
+        fun `clubs use independent canonical checkpoints`() {
+            val secondClubId = "67890"
+            val firstCheckpoint = match("first-known")
+            val secondCheckpoint = match("second-known", ownerClubId = secondClubId)
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB)))
+                .thenReturn(listOf(knownCanonical(firstCheckpoint)))
+            whenever(canonicalMatchRepository.findAll(ClubId(secondClubId)))
+                .thenReturn(listOf(knownCanonical(secondCheckpoint, secondClubId)))
+            val windowed = WindowedGateway(listOf(firstCheckpoint), listOf(secondCheckpoint))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+            service.acquire(ClubId(secondClubId), AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(windowed.clubIds).containsExactly(clubId, secondClubId)
+            assertThat(windowed.windows).containsExactly(5, 5)
+            verify(canonicalMatchRepository, never()).save(any())
+        }
+
+        @Test
+        fun `historical gaps remain isolated between clubs`() {
+            val first = SynchronizationGap(LEGACY_TEST_CLUB, "A", "D")
+            val secondClub = ClubId("67890")
+            val second = SynchronizationGap(secondClub, "X", "Z")
+
+            synchronizationGapStore.openGap(first)
+            synchronizationGapStore.openGap(second)
+
+            assertThat(synchronizationGapStore.findOpen(LEGACY_TEST_CLUB)).isEqualTo(first)
+            assertThat(synchronizationGapStore.findOpen(secondClub)).isEqualTo(second)
+        }
+    }
 
     // -------------------------------------------------------------------------
     // EA API Error Handling

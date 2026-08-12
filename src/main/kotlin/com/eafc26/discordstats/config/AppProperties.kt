@@ -48,6 +48,8 @@ data class EaProperties(
     val clubName: String = "",
     val matchType: String = "leagueMatch",
     val maxResultCount: Int = 20,
+    val incrementalInitialWindow: Int = 5,
+    val incrementalMaxWindow: Int = 20,
     val gatewayBaseUrl: String = "http://127.0.0.1:8081",
     val gatewayInternalToken: String = "",
 )

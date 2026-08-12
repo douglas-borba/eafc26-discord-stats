@@ -34,8 +34,16 @@ class OperationalEventRecorder(private val repository: OperationalEventRepositor
     fun eaUnavailable(clubId: ClubId, statusCode: Int, message: String?) =
         record(OperationalEvent(clubId = clubId, eventType = "EA_FETCH", phase = "UNAVAILABLE", status = EventStatus.FAILURE, errorCode = statusCode.toString(), message = message))
 
-    fun eaSuccess(clubId: ClubId, durationMs: Long) =
-        record(OperationalEvent(clubId = clubId, eventType = "EA_FETCH", phase = "SUCCESS", status = EventStatus.SUCCESS, durationMs = durationMs))
+    fun eaSuccess(clubId: ClubId, durationMs: Long, message: String? = null) =
+        record(OperationalEvent(clubId = clubId, eventType = "EA_FETCH", phase = "SUCCESS", status = EventStatus.SUCCESS, durationMs = durationMs, message = message))
+
+    fun eaFetchExpanded(clubId: ClubId, fromWindow: Int, toWindow: Int, checkpointFound: Boolean) =
+        record(OperationalEvent(clubId = clubId, eventType = "EA_FETCH_EXPANDED", phase = "EXPANDED", status = EventStatus.INFO,
+            message = "fromWindow=$fromWindow toWindow=$toWindow checkpointFound=$checkpointFound"))
+
+    fun eaCheckpointMissing(clubId: ClubId, window: Int, matchesReturned: Int) =
+        record(OperationalEvent(clubId = clubId, eventType = "EA_FETCH", phase = "CHECKPOINT_MISSING", status = EventStatus.WARNING,
+            message = "window=$window matchesReturned=$matchesReturned checkpointFound=false"))
 
     fun acquisitionStarted(clubId: ClubId, trigger: String) =
         record(OperationalEvent(clubId = clubId, eventType = "ACQUISITION", phase = "START", status = EventStatus.INFO, message = "Trigger: $trigger"))

@@ -3,6 +3,7 @@ package com.eafc26.discordstats.service
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
+import com.eafc26.discordstats.ea.WindowedEaClubsGateway
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.canonical.CanonicalMatch
@@ -28,7 +29,8 @@ import org.springframework.stereotype.Service
  * All callers use [acquire] which internally:
  * 1. Acquires the shared lock (via [AcquisitionLock])
  * 2. Fetches matches from EA API
- * 3. Canonicalizes and persists the complete returned window
+ * 3. For scheduler polling, synchronizes the returned EA window against the
+ *    canonical acquisition checkpoint before canonicalizing only new matches
  * 4. Applies Discord publication deduplication via [DiscordMatchPublicationService]
  * 5. Generates presentation and caches in [LatestMatchHolder]
  * 6. Delivers new matches to Discord (if applicable)
@@ -55,6 +57,7 @@ class MatchAcquisitionService(
     private val editorialPresentationService: MatchEditorialPresentationService?,
     private val llmEditorialService: LlmEditorialService,
     private val eventRecorder: OperationalEventRecorder? = null,
+    private val synchronizationGapStore: SynchronizationGapStore = InMemorySynchronizationGapStore(),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
@@ -110,11 +113,17 @@ class MatchAcquisitionService(
         // Phase: FETCHING
         stateHolder.enterPhase(clubId, AcquisitionPhase.FETCHING, "Consultando a EA...")
 
-        // Step 1: Fetch matches from EA
+        // Step 1: Fetch a bounded EA window. Scheduler polling uses canonical_matches
+        // as its acquisition checkpoint; all other triggers retain their existing mode.
         val eaFetchStartedAtMs = System.currentTimeMillis()
-        val matches = when (val result = gateway.getLatestMatches(clubId.value)) {
+        val synchronization = fetchMatches(clubId, trigger, gateway)
+        val matches = when (val result = synchronization.result) {
             is EaApiResult.Success -> {
-                eventRecorder?.eaSuccess(clubId, System.currentTimeMillis() - eaFetchStartedAtMs)
+                eventRecorder?.eaSuccess(
+                    clubId,
+                    System.currentTimeMillis() - eaFetchStartedAtMs,
+                    synchronization.diagnostics,
+                )
                 result.data
             }
             EaApiResult.NoMatches -> {
@@ -138,6 +147,11 @@ class MatchAcquisitionService(
         }
 
         if (matches.isEmpty()) {
+            if (synchronization.matchesReturned != null && synchronization.matchesReturned > 0) {
+                log.debug("EA synchronization found no new canonical matches for club-id={}", clubId)
+                stateHolder.complete(clubId, "Nenhuma partida nova.")
+                return AcquisitionResult.Processed(emptyList(), emptyList(), emptyList())
+            }
             log.info("EA returned empty match list for club-id={}", clubId)
             stateHolder.complete(clubId, "Nenhuma partida encontrada.")
             return AcquisitionResult.NoMatches
@@ -230,6 +244,77 @@ class MatchAcquisitionService(
 
         return result
     }
+
+    /**
+     * Scheduler-only bounded synchronization. The canonical collection is the
+     * acquisition checkpoint; publication state deliberately plays no role here.
+     */
+    private fun fetchMatches(
+        clubId: ClubId,
+        trigger: AcquisitionTrigger,
+        gateway: EaClubsGateway,
+    ): SynchronizationFetch {
+        if (trigger != AcquisitionTrigger.SCHEDULER || gateway !is WindowedEaClubsGateway) {
+            return SynchronizationFetch(gateway.getLatestMatches(clubId.value), null, null)
+        }
+
+        val knownMatches = canonicalMatchRepository.findAll(clubId)
+        val knownIds = knownMatches.mapTo(linkedSetOf()) { it.matchId.value }
+        if (knownIds.isEmpty()) {
+            val window = props.ea.incrementalMaxWindow
+            return SynchronizationFetch(
+                gateway.getLatestMatches(clubId.value, window),
+                "window=$window matchesReturned=first-run checkpointFound=false newMatches=first-run",
+                null,
+            )
+        }
+
+        var window = props.ea.incrementalInitialWindow.coerceAtLeast(1)
+        val maxWindow = props.ea.incrementalMaxWindow.coerceAtLeast(window)
+        while (true) {
+            val result = gateway.getLatestMatches(clubId.value, window)
+            if (result !is EaApiResult.Success) return SynchronizationFetch(result, "window=$window", null)
+
+            val deduplicated = result.data.distinctBy { it.matchId }
+            val checkpointFound = deduplicated.any { it.matchId in knownIds }
+            val newMatches = deduplicated.filterNot { it.matchId in knownIds }
+            if (checkpointFound) {
+                return SynchronizationFetch(
+                    EaApiResult.Success(newMatches),
+                    "window=$window matchesReturned=${deduplicated.size} checkpointFound=true newMatches=${newMatches.size}",
+                    deduplicated.size,
+                )
+            }
+            if (window >= maxWindow) {
+                eventRecorder?.eaCheckpointMissing(clubId, window, deduplicated.size)
+                synchronizationGapStore.openGap(
+                    SynchronizationGap(
+                        clubId = clubId,
+                        anchorMatchId = knownMatches.first().matchId.value,
+                        firstObservableMatchId = deduplicated.minByOrNull { it.timestamp }?.matchId,
+                    ),
+                )
+                log.warn(
+                    "EA synchronization checkpoint missing at maximum window: clubId={}, window={}, matchesReturned={}, newMatches={}",
+                    clubId.value, window, deduplicated.size, newMatches.size,
+                )
+                return SynchronizationFetch(
+                    EaApiResult.Success(newMatches),
+                    "window=$window matchesReturned=${deduplicated.size} checkpointFound=false newMatches=${newMatches.size} maxWindowReached=true",
+                    deduplicated.size,
+                )
+            }
+            val expanded = (window * 2).coerceAtMost(maxWindow)
+            eventRecorder?.eaFetchExpanded(clubId, window, expanded, checkpointFound = false)
+            window = expanded
+        }
+    }
+
+    private data class SynchronizationFetch(
+        val result: EaApiResult<List<MatchResponse>>,
+        val diagnostics: String?,
+        val matchesReturned: Int?,
+    )
 
     // -------------------------------------------------------------------------
     // Processing modes

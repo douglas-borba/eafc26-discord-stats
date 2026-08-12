@@ -46,6 +46,14 @@ class NodeEaClubsGatewayTest {
         assertThat(server.takeRequest().path).isEqualTo("/ea/clubs/1104972/matches?platform=common-gen5&maxResultCount=20")
     }
 
+    @Test fun `matches accepts an explicit bounded window without changing the configured default`() {
+        server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody("[]"))
+
+        assertThat(gateway.getLatestMatches("1104972", 5)).isEqualTo(EaApiResult.NoMatches)
+
+        assertThat(server.takeRequest().path).isEqualTo("/ea/clubs/1104972/matches?platform=common-gen5&maxResultCount=5")
+    }
+
     @Test fun `members parse the EA envelope`() {
         server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody("{\"members\":[]}"))
         assertThat(gateway.getMembersStats("1104972")).isEqualTo(EaApiResult.Success(emptyList<Any>()))

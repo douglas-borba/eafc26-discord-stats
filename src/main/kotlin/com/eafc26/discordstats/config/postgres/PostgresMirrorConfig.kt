@@ -19,6 +19,8 @@ import com.eafc26.discordstats.store.PostgresPublishedMatchStore
 import com.eafc26.discordstats.store.PublicationStateStore
 import com.eafc26.discordstats.store.OperationalEventRepository
 import com.eafc26.discordstats.service.OperationalEventRecorder
+import com.eafc26.discordstats.service.SynchronizationGapStore
+import com.eafc26.discordstats.store.PostgresSynchronizationGapStore
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.flywaydb.core.Flyway
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -113,6 +115,10 @@ class PostgresMirrorConfig {
     @Bean
     fun operationalEventRecorder(operationalEventRepository: OperationalEventRepository): OperationalEventRecorder =
         OperationalEventRecorder(operationalEventRepository)
+
+    @Bean
+    fun synchronizationGapStore(jdbcTemplate: JdbcTemplate): SynchronizationGapStore =
+        PostgresSynchronizationGapStore(jdbcTemplate)
 
     @Bean
     fun postgresPublishedMatchStoreImpl(jdbcTemplate: JdbcTemplate): PostgresPublishedMatchStore =

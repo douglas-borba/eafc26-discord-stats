@@ -10,6 +10,8 @@ app:
     club-name: "Associação BF"
     match-type: leagueMatch   # friendlyMatch | leagueMatch | playoffMatch
     max-result-count: 20
+    incremental-initial-window: ${EAFC_INCREMENTAL_INITIAL_WINDOW:5}
+    incremental-max-window: ${EAFC_INCREMENTAL_MAX_WINDOW:20}
     gateway-base-url: ${EA_GATEWAY_BASE_URL:http://127.0.0.1:8081}
     gateway-internal-token: ${EA_GATEWAY_INTERNAL_TOKEN:}
 

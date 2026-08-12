@@ -21,3 +21,8 @@ interface EaClubsGateway {
     fun getMembersStats(clubId: String): EaApiResult<List<MemberStats>> =
         EaApiResult.Success(emptyList())
 }
+
+/** Optional production capability for bounded, recent EA match windows. */
+interface WindowedEaClubsGateway : EaClubsGateway {
+    fun getLatestMatches(clubId: String, maxResultCount: Int): EaApiResult<List<MatchResponse>>
+}
