@@ -5,6 +5,7 @@ import { useState, useCallback } from "react";
 import { OpponentHistoryView } from "@/components/opponents/opponent-history-view";
 import { ArrowLeft } from "lucide-react";
 import type { OpponentSummary, OpponentHistory } from "@/lib/domain/types";
+import { formatDate } from "@/lib/utils";
 
 function outcomeLabel(outcome: "WIN" | "DRAW" | "LOSS") {
   return outcome === "WIN" ? "Vitória" : outcome === "DRAW" ? "Empate" : "Derrota";
@@ -162,7 +163,7 @@ export function OpponentsShell({
                       {o.lastPlayedAt && (
                         <p className="text-muted" style={{ fontSize: 12, margin: 0, marginTop: 2 }}>
                           {outcomeLabel(o.wins > 0 ? "WIN" : o.draws > 0 ? "DRAW" : "LOSS")} &middot;{" "}
-                          {new Date(o.lastPlayedAt).toLocaleDateString("pt-BR")}
+                          {formatDate(o.lastPlayedAt)}
                         </p>
                       )}
                     </div>

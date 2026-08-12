@@ -10,6 +10,7 @@ import com.eafc26.discordstats.domain.story.StoryContent
 import com.eafc26.discordstats.domain.story.StoryType
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.presentation.MatchSummaryPresentation
+import com.eafc26.discordstats.presentation.MatchPresentationTimeZone
 import org.springframework.stereotype.Component
 import java.time.ZoneId
 
@@ -27,7 +28,7 @@ class DiscordRenderer(
         footballMatch: FootballMatch,
         interpretation: MatchInterpretation,
         stories: MatchStories,
-        zoneId: ZoneId = ZoneId.systemDefault(),
+        zoneId: ZoneId = MatchPresentationTimeZone.BRAZIL,
         editorialNarrative: String? = null,
     ): DiscordPayload {
         validateInputs(footballMatch, interpretation, stories)

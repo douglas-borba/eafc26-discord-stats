@@ -12,6 +12,7 @@ import com.eafc26.discordstats.domain.match.CompetitionType
 import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.story.StoryContent
 import com.eafc26.discordstats.domain.story.StoryType
+import com.eafc26.discordstats.presentation.MatchPresentationTimeZone
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
@@ -114,7 +115,7 @@ object MatchComparisonPresenter {
         Locale.forLanguageTag("pt-BR"),
     )
 
-    fun option(option: MatchComparisonOption, zoneId: ZoneId = ZoneId.systemDefault()) =
+    fun option(option: MatchComparisonOption, zoneId: ZoneId = MatchPresentationTimeZone.BRAZIL) =
         MatchComparisonOptionView(
             matchId = option.matchId.value,
             playedAt = option.playedAt,
@@ -133,7 +134,7 @@ object MatchComparisonPresenter {
 
     fun comparison(
         comparison: MatchComparison,
-        zoneId: ZoneId = ZoneId.systemDefault(),
+        zoneId: ZoneId = MatchPresentationTimeZone.BRAZIL,
     ) = MatchComparisonView(
         first = comparison.first.presentation(zoneId),
         second = comparison.second.presentation(zoneId),

@@ -1,4 +1,5 @@
 import type { MatchSummaryPresentation } from "@/lib/services/match-card-service";
+import { formatMatchDateTime } from "@/lib/utils";
 
 interface Props {
   presentation: MatchSummaryPresentation | null | undefined;
@@ -83,7 +84,7 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
               </div>
             </div>
             <div className={`card-date ${c ? "text-[0.62rem]" : "text-[0.7rem]"} text-muted ${c ? "mt-[0.25rem]" : "mt-[0.4rem]"}`}>
-              📅 {presentation.date}
+              📅 {formatMatchDateTime(presentation.timestamp)}
             </div>
           </div>
         </div>

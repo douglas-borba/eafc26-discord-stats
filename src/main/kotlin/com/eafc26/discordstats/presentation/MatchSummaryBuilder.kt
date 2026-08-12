@@ -41,7 +41,7 @@ class MatchSummaryBuilder(
         footballMatch: FootballMatch,
         interpretation: MatchInterpretation,
         stories: MatchStories,
-        zoneId: ZoneId = ZoneId.systemDefault(),
+        zoneId: ZoneId = MatchPresentationTimeZone.BRAZIL,
         forceRandomPhrases: Boolean = false,
     ): MatchSummaryPresentation {
         require(footballMatch.id == interpretation.matchId && stories.matchId == footballMatch.id) {

@@ -1,6 +1,11 @@
 package com.eafc26.discordstats.discord
 
 import com.eafc26.discordstats.config.PhraseBank
+import com.eafc26.discordstats.application.interpretation.MatchInterpreter
+import com.eafc26.discordstats.application.story.MatchStoryExtractor
+import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.ea.mapping.EaMatchMapper
+import com.eafc26.discordstats.ea.mapping.MatchNormalizationResult
 import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
@@ -108,6 +113,32 @@ class DiscordShadowModeTest {
         assertThat(result.canonicalMatch.embeds.single().fields.map { it.name })
             .contains("⚡ DECISIVO", "😬 FICOU NO QUASE")
             .doesNotContain("🎯 PODERIA TER DECIDIDO", "😵 FALTOU CAPRICHO")
+    }
+
+    @Test
+    fun `Discord renders match instants in Brasilia time by default`() {
+        val source = match(emptyMap()).copy(timestamp = 1_786_572_420L) // 2026-08-12T22:07:00Z
+        val normalized = (EaMatchMapper().map(source) as MatchNormalizationResult.Success).match
+        val interpretation = MatchInterpreter().interpret(normalized, ClubId(clubId))
+        val stories = MatchStoryExtractor().extract(interpretation)
+
+        val payload = DiscordRenderer(MatchSummaryBuilder(PhraseBank(jacksonObjectMapper())))
+            .renderMatch(normalized, interpretation, stories)
+
+        assertThat(payload.embeds.single().description).contains("12 ago. 2026 • 19:07")
+    }
+
+    @Test
+    fun `Discord converts a UTC date boundary to the prior Brasilia date`() {
+        val source = match(emptyMap()).copy(timestamp = 1_786_584_600L) // 2026-08-13T01:30:00Z
+        val normalized = (EaMatchMapper().map(source) as MatchNormalizationResult.Success).match
+        val interpretation = MatchInterpreter().interpret(normalized, ClubId(clubId))
+        val stories = MatchStoryExtractor().extract(interpretation)
+
+        val payload = DiscordRenderer(MatchSummaryBuilder(PhraseBank(jacksonObjectMapper())))
+            .renderMatch(normalized, interpretation, stories)
+
+        assertThat(payload.embeds.single().description).contains("12 ago. 2026 • 22:30")
     }
 
     private fun match(players: Map<String, PlayerEntry>) = MatchResponse(

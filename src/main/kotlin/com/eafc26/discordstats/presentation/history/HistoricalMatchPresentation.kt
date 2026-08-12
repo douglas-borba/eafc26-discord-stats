@@ -18,6 +18,7 @@ import com.eafc26.discordstats.domain.story.Story
 import com.eafc26.discordstats.domain.story.StoryContent
 import com.eafc26.discordstats.domain.story.StoryPriority
 import com.eafc26.discordstats.domain.story.StoryType
+import com.eafc26.discordstats.presentation.MatchPresentationTimeZone
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.ZoneId
@@ -143,7 +144,7 @@ object HistoricalMatchPresenter {
 
     fun summary(
         canonical: CanonicalMatch,
-        zoneId: ZoneId = ZoneId.systemDefault(),
+        zoneId: ZoneId = MatchPresentationTimeZone.BRAZIL,
     ): HistoricalMatchSummary {
         val interpretation = canonical.interpretation
         val result = interpretation.result
@@ -176,7 +177,7 @@ object HistoricalMatchPresenter {
 
     fun detail(
         canonical: CanonicalMatch,
-        zoneId: ZoneId = ZoneId.systemDefault(),
+        zoneId: ZoneId = MatchPresentationTimeZone.BRAZIL,
     ): HistoricalMatchDetail {
         val interpretation = canonical.interpretation
         val ourPerformance = requireNotNull(

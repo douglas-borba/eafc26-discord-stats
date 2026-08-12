@@ -8,6 +8,7 @@ import com.eafc26.discordstats.opponent.OpponentRun
 import com.eafc26.discordstats.opponent.OpponentRunRecord
 import com.eafc26.discordstats.opponent.OpponentRunType
 import com.eafc26.discordstats.opponent.OpponentSummary
+import com.eafc26.discordstats.presentation.MatchPresentationTimeZone
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -39,12 +40,12 @@ data class OpponentCriterionView(val criterion: String, val tiePolicy: String, v
 object OpponentHistoryPresenter {
     private val date = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.forLanguageTag("pt-BR"))
 
-    fun index(opponents: List<OpponentSummary>, zone: ZoneId = ZoneId.systemDefault()) = OpponentIndexResponse(
+    fun index(opponents: List<OpponentSummary>, zone: ZoneId = MatchPresentationTimeZone.BRAZIL) = OpponentIndexResponse(
         if (opponents.isEmpty()) "empty" else "success",
         opponents.map { it.view(zone) },
     )
 
-    fun detail(history: OpponentHistory, zone: ZoneId = ZoneId.systemDefault()): OpponentDetailResponse {
+    fun detail(history: OpponentHistory, zone: ZoneId = MatchPresentationTimeZone.BRAZIL): OpponentDetailResponse {
         val record = history.record
         return OpponentDetailResponse("success", OpponentHistoryView(
             clubId = history.clubId.value, name = history.displayName, meetings = record.meetings,

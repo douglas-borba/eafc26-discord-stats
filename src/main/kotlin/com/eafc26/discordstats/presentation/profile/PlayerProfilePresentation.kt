@@ -6,6 +6,7 @@ import com.eafc26.discordstats.domain.match.CompetitionType
 import com.eafc26.discordstats.profile.PlayerProfile
 import com.eafc26.discordstats.profile.PlayerProfileIndexEntry
 import com.eafc26.discordstats.profile.PlayerProfileMatch
+import com.eafc26.discordstats.presentation.MatchPresentationTimeZone
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.ZoneId
@@ -80,7 +81,7 @@ object PlayerProfilePresenter {
 
     fun listItem(
         entry: PlayerProfileIndexEntry,
-        zoneId: ZoneId = ZoneId.systemDefault(),
+        zoneId: ZoneId = MatchPresentationTimeZone.BRAZIL,
     ) = PlayerProfileListItem(
         playerId = entry.playerId.value,
         name = entry.displayName,
@@ -91,7 +92,7 @@ object PlayerProfilePresenter {
 
     fun profile(
         profile: PlayerProfile,
-        zoneId: ZoneId = ZoneId.systemDefault(),
+        zoneId: ZoneId = MatchPresentationTimeZone.BRAZIL,
     ) = PlayerProfileView(
         playerId = profile.playerId.value,
         name = profile.displayName,

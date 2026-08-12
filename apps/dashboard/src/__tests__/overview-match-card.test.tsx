@@ -63,6 +63,17 @@ describe("OverviewMatchCard", () => {
     expect(html).toContain(">12</span>");
   });
 
+  it("formats the header timestamp in Brasilia time instead of using persisted display copy", () => {
+    const html = render({
+      ...basePresentation,
+      date: "12 ago. 2026 • 22:07",
+      timestamp: "2026-08-12T22:07:00Z",
+    });
+
+    expect(html).toContain("12 ago. 2026 • 19:07");
+    expect(html).not.toContain("12 ago. 2026 • 22:07");
+  });
+
   it("renders rich and sparse cards without changing the card shell", () => {
     const rich = render({
       ...basePresentation,
