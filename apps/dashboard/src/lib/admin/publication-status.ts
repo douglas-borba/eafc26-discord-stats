@@ -40,10 +40,10 @@ export function publicationStatus(record?: PublicationHistoryRecord): Publicatio
 function baselineStatus(reason: string | null): PublicationStatusPresentation {
   return reason === "FIRST_RUN"
     ? {
-        label: "Não publicado — baseline inicial",
-        description: "Registrada na inicialização e não enviada automaticamente",
+        label: "Histórico anterior",
+        description: "Publicação anterior não verificável pelo sistema atual",
         tone: "neutral",
-        actionLabel: "Enviar ao Discord",
+        actionLabel: "Reenviar",
         disabled: false,
       }
     : reason === "NO_DESTINATION"

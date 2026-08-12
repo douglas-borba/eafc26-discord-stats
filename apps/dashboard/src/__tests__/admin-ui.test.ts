@@ -128,5 +128,6 @@ describe("multi-club administration UI", () => {
     expect(detail).not.toContain("forcePublish(match)");
     expect(detail).toContain("Esta partida já consta como enviada ao Discord. Reenviar pode gerar uma mensagem duplicada.");
     expect(detail).toContain("Não é possível confirmar se o Discord recebeu esta partida. Reenviar pode gerar duplicação.");
+    expect(detail).toContain("O sistema não possui histórico suficiente para confirmar se esta partida já foi publicada no Discord. Reenviar pode gerar uma mensagem duplicada.");
   });
 });

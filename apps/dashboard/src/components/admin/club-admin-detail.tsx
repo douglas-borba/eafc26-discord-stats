@@ -410,6 +410,7 @@ function PublicationStatusBadge({ presentation }: { presentation: ReturnType<typ
 function forcePublishWarning(record?: PublicationHistoryRecord) {
   if (record?.state === "DELIVERED") return "Esta partida já consta como enviada ao Discord. Reenviar pode gerar uma mensagem duplicada.";
   if (record?.state === "DELIVERY_UNCERTAIN") return "Não é possível confirmar se o Discord recebeu esta partida. Reenviar pode gerar duplicação.";
+  if (record?.state === "BASELINED" && record.baselineReason === "FIRST_RUN") return "O sistema não possui histórico suficiente para confirmar se esta partida já foi publicada no Discord. Reenviar pode gerar uma mensagem duplicada.";
   return "A ação enviará esta partida ao Discord.";
 }
 

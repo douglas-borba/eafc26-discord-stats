@@ -17,8 +17,19 @@ describe("publicationStatus", () => {
     expect(publicationStatus(record("DELIVERED"))).toMatchObject({ label: "Enviado", actionLabel: "Reenviar", tone: "success" });
   });
 
-  it("distinguishes the initial baseline from a missing Discord destination", () => {
-    expect(publicationStatus(record("BASELINED", "FIRST_RUN"))).toMatchObject({ label: "Não publicado — baseline inicial", tone: "neutral" });
+  it("represents an initial baseline as unverifiable publication history", () => {
+    const initialBaseline = publicationStatus(record("BASELINED", "FIRST_RUN"));
+
+    expect(initialBaseline).toMatchObject({
+      label: "Histórico anterior",
+      description: "Publicação anterior não verificável pelo sistema atual",
+      actionLabel: "Reenviar",
+      tone: "neutral",
+    });
+    expect(initialBaseline.label).not.toContain("Não publicado");
+  });
+
+  it("keeps a missing Discord destination distinct from the initial baseline", () => {
     expect(publicationStatus(record("BASELINED", "NO_DESTINATION"))).toMatchObject({ label: "Não enviado", description: "Discord indisponível na ocasião", actionLabel: "Enviar agora", tone: "warning" });
   });
 
