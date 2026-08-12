@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Panel } from "@/components/ui/panel";
 import { adminRequest } from "@/lib/admin/browser-client";
-import type { OperationalEvent } from "@/lib/admin/types";
+import {
+  normalizeOperationalEvents,
+  type OperationalEvent,
+  type OperationalEventsResponse,
+} from "@/lib/admin/types";
 
 export function ClubEventTimeline({ clubId }: { clubId: string }) {
   const [events, setEvents] = useState<OperationalEvent[]>([]);
@@ -14,7 +18,8 @@ export function ClubEventTimeline({ clubId }: { clubId: string }) {
     setLoading(true);
     setError(null);
     try {
-      setEvents(await adminRequest<OperationalEvent[]>(`/api/admin/clubs/${clubId}/events`));
+      const payload = await adminRequest<OperationalEventsResponse>(`/api/admin/clubs/${clubId}/events`);
+      setEvents(normalizeOperationalEvents(payload?.events));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Não foi possível carregar eventos.");
     } finally {
@@ -37,8 +42,8 @@ export function ClubEventTimeline({ clubId }: { clubId: string }) {
             <EventDot status={event.status} />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-medium text-text-soft">{event.eventType}</span>
-                {event.phase && <span className="text-xs text-muted">{event.phase}</span>}
+                <span className="text-xs font-medium text-text-soft">{event.eventType ?? "Evento operacional"}</span>
+                <span className="text-xs text-muted">{event.phase ?? "Fase não informada"}</span>
                 {event.matchId && <span className="font-mono text-xs text-muted">#{event.matchId}</span>}
                 {event.durationMs != null && <span className="text-xs text-muted">{event.durationMs}ms</span>}
               </div>
@@ -53,16 +58,24 @@ export function ClubEventTimeline({ clubId }: { clubId: string }) {
   );
 }
 
-function EventDot({ status }: { status: string }) {
+function EventDot({ status }: { status: string | null }) {
   const color = {
     SUCCESS: "bg-win",
     FAILURE: "bg-loss",
     WARNING: "bg-yellow-400",
     INFO: "bg-accent",
-  }[status] ?? "bg-muted";
+  }[status ?? "unknown"] ?? "bg-muted";
   return <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${color}`} />;
 }
 
-function formatTime(iso: string) {
-  return new Intl.DateTimeFormat("pt-BR", { timeStyle: "medium" }).format(new Date(iso));
+function formatTime(iso: string | null) {
+  if (!iso) return "Data indisponível";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "Data indisponível";
+
+  try {
+    return new Intl.DateTimeFormat("pt-BR", { timeStyle: "medium" }).format(date);
+  } catch {
+    return "Data indisponível";
+  }
 }

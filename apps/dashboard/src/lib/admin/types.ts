@@ -40,16 +40,48 @@ export interface SystemHealth {
 }
 
 export interface OperationalEvent {
-  id: number;
-  clubId: string | null;
+  id: number | null;
   matchId: string | null;
-  eventType: string;
+  eventType: string | null;
   phase: string | null;
-  status: "SUCCESS" | "FAILURE" | "WARNING" | "INFO";
+  status: string | null;
   message: string | null;
   errorCode: string | null;
   durationMs: number | null;
-  createdAt: string;
+  createdAt: string | null;
+}
+
+/** Exact response shape returned by GET /api/admin/clubs/{clubId}/events. */
+export interface OperationalEventsResponse {
+  events: OperationalEvent[];
+}
+
+/**
+ * Keeps a malformed diagnostics response contained in the timeline instead of
+ * allowing an unexpected persisted value to break the enclosing admin page.
+ */
+export function normalizeOperationalEvents(events: unknown): OperationalEvent[] {
+  if (!Array.isArray(events)) return [];
+
+  return events.flatMap((event): OperationalEvent[] => {
+    if (!event || typeof event !== "object") return [];
+    const value = event as Record<string, unknown>;
+    return [{
+      id: typeof value.id === "number" ? value.id : null,
+      matchId: asNullableString(value.matchId),
+      eventType: asNullableString(value.eventType),
+      phase: asNullableString(value.phase),
+      status: asNullableString(value.status),
+      message: asNullableString(value.message),
+      errorCode: asNullableString(value.errorCode),
+      durationMs: typeof value.durationMs === "number" ? value.durationMs : null,
+      createdAt: asNullableString(value.createdAt),
+    }];
+  });
+}
+
+function asNullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }
 
 export interface PublicationHistoryRecord {
