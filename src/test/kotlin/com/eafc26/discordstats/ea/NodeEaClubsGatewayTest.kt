@@ -2,7 +2,10 @@ package com.eafc26.discordstats.ea
 
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.config.EaProperties
+import com.eafc26.discordstats.config.WebClientConfig
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.databind.node.ArrayNode
+import com.fasterxml.jackson.databind.node.ObjectNode
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.assertj.core.api.Assertions.assertThat
@@ -73,6 +76,54 @@ class NodeEaClubsGatewayTest {
 
         assertThat(gateway.getLatestMatches("1104972")).isInstanceOf(EaApiResult.UnexpectedPayload::class.java)
         assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test fun `configured EA gateway client reads a valid payload above 256 KiB and below 512 KiB`() {
+        val body = sizedMatchesPayload(264 * 1024)
+        assertThat(body.toByteArray().size).isGreaterThan(256 * 1024)
+        assertThat(body.toByteArray().size).isLessThan(512 * 1024)
+        server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(body))
+
+        val result = configuredGateway().getLatestMatches("1104972")
+
+        assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
+    }
+
+    @Test fun `configured EA gateway client rejects a valid payload above 512 KiB`() {
+        val body = sizedMatchesPayload(513 * 1024)
+        assertThat(body.toByteArray().size).isGreaterThan(512 * 1024)
+        server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(body))
+
+        val result = configuredGateway().getLatestMatches("1104972")
+
+        assertThat(result).isInstanceOf(EaApiResult.UnexpectedPayload::class.java)
+    }
+
+    @Test fun `configured EA gateway client keeps small valid payloads working`() {
+        server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody("[]"))
+
+        assertThat(configuredGateway().getLatestMatches("1104972")).isEqualTo(EaApiResult.NoMatches)
+    }
+
+    private fun configuredGateway(): NodeEaClubsGateway {
+        val props = AppProperties(ea = EaProperties(gatewayBaseUrl = server.url("/").toString().trimEnd('/'), gatewayInternalToken = "secret"))
+        return NodeEaClubsGateway(WebClientConfig().eaGatewayWebClient(props), props, EaResponseParser(jacksonObjectMapper()))
+    }
+
+    private fun sizedMatchesPayload(minimumBytes: Int): String {
+        val mapper = jacksonObjectMapper()
+        val template = mapper.readTree(fixture("clubs-matches.json")) as ArrayNode
+        val matches = mapper.createArrayNode()
+        var sequence = 0
+        while (mapper.writeValueAsBytes(matches).size <= minimumBytes) {
+            template.forEach { source ->
+                val copy = source.deepCopy<ObjectNode>()
+                copy.put("matchId", "sized-$sequence")
+                copy.put("timestamp", 1_718_500_000L + sequence++)
+                matches.add(copy)
+            }
+        }
+        return mapper.writeValueAsString(matches)
     }
 
     private fun fixture(name: String) = checkNotNull(javaClass.getResource("/fixtures/$name")).readText()
