@@ -9,6 +9,29 @@ export interface AdminClub {
   isDefault?: boolean;
 }
 
+export interface AdminMatchSummary {
+  matchId: string;
+  playedAt: string;
+  dateLabel?: string;
+  competition: string | null;
+  ourClub: { id: string; name: string; score: number };
+  opponentClub: { id: string; name: string; score: number };
+}
+
+export interface AdminMatchListResponse {
+  matches: AdminMatchSummary[];
+}
+
+export interface AdminPublicationHistoryResponse {
+  records: PublicationHistoryRecord[];
+}
+
+export interface ForcePublishResponse {
+  status: "success" | "failed";
+  message: string;
+  outcome: string;
+}
+
 export interface ClubSearchCandidate {
   clubId: string;
   displayName: string;

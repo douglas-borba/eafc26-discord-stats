@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/auth-server", () => ({ requireAdmin: vi.fn(async () => ({ kind: "allowed" })) }));
+import { requireAdmin } from "@/lib/supabase/auth-server";
 import { GET as listClubs, POST as createClub } from "@/app/api/admin/clubs/route";
 import { GET as searchClubs } from "@/app/api/admin/clubs/search/route";
 import { GET as getClub, DELETE as deleteClub } from "@/app/api/admin/clubs/[clubId]/route";
@@ -8,9 +9,11 @@ import { PATCH as updateMonitoring } from "@/app/api/admin/clubs/[clubId]/monito
 import { PUT as configureDiscord, DELETE as removeDiscord } from "@/app/api/admin/clubs/[clubId]/discord/route";
 import { GET as getStatus } from "@/app/api/admin/clubs/[clubId]/status/route";
 import { GET as getSystemHealth } from "@/app/api/admin/system/health/route";
+import { POST as forcePublish } from "@/app/api/admin/clubs/[clubId]/publication/[matchId]/force-publish/route";
 
 const originalBackendUrl = process.env.BACKEND_URL;
 const clubContext = { params: Promise.resolve({ clubId: "8874106" }) };
+const publicationContext = { params: Promise.resolve({ clubId: "8874106", matchId: "960520613970171" }) };
 
 beforeEach(() => { process.env.BACKEND_URL = "https://spring.example.test/"; process.env.ADMIN_INTERNAL_TOKEN = "test-admin-token"; });
 afterEach(() => {
@@ -117,6 +120,35 @@ describe("administrative BFF", () => {
     expect(response.status).toBe(204);
     expect(fetchMock.mock.calls[1][0]).toBe("https://spring.example.test/api/admin/clubs/8874106");
     expect(fetchMock.mock.calls[1][1].method).toBe("DELETE");
+  });
+
+  it("force-publishes only the explicitly selected match through the server-side CSRF flow", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(csrf())
+      .mockResolvedValueOnce(json({ status: "success", outcome: "PUBLISHED", message: "Partida reenviada com sucesso" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await forcePublish(new Request("https://dashboard.test", { method: "POST" }), publicationContext);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ status: "success", outcome: "PUBLISHED" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toBe("https://spring.example.test/api/admin/clubs/8874106/publication/960520613970171/force-publish");
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: "POST", body: undefined });
+    const headers = fetchMock.mock.calls[1][1].headers as Headers;
+    expect(headers.get("X-XSRF-TOKEN")).toBe("server-token");
+    expect(headers.get("Authorization")).toBe("Bearer test-admin-token");
+  });
+
+  it("rejects force-publish before contacting Spring when the caller is not an admin", async () => {
+    vi.mocked(requireAdmin).mockResolvedValueOnce({ kind: "anonymous" });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await forcePublish(new Request("https://dashboard.test", { method: "POST" }), publicationContext);
+
+    expect(response.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("maps backend 409 to conflict error for default club", async () => {

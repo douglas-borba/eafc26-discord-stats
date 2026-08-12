@@ -6,7 +6,15 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ArrowLeft, RefreshCw, Trash2, ExternalLink, Copy, Check } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import { adminRequest } from "@/lib/admin/browser-client";
-import type { AdminClub, ClubOperationalStatus } from "@/lib/admin/types";
+import type {
+  AdminClub,
+  AdminMatchListResponse,
+  AdminMatchSummary,
+  AdminPublicationHistoryResponse,
+  ClubOperationalStatus,
+  ForcePublishResponse,
+  PublicationHistoryRecord,
+} from "@/lib/admin/types";
 import { AdminFeedback } from "./admin-feedback";
 import { ClubEventTimeline } from "./club-event-timeline";
 
@@ -26,6 +34,11 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showEvents, setShowEvents] = useState(false);
+  const [recentMatches, setRecentMatches] = useState<AdminMatchSummary[]>([]);
+  const [publicationRecords, setPublicationRecords] = useState<Record<string, PublicationHistoryRecord>>({});
+  const [matchesError, setMatchesError] = useState<string | null>(null);
+  const [confirmPublication, setConfirmPublication] = useState<AdminMatchSummary | null>(null);
+  const [sendingMatchId, setSendingMatchId] = useState<string | null>(null);
 
   const load = useCallback(async (showFeedback = false) => {
     setLoading(true);
@@ -37,6 +50,17 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
       ]);
       setClub(clubData);
       setStatus(statusData);
+      try {
+        const [matchesData, publicationData] = await Promise.all([
+          adminRequest<AdminMatchListResponse>(`/api/admin/clubs/${clubId}/matches`),
+          adminRequest<AdminPublicationHistoryResponse>(`/api/admin/clubs/${clubId}/publication/history`),
+        ]);
+        setRecentMatches(matchesData.matches.slice(0, 10));
+        setPublicationRecords(Object.fromEntries(publicationData.records.map((record) => [record.matchId, record])));
+        setMatchesError(null);
+      } catch (reason) {
+        setMatchesError(reason instanceof Error ? reason.message : "Não foi possível carregar as últimas partidas.");
+      }
       if (showFeedback) setSuccess("Status atualizado.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Não foi possível carregar o clube.");
@@ -85,6 +109,38 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
     try { await operation(); await load(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Não foi possível concluir a operação."); }
     finally { setBusy(false); }
+  }
+
+  async function forcePublish(match: AdminMatchSummary) {
+    setSendingMatchId(match.matchId);
+    setConfirmPublication(null);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await adminRequest<ForcePublishResponse>(
+        `/api/admin/clubs/${clubId}/publication/${encodeURIComponent(match.matchId)}/force-publish`,
+        { method: "POST" },
+      );
+      if (result.status !== "success") throw new Error(result.message || "Não foi possível enviar a partida ao Discord.");
+      setPublicationRecords((current) => ({
+        ...current,
+        [match.matchId]: {
+          matchId: match.matchId,
+          state: "DELIVERED",
+          updatedAt: Date.now() / 1000,
+          attemptCount: (current[match.matchId]?.attemptCount ?? 0) + 1,
+          lastAttemptAt: Date.now() / 1000,
+          lastError: null,
+          lastHttpStatus: null,
+          baselineReason: null,
+        },
+      }));
+      setSuccess("Partida enviada ao Discord.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Não foi possível enviar a partida ao Discord.");
+    } finally {
+      setSendingMatchId(null);
+    }
   }
 
   if (loading && !club) return <Panel><p role="status" className="text-muted">Carregando clube…</p></Panel>;
@@ -146,6 +202,22 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
         </div>
       )}
 
+      {confirmPublication && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Panel className="w-full max-w-md space-y-4">
+            <h2 className="text-lg font-semibold text-text-primary">Enviar ao Discord</h2>
+            <p className="text-sm text-text-soft">
+              Enviar <strong>{club.displayName} {confirmPublication.ourClub.score} × {confirmPublication.opponentClub.score} {confirmPublication.opponentClub.name}</strong> para o Discord?
+            </p>
+            <p className="text-sm text-muted">A ação é explícita e pode gerar uma mensagem duplicada.</p>
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={() => setConfirmPublication(null)} className="min-h-10 flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-soft hover:bg-surface-raised">Cancelar</button>
+              <button type="button" onClick={() => void forcePublish(confirmPublication)} className="min-h-10 flex-1 rounded-lg bg-accent-strong px-4 py-2 text-sm font-semibold text-white hover:bg-accent">Enviar ao Discord</button>
+            </div>
+          </Panel>
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel>
           <h2 className="font-semibold text-text-primary">Operação</h2>
@@ -176,6 +248,39 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
           <p className="mt-4 text-xs text-muted">O webhook atual nunca é exibido. Para trocar, informe uma nova URL.</p>
         </Panel>
       </div>
+
+      <Panel className="mt-6">
+        <h2 className="font-semibold text-text-primary">Últimas partidas</h2>
+        <p className="mt-1 text-sm text-muted">Escolha explicitamente uma partida persistida para reenviar ao Discord.</p>
+        {matchesError ? (
+          <p className="mt-4 text-sm text-loss">{matchesError}</p>
+        ) : recentMatches.length === 0 ? (
+          <p className="mt-4 text-sm text-muted">Nenhuma partida registrada.</p>
+        ) : (
+          <div className="mt-4 divide-y divide-border">
+            {recentMatches.map((match) => {
+              const publication = publicationRecords[match.matchId];
+              const sending = sendingMatchId === match.matchId;
+              return (
+                <div key={match.matchId} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="font-medium text-text-primary">{match.ourClub.name} {match.ourClub.score} × {match.opponentClub.score} {match.opponentClub.name}</p>
+                    <p className="mt-1 text-xs text-muted">{formatDate(match.playedAt)}{publication ? ` · Discord: ${publication.state}` : " · Discord: sem registro"}</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={sendingMatchId !== null}
+                    onClick={() => setConfirmPublication(match)}
+                    className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-accent/50 px-3 py-2 text-sm font-medium text-accent hover:bg-accent/10 disabled:opacity-50"
+                  >
+                    {sending ? "Enviando…" : "Enviar ao Discord"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Panel>
 
       <div className="mt-6">
         <button

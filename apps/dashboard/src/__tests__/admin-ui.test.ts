@@ -96,4 +96,15 @@ describe("multi-club administration UI", () => {
     expect(read("components/admin/club-admin-detail.tsx")).toContain("Clube cadastrado com sucesso.");
     expect(read("components/layout/sidebar-nav.tsx")).toContain('href="/admin/clubs"');
   });
+
+  it("requires explicit confirmation before sending one selected canonical match to Discord", () => {
+    const detail = read("components/admin/club-admin-detail.tsx");
+    expect(detail).toContain("Últimas partidas");
+    expect(detail).toContain("Enviar ao Discord");
+    expect(detail).toContain("A ação é explícita e pode gerar uma mensagem duplicada.");
+    expect(detail).toContain("setConfirmPublication(match)");
+    expect(detail).toContain("force-publish");
+    expect(detail).toContain("Partida enviada ao Discord.");
+    expect(detail).not.toContain("forcePublish(match)");
+  });
 });
