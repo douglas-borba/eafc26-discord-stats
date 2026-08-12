@@ -103,8 +103,10 @@ describe("spring unavailability handling", () => {
     expect(publicClubPage).toContain("SportsApiUnavailable");
   });
 
-  it("home page catches SportsApiUnavailable", () => {
-    expect(homePage).toContain("SportsApiUnavailable");
+  it("home page stays independent from Spring availability", () => {
+    expect(homePage).not.toContain("SportsApiUnavailable");
+    expect(homePage).not.toContain("listClubs");
+    expect(homePage).not.toContain("getClub(");
   });
 
   it("404 for unknown clubs is preserved (not converted to unavailable)", () => {
