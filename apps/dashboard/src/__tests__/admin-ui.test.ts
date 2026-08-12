@@ -122,10 +122,11 @@ describe("multi-club administration UI", () => {
     const detail = read("components/admin/club-admin-detail.tsx");
     expect(detail).toContain("Últimas partidas");
     expect(detail).toContain("Enviar ao Discord");
-    expect(detail).toContain("A ação é explícita e pode gerar uma mensagem duplicada.");
     expect(detail).toContain("setConfirmPublication(match)");
     expect(detail).toContain("force-publish");
     expect(detail).toContain("Partida enviada ao Discord.");
     expect(detail).not.toContain("forcePublish(match)");
+    expect(detail).toContain("Esta partida já consta como enviada ao Discord. Reenviar pode gerar uma mensagem duplicada.");
+    expect(detail).toContain("Não é possível confirmar se o Discord recebeu esta partida. Reenviar pode gerar duplicação.");
   });
 });

@@ -129,7 +129,7 @@ export interface PublicationHistoryRecord {
   lastAttemptAt: number | null;
   lastError: string | null;
   lastHttpStatus: number | null;
-  baselineReason: "FIRST_RUN" | "NO_DESTINATION" | null;
+  baselineReason: string | null;
 }
 
 export interface AdminApiError {

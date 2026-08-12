@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ArrowLeft, RefreshCw, Trash2, ExternalLink, Copy, Check } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import { adminRequest } from "@/lib/admin/browser-client";
+import { publicationStatus } from "@/lib/admin/publication-status";
 import type {
   AdminClub,
   AdminMatchListResponse,
@@ -230,7 +231,7 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
             <p className="text-sm text-text-soft">
               Enviar <strong>{club.displayName} {confirmPublication.ourClub.score} × {confirmPublication.opponentClub.score} {confirmPublication.opponentClub.name}</strong> para o Discord?
             </p>
-            <p className="text-sm text-muted">A ação é explícita e pode gerar uma mensagem duplicada.</p>
+            <p className="text-sm text-muted">{forcePublishWarning(publicationRecords[confirmPublication.matchId])}</p>
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={() => setConfirmPublication(null)} className="min-h-10 flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-soft hover:bg-surface-raised">Cancelar</button>
               <button type="button" onClick={() => void forcePublish(confirmPublication)} className="min-h-10 flex-1 rounded-lg bg-accent-strong px-4 py-2 text-sm font-semibold text-white hover:bg-accent">Enviar ao Discord</button>
@@ -310,20 +311,22 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
           <div className="mt-4 divide-y divide-border">
             {recentMatches.map((match) => {
               const publication = publicationRecords[match.matchId];
+              const publicationView = publicationStatus(publication);
               const sending = sendingMatchId === match.matchId;
               return (
                 <div key={match.matchId} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <p className="font-medium text-text-primary">{match.ourClub.name} {match.ourClub.score} × {match.opponentClub.score} {match.opponentClub.name}</p>
-                    <p className="mt-1 text-xs text-muted">{formatDate(match.playedAt)}{publication ? ` · Discord: ${publication.state}` : " · Discord: sem registro"}</p>
+                    <p className="mt-1 text-xs text-muted">{formatDate(match.playedAt)}</p>
+                    <PublicationStatusBadge presentation={publicationView} />
                   </div>
                   <button
                     type="button"
-                    disabled={sendingMatchId !== null}
+                    disabled={sendingMatchId !== null || publicationView.disabled}
                     onClick={() => setConfirmPublication(match)}
-                    className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-accent/50 px-3 py-2 text-sm font-medium text-accent hover:bg-accent/10 disabled:opacity-50"
+                    className={`inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-50 ${publicationView.tone === "warning" && publication?.state === "DELIVERY_UNCERTAIN" ? "border-yellow-400/50 text-yellow-400 hover:bg-yellow-400/10" : "border-accent/50 text-accent hover:bg-accent/10"}`}
                   >
-                    {sending ? "Enviando…" : "Enviar ao Discord"}
+                    {sending ? "Enviando…" : publicationView.actionLabel}
                   </button>
                 </div>
               );
@@ -384,6 +387,30 @@ function healthLabel(indicator?: string) {
 
 function formatDate(value?: string | null) {
   return value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—";
+}
+
+function PublicationStatusBadge({ presentation }: { presentation: ReturnType<typeof publicationStatus> }) {
+  const colors = presentation.tone === "success"
+    ? { dot: "bg-win", text: "text-win" }
+    : presentation.tone === "danger"
+      ? { dot: "bg-loss", text: "text-loss" }
+      : presentation.tone === "warning"
+        ? { dot: "bg-yellow-400", text: "text-yellow-400" }
+        : { dot: "bg-muted", text: "text-muted" };
+  return (
+    <div className="mt-1.5 text-xs">
+      <p className={`inline-flex items-center gap-1.5 font-medium ${colors.text}`}>
+        <span className={`h-1.5 w-1.5 rounded-full ${colors.dot}`} /> {presentation.label}
+      </p>
+      {presentation.description && <p className="mt-0.5 text-muted">{presentation.description}</p>}
+    </div>
+  );
+}
+
+function forcePublishWarning(record?: PublicationHistoryRecord) {
+  if (record?.state === "DELIVERED") return "Esta partida já consta como enviada ao Discord. Reenviar pode gerar uma mensagem duplicada.";
+  if (record?.state === "DELIVERY_UNCERTAIN") return "Não é possível confirmar se o Discord recebeu esta partida. Reenviar pode gerar duplicação.";
+  return "A ação enviará esta partida ao Discord.";
 }
 
 type OperationKind = "poll" | "ea" | "discord";
