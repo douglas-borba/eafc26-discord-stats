@@ -94,6 +94,23 @@ class SetupRedirectFilterTest {
     }
 
     @Test
+    fun `trial request administration routes are reachable when Discord is not configured`() {
+        whenever(webhookConfigService.isConfigured()).thenReturn(false)
+
+        webClient.get().uri("/api/admin/trial-requests")
+            .exchange()
+            .expectStatus().isNotFound
+            .expectHeader().doesNotExist("Location")
+
+        listOf("/api/admin/trial-requests/42/approve", "/api/admin/trial-requests/42/reject").forEach { path ->
+            webClient.post().uri(path)
+                .exchange()
+                .expectStatus().isNotFound
+                .expectHeader().doesNotExist("Location")
+        }
+    }
+
+    @Test
     fun `static resources are never redirected to setup`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
 
