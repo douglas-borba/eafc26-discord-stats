@@ -4,7 +4,6 @@ import com.eafc26.discordstats.application.club.MonitoredClub
 import com.eafc26.discordstats.application.club.MonitoredClubService
 import com.eafc26.discordstats.application.club.ClubAccessPolicy
 import com.eafc26.discordstats.application.club.ClubDashboardCapability
-import com.eafc26.discordstats.application.club.TrialService
 import com.eafc26.discordstats.comparison.MatchComparisonResult
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
@@ -50,12 +49,10 @@ class ClubSportsController(
     private val cards: MatchCardService,
     private val editorial: LlmEditorialService,
     private val accessPolicy: ClubAccessPolicy,
-    private val trials: org.springframework.beans.factory.ObjectProvider<TrialService>? = null,
 ) {
     @GetMapping
     fun club(@PathVariable clubId: String): SportsClubResponse = requireClub(clubId).let {
-        val progress = trials?.ifAvailable?.progress(it)
-        SportsClubResponse(it.clubId.value, it.displayName.value, it.platform.value, it.monitoringEnabled, it.accessStatus.name, progress?.countedMatches, progress?.limit)
+        SportsClubResponse(it.clubId.value, it.displayName.value, it.platform.value, it.monitoringEnabled, it.accessStatus.name)
     }
 
     @GetMapping("/history/matches")
@@ -178,7 +175,5 @@ data class SportsClubResponse(
     val platform: String,
     val monitoringEnabled: Boolean,
     val accessStatus: String = "ACTIVE",
-    val trialMatchesCount: Int? = null,
-    val trialLimit: Int? = null,
 )
 data class SportsPlayerListResponse(val status: String, val players: List<com.eafc26.discordstats.presentation.profile.PlayerProfileView>)

@@ -1,16 +1,14 @@
 package com.eafc26.discordstats.application.club
 
 import com.eafc26.discordstats.domain.match.ClubId
-import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.service.OperationalEventRecorder
 import java.time.Clock
 import java.time.Instant
 
-/** Durable commercial trial lifecycle. Match identity gives counting idempotency. */
+/** Durable commercial trial lifecycle. A trial is a one-time dashboard snapshot. */
 class TrialService(
     private val clubs: MonitoredClubRepository,
     private val requests: TrialRequestRepository,
-    private val consumption: TrialMatchConsumptionRepository,
     private val clock: Clock = Clock.systemUTC(),
     private val events: OperationalEventRecorder? = null,
 ) {
@@ -28,12 +26,10 @@ class TrialService(
         val now = Instant.now(clock)
         val existing = clubs.findById(clubId)
         require(existing?.accessStatus != ClubAccessStatus.ACTIVE) { "This club is already active" }
-        // Claim the request before touching club state. The CAS is the cross-instance
-        // serialization point: a losing concurrent approval cannot modify a club.
         val approved = requests.transition(requestId, TrialRequestStatus.PENDING, request.copy(status = TrialRequestStatus.APPROVED, clubId = clubId, approvedAt = now, updatedAt = now))
             ?: throw IllegalStateException("Trial request is no longer pending")
-        val club = (existing ?: MonitoredClub(clubId, displayName, platform, true, null, createdAt = now, updatedAt = now))
-            .copy(displayName = displayName, platform = platform, monitoringEnabled = true, accessStatus = ClubAccessStatus.TRIAL, trialLimit = 3, trialStartedAt = now, updatedAt = now)
+        val club = (existing ?: MonitoredClub(clubId, displayName, platform, false, null, createdAt = now, updatedAt = now))
+            .copy(displayName = displayName, platform = platform, monitoringEnabled = false, accessStatus = ClubAccessStatus.TRIAL, updatedAt = now)
         clubs.save(club)
         events?.trialApproved(clubId)
         return approved
@@ -47,35 +43,7 @@ class TrialService(
             ?: throw IllegalStateException("Trial request is no longer pending")
     }
 
-    /** Called only after a genuinely new canonical match has been persisted. */
-    fun reserveNewCanonicalMatch(clubId: ClubId, matchId: MatchId): TrialConsumption = consumption.tryConsume(clubId, matchId, Instant.now(clock)).also { result ->
-        if (result is TrialConsumption.Counted) {
-            events?.trialMatchCounted(clubId, matchId.value, result.progress.countedMatches, result.progress.limit)
-            if (result.progress.expired) events?.trialExpired(clubId, result.progress.countedMatches, result.progress.limit)
-        }
-    }
-
-    fun progress(club: MonitoredClub): TrialProgress? = when (club.accessStatus) {
-        ClubAccessStatus.ACTIVE -> null
-        ClubAccessStatus.TRIAL, ClubAccessStatus.TRIAL_EXPIRED -> TrialProgress(consumption.count(club.clubId), club.trialLimit ?: 3, club.accessStatus == ClubAccessStatus.TRIAL_EXPIRED)
-    }
-
-    fun restrictsAcquisition(clubId: ClubId): Boolean = clubs.findById(clubId)?.accessStatus == ClubAccessStatus.TRIAL
-    fun isExpired(clubId: ClubId): Boolean = clubs.findById(clubId)?.accessStatus == ClubAccessStatus.TRIAL_EXPIRED
-}
-
-data class TrialProgress(val countedMatches: Int, val limit: Int, val expired: Boolean)
-
-interface TrialMatchConsumptionRepository {
-    /** Atomically locks the club, consumes at most one remaining slot, and may expire it. */
-    fun tryConsume(clubId: ClubId, matchId: MatchId, now: Instant): TrialConsumption
-    fun count(clubId: ClubId): Int
-}
-
-sealed interface TrialConsumption {
-    data class Counted(val progress: TrialProgress) : TrialConsumption
-    data object AlreadyCounted : TrialConsumption
-    data object NotTrialOrLimitReached : TrialConsumption
+    fun isTrial(clubId: ClubId): Boolean = clubs.findById(clubId)?.accessStatus == ClubAccessStatus.TRIAL
 }
 
 private fun normalize(value: String) = value.trim().lowercase().replace(Regex("\\s+"), " ")

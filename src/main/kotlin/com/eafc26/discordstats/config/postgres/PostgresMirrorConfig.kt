@@ -22,9 +22,7 @@ import com.eafc26.discordstats.store.AdminAuditLogRepository
 import com.eafc26.discordstats.service.OperationalEventRecorder
 import com.eafc26.discordstats.service.SynchronizationGapStore
 import com.eafc26.discordstats.store.PostgresSynchronizationGapStore
-import com.eafc26.discordstats.store.PostgresTrialMatchConsumptionRepository
 import com.eafc26.discordstats.store.PostgresTrialRequestRepository
-import com.eafc26.discordstats.application.club.TrialMatchConsumptionRepository
 import com.eafc26.discordstats.application.club.TrialRequestRepository
 import com.eafc26.discordstats.application.club.TrialService
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -134,15 +132,11 @@ class PostgresMirrorConfig {
     fun trialRequestRepository(jdbcTemplate: JdbcTemplate): TrialRequestRepository = PostgresTrialRequestRepository(jdbcTemplate)
 
     @Bean
-    fun trialMatchConsumptionRepository(jdbcTemplate: JdbcTemplate, transactionManager: org.springframework.transaction.PlatformTransactionManager): TrialMatchConsumptionRepository = PostgresTrialMatchConsumptionRepository(jdbcTemplate, org.springframework.transaction.support.TransactionTemplate(transactionManager))
-
-    @Bean
     fun trialService(
         clubs: MonitoredClubRepository,
         requests: TrialRequestRepository,
-        consumption: TrialMatchConsumptionRepository,
         events: org.springframework.beans.factory.ObjectProvider<OperationalEventRecorder>,
-    ): TrialService = TrialService(clubs, requests, consumption, events = events.ifAvailable)
+    ): TrialService = TrialService(clubs, requests, events = events.ifAvailable)
 
     @Bean
     fun postgresPublishedMatchStoreImpl(jdbcTemplate: JdbcTemplate): PostgresPublishedMatchStore =

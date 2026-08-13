@@ -47,8 +47,10 @@ class AdminOperationsController(
         @RequestHeader("X-Admin-Identity", defaultValue = "nextjs-admin-bff") admin: String,
     ): Mono<ResponseEntity<Map<String, Any?>>> = Mono.fromCallable {
         val club = requireClub(clubId)
-        if (trials?.ifAvailable?.isExpired(club) == true) {
-            return@fromCallable ResponseEntity.ok(mapOf<String, Any?>("status" to "trial_expired", "message" to "O teste gratuito deste clube terminou."))
+        if (trials?.ifAvailable?.isTrial(club) == true) {
+            return@fromCallable ResponseEntity.status(HttpStatus.FORBIDDEN).body(
+                mapOf<String, Any?>("status" to "trial_snapshot", "message" to "Este clube possui apenas uma prévia inicial. Ative o acompanhamento para buscar novas partidas."),
+            )
         }
         val audit = startAudit(admin, "ADMIN_POLL", club)
         val started = System.currentTimeMillis()

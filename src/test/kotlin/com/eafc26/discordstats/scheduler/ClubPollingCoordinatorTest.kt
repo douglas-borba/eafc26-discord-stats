@@ -4,6 +4,7 @@ import com.eafc26.discordstats.application.club.EaPlatform
 import com.eafc26.discordstats.application.club.MonitoredClub
 import com.eafc26.discordstats.application.club.MonitoredClubRepository
 import com.eafc26.discordstats.application.club.MonitoredClubService
+import com.eafc26.discordstats.application.club.ClubAccessStatus
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
 import com.eafc26.discordstats.service.AcquisitionResult
@@ -87,6 +88,17 @@ class ClubPollingCoordinatorTest {
 
         assertThat(cycle.clubs.single().failed).isFalse()
         assertThat(status.current(clubA).lastResult).contains("concluída normalmente")
+    }
+
+    @Test
+    fun `trial snapshot is never eligible for automatic polling`() {
+        val acquisition: MatchAcquisitionService = mock()
+        val coordinator = coordinator(listOf(club(clubA, false).copy(accessStatus = ClubAccessStatus.TRIAL)), acquisition)
+
+        val cycle = coordinator.pollEnabledClubs(60_000)
+
+        assertThat(cycle.clubs).isEmpty()
+        verify(acquisition, never()).acquire(clubA, AcquisitionTrigger.SCHEDULER)
     }
 
     @Test

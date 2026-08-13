@@ -16,8 +16,6 @@ import com.eafc26.discordstats.store.PublicationStateStore
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
-import org.springframework.beans.factory.ObjectProvider
-import com.eafc26.discordstats.application.club.TrialService
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -62,7 +60,6 @@ class MatchAcquisitionService(
     private val llmEditorialService: LlmEditorialService,
     private val eventRecorder: OperationalEventRecorder? = null,
     private val synchronizationGapStore: SynchronizationGapStore = InMemorySynchronizationGapStore(),
-    private val trialService: ObjectProvider<TrialService>? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
@@ -131,9 +128,6 @@ class MatchAcquisitionService(
         // as its acquisition checkpoint; all other triggers retain their existing mode.
         val eaFetchStartedAtMs = System.currentTimeMillis()
         val synchronization = fetchMatches(clubId, trigger, gateway)
-        // A first canonical batch establishes the acquisition baseline. It must never
-        // consume a commercial trial, even though those historical records are saved.
-        val baselineCanonicalBatch = synchronization.initialCanonicalBatch
         val matches = when (val result = synchronization.result) {
             is EaApiResult.Success -> {
                 fetchMetrics[clubId] = AcquisitionFetchMetrics(
@@ -206,11 +200,7 @@ class MatchAcquisitionService(
             .associate { match ->
                 match.matchId to canonicalMatchFactory.create(match, clubId.value, proNames)
             }
-        val trial = trialService?.ifAvailable
-        val trialRestricted = !baselineCanonicalBatch && (trigger == AcquisitionTrigger.SCHEDULER || trigger == AcquisitionTrigger.ADMIN_POLL) && trial?.restrictsAcquisition(clubId) == true
-        val acceptedCanonical = canonicalByMatchId.values.filter { canonical ->
-            !trialRestricted || trial?.reserveNewCanonicalMatch(clubId, canonical.matchId) is com.eafc26.discordstats.application.club.TrialConsumption.Counted
-        }
+        val acceptedCanonical = canonicalByMatchId.values.toList()
         val acceptedIds = acceptedCanonical.mapTo(hashSetOf()) { it.matchId.value }
         val acceptedMatches = matches.filter { it.matchId in acceptedIds }
         if (trigger != AcquisitionTrigger.DEV_SIMULATOR) {
@@ -244,6 +234,7 @@ class MatchAcquisitionService(
             AcquisitionTrigger.FORCE_RESEND -> processForceResend(clubId, acceptedMatches, canonicalByMatchId)
             AcquisitionTrigger.MANUAL, AcquisitionTrigger.CLI -> processLatestOnly(clubId, acceptedMatches, canonicalByMatchId)
             AcquisitionTrigger.SCHEDULER, AcquisitionTrigger.ADMIN_POLL -> processAllNew(clubId, acceptedMatches, canonicalByMatchId)
+            AcquisitionTrigger.TRIAL_INITIAL -> processTrialSnapshot()
             AcquisitionTrigger.DEV_SIMULATOR -> processSimulation(clubId, matches, canonicalByMatchId)
         }
 
@@ -283,8 +274,8 @@ class MatchAcquisitionService(
         trigger: AcquisitionTrigger,
         gateway: EaClubsGateway,
     ): SynchronizationFetch {
-        if ((trigger != AcquisitionTrigger.SCHEDULER && trigger != AcquisitionTrigger.ADMIN_POLL) || gateway !is WindowedEaClubsGateway) {
-            return SynchronizationFetch(gateway.getLatestMatches(clubId.value), null, null, false)
+        if ((trigger != AcquisitionTrigger.SCHEDULER && trigger != AcquisitionTrigger.ADMIN_POLL && trigger != AcquisitionTrigger.TRIAL_INITIAL) || gateway !is WindowedEaClubsGateway) {
+            return SynchronizationFetch(gateway.getLatestMatches(clubId.value), null, null)
         }
 
         val knownMatches = canonicalMatchRepository.findAll(clubId)
@@ -295,7 +286,6 @@ class MatchAcquisitionService(
                 gateway.getLatestMatches(clubId.value, window),
                 "window=$window matchesReturned=first-run checkpointFound=false newMatches=first-run",
                 null,
-                true,
             )
         }
 
@@ -303,7 +293,7 @@ class MatchAcquisitionService(
         val maxWindow = props.ea.incrementalMaxWindow.coerceAtLeast(window)
         while (true) {
             val result = gateway.getLatestMatches(clubId.value, window)
-            if (result !is EaApiResult.Success) return SynchronizationFetch(result, "window=$window", null, false)
+            if (result !is EaApiResult.Success) return SynchronizationFetch(result, "window=$window", null)
 
             val deduplicated = result.data.distinctBy { it.matchId }
             val checkpointFound = deduplicated.any { it.matchId in knownIds }
@@ -313,7 +303,6 @@ class MatchAcquisitionService(
                     EaApiResult.Success(newMatches),
                     "window=$window matchesReturned=${deduplicated.size} checkpointFound=true newMatches=${newMatches.size}",
                     deduplicated.size,
-                    false,
                 )
             }
             if (window >= maxWindow) {
@@ -333,7 +322,6 @@ class MatchAcquisitionService(
                     EaApiResult.Success(newMatches),
                     "window=$window matchesReturned=${deduplicated.size} checkpointFound=false newMatches=${newMatches.size} maxWindowReached=true",
                     deduplicated.size,
-                    false,
                 )
             }
             val expanded = (window * 2).coerceAtMost(maxWindow)
@@ -346,7 +334,6 @@ class MatchAcquisitionService(
         val result: EaApiResult<List<MatchResponse>>,
         val diagnostics: String?,
         val matchesReturned: Int?,
-        val initialCanonicalBatch: Boolean,
     )
 
     data class AcquisitionFetchMetrics(
@@ -787,6 +774,14 @@ class MatchAcquisitionService(
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    /** The approved trial receives canonical history and editorial data, never publication. */
+    private fun processTrialSnapshot(): AcquisitionResult = AcquisitionResult.Processed(
+        published = emptyList(),
+        alreadyPublished = emptyList(),
+        failed = emptyList(),
+        baselineEstablished = true,
+    )
 
     private fun buildDashboardPresentation(
         canonical: CanonicalMatch,

@@ -66,7 +66,7 @@ function Hero() {
           </p>
           <div className="landing-hero-actions">
             <a href="#teste" className="landing-btn-primary">
-              Testar grátis por 3 partidas
+              Criar prévia gratuita
               <svg
                 width="16"
                 height="16"
@@ -316,7 +316,7 @@ function FinalCTA() {
           <h2 className="landing-h2 landing-final-cta-title">
             Seu clube também pode ter uma história contada em números.
           </h2>
-          <p className="landing-hero-sub">Jogue normalmente e acompanhe as próximas 3 partidas do seu clube.</p>
+          <p className="landing-hero-sub">Veja uma prévia do seu clube com as partidas recentes disponíveis.</p>
           <TrialRequestForm />
         </div>
       </div>

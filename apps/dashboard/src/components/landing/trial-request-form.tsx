@@ -13,7 +13,7 @@ export function TrialRequestForm() {
     <input required maxLength={160} name="requesterName" placeholder="Seu nome" aria-label="Seu nome" />
     <input required maxLength={320} name="contact" placeholder="WhatsApp, Discord ou e-mail" aria-label="WhatsApp, Discord ou e-mail" />
     <p>Usaremos seu contato somente para responder à solicitação do teste.</p>
-    <button type="submit" className="landing-btn-primary landing-btn-lg" disabled={state === "loading"}>{state === "loading" ? "Enviando…" : "Testar grátis por 3 partidas"}</button>
+    <button type="submit" className="landing-btn-primary landing-btn-lg" disabled={state === "loading"}>{state === "loading" ? "Enviando…" : "Criar prévia gratuita"}</button>
     {state === "error" && <p className="landing-trial-feedback">Não foi possível enviar agora. Tente novamente.</p>}
   </form>;
 }

@@ -5,9 +5,6 @@ import com.eafc26.discordstats.config.EaProperties
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.PollingProperties
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
-import com.eafc26.discordstats.application.club.TrialConsumption
-import com.eafc26.discordstats.application.club.TrialProgress
-import com.eafc26.discordstats.application.club.TrialService
 import com.eafc26.discordstats.discord.DiscordDeliveryException
 import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.discord.DiscordWebhookClient
@@ -44,7 +41,6 @@ import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.http.HttpHeaders
-import org.springframework.beans.factory.ObjectProvider
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -71,7 +67,7 @@ class MatchAcquisitionServiceTest {
      * wired with the shared [store] and [webhookClient] mocks.
      * This allows tests to verify [webhookClient] interactions transparently.
      */
-    private fun makeService(trials: ObjectProvider<TrialService>? = null): MatchAcquisitionService {
+    private fun makeService(): MatchAcquisitionService {
         val props = AppProperties(
             ea = EaProperties(clubId = clubId, clubName = "Test FC"),
             polling = PollingProperties(),
@@ -93,7 +89,6 @@ class MatchAcquisitionServiceTest {
             editorialPresentationService,
             LlmEditorialService(EditorialContextBuilder(), null, mock(), LlmProperties(enabled = false)),
             synchronizationGapStore = synchronizationGapStore,
-            trialService = trials,
         )
     }
 
@@ -184,6 +179,22 @@ class MatchAcquisitionServiceTest {
         }
 
         @Test
+        fun `trial initial acquisition persists the complete initial window without Discord`() {
+            val first = match("first", 100)
+            val latest = match("latest", 200)
+            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(emptyList())
+            val windowed = WindowedGateway(listOf(latest, first))
+
+            val result = service.acquire(LEGACY_TEST_CLUB, AcquisitionTrigger.TRIAL_INITIAL, windowed)
+
+            assertThat(windowed.windows).containsExactly(20)
+            verify(canonicalMatchRepository, times(2)).save(any())
+            verify(webhookClient, never()).send(any(), any())
+            assertThat(result).isInstanceOf(AcquisitionResult.Processed::class.java)
+            assertThat((result as AcquisitionResult.Processed).baselineEstablished).isTrue()
+        }
+
+        @Test
         fun `first run retains league and playoff matches from the combined window`() {
             val league = match("league", 100, matchType = "leagueMatch")
             val playoff = match("playoff", 200, matchType = "playoffMatch")
@@ -210,30 +221,6 @@ class MatchAcquisitionServiceTest {
             val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
             verify(canonicalMatchRepository).save(saved.capture())
             assertThat(saved.firstValue.matchId.value).isEqualTo("new")
-        }
-
-        @Test
-        fun `trial at two of three persists only the first chronological new match`() {
-            val checkpoint = match("known", 100)
-            val first = match("first", 200)
-            val excess = match("excess", 300)
-            val trial = mock<TrialService>()
-            val provider = mock<ObjectProvider<TrialService>>()
-            whenever(provider.ifAvailable).thenReturn(trial)
-            whenever(trial.restrictsAcquisition(LEGACY_TEST_CLUB)).thenReturn(true)
-            whenever(trial.reserveNewCanonicalMatch(LEGACY_TEST_CLUB, com.eafc26.discordstats.domain.match.MatchId("first")))
-                .thenReturn(TrialConsumption.Counted(TrialProgress(3, 3, true)))
-            whenever(trial.reserveNewCanonicalMatch(LEGACY_TEST_CLUB, com.eafc26.discordstats.domain.match.MatchId("excess")))
-                .thenReturn(TrialConsumption.NotTrialOrLimitReached)
-            service = makeService(provider)
-            whenever(canonicalMatchRepository.findAll(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(listOf(knownCanonical(checkpoint)))
-            val windowed = WindowedGateway(listOf(excess, first, checkpoint))
-
-            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
-
-            val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
-            verify(canonicalMatchRepository).save(saved.capture())
-            assertThat(saved.allValues.map { it.matchId.value }).containsExactly("first")
         }
 
         @Test

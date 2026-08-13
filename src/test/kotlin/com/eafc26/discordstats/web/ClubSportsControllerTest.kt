@@ -66,7 +66,7 @@ class ClubSportsControllerTest {
 
     @Test
     fun `trial allows overview but denies deeper dashboard areas`() {
-        val trial = club("1104972", "Trial").copy(accessStatus = ClubAccessStatus.TRIAL, trialLimit = 3)
+        val trial = club("1104972", "Trial").copy(accessStatus = ClubAccessStatus.TRIAL, monitoringEnabled = false)
         whenever(clubs.find(trial.clubId)).thenReturn(trial)
         whenever(history.list(trial.clubId)).thenReturn(emptyList())
         whenever(history.metadata(trial.clubId)).thenReturn(metadata())

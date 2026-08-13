@@ -35,15 +35,12 @@ data class MonitoredClub(
     val updatedAt: Instant,
     /** Commercial access is deliberately independent from technical monitoring. */
     val accessStatus: ClubAccessStatus = ClubAccessStatus.ACTIVE,
-    val trialLimit: Int? = null,
-    val trialStartedAt: Instant? = null,
 )
 
 enum class ClubAccessStatus {
     TRIAL,
-    ACTIVE,
-    TRIAL_EXPIRED;
+    ACTIVE;
 
-    fun participatesInAutomaticMonitoring(): Boolean = this != TRIAL_EXPIRED
+    fun participatesInAutomaticMonitoring(): Boolean = this == ACTIVE
     fun permitsDashboardDepth(): Boolean = this == ACTIVE
 }

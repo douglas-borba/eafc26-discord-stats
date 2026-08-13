@@ -6,6 +6,7 @@ package com.eafc26.discordstats.service
  * The trigger determines processing behavior:
  * - [SCHEDULER]: Processes all new matches since last check
  * - [ADMIN_POLL]: Same incremental processing as [SCHEDULER], initiated explicitly by an administrator
+ * - [TRIAL_INITIAL]: One-time initial canonical snapshot; never delivers to Discord
  * - [MANUAL]: Processes only the latest match
  * - [CLI]: Processes only the latest match
  * - [DEV_SIMULATOR]: Processes all matches but is web-only (no Discord delivery)
@@ -17,6 +18,7 @@ package com.eafc26.discordstats.service
 enum class AcquisitionTrigger {
     SCHEDULER,
     ADMIN_POLL,
+    TRIAL_INITIAL,
     MANUAL,
     CLI,
     DEV_SIMULATOR,
@@ -25,9 +27,9 @@ enum class AcquisitionTrigger {
     /**
      * Returns true if this trigger should deliver matches to Discord.
      *
-     * [DEV_SIMULATOR] is web-only and never delivers to Discord.
+     * [DEV_SIMULATOR] and [TRIAL_INITIAL] are web-only and never deliver to Discord.
      */
-    fun shouldDeliverToDiscord(): Boolean = this != DEV_SIMULATOR
+    fun shouldDeliverToDiscord(): Boolean = this != DEV_SIMULATOR && this != TRIAL_INITIAL
 
     /**
      * Returns true if this trigger should persist published match IDs.
@@ -36,7 +38,7 @@ enum class AcquisitionTrigger {
      * [FORCE_RESEND] does not persist because it's a resend, not a new publish.
      */
     fun shouldPersist(): Boolean = when (this) {
-        DEV_SIMULATOR -> false
+        DEV_SIMULATOR, TRIAL_INITIAL -> false
         FORCE_RESEND -> false
         else -> true
     }

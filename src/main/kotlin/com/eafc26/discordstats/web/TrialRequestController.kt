@@ -4,6 +4,9 @@ import com.eafc26.discordstats.application.club.*
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
 import com.eafc26.discordstats.store.AdminAuditLogRepository
+import com.eafc26.discordstats.service.AcquisitionResult
+import com.eafc26.discordstats.service.AcquisitionTrigger
+import com.eafc26.discordstats.service.MatchAcquisitionService
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpStatus
 import org.springframework.transaction.annotation.Transactional
@@ -15,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
 class TrialRequestController(
     private val trials: ObjectProvider<TrialService>,
     private val audit: ObjectProvider<AdminAuditLogRepository>,
+    private val acquisition: MatchAcquisitionService,
 ) {
     private val recentRequests = ConcurrentHashMap<String, Long>()
 
@@ -54,6 +58,11 @@ class TrialRequestController(
             ClubName(request.displayName.clean("displayName", 255)),
             EaPlatform(request.platform.clean("platform", 50)),
         )
+        when (acquisition.acquire(ClubId(request.clubId), AcquisitionTrigger.TRIAL_INITIAL)) {
+            is AcquisitionResult.EaUnavailable -> throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Trial snapshot acquisition failed")
+            AcquisitionResult.Busy -> throw ResponseStatusException(HttpStatus.CONFLICT, "Trial snapshot acquisition is already running")
+            else -> Unit
+        }
         audit.ifAvailable?.record(admin, "TRIAL_APPROVE", approved.clubId, result = "SUCCESS")
         return present(approved)
     }

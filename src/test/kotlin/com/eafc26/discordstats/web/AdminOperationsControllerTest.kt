@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.application.club.MonitoredClubRepository
+import com.eafc26.discordstats.application.club.TrialService
 import com.eafc26.discordstats.config.WebhookConfigService
 import com.eafc26.discordstats.discord.DiscordDestination
 import com.eafc26.discordstats.discord.DiscordDestinationResolver
@@ -51,6 +52,7 @@ class AdminOperationsControllerTest {
     @MockBean private lateinit var webhookConfigService: WebhookConfigService
     @MockBean private lateinit var eventRecorder: OperationalEventRecorder
     @MockBean private lateinit var auditLog: AdminAuditLogRepository
+    @MockBean private lateinit var trials: TrialService
 
     private val clubId = "1104972"
     @BeforeEach fun setup() {
@@ -87,6 +89,15 @@ class AdminOperationsControllerTest {
 
         client.mutateWith(csrf()).post().uri("/api/admin/clubs/missing/poll").exchange()
             .expectStatus().isNotFound
+
+        verifyNoInteractions(acquisition)
+    }
+
+    @Test fun `poll is blocked for a trial snapshot`() {
+        whenever(trials.isTrial(ClubId(clubId))).thenReturn(true)
+
+        client.mutateWith(csrf()).post().uri("/api/admin/clubs/$clubId/poll").exchange()
+            .expectStatus().isForbidden.expectBody().jsonPath("$.status").isEqualTo("trial_snapshot")
 
         verifyNoInteractions(acquisition)
     }
