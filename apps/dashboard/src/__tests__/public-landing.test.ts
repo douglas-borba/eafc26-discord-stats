@@ -8,17 +8,40 @@ const read = (path: string) => readFileSync(resolve(root, path), "utf8");
 describe("public landing route", () => {
   const landing = read("app/page.tsx");
 
-  it("renders a static product landing instead of redirecting to a club", () => {
-    expect(landing).toContain("Seu Pro Clubs.");
-    expect(landing).toContain("Sua história.");
-    expect(landing).not.toContain("redirect(");
-    expect(landing).not.toContain("listClubs");
-    expect(landing).not.toContain("getClub(");
-    expect(landing).not.toContain("fetch(");
+  it("uses Club11 branding, not FC Stats", () => {
+    expect(landing).toContain("Club11");
+    expect(landing).toContain("CLUB11");
+    expect(landing).not.toMatch(/FC Stats/i);
+    expect(landing).not.toContain("FC STATS");
+  });
+
+  it("renders the approved headline and CTA", () => {
+    expect(landing).toContain("Todo mundo acha que joga muito.");
+    expect(landing).toContain("Agora dá pra provar.");
+    expect(landing).toContain("Quero ver meu clube");
+  });
+
+  it("does not contain mock/fictitious data", () => {
+    expect(landing).not.toContain("Clube Exemplo");
+    expect(landing).not.toContain("Jogador 10");
+    expect(landing).not.toContain("Jogador 9");
+    expect(landing).not.toContain("ProductMockup");
+    expect(landing).not.toContain("mockup");
+  });
+
+  it("uses OverviewShowcase with static snapshot data", () => {
+    expect(landing).toContain("OverviewShowcase");
+    expect(landing).not.toContain("Suspense");
+  });
+
+  it("does not depend on runtime backend for showcase", () => {
+    expect(landing).not.toContain("SHOWCASE_CLUB_ID");
+    expect(landing).not.toContain("getClub");
+    expect(landing).not.toContain("getOverviewCards");
+    expect(landing).not.toContain("process.env");
   });
 
   it("keeps the landing free from public club discovery and hardcoded client URLs", () => {
-    expect(landing).not.toContain("clubId");
     expect(landing).not.toContain("/api/admin/clubs");
     expect(landing).not.toMatch(/https?:\/\//);
   });
@@ -34,9 +57,136 @@ describe("public landing route", () => {
     expect(adminLayout).toContain("requireAdmin");
   });
 
-  it("defines landing metadata without external assets", () => {
-    expect(landing).toContain("FC Stats | Estatísticas para EA SPORTS FC Clubs");
-    expect(landing).toContain("Dashboard automático de estatísticas, desempenho e partidas para clubes de EA SPORTS FC.");
+  it("defines Club11 metadata without external assets", () => {
+    expect(landing).toContain("Club11 — O acompanhamento do seu clube no Pro Clubs");
     expect(landing).toContain("openGraph");
+  });
+});
+
+describe("overview-showcase (static snapshot)", () => {
+  const showcase = read("components/landing/overview-showcase.tsx");
+
+  it("imports data from the static snapshot, not runtime APIs", () => {
+    expect(showcase).toContain("landing-showcase-data");
+    expect(showcase).toContain("SHOWCASE_CLUB_NAME");
+    expect(showcase).toContain("SHOWCASE_EDITORIAL");
+    expect(showcase).toContain("SHOWCASE_CARDS");
+  });
+
+  it("does not depend on SHOWCASE_CLUB_ID or runtime data fetching", () => {
+    expect(showcase).not.toContain("SHOWCASE_CLUB_ID");
+    expect(showcase).not.toContain("process.env");
+    expect(showcase).not.toContain("getClub");
+    expect(showcase).not.toContain("getOverviewCards");
+    expect(showcase).not.toContain("buildSequenceEditorial");
+    expect(showcase).not.toContain("fetchSports");
+    expect(showcase).not.toContain("supabase");
+  });
+
+  it("reuses OverviewMatchCard and OverviewClubSummary", () => {
+    expect(showcase).toContain("OverviewMatchCard");
+    expect(showcase).toContain("OverviewClubSummary");
+  });
+
+  it("does not use carousel, sidebar, or admin controls", () => {
+    expect(showcase).not.toContain("Carousel");
+    expect(showcase).not.toContain("sidebar");
+    expect(showcase).not.toContain("admin");
+    expect(showcase).not.toContain("Trial");
+  });
+
+  it("returns null when no showcase cards exist", () => {
+    expect(showcase).toContain("return null");
+  });
+});
+
+describe("landing-showcase-data (static snapshot)", () => {
+  const snapshotFile = read("components/landing/landing-showcase-data.ts");
+
+  it("contains real Associação BF data, not mock", () => {
+    expect(snapshotFile).toContain("Associação BF");
+    expect(snapshotFile).not.toContain("Clube Exemplo");
+    expect(snapshotFile).not.toContain("Jogador 10");
+    expect(snapshotFile).not.toContain("Jogador 9");
+  });
+
+  it("documents its origin as real pipeline data", () => {
+    expect(snapshotFile).toContain("real processed Club11 data");
+    expect(snapshotFile).toContain("must not be replaced with fictional");
+  });
+
+  it("uses real domain types", () => {
+    expect(snapshotFile).toContain("SequenceEditorial");
+    expect(snapshotFile).toContain("MatchSummaryPresentation");
+  });
+
+  it("contains real match IDs and player names from the pipeline", () => {
+    expect(snapshotFile).toContain("968624156790107");
+    expect(snapshotFile).toContain("960632703180174");
+  });
+
+  it("does not import any runtime dependencies", () => {
+    expect(snapshotFile).not.toContain("supabase");
+    expect(snapshotFile).not.toContain("fetchSports");
+    expect(snapshotFile).not.toContain("process.env");
+  });
+});
+
+describe("overview-club-summary", () => {
+  const summary = read("components/overview/overview-club-summary.tsx");
+
+  it("exists as a reusable component", () => {
+    expect(summary).toContain("OverviewClubSummary");
+    expect(summary).toContain("SequenceEditorial");
+  });
+
+  it("does not contain navigation, sidebar or admin controls", () => {
+    expect(summary).not.toContain("Link");
+    expect(summary).not.toContain("usePathname");
+    expect(summary).not.toContain("navItems");
+    expect(summary).not.toContain("admin");
+  });
+});
+
+describe("overview-club-panel remains intact", () => {
+  const panel = read("components/overview/overview-club-panel.tsx");
+
+  it("still exports OverviewClubPanel with full dashboard structure", () => {
+    expect(panel).toContain("OverviewClubPanel");
+    expect(panel).toContain("navItems");
+    expect(panel).toContain("usePathname");
+    expect(panel).toContain("Link");
+  });
+});
+
+describe("trial request form preserves endpoint", () => {
+  const form = read("components/landing/trial-request-form.tsx");
+
+  it("posts to the same API endpoint with the same payload shape", () => {
+    expect(form).toContain("/api/trial-requests");
+    expect(form).toContain("clubName");
+    expect(form).toContain("requesterName");
+    expect(form).toContain("contact");
+  });
+
+  it("uses updated CTA copy", () => {
+    expect(form).toContain("Quero ver meu clube");
+  });
+});
+
+describe("landing CSS", () => {
+  const css = read("app/landing.css");
+
+  it("is scoped to .landing class", () => {
+    expect(css).toContain(".landing {");
+    expect(css).toContain("Club11");
+  });
+
+  it("respects prefers-reduced-motion", () => {
+    expect(css).toContain("prefers-reduced-motion");
+  });
+
+  it("does not reference FC Stats", () => {
+    expect(css).not.toMatch(/FC Stats/i);
   });
 });

@@ -2,15 +2,16 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import "./landing.css";
 import { TrialRequestForm } from "@/components/landing/trial-request-form";
+import { OverviewShowcase } from "@/components/landing/overview-showcase";
 
 export const metadata: Metadata = {
-  title: "FC Stats | Estatísticas para EA SPORTS FC Clubs",
+  title: "Club11 — O acompanhamento do seu clube no Pro Clubs",
   description:
-    "Dashboard automático de estatísticas, desempenho e partidas para clubes de EA SPORTS FC.",
+    "Artilheiros, destaques, campanha e os protagonistas do seu clube no Pro Clubs — registrados automaticamente a cada partida.",
   openGraph: {
-    title: "FC Stats | Estatísticas para EA SPORTS FC Clubs",
+    title: "Club11 — O acompanhamento do seu clube no Pro Clubs",
     description:
-      "Dashboard automático de estatísticas, desempenho e partidas para clubes de EA SPORTS FC.",
+      "Artilheiros, destaques, campanha e os protagonistas do seu clube no Pro Clubs — registrados automaticamente a cada partida.",
     type: "website",
   },
 };
@@ -20,9 +21,10 @@ export default function Home() {
     <main className="landing">
       <Header />
       <Hero />
-      <Benefits />
+      <ProductProof />
+      <WhatItReveals />
       <HowItWorks />
-      <MatchCardShowcase />
+      <Discord />
       <FinalCTA />
       <Footer />
     </main>
@@ -32,16 +34,16 @@ export default function Home() {
 function Header() {
   return (
     <header className="landing-header">
-      <a href="#inicio" className="landing-logo" aria-label="FC Stats, início">
-        <span className="landing-logo-mark">FC</span>
-        <span className="landing-logo-text">STATS</span>
+      <a href="#inicio" className="landing-logo" aria-label="Club11, início">
+        <span className="landing-logo-mark">11</span>
+        <span className="landing-logo-text">CLUB11</span>
       </a>
       <nav aria-label="Navegação principal" className="landing-nav">
-        <a href="#recursos">Recursos</a>
+        <a href="#o-que-revela">O que revela</a>
         <a href="#como-funciona">Como funciona</a>
       </nav>
-      <a href="#teste" className="landing-header-cta">
-        Testar grátis
+      <a href="#quero" className="landing-header-cta">
+        Quero ver meu clube
       </a>
     </header>
   );
@@ -53,20 +55,19 @@ function Hero() {
       <div className="landing-hero-glow" aria-hidden="true" />
       <div className="landing-hero-grid">
         <div className="landing-hero-copy">
+          <p className="landing-descriptor">O acompanhamento do seu clube no Pro Clubs</p>
           <h1 className="landing-h1">
-            Seu Pro Clubs.
+            Todo mundo acha que joga muito.
             <br />
-            Seus números.
-            <br />
-            <span className="landing-h1-accent">Sua história.</span>
+            <span className="landing-h1-accent">Agora dá pra provar.</span>
           </h1>
           <p className="landing-hero-sub">
-            Estatísticas, desempenho e destaques do seu clube no EA SPORTS FC,
-            atualizados automaticamente após cada partida.
+            Artilheiros, destaques, campanha e os protagonistas do seu clube no
+            Pro Clubs — registrados automaticamente a cada partida.
           </p>
           <div className="landing-hero-actions">
-            <a href="#teste" className="landing-btn-primary">
-              Criar prévia gratuita
+            <a href="#quero" className="landing-btn-primary">
+              Quero ver meu clube
               <svg
                 width="16"
                 height="16"
@@ -88,133 +89,53 @@ function Hero() {
             </a>
           </div>
         </div>
-        <div className="landing-hero-preview" aria-label="Prévia ilustrativa do dashboard">
-          <ProductMockup />
+        <div className="landing-hero-preview" aria-label="Dados reais de um clube acompanhado pelo Club11">
+          <OverviewShowcase />
         </div>
       </div>
     </section>
   );
 }
 
-function ProductMockup() {
+function ProductProof() {
   return (
-    <div className="mockup">
-      <div className="mockup-header">
-        <span className="mockup-brand">FC STATS</span>
-        <span className="mockup-club-name">CLUBE EXEMPLO</span>
-      </div>
-
-      <div className="mockup-match">
-        <div className="mockup-match-label">ÚLTIMA PARTIDA</div>
-        <div className="mockup-score-row">
-          <span className="mockup-team">Clube Exemplo</span>
-          <div className="mockup-score">
-            <span className="mockup-score-num">4</span>
-            <span className="mockup-score-sep">×</span>
-            <span className="mockup-score-num mockup-score-opp">2</span>
-          </div>
-          <span className="mockup-team">Adversário</span>
-        </div>
-        <div className="mockup-result-badge">Vitória</div>
-      </div>
-
-      <div className="mockup-stats-row">
-        <div className="mockup-stat">
-          <span className="mockup-stat-value">68%</span>
-          <span className="mockup-stat-label">Aproveitamento</span>
-        </div>
-        <div className="mockup-stat">
-          <span className="mockup-stat-value mockup-stat-record">
-            <span className="mockup-w">12V</span>
-            <span className="mockup-d">3E</span>
-            <span className="mockup-l">5D</span>
-          </span>
-          <span className="mockup-stat-label">Campanha</span>
-        </div>
-      </div>
-
-      <div className="mockup-highlights">
-        <div className="mockup-highlight">
-          <div className="mockup-hl-header">
-            <span className="mockup-hl-icon">★</span>
-            <span className="mockup-hl-title">Craque</span>
-          </div>
-          <span className="mockup-hl-name">Jogador 10</span>
-          <span className="mockup-hl-rating">9.1</span>
-        </div>
-        <div className="mockup-highlight">
-          <div className="mockup-hl-header">
-            <span className="mockup-hl-icon">⚽</span>
-            <span className="mockup-hl-title">Artilheiro</span>
-          </div>
-          <span className="mockup-hl-name">Jogador 9</span>
-          <span className="mockup-hl-rating">18 gols</span>
-        </div>
-      </div>
-
-      <div className="mockup-form-row">
-        {["V", "V", "D", "V", "V"].map((r, i) => (
-          <span
-            key={i}
-            className={`mockup-form-pip ${r === "V" ? "mockup-pip-w" : r === "E" ? "mockup-pip-d" : "mockup-pip-l"}`}
-          >
-            {r}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Benefits() {
-  return (
-    <section id="recursos" className="landing-benefits">
+    <section className="landing-proof">
       <div className="landing-section-inner">
-        <div className="landing-benefits-header">
-          <h2 className="landing-h2">
-            Tudo que acontece em campo,
-            <br />
-            <span className="landing-h2-accent">registrado automaticamente.</span>
-          </h2>
+        <div className="landing-proof-header">
+          <h2 className="landing-h2">Isso é o que seu clube recebe.</h2>
+          <p className="landing-proof-text">
+            Uma prévia real com as partidas recentes do seu clube. Placar,
+            desempenho, campanha e jogadores em destaque. Tudo com dados reais.
+          </p>
         </div>
-        <div className="landing-benefits-grid">
-          <BenefitItem
-            title="Estatísticas automáticas"
-            text="Resultados, gols, assistências, notas e desempenho atualizados após as partidas."
-            icon={
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 3v18h18" />
-                <path d="M7 16l4-8 4 4 5-9" />
-              </svg>
-            }
+      </div>
+    </section>
+  );
+}
+
+function WhatItReveals() {
+  return (
+    <section id="o-que-revela" className="landing-reveals">
+      <div className="landing-section-inner">
+        <h2 className="landing-h2 landing-reveals-title">
+          Cada partida revela quem é quem.
+        </h2>
+        <div className="landing-reveals-grid">
+          <RevealBlock
+            title="Artilheiros e garçons"
+            text="Quem faz gol, quem dá assistência, quem aparece quando o jogo aperta."
           />
-          <BenefitItem
-            title="Destaques das partidas"
-            text="Craque, Bagre e os principais acontecimentos de cada jogo."
-            icon={
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-              </svg>
-            }
+          <RevealBlock
+            title="Craque e bagre"
+            text="O melhor e o pior de cada partida. Com nota, com nome, sem piedade."
           />
-          <BenefitItem
-            title="Histórico e evolução"
-            text="Acompanhe partidas, adversários, jogadores e a evolução do clube."
-            icon={
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 16 14" />
-              </svg>
-            }
+          <RevealBlock
+            title="Campanha e fases"
+            text="Sequência de vitórias, fase ruim, aproveitamento geral. A história do clube em resultados."
           />
-          <BenefitItem
-            title="Discord"
-            text="Os resultados e destaques chegam ao Discord do clube sem trabalho manual."
-            icon={
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" />
-              </svg>
-            }
+          <RevealBlock
+            title="Adversários"
+            text="Contra quem vocês jogam bem. Contra quem vocês sofrem. Tudo registrado."
           />
         </div>
       </div>
@@ -222,47 +143,42 @@ function Benefits() {
   );
 }
 
-function BenefitItem({
-  title,
-  text,
-  icon,
-}: {
-  title: string;
-  text: string;
-  icon: React.ReactNode;
-}) {
+function RevealBlock({ title, text }: { title: string; text: string }) {
   return (
-    <div className="landing-benefit">
-      <div className="landing-benefit-icon">{icon}</div>
-      <h3 className="landing-benefit-title">{title}</h3>
-      <p className="landing-benefit-text">{text}</p>
+    <div className="landing-reveal">
+      <h3 className="landing-reveal-title">{title}</h3>
+      <p className="landing-reveal-text">{text}</p>
     </div>
   );
 }
 
 function HowItWorks() {
   const steps = [
-    { num: "1", title: "Cadastramos seu clube", text: "Encontramos o clube e preparamos o acompanhamento." },
-    { num: "2", title: "Vocês jogam normalmente", text: "Sem configurar nada, sem lembrar de gravar." },
-    { num: "3", title: "O FC Stats acompanha as partidas", text: "Resultados e atuações registrados automaticamente." },
-    { num: "4", title: "Dashboard e Discord atualizados", text: "O time acompanha cada capítulo da temporada." },
+    {
+      title: "Você pede",
+      text: "Informa o nome do clube.",
+    },
+    {
+      title: "A gente prepara",
+      text: "Localizamos o clube e montamos uma prévia com as partidas recentes reais.",
+    },
+    {
+      title: "Seu clube aparece",
+      text: "Você recebe o link com os dados do seu clube. Mostra pra galera.",
+    },
   ];
+
   return (
     <section id="como-funciona" className="landing-how">
       <div className="landing-section-inner">
-        <h2 className="landing-h2 landing-how-title">Como funciona</h2>
-        <p className="landing-how-sub">
-          Seu clube joga. A história fica registrada.
-        </p>
+        <h2 className="landing-h2 landing-how-title">
+          Sem instalar. Sem configurar. Sem lembrar de nada.
+        </h2>
         <div className="landing-steps">
-          {steps.map((s, i) => (
-            <div key={s.num} className="landing-step">
-              <div className="landing-step-num">{s.num}</div>
+          {steps.map((s) => (
+            <div key={s.title} className="landing-step">
               <h3 className="landing-step-title">{s.title}</h3>
               <p className="landing-step-text">{s.text}</p>
-              {i < steps.length - 1 && (
-                <div className="landing-step-connector" aria-hidden="true" />
-              )}
             </div>
           ))}
         </div>
@@ -271,34 +187,28 @@ function HowItWorks() {
   );
 }
 
-function MatchCardShowcase() {
+function Discord() {
   return (
-    <section className="landing-showcase">
-      <div className="landing-section-inner landing-showcase-inner">
-        <div className="landing-showcase-copy">
+    <section className="landing-discord">
+      <div className="landing-section-inner landing-discord-inner">
+        <div className="landing-discord-copy">
           <h2 className="landing-h2">
-            Da partida
-            <br />
-            <span className="landing-h2-accent">para o Discord.</span>
+            Depois do jogo, o resumo chega no Discord.
           </h2>
-          <p className="landing-showcase-text">
-            Depois do jogo, o FC Stats transforma o resultado em um resumo
-            completo — placar, gols, assistências, destaques individuais,
-            craque da partida e insights automáticos — publicado direto
-            no canal do Discord do clube.
-          </p>
-          <p className="landing-showcase-label">
-            Partida real processada pelo FC Stats.
+          <p className="landing-discord-text">
+            Com o acompanhamento ativo, cada partida vira um resumo completo —
+            placar, gols, assistências, destaques e craque — publicado direto no
+            canal do clube.
           </p>
         </div>
-        <div className="landing-showcase-card">
-          <div className="landing-showcase-frame">
+        <div className="landing-discord-card">
+          <div className="landing-discord-frame">
             <Image
               src="/landing/batista-flores-match-card.png"
-              alt="Match card real gerado pelo FC Stats — Associação BF 4 × 2 JardimHelenaFC"
+              alt="Resumo de partida real publicado no Discord — Associação BF 4 × 2 JardimHelenaFC"
               width={420}
               height={898}
-              className="landing-showcase-img"
+              className="landing-discord-img"
               priority={false}
             />
           </div>
@@ -310,13 +220,18 @@ function MatchCardShowcase() {
 
 function FinalCTA() {
   return (
-    <section id="teste" className="landing-final-cta">
+    <section id="quero" className="landing-final-cta">
       <div className="landing-section-inner">
         <div className="landing-final-cta-box">
           <h2 className="landing-h2 landing-final-cta-title">
-            Seu clube também pode ter uma história contada em números.
+            Seu clube também tem uma história.
+            <br />
+            <span className="landing-h2-accent">A gente mostra.</span>
           </h2>
-          <p className="landing-hero-sub">Veja uma prévia do seu clube com as partidas recentes disponíveis.</p>
+          <p className="landing-final-cta-sub">
+            Informe o nome do clube e a gente prepara uma prévia com os dados
+            reais das partidas recentes.
+          </p>
           <TrialRequestForm />
         </div>
       </div>
@@ -329,11 +244,11 @@ function Footer() {
     <footer className="landing-footer">
       <div className="landing-section-inner landing-footer-inner">
         <div className="landing-footer-brand">
-          <span className="landing-logo-mark landing-logo-mark-sm">FC</span>
-          <span className="landing-logo-text">STATS</span>
+          <span className="landing-logo-mark landing-logo-mark-sm">11</span>
+          <span className="landing-logo-text">CLUB11</span>
         </div>
         <p className="landing-footer-legal">
-          © {new Date().getFullYear()} FC Stats · EA SPORTS e EA SPORTS FC são
+          © {new Date().getFullYear()} Club11 · EA SPORTS e EA SPORTS FC são
           marcas da Electronic Arts. Este projeto não é afiliado ou endossado
           pela Electronic Arts.
         </p>
