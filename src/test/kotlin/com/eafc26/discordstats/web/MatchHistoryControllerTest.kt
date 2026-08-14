@@ -82,7 +82,7 @@ class MatchHistoryControllerTest {
         assertThat(detail.stories).isNotEmpty
         assertThat(detail.stories.first().ruleIds).isNotEmpty
         assertThat(detail.stories.first().evidenceCount).isPositive()
-        assertThat(detail.provenance.schemaVersion).isEqualTo(1)
+        assertThat(detail.provenance.schemaVersion).isEqualTo(2)
         verify(historyService).findById(OUR_CLUB, MatchId("detail-1"))
         verifyNoMoreInteractions(historyService)
     }

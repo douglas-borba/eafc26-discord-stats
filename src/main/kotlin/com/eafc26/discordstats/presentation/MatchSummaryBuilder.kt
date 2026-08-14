@@ -63,6 +63,8 @@ class MatchSummaryBuilder(
             date = footballMatch.playedAt.atZone(zoneId).format(dateFmt),
             timestamp = footballMatch.playedAt.toString(),
             matchId = footballMatch.id.value,
+            completionStatus = footballMatch.completion.status.name,
+            dnfClubId = footballMatch.completion.dnfClubId?.value,
             goals = goals(storyByType[StoryType.GOALS], players),
             assists = assists(storyByType[StoryType.ASSISTS], players),
             highlights = highlights(storyByType[StoryType.HIGHLIGHTS], players),
@@ -94,7 +96,7 @@ class MatchSummaryBuilder(
                 footballMatch.id.value,
                 random,
             ),
-            allPlayers = buildAllPlayers(ourClub.players),
+            allPlayers = if (footballMatch.completion.hasCompleteSportingStatistics) buildAllPlayers(ourClub.players) else emptyList(),
         )
     }
 

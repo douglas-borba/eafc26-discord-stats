@@ -124,6 +124,7 @@ export function MatchesShell({
                     {m.matchType && (
                       <p className="text-[12px] text-muted mt-[2px]">{m.matchType}</p>
                     )}
+                    {m.completionStatus === "DNF" && <p className="text-[11px] font-semibold text-amber-300 mt-[2px]">ENCERRADA POR DNF</p>}
                   </button>
                 );
               })}

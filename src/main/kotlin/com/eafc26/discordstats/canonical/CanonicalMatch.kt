@@ -27,7 +27,7 @@ data class CanonicalMatch(
     }
 
     companion object {
-        val CURRENT_SCHEMA_VERSION = CanonicalSchemaVersion(1)
+        val CURRENT_SCHEMA_VERSION = CanonicalSchemaVersion(2)
         val CURRENT_ENGINE_VERSION = EngineVersion("1.0.0")
 
         fun current(

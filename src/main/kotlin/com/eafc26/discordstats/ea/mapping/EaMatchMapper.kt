@@ -13,6 +13,7 @@ import com.eafc26.discordstats.domain.match.EaRecognition
 import com.eafc26.discordstats.domain.match.FootballMatch
 import com.eafc26.discordstats.domain.match.GoalkeepingStats
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.MatchRating
 import com.eafc26.discordstats.domain.match.Participation
 import com.eafc26.discordstats.domain.match.ParticipationStatus
@@ -50,6 +51,7 @@ class EaMatchMapper {
         val parser = EaStatParser(warnings)
 
         val scoreByClub = resolveScores(source, parser, warnings)
+        val completion = resolveCompletion(source, warnings)
         val participants = source.clubs.entries.map { (clubId, clubEntry) ->
             mapClub(
                 source = source,
@@ -79,9 +81,29 @@ class EaMatchMapper {
                 playedAt = Instant.ofEpochSecond(source.timestamp),
                 competition = mapCompetition(source.matchType, warnings),
                 participants = participants,
+                completion = completion,
             ),
             warnings = warnings.toList(),
         )
+    }
+
+    private fun resolveCompletion(source: MatchResponse, warnings: MutableList<NormalizationWarning>): MatchCompletion {
+        if (source.clubs.size != 2) return MatchCompletion.UNKNOWN
+        val flags = source.clubs.mapValues { it.value.winnerByDnf }
+        if (flags.values.any { it == null }) return MatchCompletion.UNKNOWN
+        if (flags.values.any { it != "0" && it != "1" }) {
+            warnings += NormalizationWarning(NormalizationIssueCode.INVALID_MATCH_COMPLETION, "clubs.winnerByDnf", "Invalid winnerByDnf value", flags.values.joinToString())
+            return MatchCompletion.UNKNOWN
+        }
+        val winners = flags.filterValues { it == "1" }.keys
+        return when (winners.size) {
+            0 -> MatchCompletion.COMPLETED
+            1 -> MatchCompletion.dnf(ClubId(source.clubs.keys.first { it != winners.single() }))
+            else -> {
+                warnings += NormalizationWarning(NormalizationIssueCode.INVALID_MATCH_COMPLETION, "clubs.winnerByDnf", "Multiple DNF winners", winners.joinToString())
+                MatchCompletion.UNKNOWN
+            }
+        }
     }
 
     private fun validateRequiredMatchFacts(source: MatchResponse): List<NormalizationError> {

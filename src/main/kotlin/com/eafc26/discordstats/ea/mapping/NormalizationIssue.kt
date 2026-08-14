@@ -20,6 +20,7 @@ enum class NormalizationIssueCode {
     BLANK_PLAYER_ID,
     MISSING_PLAYER_NAME,
     UNKNOWN_PLAYER_CLUB,
+    INVALID_MATCH_COMPLETION,
 }
 
 sealed interface NormalizationIssue {

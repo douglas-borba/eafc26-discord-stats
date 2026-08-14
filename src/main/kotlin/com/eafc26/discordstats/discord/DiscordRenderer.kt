@@ -129,6 +129,7 @@ class DiscordRenderer(
 
         val description = buildString {
             append("${summary.outcome.emoji} ${summary.outcome.label}\n📅 ${summary.date}")
+            if (footballMatch.completion.status.name == "DNF") append("\n\n⚠️ PARTIDA ENCERRADA POR DNF")
             // Temporarily hidden until LLM issue is resolved
             // if (!editorialNarrative.isNullOrBlank()) {
             //     append("\n\n")

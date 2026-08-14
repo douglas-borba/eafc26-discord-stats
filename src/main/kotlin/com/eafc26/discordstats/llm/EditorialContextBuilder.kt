@@ -57,6 +57,15 @@ class EditorialContextBuilder {
         val opponent = match.participants.first { it.club.id == interp.result.opponentClub }
         val players = ourClub.players.associateBy { it.player.id }
         val stories = canonical.stories.stories
+        if (!match.completion.hasCompleteSportingStatistics) {
+            return MatchContext(
+                ourClub = ourClub.club.name?.value ?: "Nós", opponent = opponent.club.name?.value ?: "Adversário",
+                ourScore = interp.result.ourScore.goals, opponentScore = interp.result.opponentScore.goals,
+                outcome = interp.result.outcome, date = match.playedAt.atZone(zoneId).format(dateFmt),
+                mvp = null, worstPerformer = null, xerife = null, goalkeeper = null,
+                goals = emptyList(), assists = emptyList(), teamAverageRating = null, notableEvents = emptyList(),
+            )
+        }
 
         val mvpStory = stories
             .filter { it.type == StoryType.AWARD }

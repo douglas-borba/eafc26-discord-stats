@@ -270,7 +270,7 @@ class PostgresCanonicalMatchRepositoryTest {
         val row = jdbcTemplate.queryForMap("SELECT club_id, opponent_club_id, played_at, match_type, canonical_schema_version FROM canonical_matches WHERE match_id = ?", "indexed-test")
         assertThat(row["club_id"]).isEqualTo(OUR_CLUB.value)
         assertThat(row["opponent_club_id"]).isEqualTo("opponent")
-        assertThat(row["canonical_schema_version"]).isEqualTo(1)
+        assertThat(row["canonical_schema_version"]).isEqualTo(2)
     }
 
     private fun canonicalMatch(

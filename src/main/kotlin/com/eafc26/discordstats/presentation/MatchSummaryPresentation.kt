@@ -21,6 +21,8 @@ data class MatchSummaryPresentation(
     val date: String,
     val timestamp: String,
     val matchId: String,
+    val completionStatus: String = "UNKNOWN",
+    val dnfClubId: String? = null,
     
     // Sections (null if not applicable)
     val goals: GoalsSection?,

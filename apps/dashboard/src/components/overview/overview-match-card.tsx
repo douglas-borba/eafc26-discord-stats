@@ -86,6 +86,11 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
             <div className={`card-date ${c ? "text-[0.62rem]" : "text-[0.7rem]"} text-muted ${c ? "mt-[0.25rem]" : "mt-[0.4rem]"}`}>
               📅 {formatMatchDateTime(presentation.timestamp)}
             </div>
+            {presentation.completionStatus === "DNF" && (
+              <div className={`mt-1 font-semibold text-amber-300 ${c ? "text-[0.58rem]" : "text-[0.65rem]"}`}>
+                PARTIDA ENCERRADA POR DNF
+              </div>
+            )}
           </div>
         </div>
 

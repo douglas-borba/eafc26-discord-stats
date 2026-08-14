@@ -42,7 +42,7 @@ class OpponentHistoryService(
         val biggestLosses = newest.extreme(MatchOutcome.LOSS, maximum = false)
         val current = oldest.currentRun()
         val runRecords = OpponentRunType.entries.mapNotNull { type -> oldest.recordRun(type) }
-        val leaders = oldest.playerLeaders()
+        val leaders = oldest.filter { it.footballMatch.completion.hasCompleteSportingStatistics }.playerLeaders()
         val record = newest.record()
         val criteria = buildList {
             add(criterion("retrospecto", "Todas as partidas do ClubId são consideradas.", record.toString(), newest))

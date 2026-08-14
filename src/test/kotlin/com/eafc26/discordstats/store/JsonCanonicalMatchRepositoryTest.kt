@@ -54,7 +54,7 @@ class JsonCanonicalMatchRepositoryTest {
         val file = Files.list(canonicalDir(OUR_CLUB)).use { it.findFirst().orElseThrow() }
         val json = jacksonObjectMapper().readTree(file.toFile())
 
-        assertThat(json["schemaVersion"].asInt()).isEqualTo(1)
+        assertThat(json["schemaVersion"].asInt()).isEqualTo(2)
         assertThat(json["engineVersion"].asText()).isEqualTo("1.0.0")
         assertThat(json["generatedAt"].asText()).isEqualTo("2026-07-30T10:00:00Z")
         assertThat(json.has("matchId")).isFalse()

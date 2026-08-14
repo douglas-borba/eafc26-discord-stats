@@ -29,6 +29,8 @@ export interface MatchSummary {
   opponentScore: number;
   outcome: "WIN" | "DRAW" | "LOSS";
   matchType: string | null;
+  completionStatus?: "COMPLETED" | "DNF" | "UNKNOWN";
+  dnfClubId?: string | null;
 }
 
 export interface MatchDetail {
@@ -42,6 +44,8 @@ export interface MatchDetail {
   opponentScore: number;
   outcome: "WIN" | "DRAW" | "LOSS";
   matchType: string | null;
+  completionStatus?: "COMPLETED" | "DNF" | "UNKNOWN";
+  dnfClubId?: string | null;
   players: MatchPlayer[];
   awards: MatchAwards;
   stories: Story[];

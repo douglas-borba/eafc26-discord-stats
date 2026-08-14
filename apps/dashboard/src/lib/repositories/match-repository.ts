@@ -1,7 +1,7 @@
 import { clubPath, fetchSports, SportsApiNotFound } from "@/lib/api/sports-client";
 import type { MatchSummary, MatchDetail, PagedResult, MatchAwards } from "@/lib/domain/types";
 
-type HistorySummary = { matchId:string; playedAt:string; competition:string|null; ourClub:{id:string;name:string;score:number}; opponentClub:{id:string;name:string;score:number}; outcome:{code:"WIN"|"DRAW"|"LOSS"} };
+type HistorySummary = { matchId:string; playedAt:string; competition:string|null; ourClub:{id:string;name:string;score:number}; opponentClub:{id:string;name:string;score:number}; outcome:{code:"WIN"|"DRAW"|"LOSS"}; completionStatus?:"COMPLETED"|"DNF"|"UNKNOWN"; dnfClubId?:string|null };
 type HistoryList = { matches: HistorySummary[] };
 type HistoryDetail = { status:string; match?: { summary:HistorySummary; players:Array<Record<string, unknown>>; awards:Array<Record<string, unknown>>; stories:Array<Record<string, unknown>> } };
 
@@ -42,5 +42,5 @@ export async function getMatchDetail(clubId:string, matchId:string): Promise<Mat
 function toSummary(m:HistorySummary): MatchSummary { return {
   matchId:m.matchId, playedAt:m.playedAt, ourClubId:m.ourClub.id, ourClubName:m.ourClub.name,
   opponentClubId:m.opponentClub.id, opponentClubName:m.opponentClub.name, ourScore:m.ourClub.score,
-  opponentScore:m.opponentClub.score, outcome:m.outcome.code, matchType:m.competition,
+  opponentScore:m.opponentClub.score, outcome:m.outcome.code, matchType:m.competition, completionStatus:m.completionStatus, dnfClubId:m.dnfClubId,
 }; }

@@ -6,6 +6,7 @@ import com.eafc26.discordstats.domain.match.DisplayName
 import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.match.PlayerRole
 import com.eafc26.discordstats.domain.match.ReportedMatchResult
+import com.eafc26.discordstats.domain.match.MatchCompletionStatus
 import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
@@ -19,6 +20,36 @@ import java.time.Instant
 class EaMatchMapperTest {
 
     private val mapper = EaMatchMapper()
+
+    @Test fun `explicit non DNF flags produce completed completion`() {
+        val result = mapper.map(match().copy(clubs = linkedMapOf(
+            "our-club" to club("Our FC", "3", "1", null, "0"),
+            "opponent" to club("Opponent", "0", "0", null, "0"),
+        ))).success()
+        assertThat(result.match.completion.status).isEqualTo(MatchCompletionStatus.COMPLETED)
+        assertThat(result.match.completion.dnfClubId).isNull()
+    }
+
+    @Test fun `winner by DNF identifies the other club without interpreting result codes`() {
+        val result = mapper.map(match(ourScore = "0", opponentScore = "3", ourResult = "10").copy(clubs = linkedMapOf(
+            "our-club" to club("Our FC", "0", "10", "3", "0"),
+            "opponent" to club("Opponent", "3", "16385", "0", "1"),
+        ))).success()
+        assertThat(result.match.completion.status).isEqualTo(MatchCompletionStatus.DNF)
+        assertThat(result.match.completion.dnfClubId).isEqualTo(ClubId("our-club"))
+        assertThat(result.match.participants.first { it.club.id == ClubId("our-club") }.score.goals).isZero()
+    }
+
+    @Test fun `missing or inconsistent DNF flags remain unknown`() {
+        val missing = mapper.map(match()).success()
+        val inconsistent = mapper.map(match().copy(clubs = linkedMapOf(
+            "our-club" to club("Our FC", "1", "1", null, "1"),
+            "opponent" to club("Opponent", "0", "0", null, "1"),
+        ))).success()
+        assertThat(missing.match.completion.status).isEqualTo(MatchCompletionStatus.UNKNOWN)
+        assertThat(inconsistent.match.completion.status).isEqualTo(MatchCompletionStatus.UNKNOWN)
+        assertThat(inconsistent.warnings.map { it.code }).contains(NormalizationIssueCode.INVALID_MATCH_COMPLETION)
+    }
 
     @Test
     fun `maps a complete EA response into typed normalized match facts`() {
@@ -307,11 +338,13 @@ class EaMatchMapperTest {
         score: String?,
         result: String?,
         goalsAgainst: String?,
+        winnerByDnf: String? = null,
     ): ClubMatchEntry = ClubMatchEntry(
         details = name?.let { ClubDetails(name = it) },
         score = score,
         goalsAgainst = goalsAgainst,
         result = result,
+        winnerByDnf = winnerByDnf,
     )
 
     private fun player(

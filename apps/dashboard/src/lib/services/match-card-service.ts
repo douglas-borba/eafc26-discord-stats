@@ -24,6 +24,8 @@ export interface MatchSummaryPresentation {
   date: string;
   timestamp: string;
   matchId: string;
+  completionStatus?: "COMPLETED" | "DNF" | "UNKNOWN";
+  dnfClubId?: string | null;
   goals: GoalsSection | null;
   assists: AssistsSection | null;
   highlights: HighlightsSection | null;
@@ -202,6 +204,8 @@ type CanonicalMatchSummary = {
   ourClub: { id: string; name: string; score: number };
   opponentClub: { id: string; name: string; score: number };
   outcome: { code: "WIN" | "DRAW" | "LOSS"; label: string; icon: string };
+  completionStatus?: "COMPLETED" | "DNF" | "UNKNOWN";
+  dnfClubId?: string | null;
 };
 
 type CanonicalMatchList = { matches: CanonicalMatchSummary[] };
@@ -223,6 +227,8 @@ function canonicalToBasicPresentation(m: CanonicalMatchSummary): MatchSummaryPre
     date: m.dateLabel,
     timestamp: m.playedAt,
     matchId: m.matchId,
+    completionStatus: m.completionStatus,
+    dnfClubId: m.dnfClubId,
     goals: null,
     assists: null,
     highlights: null,

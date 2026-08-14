@@ -23,6 +23,7 @@ class PlayerProfileService(
         val accumulated = linkedMapOf<PlayerId, MutablePlayerIndex>()
 
         matchHistoryService.list(clubId).forEach { canonical ->
+            if (!canonical.footballMatch.completion.hasCompleteSportingStatistics) return@forEach
             canonical.perspectivePlayers().forEach { performance ->
                 val player = performance.player
                 val current = accumulated.getOrPut(player.id) {
@@ -59,6 +60,7 @@ class PlayerProfileService(
 
         val appearances = matchHistoryService
             .list(clubId, MatchHistoryQuery(playerId = playerId))
+            .filter { it.footballMatch.completion.hasCompleteSportingStatistics }
             .mapNotNull { canonical ->
                 canonical.perspectivePlayers()
                     .firstOrNull { it.player.id == playerId }

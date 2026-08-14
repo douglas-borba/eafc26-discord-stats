@@ -26,6 +26,22 @@ class MatchInterpreter(
             match.participants.firstOrNull { it.club.id == perspective }
         ) { "Perspective club ${perspective.value} is not a match participant" }
 
+        if (!match.completion.hasCompleteSportingStatistics) {
+            val eligibility = eligibilityEvaluator.evaluate(emptyList())
+            val result = outcomeEvaluator.evaluate(match, perspective)
+            val metrics = metricsCalculator.calculate(emptyList())
+            val awards = awardsEvaluator.evaluate(emptyList(), eligibility)
+            return MatchInterpretation(
+                footballMatch = match,
+                perspectiveClubId = perspective,
+                result = result,
+                eligibility = eligibility,
+                teamMetrics = metrics,
+                awards = awards,
+                features = featuresEvaluator.evaluate(emptyList(), eligibility, result, metrics, awards),
+            )
+        }
+
         val eligibility = eligibilityEvaluator.evaluate(clubPerformance.players)
         val statisticallyEligiblePlayers = clubPerformance.players.filter {
             it.player.id in eligibility.eligiblePlayerIds

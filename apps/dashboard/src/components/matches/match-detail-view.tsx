@@ -321,6 +321,7 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
         <h2 style={{ fontSize: "clamp(20px, 2.4vw, 26px)" }} className="font-bold text-text-primary mb-4">
           A Partida
         </h2>
+        {match.completionStatus === "DNF" && <p className="text-xs font-semibold text-amber-300 mb-3">PARTIDA ENCERRADA POR DNF</p>}
 
         {/* meta row: date+competition left, outcome right */}
         <div className="flex items-center justify-between mb-6">

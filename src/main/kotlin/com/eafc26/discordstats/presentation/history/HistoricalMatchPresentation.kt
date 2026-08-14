@@ -45,6 +45,8 @@ data class HistoricalMatchSummary(
     val ourClub: HistoricalClub,
     val opponentClub: HistoricalClub,
     val outcome: HistoricalOutcome,
+    val completionStatus: String = "UNKNOWN",
+    val dnfClubId: String? = null,
 )
 
 data class HistoricalMatchDetail(
@@ -172,6 +174,8 @@ object HistoricalMatchPresenter {
                 score = result.opponentScore.goals,
             ),
             outcome = result.outcome.presentation(),
+            completionStatus = canonical.footballMatch.completion.status.name,
+            dnfClubId = canonical.footballMatch.completion.dnfClubId?.value,
         )
     }
 
@@ -191,7 +195,7 @@ object HistoricalMatchPresenter {
         }
         val eligibilityById = interpretation.eligibility.decisions.associateBy { it.playerId }
 
-        val players = ourPerformance.players.map { performance ->
+        val players = if (!canonical.footballMatch.completion.hasCompleteSportingStatistics) emptyList() else ourPerformance.players.map { performance ->
             val eligibility = eligibilityById[performance.player.id]
             HistoricalPlayer(
                 id = performance.player.id.value,

@@ -48,6 +48,7 @@ data class ClubMatchEntry(
 
     // 0 = loss, 1 = win, 2 = draw (as documented in community code)
     @JsonProperty("result") val result: String? = null,
+    @JsonProperty("winnerByDnf") val winnerByDnf: String? = null,
 ) {
     fun resolvedName(): String? = (details?.name ?: name)?.let { normalizeEaText(it) }
 }
