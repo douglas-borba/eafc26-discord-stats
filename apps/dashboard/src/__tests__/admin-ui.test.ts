@@ -65,6 +65,15 @@ describe("admin route group structure", () => {
 });
 
 describe("multi-club administration UI", () => {
+  it("presents the actual trial approval outcome and approved EA club identity", () => {
+    const trialRequests = read("components/admin/trial-requests-list.tsx");
+    expect(trialRequests).toContain('snapshot: "ready" | "unavailable" | "in_progress" | "not_required"');
+    expect(trialRequests).toContain("AdminRequestError");
+    expect(trialRequests).toContain("Clube EA:");
+    expect(trialRequests).toContain("const result = await adminRequest<ApprovalResult>");
+    expect(trialRequests).toContain("setNotice(result.message)");
+  });
+
   it("lists operational summaries and supports club removal", () => {
     const source = read("components/admin/club-admin-list.tsx");
     expect(source).toContain("/api/admin/clubs");

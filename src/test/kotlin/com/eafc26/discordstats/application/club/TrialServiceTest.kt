@@ -8,28 +8,49 @@ import org.junit.jupiter.api.Test
 import java.time.Instant
 
 class TrialServiceTest {
-    @Test fun `approval creates an unmonitored trial snapshot`() {
+    @Test fun `approval creates an unmonitored trial`() {
         val clubs = Clubs()
         val clubId = ClubId("1104972")
         val service = TrialService(clubs, Requests(TrialRequest(1, "Example", "Requester", "contact", createdAt = Instant.EPOCH, updatedAt = Instant.EPOCH)))
 
-        service.approve(1, clubId, ClubName("Example"), EaPlatform("common-gen5"))
+        val result = service.approve(1, clubId, ClubName("Example"), EaPlatform("common-gen5"))
 
+        assertThat(result).isInstanceOf(TrialApprovalResult.NewTrial::class.java)
         assertThat(clubs.findById(clubId)).extracting("accessStatus", "monitoringEnabled")
             .containsExactly(ClubAccessStatus.TRIAL, false)
         assertThat(service.isTrial(clubId)).isTrue()
     }
 
-    @Test fun `approval never downgrades an active club to a trial`() {
+    @Test fun `approval preserves an active club and approves the new request`() {
         val clubs = Clubs()
         val clubId = ClubId("1104972")
         clubs.save(MonitoredClub(clubId, ClubName("Active"), EaPlatform("common-gen5"), true, null, Instant.EPOCH, Instant.EPOCH, ClubAccessStatus.ACTIVE))
         val service = TrialService(clubs, Requests(TrialRequest(1, "Active", "Requester", "contact", createdAt = Instant.EPOCH, updatedAt = Instant.EPOCH)))
 
-        assertThatThrownBy { service.approve(1, clubId, ClubName("Active"), EaPlatform("common-gen5")) }
-            .isInstanceOf(IllegalArgumentException::class.java)
-            .hasMessage("This club is already active")
+        val result = service.approve(1, clubId, ClubName("Active"), EaPlatform("common-gen5"))
+
+        assertThat(result).isInstanceOf(TrialApprovalResult.ExistingActive::class.java)
         assertThat(clubs.findById(clubId)!!.accessStatus).isEqualTo(ClubAccessStatus.ACTIVE)
+    }
+
+    @Test fun `approval of an existing trial is idempotent`() {
+        val clubs = Clubs()
+        val clubId = ClubId("1104972")
+        clubs.save(MonitoredClub(clubId, ClubName("Trial"), EaPlatform("common-gen5"), false, null, Instant.EPOCH, Instant.EPOCH, ClubAccessStatus.TRIAL))
+        val service = TrialService(clubs, Requests(TrialRequest(1, "Trial", "Requester", "contact", createdAt = Instant.EPOCH, updatedAt = Instant.EPOCH)))
+
+        val result = service.approve(1, clubId, ClubName("Trial"), EaPlatform("common-gen5"))
+
+        assertThat(result).isInstanceOf(TrialApprovalResult.ExistingTrial::class.java)
+        assertThat(clubs.findById(clubId)!!.accessStatus).isEqualTo(ClubAccessStatus.TRIAL)
+    }
+
+    @Test fun `approval keeps the pending invariant`() {
+        val service = TrialService(Clubs(), Requests(TrialRequest(1, "Example", "Requester", "contact", status = TrialRequestStatus.APPROVED, createdAt = Instant.EPOCH, updatedAt = Instant.EPOCH)))
+
+        assertThatThrownBy { service.approve(1, ClubId("1104972"), ClubName("Example"), EaPlatform("common-gen5")) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("Trial request is not pending")
     }
 
     private class Clubs : MonitoredClubRepository {

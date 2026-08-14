@@ -20,19 +20,38 @@ class TrialService(
 
     fun listRequests(): List<TrialRequest> = requests.findAll()
 
-    fun approve(requestId: Long, clubId: ClubId, displayName: com.eafc26.discordstats.domain.match.ClubName, platform: EaPlatform): TrialRequest {
+    fun approve(
+        requestId: Long,
+        clubId: ClubId,
+        displayName: com.eafc26.discordstats.domain.match.ClubName,
+        platform: EaPlatform,
+    ): TrialApprovalResult {
         val request = requests.findById(requestId) ?: throw NoSuchElementException("Trial request not found")
         require(request.status == TrialRequestStatus.PENDING) { "Trial request is not pending" }
         val now = Instant.now(clock)
         val existing = clubs.findById(clubId)
-        require(existing?.accessStatus != ClubAccessStatus.ACTIVE) { "This club is already active" }
         val approved = requests.transition(requestId, TrialRequestStatus.PENDING, request.copy(status = TrialRequestStatus.APPROVED, clubId = clubId, approvedAt = now, updatedAt = now))
             ?: throw IllegalStateException("Trial request is no longer pending")
-        val club = (existing ?: MonitoredClub(clubId, displayName, platform, false, null, createdAt = now, updatedAt = now))
-            .copy(displayName = displayName, platform = platform, monitoringEnabled = false, accessStatus = ClubAccessStatus.TRIAL, updatedAt = now)
-        clubs.save(club)
         events?.trialApproved(clubId)
-        return approved
+        return when (existing?.accessStatus) {
+            null -> {
+                clubs.save(
+                    MonitoredClub(
+                        clubId = clubId,
+                        displayName = displayName,
+                        platform = platform,
+                        monitoringEnabled = false,
+                        discordWebhookSecretReference = null,
+                        createdAt = now,
+                        updatedAt = now,
+                        accessStatus = ClubAccessStatus.TRIAL,
+                    ),
+                )
+                TrialApprovalResult.NewTrial(approved)
+            }
+            ClubAccessStatus.TRIAL -> TrialApprovalResult.ExistingTrial(approved)
+            ClubAccessStatus.ACTIVE -> TrialApprovalResult.ExistingActive(approved)
+        }
     }
 
     fun reject(requestId: Long): TrialRequest {
@@ -44,6 +63,14 @@ class TrialService(
     }
 
     fun isTrial(clubId: ClubId): Boolean = clubs.findById(clubId)?.accessStatus == ClubAccessStatus.TRIAL
+}
+
+sealed interface TrialApprovalResult {
+    val request: TrialRequest
+
+    data class NewTrial(override val request: TrialRequest) : TrialApprovalResult
+    data class ExistingTrial(override val request: TrialRequest) : TrialApprovalResult
+    data class ExistingActive(override val request: TrialRequest) : TrialApprovalResult
 }
 
 private fun normalize(value: String) = value.trim().lowercase().replace(Regex("\\s+"), " ")

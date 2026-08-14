@@ -13,10 +13,12 @@ import { POST as forcePublish } from "@/app/api/admin/clubs/[clubId]/publication
 import { POST as poll } from "@/app/api/admin/clubs/[clubId]/poll/route";
 import { POST as testEa } from "@/app/api/admin/clubs/[clubId]/ea/test/route";
 import { POST as testDiscord } from "@/app/api/admin/clubs/[clubId]/discord/test/route";
+import { POST as approveTrialRequest } from "@/app/api/admin/trial-requests/[requestId]/approve/route";
 
 const originalBackendUrl = process.env.BACKEND_URL;
 const clubContext = { params: Promise.resolve({ clubId: "8874106" }) };
 const publicationContext = { params: Promise.resolve({ clubId: "8874106", matchId: "960520613970171" }) };
+const trialRequestContext = { params: Promise.resolve({ requestId: "42" }) };
 
 beforeEach(() => { process.env.BACKEND_URL = "https://spring.example.test/"; process.env.ADMIN_INTERNAL_TOKEN = "test-admin-token"; });
 afterEach(() => {
@@ -142,6 +144,27 @@ describe("administrative BFF", () => {
     expect(headers.get("X-XSRF-TOKEN")).toBe("server-token");
     expect(headers.get("Authorization")).toBe("Bearer test-admin-token");
     expect(headers.get("X-Admin-Identity")).toBe("admin@example.com");
+  });
+
+  it("preserves a successful partial trial approval result from Spring", async () => {
+    const result = {
+      status: "approved",
+      clubId: "35537",
+      clubState: "TRIAL",
+      snapshot: "unavailable",
+      message: "Solicitação aprovada. Os dados iniciais não puderam ser carregados agora.",
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(csrf()).mockResolvedValueOnce(json(result));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await approveTrialRequest(
+      new Request("https://dashboard.test", { method: "POST", body: JSON.stringify({ clubId: "35537", displayName: "Qi da Topeira", platform: "common-gen5" }) }),
+      trialRequestContext,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(result);
+    expect(fetchMock.mock.calls[1][0]).toBe("https://spring.example.test/api/admin/trial-requests/42/approve");
   });
 
   it.each([
