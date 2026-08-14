@@ -29,7 +29,8 @@ describe("public landing route", () => {
     expect(landing).not.toContain("mockup");
   });
 
-  it("uses OverviewShowcase with static snapshot data", () => {
+  it("uses HeroClubSnapshot for hero and OverviewShowcase for proof section", () => {
+    expect(landing).toContain("HeroClubSnapshot");
     expect(landing).toContain("OverviewShowcase");
     expect(landing).not.toContain("Suspense");
   });
@@ -63,8 +64,18 @@ describe("public landing route", () => {
   });
 });
 
-describe("overview-showcase (static snapshot)", () => {
+describe("overview-showcase (hero + proof)", () => {
   const showcase = read("components/landing/overview-showcase.tsx");
+
+  it("exports HeroClubSnapshot for the hero", () => {
+    expect(showcase).toContain("export function HeroClubSnapshot");
+    expect(showcase).toContain("hero-snapshot");
+  });
+
+  it("exports OverviewShowcase for the proof section", () => {
+    expect(showcase).toContain("export function OverviewShowcase");
+    expect(showcase).toContain("overview-proof");
+  });
 
   it("imports data from the static snapshot, not runtime APIs", () => {
     expect(showcase).toContain("landing-showcase-data");
@@ -93,6 +104,13 @@ describe("overview-showcase (static snapshot)", () => {
     expect(showcase).not.toContain("sidebar");
     expect(showcase).not.toContain("admin");
     expect(showcase).not.toContain("Trial");
+  });
+
+  it("hero snapshot does not render match cards", () => {
+    const heroFnMatch = showcase.match(/export function HeroClubSnapshot[\s\S]*?^}/m);
+    const heroFnBody = heroFnMatch ? heroFnMatch[0] : "";
+    expect(heroFnBody).not.toContain("OverviewMatchCard");
+    expect(heroFnBody).not.toContain("presentation=");
   });
 
   it("returns null when no showcase cards exist", () => {
@@ -159,7 +177,7 @@ describe("overview-club-panel remains intact", () => {
   });
 });
 
-describe("trial request form preserves endpoint", () => {
+describe("trial request form", () => {
   const form = read("components/landing/trial-request-form.tsx");
 
   it("posts to the same API endpoint with the same payload shape", () => {
@@ -171,6 +189,27 @@ describe("trial request form preserves endpoint", () => {
 
   it("uses updated CTA copy", () => {
     expect(form).toContain("Quero ver meu clube");
+  });
+
+  it("has persistent labels above inputs", () => {
+    expect(form).toContain("Nome do clube");
+    expect(form).toContain("Seu nome ou gamertag");
+    expect(form).toContain("Como a gente te responde?");
+    expect(form).toContain("<label");
+  });
+});
+
+describe("discord section uses real asset", () => {
+  const landing = read("app/page.tsx");
+
+  it("references the real Discord match card image", () => {
+    expect(landing).toContain("batista-flores-match-card.png");
+  });
+
+  it("presents the image in a Discord channel context", () => {
+    expect(landing).toContain("landing-discord-channel");
+    expect(landing).toContain("resultados");
+    expect(landing).toContain("BOT");
   });
 });
 
@@ -188,5 +227,15 @@ describe("landing CSS", () => {
 
   it("does not reference FC Stats", () => {
     expect(css).not.toMatch(/FC Stats/i);
+  });
+
+  it("has hero snapshot styles separate from overview proof styles", () => {
+    expect(css).toContain(".hero-snapshot");
+    expect(css).toContain(".overview-proof");
+  });
+
+  it("has form label styles", () => {
+    expect(css).toContain(".landing-trial-label");
+    expect(css).toContain(".landing-trial-field");
   });
 });

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import "./landing.css";
 import { TrialRequestForm } from "@/components/landing/trial-request-form";
-import { OverviewShowcase } from "@/components/landing/overview-showcase";
+import { HeroClubSnapshot, OverviewShowcase } from "@/components/landing/overview-showcase";
 
 export const metadata: Metadata = {
   title: "Club11 — O acompanhamento do seu clube no Pro Clubs",
@@ -89,8 +89,8 @@ function Hero() {
             </a>
           </div>
         </div>
-        <div className="landing-hero-preview" aria-label="Dados reais de um clube acompanhado pelo Club11">
-          <OverviewShowcase />
+        <div className="landing-hero-preview">
+          <HeroClubSnapshot />
         </div>
       </div>
     </section>
@@ -104,9 +104,12 @@ function ProductProof() {
         <div className="landing-proof-header">
           <h2 className="landing-h2">Isso é o que seu clube recebe.</h2>
           <p className="landing-proof-text">
-            Uma prévia real com as partidas recentes do seu clube. Placar,
-            desempenho, campanha e jogadores em destaque. Tudo com dados reais.
+            Campanha, jogadores em destaque e cada partida analisada. Tudo com
+            dados reais, atualizado automaticamente.
           </p>
+        </div>
+        <div className="landing-proof-showcase">
+          <OverviewShowcase />
         </div>
       </div>
     </section>
@@ -202,15 +205,28 @@ function Discord() {
           </p>
         </div>
         <div className="landing-discord-card">
-          <div className="landing-discord-frame">
-            <Image
-              src="/landing/batista-flores-match-card.png"
-              alt="Resumo de partida real publicado no Discord — Associação BF 4 × 2 JardimHelenaFC"
-              width={420}
-              height={898}
-              className="landing-discord-img"
-              priority={false}
-            />
+          <div className="landing-discord-channel">
+            <div className="landing-discord-channel-bar">
+              <span className="landing-discord-channel-hash">#</span>
+              <span className="landing-discord-channel-name">resultados</span>
+            </div>
+            <div className="landing-discord-message">
+              <div className="landing-discord-message-header">
+                <span className="landing-discord-bot-avatar">11</span>
+                <span className="landing-discord-bot-name">Club11</span>
+                <span className="landing-discord-bot-tag">BOT</span>
+              </div>
+              <div className="landing-discord-frame">
+                <Image
+                  src="/landing/batista-flores-match-card.png"
+                  alt="Resumo de partida real publicado no Discord — Associação BF 4 × 2 JardimHelenaFC"
+                  width={420}
+                  height={898}
+                  className="landing-discord-img"
+                  priority={false}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
