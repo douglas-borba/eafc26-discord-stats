@@ -2,6 +2,7 @@ export interface AdminClub {
   clubId: string;
   displayName: string;
   platform: string;
+  accessStatus: "ACTIVE" | "TRIAL";
   monitoringEnabled: boolean;
   discordConfigured: boolean;
   discordReferencePresent?: boolean;

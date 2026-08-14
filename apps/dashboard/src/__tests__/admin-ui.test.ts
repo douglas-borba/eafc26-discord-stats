@@ -76,13 +76,29 @@ describe("multi-club administration UI", () => {
 
   it("lists operational summaries and supports club removal", () => {
     const source = read("components/admin/club-admin-list.tsx");
+    const presentation = read("components/admin/club-status-presentation.ts");
     expect(source).toContain("/api/admin/clubs");
     expect(source).toContain("/status");
-    expect(source).toContain("monitoringEnabled");
+    expect(presentation).toContain("monitoringEnabled");
     expect(source).toContain('method: "DELETE"');
     expect(source).toContain("Remover clube");
     expect(source).toContain("Discord");
     expect(source).toContain("Última atividade");
+    expect(source).toContain("accessStatusPresentation");
+    expect(source).toContain("Última aquisição");
+    expect(source).not.toContain('club.monitoringEnabled ? "Ativo" : "Inativo"');
+    expect(presentation).toContain('case "TRIAL": return { label: "Teste"');
+    expect(presentation).toContain("Desativado durante o período de teste");
+    expect(presentation).toContain('case "FAILED": return "Falhou"');
+  });
+
+  it("keeps access, monitoring, and acquisition presentation separate in club details", () => {
+    const detail = read("components/admin/club-admin-detail.tsx");
+    expect(detail).toContain('label="Monitoramento"');
+    expect(detail).toContain('label="Polling"');
+    expect(detail).toContain('label="Última aquisição"');
+    expect(detail).toContain("monitoringLabel(club)");
+    expect(detail).toContain("acquisitionLabel(status?.acquisitionStatus)");
   });
 
   it("requires selecting an EA search result before registration", () => {

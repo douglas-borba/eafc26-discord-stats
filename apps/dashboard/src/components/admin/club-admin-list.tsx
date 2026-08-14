@@ -7,6 +7,7 @@ import { Panel } from "@/components/ui/panel";
 import { adminRequest } from "@/lib/admin/browser-client";
 import type { AdminClub, ClubOperationalStatus } from "@/lib/admin/types";
 import { AdminFeedback } from "./admin-feedback";
+import { accessStatusPresentation, acquisitionLabel, monitoringLabel } from "./club-status-presentation";
 
 export function ClubAdminList() {
   const [clubs, setClubs] = useState<AdminClub[]>([]);
@@ -102,6 +103,7 @@ export function ClubAdminList() {
         <div className="grid gap-4 md:grid-cols-2">
           {clubs.map((club) => {
             const status = statuses[club.clubId];
+            const access = accessStatusPresentation(club.accessStatus);
             return (
               <Panel key={club.clubId} className="flex flex-col gap-4">
                 <div className="flex items-start justify-between gap-3">
@@ -112,14 +114,15 @@ export function ClubAdminList() {
                       {club.isDefault && <span className="ml-2 text-accent">principal</span>}
                     </p>
                   </div>
-                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${healthBadgeColor(status?.healthIndicator)}`}>
-                    <span className={`h-2 w-2 rounded-full ${healthDotColor(status?.healthIndicator)}`} />
-                    {club.monitoringEnabled ? "Ativo" : "Inativo"}
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${access.badgeClass}`}>
+                    <span className="h-2 w-2 rounded-full bg-current" />
+                    {access.label}
                   </span>
                 </div>
                 <dl className="grid grid-cols-2 gap-3 text-sm">
                   <div><dt className="text-xs text-muted">Discord</dt><dd className="mt-0.5 text-text-soft">{discordStatusLabel(club)}</dd></div>
-                  <div><dt className="text-xs text-muted">Operação</dt><dd className="mt-0.5 text-text-soft">{status ? `${status.pollingStatus} · ${status.acquisitionStatus}` : "Carregando…"}</dd></div>
+                  <div><dt className="text-xs text-muted">Monitoramento</dt><dd className="mt-0.5 text-text-soft">{monitoringLabel(club)}</dd></div>
+                  <div><dt className="text-xs text-muted">Última aquisição</dt><dd className={`mt-0.5 ${status?.acquisitionStatus === "FAILED" ? "text-loss" : "text-text-soft"}`}>{status ? acquisitionLabel(status.acquisitionStatus) : "Carregando…"}</dd></div>
                   <div className="col-span-2"><dt className="text-xs text-muted">Última atividade</dt><dd className="mt-0.5 text-text-soft">{formatActivity(status)}</dd></div>
                 </dl>
                 <div className="mt-auto flex flex-col gap-2 sm:flex-row">
@@ -167,22 +170,4 @@ function formatActivity(status?: ClubOperationalStatus) {
   const value = status?.lastSuccessAt ?? status?.lastPollAt;
   if (!value) return "Nenhuma atividade registrada";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
-}
-
-function healthBadgeColor(indicator?: string) {
-  switch (indicator) {
-    case "healthy": return "bg-win/15 text-win";
-    case "warning": return "bg-yellow-500/15 text-yellow-400";
-    case "error": return "bg-loss/15 text-loss";
-    default: return "bg-surface-raised text-muted";
-  }
-}
-
-function healthDotColor(indicator?: string) {
-  switch (indicator) {
-    case "healthy": return "bg-win";
-    case "warning": return "bg-yellow-400";
-    case "error": return "bg-loss";
-    default: return "bg-muted";
-  }
 }

@@ -243,6 +243,18 @@ class ClubAdministrationControllerTest {
     }
 
     @Test
+    fun `club response exposes commercial access status independently from monitoring`() {
+        whenever(monitoredClubs.find(brasil.clubId)).thenReturn(
+            brasil.copy(accessStatus = com.eafc26.discordstats.application.club.ClubAccessStatus.TRIAL),
+        )
+
+        client.get().uri("/api/admin/clubs/8874106").exchange().expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.accessStatus").isEqualTo("TRIAL")
+            .jsonPath("$.monitoringEnabled").isEqualTo(false)
+    }
+
+    @Test
     fun `mutations require csrf while valid csrf permits request`() {
         client.post().uri("/api/admin/clubs")
             .contentType(MediaType.APPLICATION_JSON)

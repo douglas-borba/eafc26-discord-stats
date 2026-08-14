@@ -19,6 +19,7 @@ import type {
 } from "@/lib/admin/types";
 import { AdminFeedback } from "./admin-feedback";
 import { ClubEventTimeline } from "./club-event-timeline";
+import { acquisitionLabel, monitoringLabel, pollingLabel } from "./club-status-presentation";
 
 export function ClubAdminDetail({ clubId }: { clubId: string }) {
   const router = useRouter();
@@ -244,9 +245,9 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
         <Panel>
           <h2 className="font-semibold text-text-primary">Operação</h2>
           <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
-            <Status label="Monitoramento" value={club.monitoringEnabled ? "Ativo" : "Inativo"} />
-            <Status label="Polling" value={status?.pollingStatus ?? "—"} />
-            <Status label="Aquisição" value={status?.acquisitionStatus ?? "—"} />
+            <Status label="Monitoramento" value={monitoringLabel(club)} />
+            <Status label="Polling" value={pollingLabel(status?.pollingStatus)} />
+            <Status label="Última aquisição" value={acquisitionLabel(status?.acquisitionStatus)} tone={status?.acquisitionStatus === "FAILED" ? "error" : undefined} />
             <Status label="Último polling" value={formatDate(status?.lastPollAt)} />
             <Status label="Último sucesso" value={formatDate(status?.lastSuccessAt)} />
             <Status label="Última partida" value={status?.latestMatchId ?? "—"} />
