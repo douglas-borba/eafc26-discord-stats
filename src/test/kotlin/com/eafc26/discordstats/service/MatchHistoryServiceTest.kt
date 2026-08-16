@@ -20,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.never
 import org.mockito.kotlin.whenever
 import java.time.Instant
 
@@ -119,6 +120,16 @@ class MatchHistoryServiceTest {
         whenever(repository.findAll(CLUB_ID)).thenReturn(listOf(one, three, two))
 
         assertThat(service.latest(CLUB_ID, 2)).containsExactly(three, two)
+    }
+
+    @Test
+    fun `recent delegates the bounded overview feed without loading all history`() {
+        val recent = canonical("recent", "2026-07-03T10:00:00Z")
+        whenever(repository.findRecent(CLUB_ID, 10)).thenReturn(listOf(recent))
+
+        assertThat(service.recent(CLUB_ID, 10)).containsExactly(recent)
+        verify(repository).findRecent(CLUB_ID, 10)
+        verify(repository, never()).findAll(CLUB_ID)
     }
 
     @Test

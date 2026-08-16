@@ -27,6 +27,18 @@ interface CanonicalMatchRepository {
      */
     fun findAll(clubId: ClubId): List<CanonicalMatch>
 
+    /**
+     * Returns the most recent records ordered by match time descending, then ID.
+     *
+     * Implementations backed by a database must apply [limit] before loading full
+     * canonical payloads. The default preserves compatibility for repositories that
+     * cannot select a subset without reading their local documents.
+     */
+    fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> {
+        require(limit >= 0) { "limit must be non-negative" }
+        return findAll(clubId).take(limit)
+    }
+
     fun metadata(clubId: ClubId): CanonicalRepositoryMetadata
 }
 

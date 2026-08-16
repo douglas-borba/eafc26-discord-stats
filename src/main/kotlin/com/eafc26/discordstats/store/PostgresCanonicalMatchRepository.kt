@@ -133,6 +133,16 @@ class PostgresCanonicalMatchRepository(
         )
     }
 
+    override fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> {
+        require(limit >= 0) { "limit must be non-negative" }
+        return jdbcTemplate.query(
+            "SELECT payload FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC LIMIT ?",
+            { rs, _ -> readPayload(rs) },
+            clubId.value,
+            limit,
+        )
+    }
+
     override fun metadata(clubId: ClubId): CanonicalRepositoryMetadata {
         return jdbcTemplate.queryForObject(
             """

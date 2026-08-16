@@ -65,6 +65,16 @@ class MirroringCanonicalMatchRepositoryTest {
     }
 
     @Test
+    fun `findRecent delegates to primary only`() {
+        primary.store[MatchId("m1")] = testMatch("m1")
+        mirror.failOnRecentRead = true
+
+        assertThat(repo.findRecent(CLUB_ID, 1)).hasSize(1)
+        assertThat(primary.recentReads).isEqualTo(1)
+        assertThat(mirror.recentReads).isZero()
+    }
+
+    @Test
     fun `metadata delegates to primary only`() {
         assertThat(repo.metadata(CLUB_ID).matchCount).isZero()
     }
@@ -93,6 +103,8 @@ class MirroringCanonicalMatchRepositoryTest {
         val store = linkedMapOf<MatchId, CanonicalMatch>()
         val saved = mutableListOf<String>()
         var failOnSave = false
+        var failOnRecentRead = false
+        var recentReads = 0
 
         override fun save(match: CanonicalMatch) {
             if (failOnSave) throw RuntimeException("simulated failure")
@@ -106,6 +118,11 @@ class MirroringCanonicalMatchRepositoryTest {
             store.values.filter { it.interpretation.perspectiveClubId == clubId }.mapTo(linkedSetOf()) { it.matchId }
         override fun findAll(clubId: ClubId) =
             store.values.filter { it.interpretation.perspectiveClubId == clubId }
+        override fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> {
+            recentReads++
+            if (failOnRecentRead) throw RuntimeException("secondary recent read should not happen")
+            return findAll(clubId).take(limit)
+        }
         override fun metadata(clubId: ClubId) = CanonicalRepositoryMetadata(
             findAll(clubId).size, null, null, null, emptySet(), emptySet(),
         )

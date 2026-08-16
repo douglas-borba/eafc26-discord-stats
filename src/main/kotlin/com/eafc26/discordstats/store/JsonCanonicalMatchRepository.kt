@@ -109,6 +109,12 @@ class JsonCanonicalMatchRepository(
     }
 
     @Synchronized
+    override fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> {
+        require(limit >= 0) { "limit must be non-negative" }
+        return findAll(clubId).take(limit)
+    }
+
+    @Synchronized
     override fun metadata(clubId: ClubId): CanonicalRepositoryMetadata {
         val matches = findAll(clubId)
         return CanonicalRepositoryMetadata(

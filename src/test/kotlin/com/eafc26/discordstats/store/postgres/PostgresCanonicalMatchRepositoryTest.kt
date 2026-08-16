@@ -26,6 +26,7 @@ import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.Instant
+import java.nio.file.Files
 
 @Testcontainers
 @EnabledIf("isDockerAvailable")
@@ -120,6 +121,32 @@ class PostgresCanonicalMatchRepositoryTest {
 
         assertThat(repository.findAll(OUR_CLUB).map { it.matchId.value })
             .containsExactly("a", "b", "old")
+    }
+
+    @Test
+    fun `findRecent returns only the requested newest records with the same tie break`() {
+        val old = canonicalMatch("old", 1_700_000_000L)
+        val sameTimeB = canonicalMatch("b", 1_800_000_000L)
+        val sameTimeA = canonicalMatch("a", 1_800_000_000L)
+        val newest = canonicalMatch("newest", 1_900_000_000L)
+        listOf(old, sameTimeB, sameTimeA, newest).forEach(repository::save)
+
+        assertThat(repository.findRecent(OUR_CLUB, 3).map { it.matchId.value })
+            .containsExactly("newest", "a", "b")
+        assertThat(repository.findRecent(OUR_CLUB, 10).map { it.matchId.value })
+            .containsExactly("newest", "a", "b", "old")
+        assertThat(repository.findRecent(ClubId("empty-club"), 10)).isEmpty()
+    }
+
+    @Test
+    fun `findRecent query limits payload retrieval in PostgreSQL`() {
+        val source = Files.readString(
+            java.nio.file.Path.of("src/main/kotlin/com/eafc26/discordstats/store/PostgresCanonicalMatchRepository.kt")
+        )
+
+        assertThat(source).contains(
+            "SELECT payload FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC LIMIT ?"
+        )
     }
 
     @Test

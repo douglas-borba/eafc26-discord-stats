@@ -68,7 +68,7 @@ class ClubSportsControllerTest {
     fun `trial allows overview but denies deeper dashboard areas`() {
         val trial = club("1104972", "Trial").copy(accessStatus = ClubAccessStatus.TRIAL, monitoringEnabled = false)
         whenever(clubs.find(trial.clubId)).thenReturn(trial)
-        whenever(history.list(trial.clubId)).thenReturn(emptyList())
+        whenever(history.recent(trial.clubId, 10)).thenReturn(emptyList())
         whenever(history.metadata(trial.clubId)).thenReturn(metadata())
 
         assertThat(controller.overviewMatches(trial.clubId.value).status).isEqualTo("empty")
@@ -81,6 +81,18 @@ class ClubSportsControllerTest {
         assertThatThrownBy { controller.opponents(trial.clubId.value) }
             .isInstanceOf(ResponseStatusException::class.java)
             .extracting("statusCode.value").isEqualTo(403)
+    }
+
+    @Test
+    fun `overview requests only the bounded recent feed`() {
+        val club = club("1104972", "Associação BF")
+        whenever(clubs.find(club.clubId)).thenReturn(club)
+        whenever(history.recent(club.clubId, 10)).thenReturn(emptyList())
+        whenever(history.metadata(club.clubId)).thenReturn(metadata())
+
+        assertThat(controller.overviewMatches(club.clubId.value).status).isEqualTo("empty")
+        verify(history).recent(club.clubId, 10)
+        verify(history, never()).list(club.clubId)
     }
 
     @Test

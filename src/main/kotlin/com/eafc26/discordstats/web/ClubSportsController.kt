@@ -68,7 +68,7 @@ class ClubSportsController(
     /** Deliberately shallow public feed used by the Overview, including trials. */
     @GetMapping("/overview/matches")
     fun overviewMatches(@PathVariable clubId: String): HistoricalMatchListResponse = scope(clubId, ClubDashboardCapability.OVERVIEW) { id ->
-        val matches = history.list(id).take(10)
+        val matches = history.recent(id, 10)
         HistoricalMatchListResponse(
             status = if (matches.isEmpty()) "empty" else "success",
             matches = matches.map(HistoricalMatchPresenter::summary),

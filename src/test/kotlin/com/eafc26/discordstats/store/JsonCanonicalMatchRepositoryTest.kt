@@ -86,6 +86,22 @@ class JsonCanonicalMatchRepositoryTest {
     }
 
     @Test
+    fun `findRecent preserves newest-first ordering and club isolation`() {
+        val otherClub = ClubId("other-club")
+        val old = canonicalMatch("old", 1_700_000_000L)
+        val sameTimeB = canonicalMatch("b", 1_800_000_000L)
+        val sameTimeA = canonicalMatch("a", 1_800_000_000L)
+        val other = canonicalMatch("other", 1_900_000_000L, otherClub)
+        listOf(old, sameTimeB, sameTimeA, other).forEach(repository::save)
+
+        assertThat(repository.findRecent(OUR_CLUB, 2).map { it.matchId.value })
+            .containsExactly("a", "b")
+        assertThat(repository.findRecent(OUR_CLUB, 10).map { it.matchId.value })
+            .containsExactly("a", "b", "old")
+        assertThat(repository.findRecent(ClubId("empty-club"), 10)).isEmpty()
+    }
+
+    @Test
     fun `findMatchIds reads file identities without deserializing canonical payloads`() {
         val canonical = canonicalMatch("lightweight-id", 1_700_000_000L)
         repository.save(canonical)
@@ -195,24 +211,25 @@ class JsonCanonicalMatchRepositoryTest {
         timestamp: Long,
         perspectiveClubId: ClubId = OUR_CLUB,
     ): CanonicalMatch {
+        val opponentClubId = if (perspectiveClubId.value == "opponent") "other-opponent" else "opponent"
         val source = MatchResponse(
             matchId = id,
             timestamp = timestamp,
             matchType = "leagueMatch",
             clubs = linkedMapOf(
-                OUR_CLUB.value to ClubMatchEntry(
-                    details = ClubDetails("Our FC", OUR_CLUB.value),
+                perspectiveClubId.value to ClubMatchEntry(
+                    details = ClubDetails("Our FC", perspectiveClubId.value),
                     score = "3",
                     result = "1",
                 ),
-                "opponent" to ClubMatchEntry(
-                    details = ClubDetails("Opponent FC", "opponent"),
+                opponentClubId to ClubMatchEntry(
+                    details = ClubDetails("Opponent FC", opponentClubId),
                     score = "1",
                     result = "0",
                 ),
             ),
             players = mapOf(
-                OUR_CLUB.value to linkedMapOf(
+                perspectiveClubId.value to linkedMapOf(
                     "mvp" to player("MVP", "9.2", goals = "2", mom = "1"),
                     "defender" to player(
                         "Defender",

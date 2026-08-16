@@ -56,5 +56,11 @@ class MatchHistoryService(
     fun latest(clubId: ClubId, limit: Int): List<CanonicalMatch> =
         list(clubId, MatchHistoryQuery(order = MatchHistoryOrder.NEWEST_FIRST, limit = limit))
 
+    /**
+     * Shallow newest-first feed for consumers that do not need to filter or inspect
+     * the complete history. The repository applies the limit before loading payloads.
+     */
+    fun recent(clubId: ClubId, limit: Int): List<CanonicalMatch> = repository.findRecent(clubId, limit)
+
     fun metadata(clubId: ClubId): CanonicalRepositoryMetadata = repository.metadata(clubId)
 }
