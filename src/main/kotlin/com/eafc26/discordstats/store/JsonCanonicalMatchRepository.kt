@@ -75,6 +75,23 @@ class JsonCanonicalMatchRepository(
     }
 
     @Synchronized
+    override fun findMatchIds(clubId: ClubId): Set<MatchId> {
+        migrateLegacyFilesIfNeeded(clubId)
+        val root = rootFor(clubId)
+        if (!root.exists()) return emptySet()
+        return Files.list(root).use { paths ->
+            paths
+                .filter { it.isRegularFile() && it.extension == JSON_EXTENSION }
+                .map { path ->
+                    val encoded = path.fileName.toString().removeSuffix(".$JSON_EXTENSION")
+                    MatchId(String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8))
+                }
+                .toList()
+                .toCollection(linkedSetOf())
+        }
+    }
+
+    @Synchronized
     override fun findAll(clubId: ClubId): List<CanonicalMatch> {
         migrateLegacyFilesIfNeeded(clubId)
         val root = rootFor(clubId)

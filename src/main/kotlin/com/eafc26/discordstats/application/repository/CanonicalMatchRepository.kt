@@ -16,6 +16,13 @@ interface CanonicalMatchRepository {
     fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch?
 
     /**
+     * Returns canonical identifiers without loading or deserializing full match payloads.
+     *
+     * This is the acquisition checkpoint query and must remain lightweight for polling.
+     */
+    fun findMatchIds(clubId: ClubId): Set<MatchId>
+
+    /**
      * Returns all records ordered by match time descending, then ID.
      */
     fun findAll(clubId: ClubId): List<CanonicalMatch>

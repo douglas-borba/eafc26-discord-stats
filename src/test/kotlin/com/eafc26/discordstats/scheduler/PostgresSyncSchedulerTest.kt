@@ -31,6 +31,7 @@ class PostgresSyncSchedulerTest {
         val emptyRepo = object : CanonicalMatchRepository {
             override fun save(match: CanonicalMatch) {}
             override fun findById(clubId: ClubId, matchId: MatchId) = null
+            override fun findMatchIds(clubId: ClubId) = emptySet<MatchId>()
             override fun findAll(clubId: ClubId) = emptyList<CanonicalMatch>()
             override fun metadata(clubId: ClubId) = CanonicalRepositoryMetadata(0, null, null, null, emptySet(), emptySet())
         }

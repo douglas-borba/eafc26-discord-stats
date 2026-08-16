@@ -184,6 +184,8 @@ class PostgresSyncServiceTest {
 
         override fun findById(clubId: ClubId, matchId: MatchId) =
             store[matchId]?.takeIf { it.interpretation.perspectiveClubId == clubId }
+        override fun findMatchIds(clubId: ClubId) =
+            store.values.filter { it.interpretation.perspectiveClubId == clubId }.mapTo(linkedSetOf()) { it.matchId }
         override fun findAll(clubId: ClubId) =
             store.values.filter { it.interpretation.perspectiveClubId == clubId }
         override fun metadata(clubId: ClubId) =

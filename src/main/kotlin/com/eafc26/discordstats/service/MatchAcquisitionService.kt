@@ -8,6 +8,7 @@ import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.llm.LlmEditorialService
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationService
@@ -278,8 +279,7 @@ class MatchAcquisitionService(
             return SynchronizationFetch(gateway.getLatestMatches(clubId.value), null, null)
         }
 
-        val knownMatches = canonicalMatchRepository.findAll(clubId)
-        val knownIds = knownMatches.mapTo(linkedSetOf()) { it.matchId.value }
+        val knownIds = canonicalMatchRepository.findMatchIds(clubId)
         if (knownIds.isEmpty()) {
             val window = props.ea.incrementalMaxWindow
             return SynchronizationFetch(
@@ -296,8 +296,8 @@ class MatchAcquisitionService(
             if (result !is EaApiResult.Success) return SynchronizationFetch(result, "window=$window", null)
 
             val deduplicated = result.data.distinctBy { it.matchId }
-            val checkpointFound = deduplicated.any { it.matchId in knownIds }
-            val newMatches = deduplicated.filterNot { it.matchId in knownIds }
+            val checkpointFound = deduplicated.any { MatchId(it.matchId) in knownIds }
+            val newMatches = deduplicated.filterNot { MatchId(it.matchId) in knownIds }
             if (checkpointFound) {
                 return SynchronizationFetch(
                     EaApiResult.Success(newMatches),
@@ -310,7 +310,7 @@ class MatchAcquisitionService(
                 synchronizationGapStore.openGap(
                     SynchronizationGap(
                         clubId = clubId,
-                        anchorMatchId = knownMatches.first().matchId.value,
+                        anchorMatchId = knownIds.first().value,
                         firstObservableMatchId = deduplicated.minByOrNull { it.timestamp }?.matchId,
                     ),
                 )

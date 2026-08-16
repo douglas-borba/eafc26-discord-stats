@@ -86,6 +86,16 @@ class JsonCanonicalMatchRepositoryTest {
     }
 
     @Test
+    fun `findMatchIds reads file identities without deserializing canonical payloads`() {
+        val canonical = canonicalMatch("lightweight-id", 1_700_000_000L)
+        repository.save(canonical)
+        val file = Files.list(canonicalDir(OUR_CLUB)).use { it.findFirst().orElseThrow() }
+        file.writeText("{not-json}")
+
+        assertThat(repository.findMatchIds(OUR_CLUB)).containsExactly(canonical.matchId)
+    }
+
+    @Test
     fun `metadata describes stored versions and time range`() {
         val old = canonicalMatch("old", 1_700_000_000L)
         val recent = canonicalMatch("recent", 1_800_000_000L)

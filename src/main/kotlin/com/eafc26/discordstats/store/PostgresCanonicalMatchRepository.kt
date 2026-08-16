@@ -119,6 +119,12 @@ class PostgresCanonicalMatchRepository(
         return results.firstOrNull()
     }
 
+    override fun findMatchIds(clubId: ClubId): Set<MatchId> = jdbcTemplate.query(
+        "SELECT match_id FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC",
+        { rs, _ -> MatchId(rs.getString("match_id")) },
+        clubId.value,
+    ).toCollection(linkedSetOf())
+
     override fun findAll(clubId: ClubId): List<CanonicalMatch> {
         return jdbcTemplate.query(
             "SELECT payload FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC",

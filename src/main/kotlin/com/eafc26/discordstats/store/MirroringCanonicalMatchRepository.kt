@@ -29,6 +29,8 @@ class MirroringCanonicalMatchRepository(
 
     override fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch? = primary.findById(clubId, matchId)
 
+    override fun findMatchIds(clubId: ClubId): Set<MatchId> = primary.findMatchIds(clubId)
+
     override fun findAll(clubId: ClubId): List<CanonicalMatch> = primary.findAll(clubId)
 
     override fun metadata(clubId: ClubId): CanonicalRepositoryMetadata = primary.metadata(clubId)

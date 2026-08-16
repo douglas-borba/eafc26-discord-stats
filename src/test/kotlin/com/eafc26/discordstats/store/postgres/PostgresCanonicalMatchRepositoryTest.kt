@@ -88,6 +88,7 @@ class PostgresCanonicalMatchRepositoryTest {
         assertThat(repository.findAll(OUR_CLUB)).hasSize(1)
         assertThat(repository.findById(OUR_CLUB, MatchId("same-id"))!!.generatedAt)
             .isEqualTo(replacement.generatedAt)
+        assertThat(repository.findMatchIds(OUR_CLUB)).containsExactly(MatchId("same-id"))
     }
 
     @Test
@@ -119,6 +120,48 @@ class PostgresCanonicalMatchRepositoryTest {
 
         assertThat(repository.findAll(OUR_CLUB).map { it.matchId.value })
             .containsExactly("a", "b", "old")
+    }
+
+    @Test
+    fun `findMatchIds reads only identifiers without deserializing payloads`() {
+        val canonical = canonicalMatch("lightweight-id", 1_700_000_000L)
+        repository.save(canonical)
+        jdbcTemplate.update(
+            "UPDATE canonical_matches SET payload = ?::jsonb WHERE club_id = ? AND match_id = ?",
+            "{}",
+            OUR_CLUB.value,
+            canonical.matchId.value,
+        )
+
+        assertThat(repository.findMatchIds(OUR_CLUB)).containsExactly(canonical.matchId)
+    }
+
+    @Test
+    fun `findMatchIds is empty and scoped to the requested club`() {
+        val otherClub = ClubId("other-club")
+        val ours = canonicalMatch("our-match", 1_700_000_000L)
+        repository.save(ours)
+        jdbcTemplate.update(
+            """
+            INSERT INTO canonical_matches
+                (match_id, club_id, opponent_club_id, played_at, match_type,
+                 canonical_schema_version, payload, created_at, updated_at,
+                 outcome, our_score, opponent_score, our_club_name, opponent_club_name)
+            SELECT ?, ?, opponent_club_id, played_at, match_type,
+                   canonical_schema_version, payload, created_at, updated_at,
+                   outcome, our_score, opponent_score, our_club_name, opponent_club_name
+            FROM canonical_matches
+            WHERE club_id = ? AND match_id = ?
+            """.trimIndent(),
+            "other-match",
+            otherClub.value,
+            OUR_CLUB.value,
+            ours.matchId.value,
+        )
+
+        assertThat(repository.findMatchIds(OUR_CLUB)).containsExactly(ours.matchId)
+        assertThat(repository.findMatchIds(otherClub)).containsExactly(MatchId("other-match"))
+        assertThat(repository.findMatchIds(ClubId("empty-club"))).isEmpty()
     }
 
     @Test

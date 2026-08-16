@@ -172,6 +172,9 @@ class CanonicalBackfillServiceTest {
         override fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch? =
             records[clubId to matchId]
 
+        override fun findMatchIds(clubId: ClubId): Set<MatchId> =
+            records.values.filter { it.interpretation.perspectiveClubId == clubId }.mapTo(linkedSetOf()) { it.matchId }
+
         override fun findAll(clubId: ClubId): List<CanonicalMatch> =
             records.values.filter { it.interpretation.perspectiveClubId == clubId }
 
