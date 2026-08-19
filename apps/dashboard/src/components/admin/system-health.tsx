@@ -12,6 +12,7 @@ export function SystemHealthView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -49,8 +50,9 @@ export function SystemHealthView() {
       {error && <div className="mb-4"><AdminFeedback message={error} /></div>}
 
       {health && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <HealthCard
+        <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <HealthCard
             title="Aplicação"
             status={health.application.status}
             items={[
@@ -58,7 +60,7 @@ export function SystemHealthView() {
               ["Uptime", formatUptime(health.application.uptimeSeconds)],
             ]}
           />
-          <HealthCard
+            <HealthCard
             title="Postgres"
             status={health.postgres.status}
             items={[
@@ -66,7 +68,7 @@ export function SystemHealthView() {
               ...(health.postgres.error ? [["Erro", health.postgres.error] as const] : []),
             ]}
           />
-          <HealthCard
+            <HealthCard
             title="EA Gateway"
             status={health.eaGateway.status}
             items={[
@@ -76,7 +78,7 @@ export function SystemHealthView() {
               ...(health.eaGateway.error ? [["Erro", health.eaGateway.error] as const] : []),
             ]}
           />
-          <HealthCard
+            <HealthCard
             title="Scheduler"
             status={health.scheduler.status}
             items={[
@@ -85,18 +87,97 @@ export function SystemHealthView() {
               ...(health.scheduler.reason ? [["Detalhe", health.scheduler.reason] as const] : []),
             ]}
           />
-          <HealthCard
+            <HealthCard
             title="Build"
             status="INFO"
             items={[
               ["Commit", health.build.commitSha?.slice(0, 8) ?? "—"],
               ["Branch", health.build.branch ?? "—"],
             ]}
-          />
-        </div>
+            />
+          </div>
+          {health.canonicalReadDiagnostics && (
+            <CanonicalReadDiagnosticsPanel
+              diagnostics={health.canonicalReadDiagnostics}
+              flags={health.runtimeFlags}
+              resetting={resetting}
+              onReset={async () => {
+                setResetting(true);
+                setError(null);
+                try {
+                  const result = await adminRequest<{ canonicalReadDiagnostics: typeof health.canonicalReadDiagnostics }>(
+                    "/api/admin/system/canonical-read-diagnostics/reset",
+                    { method: "POST" },
+                  );
+                  setHealth((current) => current ? { ...current, canonicalReadDiagnostics: result.canonicalReadDiagnostics } : current);
+                } catch (reason) {
+                  setError(reason instanceof Error ? reason.message : "Não foi possível zerar os contadores.");
+                } finally {
+                  setResetting(false);
+                }
+              }}
+            />
+          )}
+        </>
       )}
     </section>
   );
+}
+
+function CanonicalReadDiagnosticsPanel({
+  diagnostics,
+  flags,
+  resetting,
+  onReset,
+}: {
+  diagnostics: NonNullable<SystemHealth["canonicalReadDiagnostics"]>;
+  flags?: SystemHealth["runtimeFlags"];
+  resetting: boolean;
+  onReset: () => Promise<void>;
+}) {
+  const operationRows = Object.entries(diagnostics.operations).filter(([, value]) => value.calls > 0);
+  const originRows = Object.entries(diagnostics.origins).filter(([, value]) => value.calls > 0);
+  return (
+    <Panel className="mt-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="font-semibold text-text-primary">Diagnóstico de leituras PostgreSQL</h2>
+          <p className="mt-1 text-sm text-muted">Contadores em memória desde o último início da aplicação. Os bytes representam dados retornados às consultas da aplicação e não o egress faturado pelo Supabase.</p>
+        </div>
+        <button type="button" disabled={resetting} onClick={() => { void onReset(); }} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border px-4 py-2 text-sm text-text-soft hover:bg-surface-raised disabled:opacity-50">
+          {resetting ? "Zerando…" : "Zerar contadores"}
+        </button>
+      </div>
+      <dl className="mb-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Instância" value={diagnostics.instanceId} />
+        <Metric label="Período" value={`${formatDate(diagnostics.startedAt)} → ${diagnostics.lastUpdatedAt ? formatDate(diagnostics.lastUpdatedAt) : "agora"}`} />
+        <Metric label="Chamadas" value={String(diagnostics.total.calls)} />
+        <Metric label="Registros retornados" value={String(diagnostics.total.rows)} />
+        <Metric label="Dados retornados" value={formatBytes(diagnostics.total.estimatedReturnedBytes)} />
+        {flags && <Metric label="Runtime" value={`LLM: ${flag(flags.llmEnabled)} · Mirror: ${flag(flags.postgresMirrorEnabled)} · Sync: ${flag(flags.postgresSyncEnabled)}`} />}
+      </dl>
+      <ReadTable title="Por operação" rows={operationRows} />
+      <ReadTable title="Por origem" rows={originRows} className="mt-5" />
+    </Panel>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return <div><dt className="text-muted">{label}</dt><dd className="mt-1 break-all text-text-soft">{value}</dd></div>;
+}
+
+function ReadTable({ title, rows, className = "" }: { title: string; rows: [string, { calls: number; rows: number; estimatedReturnedBytes: number }][]; className?: string }) {
+  return <div className={className}>
+    <h3 className="mb-2 text-sm font-medium text-text-primary">{title}</h3>
+    {rows.length === 0 ? <p className="text-sm text-muted">Nenhuma leitura registrada neste período.</p> : (
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] text-left text-sm">
+          <thead className="border-b border-border text-muted"><tr><th className="pb-2 font-medium">{title === "Por operação" ? "Operação" : "Origem"}</th><th className="pb-2 text-right font-medium">Chamadas</th><th className="pb-2 text-right font-medium">Registros</th><th className="pb-2 text-right font-medium">Dados retornados</th></tr></thead>
+          <tbody>{rows.map(([name, metric]) => <tr key={name} className="border-b border-border/60"><td className="py-2 text-text-soft">{name}</td><td className="py-2 text-right text-text-soft">{metric.calls}</td><td className="py-2 text-right text-text-soft">{metric.rows}</td><td className="py-2 text-right text-text-soft">{formatBytes(metric.estimatedReturnedBytes)}</td></tr>)}</tbody>
+        </table>
+      </div>
+    )}
+  </div>;
 }
 
 function HealthCard({ title, status, items }: { title: string; status: string; items: readonly (readonly [string, string])[] }) {
@@ -158,3 +239,11 @@ function formatUptime(seconds: number) {
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
 }
+
+export function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function flag(value: boolean) { return value ? "Ativo" : "Desativado"; }

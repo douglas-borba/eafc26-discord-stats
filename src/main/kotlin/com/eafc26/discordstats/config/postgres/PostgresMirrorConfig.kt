@@ -25,6 +25,8 @@ import com.eafc26.discordstats.store.PostgresSynchronizationGapStore
 import com.eafc26.discordstats.store.PostgresTrialRequestRepository
 import com.eafc26.discordstats.application.club.TrialRequestRepository
 import com.eafc26.discordstats.application.club.TrialService
+import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnostics
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.flywaydb.core.Flyway
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -67,8 +69,10 @@ class PostgresMirrorConfig {
     fun postgresCanonicalMatchRepository(
         jdbcTemplate: JdbcTemplate,
         objectMapper: ObjectMapper,
+        canonicalReadDiagnostics: CanonicalReadDiagnostics,
+        canonicalReadOriginContext: CanonicalReadOriginContext,
     ): PostgresCanonicalMatchRepository {
-        return PostgresCanonicalMatchRepository(jdbcTemplate, objectMapper)
+        return PostgresCanonicalMatchRepository(jdbcTemplate, objectMapper, canonicalReadDiagnostics, canonicalReadOriginContext)
     }
 
     @Bean

@@ -9,6 +9,7 @@ import { PATCH as updateMonitoring } from "@/app/api/admin/clubs/[clubId]/monito
 import { PUT as configureDiscord, DELETE as removeDiscord } from "@/app/api/admin/clubs/[clubId]/discord/route";
 import { GET as getStatus } from "@/app/api/admin/clubs/[clubId]/status/route";
 import { GET as getSystemHealth } from "@/app/api/admin/system/health/route";
+import { POST as resetCanonicalReadDiagnostics } from "@/app/api/admin/system/canonical-read-diagnostics/reset/route";
 import { POST as forcePublish } from "@/app/api/admin/clubs/[clubId]/publication/[matchId]/force-publish/route";
 import { POST as poll } from "@/app/api/admin/clubs/[clubId]/poll/route";
 import { POST as testEa } from "@/app/api/admin/clubs/[clubId]/ea/test/route";
@@ -264,6 +265,32 @@ describe("administrative BFF", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ overall: "UP" });
+  });
+
+  it("resets only server-side canonical read diagnostics through the protected CSRF flow", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(csrf())
+      .mockResolvedValueOnce(json({ status: "reset", canonicalReadDiagnostics: { total: { calls: 0 } } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await resetCanonicalReadDiagnostics();
+
+    expect(response.status).toBe(200);
+    expect(fetchMock.mock.calls[1][0]).toBe("https://spring.example.test/api/admin/system/canonical-read-diagnostics/reset");
+    const headers = fetchMock.mock.calls[1][1].headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer test-admin-token");
+    expect(headers.get("X-XSRF-TOKEN")).toBe("server-token");
+  });
+
+  it("rejects diagnostic reset before contacting Spring when the caller is not an admin", async () => {
+    vi.mocked(requireAdmin).mockResolvedValueOnce({ kind: "anonymous" });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await resetCanonicalReadDiagnostics();
+
+    expect(response.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it.each([401, 403])("classifies Spring HTTP %s as an internal authentication failure", async (status) => {

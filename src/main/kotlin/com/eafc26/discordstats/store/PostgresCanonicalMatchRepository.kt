@@ -7,6 +7,9 @@ import com.eafc26.discordstats.canonical.CanonicalSchemaVersion
 import com.eafc26.discordstats.canonical.EngineVersion
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnostics
+import com.eafc26.discordstats.diagnostics.CanonicalReadOperation
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.jdbc.core.JdbcTemplate
 import java.sql.ResultSet
@@ -16,6 +19,8 @@ import java.time.Instant
 class PostgresCanonicalMatchRepository(
     private val jdbcTemplate: JdbcTemplate,
     sourceMapper: ObjectMapper,
+    private val readDiagnostics: CanonicalReadDiagnostics = CanonicalReadDiagnostics(),
+    private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) : CanonicalMatchRepository {
 
     private val objectMapper = CanonicalObjectMapperFactory.create(sourceMapper)
@@ -116,31 +121,60 @@ class PostgresCanonicalMatchRepository(
             clubId.value,
             matchId.value,
         )
-        return results.firstOrNull()
+        readDiagnostics.record(
+            CanonicalReadOperation.FIND_BY_ID,
+            readOriginContext.current(),
+            results.size,
+            results.sumOf { it.payloadBytes },
+        )
+        return results.firstOrNull()?.match
     }
 
-    override fun findMatchIds(clubId: ClubId): Set<MatchId> = jdbcTemplate.query(
-        "SELECT match_id FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC",
-        { rs, _ -> MatchId(rs.getString("match_id")) },
-        clubId.value,
-    ).toCollection(linkedSetOf())
+    override fun findMatchIds(clubId: ClubId): Set<MatchId> {
+        val results = jdbcTemplate.query(
+            "SELECT match_id FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC",
+            { rs, _ -> rs.getString("match_id") },
+            clubId.value,
+        )
+        readDiagnostics.record(
+            CanonicalReadOperation.FIND_MATCH_IDS,
+            readOriginContext.current(),
+            results.size,
+            results.sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() },
+        )
+        return results.mapTo(linkedSetOf(), ::MatchId)
+    }
 
     override fun findAll(clubId: ClubId): List<CanonicalMatch> {
-        return jdbcTemplate.query(
+        val results = jdbcTemplate.query(
             "SELECT payload FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC",
             { rs, _ -> readPayload(rs) },
             clubId.value,
         )
+        readDiagnostics.record(
+            CanonicalReadOperation.FIND_ALL,
+            readOriginContext.current(),
+            results.size,
+            results.sumOf { it.payloadBytes },
+        )
+        return results.map(PayloadRead::match)
     }
 
     override fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> {
         require(limit >= 0) { "limit must be non-negative" }
-        return jdbcTemplate.query(
+        val results = jdbcTemplate.query(
             "SELECT payload FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC LIMIT ?",
             { rs, _ -> readPayload(rs) },
             clubId.value,
             limit,
         )
+        readDiagnostics.record(
+            CanonicalReadOperation.FIND_RECENT,
+            readOriginContext.current(),
+            results.size,
+            results.sumOf { it.payloadBytes },
+        )
+        return results.map(PayloadRead::match)
     }
 
     override fun metadata(clubId: ClubId): CanonicalRepositoryMetadata {
@@ -182,7 +216,13 @@ class PostgresCanonicalMatchRepository(
         )!!
     }
 
-    private fun readPayload(rs: ResultSet): CanonicalMatch {
-        return objectMapper.readValue(rs.getString("payload"), CanonicalMatch::class.java)
+    private fun readPayload(rs: ResultSet): PayloadRead {
+        val payload = rs.getString("payload")
+        return PayloadRead(
+            match = objectMapper.readValue(payload, CanonicalMatch::class.java),
+            payloadBytes = payload.toByteArray(Charsets.UTF_8).size.toLong(),
+        )
     }
+
+    private data class PayloadRead(val match: CanonicalMatch, val payloadBytes: Long)
 }

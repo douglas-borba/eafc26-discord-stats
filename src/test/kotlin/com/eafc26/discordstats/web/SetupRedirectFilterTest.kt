@@ -94,6 +94,16 @@ class SetupRedirectFilterTest {
     }
 
     @Test
+    fun `administrative diagnostics reset is reachable when Discord is not configured`() {
+        whenever(webhookConfigService.isConfigured()).thenReturn(false)
+
+        webClient.post().uri("/api/admin/system/canonical-read-diagnostics/reset")
+            .exchange()
+            .expectStatus().isNotFound
+            .expectHeader().doesNotExist("Location")
+    }
+
+    @Test
     fun `trial request administration routes are reachable when Discord is not configured`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
 

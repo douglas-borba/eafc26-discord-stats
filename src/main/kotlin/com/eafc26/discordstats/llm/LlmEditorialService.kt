@@ -3,6 +3,8 @@ package com.eafc26.discordstats.llm
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.service.MatchHistoryService
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.security.MessageDigest
@@ -17,6 +19,7 @@ class LlmEditorialService(
     private val properties: LlmProperties,
     private val panoramaRepository: PanoramaRepository? = null,
     private val clock: Clock = Clock.systemDefaultZone(),
+    private val canonicalReadOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val discordNarrativeCache = ConcurrentHashMap<NarrativeCacheKey, String?>()
@@ -30,7 +33,9 @@ class LlmEditorialService(
 
         try {
             val clubId = canonical.interpretation.perspectiveClubId
-            val recentMatches = historyService.latest(clubId, PANORAMA_MATCH_COUNT)
+            val recentMatches = canonicalReadOriginContext.withOrigin(CanonicalReadOrigin.LLM_PANORAMA) {
+                historyService.latest(clubId, PANORAMA_MATCH_COUNT)
+            }
             // IMPORTANT: Use chronological order (newest first), NOT sorted alphabetically
             // This ensures cache invalidation when match order changes due to reconciliation/republication
             val matchIds = recentMatches.map { it.matchId.value }
@@ -143,7 +148,9 @@ class LlmEditorialService(
         if (panoramaRepository == null) return null
         
         // Calculate current contextKey based on latest matches
-        val recentMatches = historyService.latest(clubId, PANORAMA_MATCH_COUNT)
+        val recentMatches = canonicalReadOriginContext.withOrigin(CanonicalReadOrigin.LLM_PANORAMA) {
+            historyService.latest(clubId, PANORAMA_MATCH_COUNT)
+        }
         if (recentMatches.isEmpty()) return null
         
         val matchIds = recentMatches.map { it.matchId.value }
@@ -168,7 +175,9 @@ class LlmEditorialService(
         }
 
         return try {
-            val recentMatches = historyService.latest(canonical.interpretation.perspectiveClubId, PANORAMA_MATCH_COUNT)
+            val recentMatches = canonicalReadOriginContext.withOrigin(CanonicalReadOrigin.LLM_DISCORD) {
+                historyService.latest(canonical.interpretation.perspectiveClubId, PANORAMA_MATCH_COUNT)
+            }
             val context = contextBuilder.buildFullContext(canonical, recentMatches)
             when (val result = provider!!.generateMatchNarrative(context)) {
                 is LlmEditorialResult.Success -> {

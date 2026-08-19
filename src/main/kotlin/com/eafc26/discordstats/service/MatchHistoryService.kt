@@ -7,6 +7,8 @@ import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.history.MatchHistoryOrder
 import com.eafc26.discordstats.history.MatchHistoryQuery
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import org.springframework.stereotype.Service
 
 /**
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Service
 @Service
 class MatchHistoryService(
     private val repository: CanonicalMatchRepository,
+    private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) {
     fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch? = repository.findById(clubId, matchId)
 
@@ -53,14 +56,28 @@ class MatchHistoryService(
         return query.limit?.let(matches::take)?.toList() ?: matches.toList()
     }
 
-    fun latest(clubId: ClubId, limit: Int): List<CanonicalMatch> =
-        list(clubId, MatchHistoryQuery(order = MatchHistoryOrder.NEWEST_FIRST, limit = limit))
+    fun latest(
+        clubId: ClubId,
+        limit: Int,
+        origin: CanonicalReadOrigin? = null,
+    ): List<CanonicalMatch> = readOriginContext.withOrigin(
+        origin ?: readOriginContext.current().takeUnless { it == CanonicalReadOrigin.UNKNOWN }
+            ?: CanonicalReadOrigin.HISTORY_LATEST,
+    ) {
+        repository.findRecent(clubId, limit)
+    }
 
     /**
      * Shallow newest-first feed for consumers that do not need to filter or inspect
      * the complete history. The repository applies the limit before loading payloads.
      */
-    fun recent(clubId: ClubId, limit: Int): List<CanonicalMatch> = repository.findRecent(clubId, limit)
+    fun recent(
+        clubId: ClubId,
+        limit: Int,
+        origin: CanonicalReadOrigin = CanonicalReadOrigin.DASHBOARD_OVERVIEW,
+    ): List<CanonicalMatch> = readOriginContext.withOrigin(origin) {
+        repository.findRecent(clubId, limit)
+    }
 
     fun metadata(clubId: ClubId): CanonicalRepositoryMetadata = repository.metadata(clubId)
 }

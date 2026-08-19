@@ -113,13 +113,14 @@ class MatchHistoryServiceTest {
     }
 
     @Test
-    fun `latest applies limit after canonical ordering`() {
-        val one = canonical("one", "2026-07-01T10:00:00Z")
+    fun `latest delegates the requested limit to the repository without loading all history`() {
         val three = canonical("three", "2026-07-03T10:00:00Z")
         val two = canonical("two", "2026-07-02T10:00:00Z")
-        whenever(repository.findAll(CLUB_ID)).thenReturn(listOf(one, three, two))
+        whenever(repository.findRecent(CLUB_ID, 2)).thenReturn(listOf(three, two))
 
         assertThat(service.latest(CLUB_ID, 2)).containsExactly(three, two)
+        verify(repository).findRecent(CLUB_ID, 2)
+        verify(repository, never()).findAll(CLUB_ID)
     }
 
     @Test

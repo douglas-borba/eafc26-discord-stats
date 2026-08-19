@@ -1,11 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { formatBytes } from "@/components/admin/system-health";
 
 const root = resolve(process.cwd(), "src");
 const read = (path: string) => readFileSync(resolve(root, path), "utf8");
 
 describe("admin route group structure", () => {
+  it("renders temporary in-memory PostgreSQL read diagnostics with clear byte units and reset control", () => {
+    const systemHealth = read("components/admin/system-health.tsx");
+    expect(systemHealth).toContain("Diagnóstico de leituras PostgreSQL");
+    expect(systemHealth).toContain("Contadores em memória desde o último início da aplicação");
+    expect(systemHealth).toContain("Zerar contadores");
+    expect(systemHealth).toContain("Por operação");
+    expect(systemHealth).toContain("Por origem");
+    expect(systemHealth).toContain("/api/admin/system/canonical-read-diagnostics/reset");
+  });
+
+  it("formats diagnostic byte values for human reading", () => {
+    expect(formatBytes(512)).toBe("512 B");
+    expect(formatBytes(1_536)).toBe("1.5 KB");
+    expect(formatBytes(2 * 1024 * 1024)).toBe("2.00 MB");
+  });
   it("login page is outside the protected route group and uses password auth", () => {
     const login = read("app/admin/login/page.tsx");
     expect(login).toContain('"use client"');

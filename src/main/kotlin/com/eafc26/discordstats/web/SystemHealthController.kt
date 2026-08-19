@@ -4,7 +4,10 @@ import com.eafc26.discordstats.application.club.MonitoredClubRepository
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.scheduler.MatchPollingScheduler
 import com.eafc26.discordstats.scheduler.PollingStatusHolder
+import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnostics
+import com.eafc26.discordstats.llm.LlmProperties
 import org.springframework.http.MediaType
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
@@ -20,6 +23,8 @@ class SystemHealthController(
     private val pollingStatusHolder: PollingStatusHolder,
     private val monitoredClubRepository: MonitoredClubRepository,
     private val props: AppProperties,
+    private val canonicalReadDiagnostics: CanonicalReadDiagnostics = CanonicalReadDiagnostics(),
+    private val llmProperties: LlmProperties = LlmProperties(),
 ) {
     private val startedAt: Instant = Instant.now()
 
@@ -34,8 +39,20 @@ class SystemHealthController(
         return components + mapOf(
             "overall" to overallStatus(components),
             "build" to buildInfo(),
+            "canonicalReadDiagnostics" to canonicalReadDiagnostics.snapshot(),
+            "runtimeFlags" to mapOf(
+                "llmEnabled" to llmProperties.enabled,
+                "postgresMirrorEnabled" to props.postgres.mirrorEnabled,
+                "postgresSyncEnabled" to props.postgres.syncEnabled,
+            ),
         )
     }
+
+    @PostMapping("/canonical-read-diagnostics/reset")
+    fun resetCanonicalReadDiagnostics(): Map<String, Any> = mapOf(
+        "status" to "reset",
+        "canonicalReadDiagnostics" to canonicalReadDiagnostics.reset(),
+    )
 
     private fun applicationHealth(): Map<String, Any> = mapOf(
         "status" to "UP",

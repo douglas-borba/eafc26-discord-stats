@@ -5,6 +5,10 @@ import com.eafc26.discordstats.application.club.MonitoredClubRepository
 import com.eafc26.discordstats.application.club.EaPlatform
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.config.EaProperties
+import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnostics
+import com.eafc26.discordstats.diagnostics.CanonicalReadOperation
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnosticsSnapshot
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
 import com.eafc26.discordstats.scheduler.PollingStatusHolder
@@ -18,6 +22,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.web.reactive.function.client.WebClient
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 
@@ -81,14 +86,36 @@ class SystemHealthControllerTest {
         assertThat(component(response, "postgres")["status"]).isEqualTo("DOWN")
     }
 
+    @Test fun `health serializes process local canonical diagnostics and safe runtime flags`() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[]"))
+        val diagnostics = CanonicalReadDiagnostics().also {
+            it.record(CanonicalReadOperation.FIND_RECENT, CanonicalReadOrigin.DASHBOARD_OVERVIEW, 10, 4_096)
+        }
+        val controller = controller(jdbc = healthyJdbc(), diagnostics = diagnostics)
+
+        val health = controller.health()
+        val diagnostic = health["canonicalReadDiagnostics"] as CanonicalReadDiagnosticsSnapshot
+        @Suppress("UNCHECKED_CAST") val runtimeFlags = health["runtimeFlags"] as Map<String, Boolean>
+
+        assertThat(diagnostic.instanceId).isEqualTo(diagnostics.instanceId)
+        assertThat(runtimeFlags).containsEntry("llmEnabled", false)
+        assertThat(runtimeFlags).containsKeys("postgresMirrorEnabled", "postgresSyncEnabled")
+        assertThat(diagnostic.operations.keys).contains("findRecent")
+        val serialized = jacksonObjectMapper().findAndRegisterModules().writeValueAsString(health)
+        assertThat(serialized).contains("canonicalReadDiagnostics", "estimatedReturnedBytes", "runtimeFlags")
+        assertThat(controller.resetCanonicalReadDiagnostics()["status"]).isEqualTo("reset")
+        assertThat(diagnostics.snapshot().total.calls).isZero()
+    }
+
     private fun controller(
         jdbc: JdbcTemplate?,
         clubs: List<MonitoredClub> = emptyList(),
         pollingStatus: PollingStatusHolder = PollingStatusHolder(),
+        diagnostics: CanonicalReadDiagnostics = CanonicalReadDiagnostics(),
     ): SystemHealthController {
         val props = AppProperties(ea = EaProperties(gatewayBaseUrl = server.url("/").toString().trimEnd('/')))
         val probe = EaGatewayHealthProbe(WebClient.builder().baseUrl(props.ea.gatewayBaseUrl).build(), props)
-        return SystemHealthController(jdbc, probe, pollingStatus, repository(clubs), props)
+        return SystemHealthController(jdbc, probe, pollingStatus, repository(clubs), props, diagnostics)
     }
 
     private fun healthyJdbc(): JdbcTemplate = mock<JdbcTemplate>().also {

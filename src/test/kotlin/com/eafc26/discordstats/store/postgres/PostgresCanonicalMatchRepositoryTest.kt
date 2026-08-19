@@ -12,6 +12,9 @@ import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.store.PostgresCanonicalMatchRepository
+import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnostics
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -57,11 +60,44 @@ class PostgresCanonicalMatchRepositoryTest {
     }
 
     private lateinit var repository: PostgresCanonicalMatchRepository
+    private lateinit var readDiagnostics: CanonicalReadDiagnostics
+    private lateinit var readOriginContext: CanonicalReadOriginContext
 
     @BeforeEach
     fun setUp() {
-        repository = PostgresCanonicalMatchRepository(jdbcTemplate, jacksonObjectMapper().findAndRegisterModules())
+        readDiagnostics = CanonicalReadDiagnostics()
+        readOriginContext = CanonicalReadOriginContext()
+        repository = PostgresCanonicalMatchRepository(
+            jdbcTemplate,
+            jacksonObjectMapper().findAndRegisterModules(),
+            readDiagnostics,
+            readOriginContext,
+        )
         jdbcTemplate.update("DELETE FROM canonical_matches")
+    }
+
+    @Test
+    fun `repository measures returned canonical data by operation and logical origin`() {
+        val first = canonicalMatch("diagnostic-1", 1_718_500_000L)
+        val second = canonicalMatch("diagnostic-2", 1_718_600_000L)
+        repository.save(first)
+        repository.save(second)
+
+        readOriginContext.withOrigin(CanonicalReadOrigin.HISTORY_LIST) { repository.findAll(OUR_CLUB) }
+        readOriginContext.withOrigin(CanonicalReadOrigin.DASHBOARD_OVERVIEW) { repository.findRecent(OUR_CLUB, 1) }
+        readOriginContext.withOrigin(CanonicalReadOrigin.COMPARISON) { repository.findById(OUR_CLUB, first.matchId) }
+        readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) { repository.findMatchIds(OUR_CLUB) }
+
+        val snapshot = readDiagnostics.snapshot()
+        val findAll = snapshot.operations.getValue("findAll")
+        assertThat(findAll.calls).isEqualTo(1)
+        assertThat(findAll.rows).isEqualTo(2)
+        assertThat(findAll.estimatedReturnedBytes).isGreaterThan(0)
+        assertThat(snapshot.operations.getValue("findRecent").rows).isEqualTo(1)
+        assertThat(snapshot.operations.getValue("findById").rows).isEqualTo(1)
+        assertThat(snapshot.operations.getValue("findMatchIds").rows).isEqualTo(2)
+        assertThat(snapshot.origins.getValue("history.list").estimatedReturnedBytes).isGreaterThan(0)
+        assertThat(snapshot.origins.getValue("polling.checkpoint").estimatedReturnedBytes).isGreaterThan(0)
     }
 
     @Test

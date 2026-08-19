@@ -14,6 +14,8 @@ import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationService
 import com.eafc26.discordstats.store.PublicationState
 import com.eafc26.discordstats.store.PublicationStateStore
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
@@ -61,6 +63,7 @@ class MatchAcquisitionService(
     private val llmEditorialService: LlmEditorialService,
     private val eventRecorder: OperationalEventRecorder? = null,
     private val synchronizationGapStore: SynchronizationGapStore = InMemorySynchronizationGapStore(),
+    private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
@@ -279,7 +282,9 @@ class MatchAcquisitionService(
             return SynchronizationFetch(gateway.getLatestMatches(clubId.value), null, null)
         }
 
-        val knownIds = canonicalMatchRepository.findMatchIds(clubId)
+        val knownIds = readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) {
+            canonicalMatchRepository.findMatchIds(clubId)
+        }
         if (knownIds.isEmpty()) {
             val window = props.ea.incrementalMaxWindow
             return SynchronizationFetch(

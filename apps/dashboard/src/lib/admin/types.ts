@@ -75,6 +75,31 @@ export interface SystemHealth {
   eaGateway: { status: string; latencyMs?: number; statusCode?: number; message?: string; error?: string };
   scheduler: { status: string; mostRecentPollAt?: string; monitoredClubCount?: number; reason?: string };
   build: { commitSha: string | null; branch: string | null };
+  canonicalReadDiagnostics?: CanonicalReadDiagnostics;
+  runtimeFlags?: RuntimeFlags;
+}
+
+export interface CanonicalReadMetric {
+  calls: number;
+  rows: number;
+  estimatedReturnedBytes: number;
+  firstObservedAt: string | null;
+  lastObservedAt: string | null;
+}
+
+export interface CanonicalReadDiagnostics {
+  instanceId: string;
+  startedAt: string;
+  lastUpdatedAt: string | null;
+  total: CanonicalReadMetric;
+  operations: Record<string, CanonicalReadMetric>;
+  origins: Record<string, CanonicalReadMetric>;
+}
+
+export interface RuntimeFlags {
+  llmEnabled: boolean;
+  postgresMirrorEnabled: boolean;
+  postgresSyncEnabled: boolean;
 }
 
 export interface OperationalEvent {
