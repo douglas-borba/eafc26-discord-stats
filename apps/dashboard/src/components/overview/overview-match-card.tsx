@@ -36,6 +36,9 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
   const textSm = c ? "text-[0.76rem]" : "text-[0.82rem]";
   const textXs = c ? "text-[0.68rem]" : "text-[0.75rem]";
   const nameLg = c ? "text-[0.88rem]" : "text-[0.95rem]";
+  const xerifeStats = presentation.xerife
+    ? formatXerifeStats(presentation.xerife)
+    : "";
 
   return (
     <div className={c ? "w-full min-w-0" : "w-full min-w-0 max-w-[420px] mx-auto px-3"}>
@@ -83,9 +86,6 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
                 {presentation.oppName}
               </div>
             </div>
-            <div className={`card-date ${c ? "text-[0.62rem]" : "text-[0.7rem]"} text-muted ${c ? "mt-[0.25rem]" : "mt-[0.4rem]"}`}>
-              📅 {formatMatchDateTime(presentation.timestamp)}
-            </div>
             {presentation.completionStatus === "DNF" && (
               <div className={`mt-1 font-semibold text-amber-300 ${c ? "text-[0.58rem]" : "text-[0.65rem]"}`}>
                 PARTIDA ENCERRADA POR DNF
@@ -131,20 +131,23 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
             <>
               <Divider my={divMy} />
               <Section title="🥇 DESTAQUES" mb={sectionMb} titleCls={sectionTitleCls}>
-                <div className={`card-top3 flex flex-col ${c ? "gap-[0.15rem]" : "gap-1"}`}>
-                  {presentation.highlights.top3.map((t) => (
-                    <div key={t.name} className={`card-top3-item flex items-center ${c ? "gap-1.5" : "gap-2"} ${textSm}`}>
-                      <span className={`card-top3-medal ${c ? "text-[0.82rem] w-[1.1rem]" : "text-[0.9rem] w-5"} shrink-0 text-center`}>{t.medal}</span>
-                      <span className="card-top3-name text-[#e6edf3] font-medium">{t.name}</span>
-                      <span className="card-top3-rating text-[#7ee787] font-semibold">{t.rating}</span>
-                    </div>
-                  ))}
-                </div>
-                {presentation.highlights.teamAverage && (
-                  <div className={`card-team-avg ${textXs} text-muted ${c ? "mt-[0.2rem]" : "mt-[0.35rem]"}`}>
-                    ⭐ Média: {presentation.highlights.teamAverage}
+                <div className={`card-highlights-layout grid grid-cols-[minmax(0,1fr)_auto] items-start ${c ? "gap-2" : "gap-3"}`}>
+                  <div className={`card-top3 flex flex-col ${c ? "gap-[0.15rem]" : "gap-1"}`}>
+                    {presentation.highlights.top3.map((t) => (
+                      <div key={t.name} className={`card-top3-item flex items-center ${c ? "gap-1.5" : "gap-2"} ${textSm}`}>
+                        <span className={`card-top3-medal ${c ? "text-[0.82rem] w-[1.1rem]" : "text-[0.9rem] w-5"} shrink-0 text-center`}>{t.medal}</span>
+                        <span className="card-top3-name text-[#e6edf3] font-medium">{t.name}</span>
+                        <span className="card-top3-rating text-[#7ee787] font-semibold">{t.rating}</span>
+                      </div>
+                    ))}
                   </div>
-                )}
+                  {presentation.highlights.teamAverage && (
+                    <div className={`card-team-avg min-w-0 border-l border-[#30363d] ${c ? "pl-2" : "pl-3"} text-right`}>
+                      <div className={`${c ? "text-[0.52rem]" : "text-[0.58rem]"} font-bold uppercase tracking-[0.05em] text-muted`}>📊 Média do time</div>
+                      <div className={`${c ? "text-[0.88rem]" : "text-[1rem]"} font-semibold text-[#7ee787]`}>{presentation.highlights.teamAverage}</div>
+                    </div>
+                  )}
+                </div>
               </Section>
             </>
           )}
@@ -178,6 +181,56 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
               />
             </div>
           ))}
+
+          {/* Behind the Play */}
+          {presentation.behindThePlay && (
+            <>
+              <Divider my={divMy} />
+              <HighlightBlock
+                title="🧠 POR TRÁS DA JOGADA"
+                name={presentation.behindThePlay.name}
+                stats={[
+                  pluralize(presentation.behindThePlay.secondAssists, "pré-assistência", "pré-assistências"),
+                  presentation.behindThePlay.throughPasses > 0
+                    ? pluralize(presentation.behindThePlay.throughPasses, "passe em profundidade", "passes em profundidade")
+                    : null,
+                ].filter(Boolean).join(" • ")}
+                phrase={presentation.behindThePlay.phrase}
+                sectionMb={sectionMb} titleCls={sectionTitleCls} nameCls={nameLg} textCls={textSm} statCls={textXs}
+                c={c}
+              />
+            </>
+          )}
+
+          {/* One on one */}
+          {presentation.oneOnOne && (
+            <>
+              <Divider my={divMy} />
+              <HighlightBlock
+                title="🪄 NO UM CONTRA UM"
+                name={presentation.oneOnOne.name}
+                stats={`${pluralize(presentation.oneOnOne.beats, "adversário superado", "adversários superados")} • ${pluralize(presentation.oneOnOne.dribblesCompleted, "drible completo", "dribles completos")}`}
+                phrase={presentation.oneOnOne.phrase}
+                sectionMb={sectionMb} titleCls={sectionTitleCls} nameCls={nameLg} textCls={textSm} statCls={textXs}
+                c={c}
+              />
+            </>
+          )}
+
+          {/* Xerife */}
+          {presentation.xerife && (
+            <>
+              <Divider my={divMy} />
+              <HighlightBlock
+                title="🛡️ XERIFE"
+                name={presentation.xerife.name}
+                stats={xerifeStats}
+                phrase={presentation.xerife.phrase}
+                sectionMb={sectionMb} titleCls={sectionTitleCls} nameCls={nameLg} textCls={textSm} statCls={textXs}
+                c={c}
+              />
+            </>
+          )}
 
           {/* Bagre */}
           {presentation.bagre && (
@@ -214,21 +267,6 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
                 name={presentation.redCard.name}
                 stats="Cartão vermelho"
                 phrase={presentation.redCard.phrase}
-                sectionMb={sectionMb} titleCls={sectionTitleCls} nameCls={nameLg} textCls={textSm} statCls={textXs}
-                c={c}
-              />
-            </>
-          )}
-
-          {/* Xerife */}
-          {presentation.xerife && (
-            <>
-              <Divider my={divMy} />
-              <HighlightBlock
-                title="🚧 XERIFE"
-                name={presentation.xerife.name}
-                stats={`${presentation.xerife.tacklesMade}/${presentation.xerife.tackleAttempts} desarmes (${presentation.xerife.successRate}%)`}
-                phrase={presentation.xerife.phrase}
                 sectionMb={sectionMb} titleCls={sectionTitleCls} nameCls={nameLg} textCls={textSm} statCls={textXs}
                 c={c}
               />
@@ -284,11 +322,27 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
 
         {/* Footer */}
         <div className={`card-footer rounded-b-[10px] ${c ? "py-[0.35rem] px-3 text-[0.6rem]" : "py-[0.6rem] px-3 text-[0.7rem]"} text-center text-[#6e7681] bg-black/25 border-t border-[#30363d]`}>
-          EA FC 26 — {presentation.ourName}
+          📅 {formatMatchDateTime(presentation.timestamp)}
         </div>
       </div>
     </div>
   );
+}
+
+function formatXerifeStats(xerife: NonNullable<MatchSummaryPresentation["xerife"]>): string {
+  const parts: string[] = [];
+  if ((xerife.interceptions ?? 0) > 0) {
+    parts.push(pluralize(xerife.interceptions ?? 0, "interceptação", "interceptações"));
+  }
+  if (xerife.tacklesMade > 0) {
+    const accuracy = xerife.tackleAttempts > 0 ? ` (${xerife.successRate}% de acerto)` : "";
+    parts.push(`${pluralize(xerife.tacklesMade, "desarme certo", "desarmes certos")}${accuracy}`);
+  }
+  return parts.join(" • ") || "Atuação defensiva de destaque";
+}
+
+function pluralize(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
 
 function Divider({ my }: { my: string }) {

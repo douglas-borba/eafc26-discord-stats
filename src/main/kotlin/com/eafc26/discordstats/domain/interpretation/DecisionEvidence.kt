@@ -59,6 +59,15 @@ sealed interface DecisionEvidence {
         val tacklesCompleted: Int?,
         val tacklesAttempted: Int?,
         val defensiveImpactScore: BigDecimal?,
+        val interceptions: Int? = null,
+    ) : DecisionEvidence
+
+    data class AdvancedPerformance(
+        val playerId: PlayerId,
+        val secondAssists: Int,
+        val throughPasses: Int,
+        val dribblesCompleted: Int,
+        val beats: Int,
     ) : DecisionEvidence
 
     data class Discipline(

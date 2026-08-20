@@ -14,6 +14,8 @@ data class MatchFeatures(
     val goalkeeper: GoalkeeperDecision?,
     val eaRecognizedMvp: EaRecognizedMvpDecision?,
     val evaluations: List<FeatureEvaluation>,
+    val behindThePlay: BehindThePlayDecision? = null,
+    val oneOnOne: OneOnOneDecision? = null,
 ) {
     val rules: List<RuleReference>
         get() = evaluations.map { it.rule }.distinct()
@@ -38,6 +40,8 @@ enum class MatchFeatureType {
     HIGHLIGHTS,
     BAGRE_PERFORMANCE,
     OFFENSIVE_NARRATIVES,
+    BEHIND_THE_PLAY,
+    ONE_ON_ONE,
     RED_CARD,
     PASS_PRECISION,
     LOST_MAIL,
@@ -98,6 +102,26 @@ data class OffensiveNarrativeDecision(
     val shots: Int,
     val goals: Int,
     val category: OffensiveNarrativeCategory,
+    val rule: RuleReference,
+    val evidence: List<DecisionEvidence>,
+)
+
+/** A creative contribution before the official assist. */
+data class BehindThePlayDecision(
+    val playerId: PlayerId,
+    val secondAssists: Int,
+    val throughPasses: Int,
+    val rating: BigDecimal?,
+    val rule: RuleReference,
+    val evidence: List<DecisionEvidence>,
+)
+
+/** A player who repeatedly beat direct opponents in one-on-one situations. */
+data class OneOnOneDecision(
+    val playerId: PlayerId,
+    val beats: Int,
+    val dribblesCompleted: Int,
+    val rating: BigDecimal?,
     val rule: RuleReference,
     val evidence: List<DecisionEvidence>,
 )

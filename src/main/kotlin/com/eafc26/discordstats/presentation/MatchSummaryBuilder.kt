@@ -70,6 +70,18 @@ class MatchSummaryBuilder(
             highlights = highlights(storyByType[StoryType.HIGHLIGHTS], players),
             craque = craque(storyByType[StoryType.AWARD], players, footballMatch.id.value, random),
             offensiveNarratives = offensive(storyByType[StoryType.OFFENSIVE_NARRATIVE], players),
+            behindThePlay = behindThePlay(
+                storyByType[StoryType.BEHIND_THE_PLAY],
+                players,
+                footballMatch.id.value,
+                random,
+            ),
+            oneOnOne = oneOnOne(
+                storyByType[StoryType.ONE_ON_ONE],
+                players,
+                footballMatch.id.value,
+                random,
+            ),
             bagre = bagre(
                 storyByType[StoryType.BAGRE_PERFORMANCE],
                 players,
@@ -230,6 +242,39 @@ class MatchSummaryBuilder(
             metrics.tacklesAttempted,
             metrics.accuracyPercent,
             phrase(PhraseCategory.XERIFE, matchId, playerName, random),
+            metrics.interceptions,
+        )
+    }
+
+    private fun behindThePlay(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        players: Map<PlayerId, PlayerMatchPerformance>,
+        matchId: String,
+        random: Random?,
+    ): BehindThePlaySection? {
+        val content = stories?.singleOrNull()?.content as? StoryContent.BehindThePlay ?: return null
+        val playerName = name(players.getValue(content.playerId))
+        return BehindThePlaySection(
+            playerName,
+            content.secondAssists,
+            content.throughPasses,
+            phrase(PhraseCategory.BEHIND_THE_PLAY, matchId, playerName, random),
+        )
+    }
+
+    private fun oneOnOne(
+        stories: List<com.eafc26.discordstats.domain.story.Story>?,
+        players: Map<PlayerId, PlayerMatchPerformance>,
+        matchId: String,
+        random: Random?,
+    ): OneOnOneSection? {
+        val content = stories?.singleOrNull()?.content as? StoryContent.OneOnOne ?: return null
+        val playerName = name(players.getValue(content.playerId))
+        return OneOnOneSection(
+            playerName,
+            content.beats,
+            content.dribblesCompleted,
+            phrase(PhraseCategory.ONE_ON_ONE, matchId, playerName, random),
         )
     }
 

@@ -88,6 +88,55 @@ class MatchFeaturesEvaluatorTest {
     }
 
     @Test
+    fun `behind the play is absent without second assists even with through passes`() {
+        val creator = awardPlayer("creator", throughPasses = 12, rating = "9.0")
+
+        val features = evaluate(listOf(creator))
+
+        assertThat(features.behindThePlay).isNull()
+        assertThat(features.offensiveNarratives).isEmpty()
+        assertThat(features.passPrecision!!.playerId).isEqualTo(creator.player.id)
+    }
+
+    @Test
+    fun `behind the play breaks second assist ties with through passes then rating`() {
+        val throughWinner = awardPlayer("through", secondAssists = 2, throughPasses = 8, rating = "6.0")
+        val ratingWinner = awardPlayer("rating", secondAssists = 2, throughPasses = 8, rating = "8.5")
+        val lowerThrough = awardPlayer("lower", secondAssists = 2, throughPasses = 7, rating = "9.9")
+
+        val decision = evaluate(listOf(throughWinner, ratingWinner, lowerThrough)).behindThePlay
+
+        assertThat(decision!!.playerId).isEqualTo(ratingWinner.player.id)
+        assertThat(decision.secondAssists).isEqualTo(2)
+        assertThat(decision.throughPasses).isEqualTo(8)
+        assertThat(decision.rule).isEqualTo(MatchFeaturesEvaluator.BEHIND_THE_PLAY_RULE)
+    }
+
+    @Test
+    fun `one on one remains absent below three beats`() {
+        val player = awardPlayer("dribbler", beats = 2, dribblesCompleted = 30, rating = "9.0")
+
+        assertThat(evaluate(listOf(player)).oneOnOne).isNull()
+    }
+
+    @Test
+    fun `one on one appears at three beats and prefers beats dribbles then rating`() {
+        val threshold = awardPlayer("threshold", beats = 3, dribblesCompleted = 2, rating = "6.0")
+        val bestBeats = awardPlayer("beats", beats = 6, dribblesCompleted = 1, rating = "5.0")
+        val bestDribbles = awardPlayer("dribbles", beats = 6, dribblesCompleted = 9, rating = "6.0")
+        val bestRating = awardPlayer("rating", beats = 6, dribblesCompleted = 9, rating = "8.0")
+
+        val thresholdDecision = evaluate(listOf(threshold)).oneOnOne
+        val decision = evaluate(listOf(threshold, bestBeats, bestDribbles, bestRating)).oneOnOne
+
+        assertThat(thresholdDecision!!.playerId).isEqualTo(threshold.player.id)
+        assertThat(decision!!.playerId).isEqualTo(bestRating.player.id)
+        assertThat(decision.beats).isEqualTo(6)
+        assertThat(decision.dribblesCompleted).isEqualTo(9)
+        assertThat(decision.rule).isEqualTo(MatchFeaturesEvaluator.ONE_ON_ONE_RULE)
+    }
+
+    @Test
     fun `Bagre assessment records visible summaries and criticism category`() {
         val bagre = awardPlayer(
             "bagre",
@@ -172,7 +221,7 @@ class MatchFeaturesEvaluatorTest {
         assertThat(features.contributions.evidence).isNotEmpty()
         assertThat(features.highlights.rule).isEqualTo(MatchFeaturesEvaluator.HIGHLIGHTS_RULE)
         assertThat(features.highlights.evidence).isNotEmpty()
-        assertThat(features.evaluations).hasSize(9)
+        assertThat(features.evaluations).hasSize(11)
         assertThat(features.evaluations).allMatch { it.evidence.isNotEmpty() }
         assertThat(features.evaluations.single {
             it.feature == com.eafc26.discordstats.domain.interpretation.MatchFeatureType.RED_CARD

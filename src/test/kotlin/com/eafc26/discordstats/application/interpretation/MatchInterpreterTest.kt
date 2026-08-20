@@ -83,6 +83,8 @@ class MatchInterpreterTest {
                 "match.rated-highlights",
                 "narrative.bagre-performance",
                 "narrative.offensive-performance",
+                "narrative.behind-the-play",
+                "narrative.one-on-one",
                 "narrative.red-card",
                 "award.pass-precision",
                 "award.lost-mail",

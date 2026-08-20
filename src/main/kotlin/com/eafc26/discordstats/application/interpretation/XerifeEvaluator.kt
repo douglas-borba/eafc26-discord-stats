@@ -11,7 +11,6 @@ import com.eafc26.discordstats.domain.interpretation.RuleReference
 import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
 import java.math.BigDecimal
-import java.math.RoundingMode
 
 class XerifeEvaluator {
 
@@ -22,28 +21,31 @@ class XerifeEvaluator {
     ): AwardDecision {
         val pool = AwardCandidatePool.outfield(players, eligibility, excludedByAward)
         val candidates = pool.candidates.mapNotNull { player ->
-            val attempted = player.defending.tacklesAttempted ?: return@mapNotNull null
+            val attempted = player.defending.tacklesAttempted ?: 0
             val completed = player.defending.tacklesCompleted ?: 0
-            if (attempted <= 0 || completed < MINIMUM_TACKLES) return@mapNotNull null
-            if (completed.toLong() * 100 < attempted.toLong() * MINIMUM_ACCURACY_PERCENT) {
+            val interceptions = player.defending.interceptions
+            val defensiveActions = completed + interceptions
+            if (defensiveActions < MINIMUM_DEFENSIVE_ACTIONS) return@mapNotNull null
+            if (attempted > 0 && completed.toLong() * 100 < attempted.toLong() * MINIMUM_ACCURACY_PERCENT) {
                 return@mapNotNull null
             }
             if ((player.discipline.redCards ?: 0) > 0) return@mapNotNull null
 
             Candidate(
                 player = player,
-                impact = completed.toBigDecimal()
-                    .multiply(completed.toBigDecimal())
-                    .divide(attempted.toBigDecimal(), SCORE_SCALE, RoundingMode.HALF_UP),
-                accuracyPercent = completed * 100 / attempted,
+                impact = defensiveActions.toBigDecimal(),
+                accuracyPercent = if (attempted > 0) completed * 100 / attempted else null,
                 completed = completed,
                 attempted = attempted,
+                interceptions = interceptions,
             )
         }
         val winner = candidates.maxWithOrNull(
             compareBy<Candidate> { it.impact }
-                .thenBy { it.accuracyPercent }
+                .thenBy { it.accuracyPercent ?: -1 }
+                .thenBy { it.interceptions }
                 .thenBy { it.completed }
+                .thenBy { it.player.player.id.value }
         )
         val candidateById = candidates.associateBy { it.player.player.id }
         val evidence = pool.evidence + pool.candidates.flatMap {
@@ -53,6 +55,7 @@ class XerifeEvaluator {
                     it.defending.tacklesCompleted,
                     it.defending.tacklesAttempted,
                     candidateById[it.player.id]?.impact,
+                    it.defending.interceptions,
                 ),
                 DecisionEvidence.Discipline(it.player.id, it.discipline.redCards),
             )
@@ -72,8 +75,9 @@ class XerifeEvaluator {
                 AwardMetrics.Xerife(
                     tacklesCompleted = it.completed,
                     tacklesAttempted = it.attempted,
-                    accuracyPercent = it.accuracyPercent,
+                    accuracyPercent = it.accuracyPercent ?: 0,
                     defensiveImpactScore = it.impact,
+                    interceptions = it.interceptions,
                 )
             },
         )
@@ -82,15 +86,16 @@ class XerifeEvaluator {
     private data class Candidate(
         val player: PlayerMatchPerformance,
         val impact: BigDecimal,
-        val accuracyPercent: Int,
+        val accuracyPercent: Int?,
         val completed: Int,
         val attempted: Int,
+        val interceptions: Int,
     )
 
     companion object {
-        const val MINIMUM_TACKLES = 4
+        /** Combined successful defensive actions: tackles made + interceptions. */
+        const val MINIMUM_DEFENSIVE_ACTIONS = 4
         const val MINIMUM_ACCURACY_PERCENT = 70
-        private const val SCORE_SCALE = 6
-        val RULE = RuleReference(RuleId("award.xerife"), version = 1)
+        val RULE = RuleReference(RuleId("award.xerife"), version = 2)
     }
 }

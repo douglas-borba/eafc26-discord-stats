@@ -219,6 +219,26 @@ enum class PhraseCategory(val key: String, val displayName: String, val defaults
         ),
     ),
 
+    BEHIND_THE_PLAY(
+        key = "behind_the_play",
+        displayName = "Por Trás da Jogada",
+        defaults = listOf(
+            "Nem toda participação decisiva aparece na súmula.",
+            "A construção da jogada também teve protagonista.",
+            "A jogada começou bem antes da assistência oficial.",
+        ),
+    ),
+
+    ONE_ON_ONE(
+        key = "one_on_one",
+        displayName = "No Um Contra Um",
+        defaults = listOf(
+            "Chamou para o duelo e passou.",
+            "No mano a mano, encontrou espaço toda vez.",
+            "Transformou cada duelo em avanço.",
+        ),
+    ),
+
     GOALKEEPER(
         key = "goalkeeper",
         displayName = "Muralha (goleiro) — legado",

@@ -6,6 +6,7 @@ import com.eafc26.discordstats.domain.interpretation.EligibilityReason
 import com.eafc26.discordstats.domain.interpretation.EligibilityStatus
 import com.eafc26.discordstats.domain.interpretation.PlayerEligibilityDecision
 import com.eafc26.discordstats.domain.match.AttackingStats
+import com.eafc26.discordstats.domain.match.AdvancedPlayerStats
 import com.eafc26.discordstats.domain.match.DefendingStats
 import com.eafc26.discordstats.domain.match.DisciplineStats
 import com.eafc26.discordstats.domain.match.DisplayName
@@ -31,6 +32,11 @@ internal fun awardPlayer(
     passesAttempted: Int? = 10,
     tacklesCompleted: Int? = 0,
     tacklesAttempted: Int? = 0,
+    interceptions: Int = 0,
+    secondAssists: Int = 0,
+    throughPasses: Int = 0,
+    dribblesCompleted: Int = 0,
+    beats: Int = 0,
     redCards: Int? = 0,
     eaMvp: Boolean? = false,
     role: PlayerRole = PlayerRole.Outfield(null),
@@ -47,7 +53,7 @@ internal fun awardPlayer(
     rating = rating?.let { MatchRating(BigDecimal(it)) },
     attacking = AttackingStats(goals, assists, shots),
     passing = PassingStats(passesAttempted, passesCompleted),
-    defending = DefendingStats(tacklesAttempted, tacklesCompleted),
+    defending = DefendingStats(tacklesAttempted, tacklesCompleted, interceptions),
     discipline = DisciplineStats(redCards),
     goalkeeping = if (role == PlayerRole.Goalkeeper) {
         GoalkeepingStats(
@@ -68,6 +74,13 @@ internal fun awardPlayer(
         null
     },
     eaRecognition = EaRecognition(eaMvp),
+    advanced = AdvancedPlayerStats(
+        secondAssists = secondAssists,
+        throughPasses = throughPasses,
+        dribblesCompleted = dribblesCompleted,
+        beats = beats,
+        interceptions = interceptions,
+    ),
 )
 
 internal fun eligibility(

@@ -4,6 +4,7 @@ import com.eafc26.discordstats.domain.interpretation.ContributionDecision
 import com.eafc26.discordstats.domain.interpretation.AccuracySummary
 import com.eafc26.discordstats.domain.interpretation.BagreCriticism
 import com.eafc26.discordstats.domain.interpretation.BagrePerformanceDecision
+import com.eafc26.discordstats.domain.interpretation.BehindThePlayDecision
 import com.eafc26.discordstats.domain.interpretation.DecisionEvidence
 import com.eafc26.discordstats.domain.interpretation.EligibilityInterpretation
 import com.eafc26.discordstats.domain.interpretation.EaRecognizedMvpDecision
@@ -18,6 +19,7 @@ import com.eafc26.discordstats.domain.interpretation.MatchFeatures
 import com.eafc26.discordstats.domain.interpretation.MatchFeatureType
 import com.eafc26.discordstats.domain.interpretation.OffensiveNarrativeCategory
 import com.eafc26.discordstats.domain.interpretation.OffensiveNarrativeDecision
+import com.eafc26.discordstats.domain.interpretation.OneOnOneDecision
 import com.eafc26.discordstats.domain.interpretation.PassPrecisionDecision
 import com.eafc26.discordstats.domain.interpretation.PlayerContribution
 import com.eafc26.discordstats.domain.interpretation.RatedHighlight
@@ -52,6 +54,8 @@ class MatchFeaturesEvaluator {
         val highlights = highlights(positiveOutfield, eligible, teamMetrics, bagreId)
         val bagrePerformance = bagrePerformance(outfield, bagreId)
         val offensive = offensive(positiveOutfield, result, bagreId)
+        val behindThePlay = behindThePlay(positiveOutfield)
+        val oneOnOne = oneOnOne(positiveOutfield)
         val redCard = redCard(outfield)
         val passPrecision = passPrecision(positiveOutfield, bagreId)
         val lostMail = lostMail(outfield)
@@ -64,6 +68,8 @@ class MatchFeaturesEvaluator {
             highlights = highlights,
             bagrePerformance = bagrePerformance,
             offensiveNarratives = offensive,
+            behindThePlay = behindThePlay,
+            oneOnOne = oneOnOne,
             redCard = redCard,
             passPrecision = passPrecision,
             lostMail = lostMail,
@@ -99,6 +105,18 @@ class MatchFeaturesEvaluator {
                                 result.opponentScore.goals,
                             )
                     },
+                ),
+                FeatureEvaluation(
+                    MatchFeatureType.BEHIND_THE_PLAY,
+                    behindThePlay != null,
+                    BEHIND_THE_PLAY_RULE,
+                    behindThePlay?.evidence ?: (population + positiveOutfield.map(::advancedEvidence)),
+                ),
+                FeatureEvaluation(
+                    MatchFeatureType.ONE_ON_ONE,
+                    oneOnOne != null,
+                    ONE_ON_ONE_RULE,
+                    oneOnOne?.evidence ?: (population + positiveOutfield.map(::advancedEvidence)),
                 ),
                 FeatureEvaluation(
                     MatchFeatureType.RED_CARD,
@@ -347,6 +365,60 @@ class MatchFeaturesEvaluator {
         }
     }
 
+    private fun behindThePlay(players: List<PlayerMatchPerformance>): BehindThePlayDecision? {
+        data class Candidate(
+            val player: PlayerMatchPerformance,
+            val secondAssists: Int,
+            val throughPasses: Int,
+        )
+        val winner = players.mapNotNull { player ->
+            val secondAssists = player.advanced.secondAssists
+            if (secondAssists <= 0) return@mapNotNull null
+            Candidate(player, secondAssists, player.advanced.throughPasses)
+        }.maxWithOrNull(
+            compareBy<Candidate> { it.secondAssists }
+                .thenBy { it.throughPasses }
+                .thenBy { it.player.rating?.value ?: BigDecimal.ZERO }
+                .thenBy { sourceName(it.player) }
+        ) ?: return null
+
+        return BehindThePlayDecision(
+            winner.player.player.id,
+            winner.secondAssists,
+            winner.throughPasses,
+            winner.player.rating?.value,
+            BEHIND_THE_PLAY_RULE,
+            players.map(::advancedEvidence),
+        )
+    }
+
+    private fun oneOnOne(players: List<PlayerMatchPerformance>): OneOnOneDecision? {
+        data class Candidate(
+            val player: PlayerMatchPerformance,
+            val beats: Int,
+            val dribblesCompleted: Int,
+        )
+        val winner = players.mapNotNull { player ->
+            val beats = player.advanced.beats
+            if (beats < MIN_BEATS_FOR_ONE_ON_ONE) return@mapNotNull null
+            Candidate(player, beats, player.advanced.dribblesCompleted)
+        }.maxWithOrNull(
+            compareBy<Candidate> { it.beats }
+                .thenBy { it.dribblesCompleted }
+                .thenBy { it.player.rating?.value ?: BigDecimal.ZERO }
+                .thenBy { sourceName(it.player) }
+        ) ?: return null
+
+        return OneOnOneDecision(
+            winner.player.player.id,
+            winner.beats,
+            winner.dribblesCompleted,
+            winner.player.rating?.value,
+            ONE_ON_ONE_RULE,
+            players.map(::advancedEvidence),
+        )
+    }
+
     private fun redCard(players: List<PlayerMatchPerformance>): RedCardDecision? {
         val winner = players
             .filter { (it.discipline.redCards ?: 0) > 0 }
@@ -543,6 +615,15 @@ class MatchFeaturesEvaluator {
             player.passing.attempted,
         )
 
+    private fun advancedEvidence(player: PlayerMatchPerformance) =
+        DecisionEvidence.AdvancedPerformance(
+            player.player.id,
+            player.advanced.secondAssists,
+            player.advanced.throughPasses,
+            player.advanced.dribblesCompleted,
+            player.advanced.beats,
+        )
+
     private fun sourceName(player: PlayerMatchPerformance): String =
         player.player.platformName?.value ?: ""
 
@@ -569,6 +650,7 @@ class MatchFeaturesEvaluator {
     companion object {
         private const val HIGHLIGHT_LIMIT = 3
         private const val MIN_OFFENSIVE_SHOTS = 5
+        private const val MIN_BEATS_FOR_ONE_ON_ONE = 3
         private const val MIN_PRECISION_ATTEMPTS = 10
         private const val MIN_LOST_MAIL_ATTEMPTS = 3
         private const val HIGH_VOLUME_ATTEMPTS = 10
@@ -580,6 +662,8 @@ class MatchFeaturesEvaluator {
         val HIGHLIGHTS_RULE = RuleReference(RuleId("match.rated-highlights"), 1)
         val BAGRE_PERFORMANCE_RULE = RuleReference(RuleId("narrative.bagre-performance"), 1)
         val OFFENSIVE_RULE = RuleReference(RuleId("narrative.offensive-performance"), 1)
+        val BEHIND_THE_PLAY_RULE = RuleReference(RuleId("narrative.behind-the-play"), 1)
+        val ONE_ON_ONE_RULE = RuleReference(RuleId("narrative.one-on-one"), 1)
         val RED_CARD_RULE = RuleReference(RuleId("narrative.red-card"), 1)
         val PASS_PRECISION_RULE = RuleReference(RuleId("award.pass-precision"), 1)
         val LOST_MAIL_RULE = RuleReference(RuleId("award.lost-mail"), 1)

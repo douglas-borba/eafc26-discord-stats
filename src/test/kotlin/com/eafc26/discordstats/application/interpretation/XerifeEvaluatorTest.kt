@@ -11,7 +11,7 @@ class XerifeEvaluatorTest {
     private val evaluator = XerifeEvaluator()
 
     @Test
-    fun `requires four tackles seventy percent accuracy and no red card`() {
+    fun `requires four defensive actions applicable tackle accuracy and no red card`() {
         val belowVolume = awardPlayer("volume", tacklesCompleted = 3, tacklesAttempted = 3)
         val belowAccuracy = awardPlayer("accuracy", tacklesCompleted = 4, tacklesAttempted = 6)
         val redCard = awardPlayer("red", tacklesCompleted = 8, tacklesAttempted = 8, redCards = 1)
@@ -23,6 +23,21 @@ class XerifeEvaluatorTest {
         assertThat(decision.winnerId).isEqualTo(PlayerId("valid"))
         assertThat(decision.reason).isEqualTo(AwardDecisionReason.HIGHEST_DEFENSIVE_IMPACT)
         assertThat(decision.rule).isEqualTo(XerifeEvaluator.RULE)
+    }
+
+    @Test
+    fun `interceptions count toward defensive impact and can elect a Xerife with few tackles`() {
+        val tackler = awardPlayer("tackler", tacklesCompleted = 4, tacklesAttempted = 4, interceptions = 0)
+        val reader = awardPlayer("reader", tacklesCompleted = 2, tacklesAttempted = 2, interceptions = 5)
+
+        val decision = evaluator.evaluate(listOf(tackler, reader), eligibility(listOf(tackler, reader)))
+
+        assertThat(decision.winnerId).isEqualTo(reader.player.id)
+        assertThat(decision.metrics).isInstanceOf(com.eafc26.discordstats.domain.interpretation.AwardMetrics.Xerife::class.java)
+        val metrics = decision.metrics as com.eafc26.discordstats.domain.interpretation.AwardMetrics.Xerife
+        assertThat(metrics.interceptions).isEqualTo(5)
+        assertThat(metrics.tacklesCompleted).isEqualTo(2)
+        assertThat(metrics.defensiveImpactScore).isEqualByComparingTo("7")
     }
 
     @Test

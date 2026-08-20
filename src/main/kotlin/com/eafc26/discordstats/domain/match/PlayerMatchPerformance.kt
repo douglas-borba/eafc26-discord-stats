@@ -11,4 +11,5 @@ data class PlayerMatchPerformance(
     val discipline: DisciplineStats,
     val goalkeeping: GoalkeepingStats?,
     val eaRecognition: EaRecognition,
+    val advanced: AdvancedPlayerStats = AdvancedPlayerStats(),
 )

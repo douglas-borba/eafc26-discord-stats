@@ -285,6 +285,7 @@ class EaMatchMapper {
         val tackleAttempts = parser.nonNegativeInt(source.tackleAttempts, "$path.tackleattempts")
         val tacklesMade = parser.nonNegativeInt(source.tacklesMade, "$path.tacklesmade")
         val normalizedDefending = parser.completedAttempts(tackleAttempts, tacklesMade, "$path.defending")
+        val advanced = EaAdvancedStatsDecoder.decode(source)
 
         val role = if (source.isGoalkeeper()) PlayerRole.Goalkeeper else PlayerRole.Outfield(position = null)
 
@@ -313,6 +314,7 @@ class EaMatchMapper {
             defending = DefendingStats(
                 tacklesAttempted = normalizedDefending.first,
                 tacklesCompleted = normalizedDefending.second,
+                interceptions = advanced.interceptions,
             ),
             discipline = DisciplineStats(
                 redCards = parser.nonNegativeInt(source.redCards, "$path.redcards"),
@@ -321,6 +323,7 @@ class EaMatchMapper {
             eaRecognition = EaRecognition(
                 manOfTheMatch = parser.booleanFlag(source.manOfTheMatch, "$path.mom"),
             ),
+            advanced = advanced,
         )
     }
 

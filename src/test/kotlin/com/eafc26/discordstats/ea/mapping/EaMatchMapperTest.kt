@@ -102,6 +102,58 @@ class EaMatchMapperTest {
     }
 
     @Test
+    fun `decodes advanced EA aggregate facts and sums interceptions across slots`() {
+        val result = mapper.map(
+            match(players = mapOf(
+                "our-club" to mapOf(
+                    "advanced" to player(
+                        name = "Advanced",
+                        aggregate0 = "6:4,112:8,115:2,152:9,174:18",
+                        aggregate1 = "6:3",
+                    ),
+                ),
+            )),
+        ).success()
+
+        val advanced = result.match.participants.first().players.single().advanced
+        val defending = result.match.participants.first().players.single().defending
+
+        assertThat(advanced.secondAssists).isEqualTo(2)
+        assertThat(advanced.throughPasses).isEqualTo(9)
+        assertThat(advanced.dribblesCompleted).isEqualTo(18)
+        assertThat(advanced.beats).isEqualTo(8)
+        assertThat(advanced.interceptions).isEqualTo(7)
+        assertThat(defending.interceptions).isEqualTo(7)
+    }
+
+    @Test
+    fun `treats a missing interception aggregate slot or code as zero`() {
+        val aggregateZeroOnly = mapper.map(
+            match(players = mapOf(
+                "our-club" to mapOf("player" to player(name = "Zero", aggregate0 = "6:4")),
+            )),
+        ).success().match.participants.first().players.single().advanced
+        val aggregateOneOnly = mapper.map(
+            match(players = mapOf(
+                "our-club" to mapOf("player" to player(name = "One", aggregate1 = "6:3")),
+            )),
+        ).success().match.participants.first().players.single().advanced
+        val absent = mapper.map(
+            match(players = mapOf(
+                "our-club" to mapOf("player" to player(name = "Absent", aggregate0 = "115:0")),
+            )),
+        ).success().match.participants.first().players.single().advanced
+
+        assertThat(aggregateZeroOnly.interceptions).isEqualTo(4)
+        assertThat(aggregateOneOnly.interceptions).isEqualTo(3)
+        assertThat(absent.interceptions).isZero()
+        assertThat(absent.secondAssists).isZero()
+        assertThat(absent.throughPasses).isZero()
+        assertThat(absent.dribblesCompleted).isZero()
+        assertThat(absent.beats).isZero()
+    }
+
+    @Test
     fun `optional absent fields remain absent without preventing a valid match`() {
         val source = match(
             matchType = null,
@@ -360,6 +412,8 @@ class EaMatchMapperTest {
         redCards: String = "0",
         secondsPlayed: String = "5400",
         mom: String = "0",
+        aggregate0: String? = null,
+        aggregate1: String? = null,
     ): PlayerEntry = PlayerEntry(
         playerName = name,
         position = "14",
@@ -374,6 +428,8 @@ class EaMatchMapperTest {
         redCards = redCards,
         secondsPlayed = secondsPlayed,
         manOfTheMatch = mom,
+        matchEventAggregate0 = aggregate0,
+        matchEventAggregate1 = aggregate1,
     )
 
     private fun goalkeeper(name: String): PlayerEntry = PlayerEntry(

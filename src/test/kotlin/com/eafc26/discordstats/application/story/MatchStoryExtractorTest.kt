@@ -150,6 +150,10 @@ class MatchStoryExtractorTest {
             passesAttempted = 10,
             tacklesCompleted = 4,
             tacklesAttempted = 5,
+            secondAssists = 2,
+            throughPasses = 8,
+            dribblesCompleted = 7,
+            beats = 3,
             redCards = 1,
         )
         val goalkeeper = awardPlayer(
@@ -173,6 +177,8 @@ class MatchStoryExtractorTest {
             StoryType.HIGHLIGHTS,
             StoryType.BAGRE_PERFORMANCE,
             StoryType.OFFENSIVE_NARRATIVE,
+            StoryType.BEHIND_THE_PLAY,
+            StoryType.ONE_ON_ONE,
             StoryType.RED_CARD,
             StoryType.PASS_PRECISION,
             StoryType.LOST_MAIL,

@@ -40,6 +40,8 @@ enum class StoryType {
     HIGHLIGHTS,
     BAGRE_PERFORMANCE,
     OFFENSIVE_NARRATIVE,
+    BEHIND_THE_PLAY,
+    ONE_ON_ONE,
     RED_CARD,
     PASS_PRECISION,
     LOST_MAIL,
@@ -106,6 +108,20 @@ sealed interface StoryContent {
         val shots: Int,
         val goals: Int,
         val category: OffensiveNarrativeCategory,
+    ) : StoryContent
+
+    data class BehindThePlay(
+        val playerId: PlayerId,
+        val secondAssists: Int,
+        val throughPasses: Int,
+        val rating: java.math.BigDecimal?,
+    ) : StoryContent
+
+    data class OneOnOne(
+        val playerId: PlayerId,
+        val beats: Int,
+        val dribblesCompleted: Int,
+        val rating: java.math.BigDecimal?,
     ) : StoryContent
 
     data class RedCard(

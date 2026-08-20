@@ -36,6 +36,8 @@ data class MatchSummaryPresentation(
     val passePrecisao: PassePrecisaoSection?,
     val correioExtraviado: CorreioExtraviadoSection?,
     val muralha: MuralhaSection?,
+    val behindThePlay: BehindThePlaySection? = null,
+    val oneOnOne: OneOnOneSection? = null,
     
     /**
      * All players who participated in this match with their ratings.
@@ -109,6 +111,20 @@ data class OffensiveNarrativeSection(
     val message: String,
 )
 
+data class BehindThePlaySection(
+    val name: String,
+    val secondAssists: Int,
+    val throughPasses: Int,
+    val phrase: String,
+)
+
+data class OneOnOneSection(
+    val name: String,
+    val beats: Int,
+    val dribblesCompleted: Int,
+    val phrase: String,
+)
+
 data class RedCardSection(
     val name: String,
     val redCards: Int,
@@ -130,6 +146,7 @@ data class XerifeSection(
     val tackleAttempts: Int,
     val successRate: Int,
     val phrase: String,
+    val interceptions: Int = 0,
 )
 
 data class PassePrecisaoSection(

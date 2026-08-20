@@ -125,6 +125,40 @@ class MatchStoryExtractor {
                     )
                 )
             }
+            features.behindThePlay?.let {
+                add(
+                    featureStory(
+                        StoryType.BEHIND_THE_PLAY,
+                        "narrative.behind-the-play",
+                        setOf(it.playerId),
+                        StoryContent.BehindThePlay(
+                            it.playerId,
+                            it.secondAssists,
+                            it.throughPasses,
+                            it.rating,
+                        ),
+                        it.rule,
+                        it.evidence,
+                    )
+                )
+            }
+            features.oneOnOne?.let {
+                add(
+                    featureStory(
+                        StoryType.ONE_ON_ONE,
+                        "narrative.one-on-one",
+                        setOf(it.playerId),
+                        StoryContent.OneOnOne(
+                            it.playerId,
+                            it.beats,
+                            it.dribblesCompleted,
+                            it.rating,
+                        ),
+                        it.rule,
+                        it.evidence,
+                    )
+                )
+            }
             features.redCard?.let {
                 add(
                     featureStory(

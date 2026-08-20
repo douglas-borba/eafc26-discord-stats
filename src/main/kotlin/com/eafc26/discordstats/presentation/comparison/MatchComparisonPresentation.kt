@@ -245,6 +245,16 @@ object MatchComparisonPresenter {
             ComparisonFactView("Jogador", names[playerId] ?: playerId.value),
             ComparisonFactView("Produção", "$goals gol(s) em $shots finalização(ões)"),
         )
+        is StoryContent.BehindThePlay -> listOf(
+            ComparisonFactView("Jogador", names[playerId] ?: playerId.value),
+            ComparisonFactView("Pré-assistências", secondAssists.toString()),
+            ComparisonFactView("Passes em profundidade", throughPasses.toString()),
+        )
+        is StoryContent.OneOnOne -> listOf(
+            ComparisonFactView("Jogador", names[playerId] ?: playerId.value),
+            ComparisonFactView("Adversários superados", beats.toString()),
+            ComparisonFactView("Dribles completos", dribblesCompleted.toString()),
+        )
         is StoryContent.RedCard -> listOf(ComparisonFactView(names[playerId] ?: playerId.value, "$redCards cartão(ões)"))
         is StoryContent.PassPrecision -> listOf(ComparisonFactView(names[playerId] ?: playerId.value, "$completed/$attempted ($accuracyPercent%)"))
         is StoryContent.LostMail -> listOf(ComparisonFactView(names[playerId] ?: playerId.value, "$playerAccuracyPercent% · time $teamAccuracyPercent%"))
@@ -319,6 +329,8 @@ object MatchComparisonPresenter {
         StoryType.HIGHLIGHTS -> "Destaques"
         StoryType.BAGRE_PERFORMANCE -> "Menor Desempenho"
         StoryType.OFFENSIVE_NARRATIVE -> "Narrativa ofensiva"
+        StoryType.BEHIND_THE_PLAY -> "Por Trás da Jogada"
+        StoryType.ONE_ON_ONE -> "No Um Contra Um"
         StoryType.RED_CARD -> "Cartão vermelho"
         StoryType.PASS_PRECISION -> "Passe de Precisão"
         StoryType.LOST_MAIL -> "Correio Extraviado"

@@ -88,6 +88,13 @@ data class PlayerEntry(
     @JsonProperty("cleansheetsany") val cleanSheetsAny: String? = null,
     @JsonProperty("secondsplayed") val secondsPlayed: String? = null,
     @JsonProperty("status") val status: String? = null,
+    /**
+     * Sparse EA event histograms. Their codes are transport details and are
+     * decoded centrally by [EaAdvancedStatsDecoder] before entering the
+     * canonical domain.
+     */
+    @JsonProperty("match_event_aggregate_0") val matchEventAggregate0: String? = null,
+    @JsonProperty("match_event_aggregate_1") val matchEventAggregate1: String? = null,
 ) {
     companion object {
         /**

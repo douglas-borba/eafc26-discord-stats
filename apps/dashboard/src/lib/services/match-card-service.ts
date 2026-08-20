@@ -37,6 +37,8 @@ export interface MatchSummaryPresentation {
   passePrecisao: PassePrecisaoSection | null;
   correioExtraviado: CorreioExtraviadoSection | null;
   muralha: MuralhaSection | null;
+  behindThePlay?: BehindThePlaySection | null;
+  oneOnOne?: OneOnOneSection | null;
   allPlayers?: PlayerRating[] | null;
 }
 
@@ -117,6 +119,21 @@ export interface XerifeSection {
   tacklesMade: number;
   tackleAttempts: number;
   successRate: number;
+  phrase: string;
+  interceptions?: number;
+}
+
+export interface BehindThePlaySection {
+  name: string;
+  secondAssists: number;
+  throughPasses: number;
+  phrase: string;
+}
+
+export interface OneOnOneSection {
+  name: string;
+  beats: number;
+  dribblesCompleted: number;
   phrase: string;
 }
 
@@ -240,6 +257,8 @@ function canonicalToBasicPresentation(m: CanonicalMatchSummary): MatchSummaryPre
     passePrecisao: null,
     correioExtraviado: null,
     muralha: null,
+    behindThePlay: null,
+    oneOnOne: null,
   };
 }
 

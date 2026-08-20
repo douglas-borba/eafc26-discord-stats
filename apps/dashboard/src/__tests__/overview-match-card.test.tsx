@@ -63,7 +63,7 @@ describe("OverviewMatchCard", () => {
     expect(html).toContain(">12</span>");
   });
 
-  it("formats the header timestamp in Brasilia time instead of using persisted display copy", () => {
+  it("formats the footer timestamp in Brasilia time instead of using persisted display copy", () => {
     const html = render({
       ...basePresentation,
       date: "12 ago. 2026 • 22:07",
@@ -72,6 +72,36 @@ describe("OverviewMatchCard", () => {
 
     expect(html).toContain("12 ago. 2026 • 19:07");
     expect(html).not.toContain("12 ago. 2026 • 22:07");
+    expect(html).not.toContain("card-date");
+    expect(html).toContain("card-footer");
+  });
+
+  it("keeps the team average beside the highlights and renders advanced conditional blocks", () => {
+    const html = render({
+      ...basePresentation,
+      xerife: { name: "Dnph27", tacklesMade: 2, tackleAttempts: 2, successRate: 100, interceptions: 6, phrase: "Leu o jogo antes dos adversários." },
+      behindThePlay: { name: "Guilherme", secondAssists: 2, throughPasses: 9, phrase: "Nem toda participação decisiva aparece na súmula." },
+      oneOnOne: { name: "Dnph27", beats: 8, dribblesCompleted: 18, phrase: "Chamou para o duelo e passou." },
+    });
+
+    expect(html).toContain("card-highlights-layout grid grid-cols-[minmax(0,1fr)_auto]");
+    expect(html).toContain("📊 Média do time");
+    expect(html).toContain("POR TRÁS DA JOGADA");
+    expect(html).toContain("2 pré-assistências • 9 passes em profundidade");
+    expect(html).toContain("NO UM CONTRA UM");
+    expect(html).toContain("8 adversários superados • 18 dribles completos");
+    expect(html).toContain("🛡️ XERIFE");
+    expect(html).toContain("6 interceptações • 2 desarmes certos (100% de acerto)");
+    expect(html.indexOf("POR TRÁS DA JOGADA")).toBeLessThan(html.indexOf("NO UM CONTRA UM"));
+    expect(html.indexOf("NO UM CONTRA UM")).toBeLessThan(html.indexOf("🛡️ XERIFE"));
+  });
+
+  it("does not render advanced conditional blocks when no decisions were produced", () => {
+    const html = render(basePresentation);
+
+    expect(html).not.toContain("POR TRÁS DA JOGADA");
+    expect(html).not.toContain("NO UM CONTRA UM");
+    expect(html).not.toContain("🛡️ XERIFE");
   });
 
   it("renders rich and sparse cards without changing the card shell", () => {

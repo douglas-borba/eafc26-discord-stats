@@ -41,6 +41,7 @@ sealed interface AwardMetrics {
         val tacklesAttempted: Int,
         val accuracyPercent: Int,
         val defensiveImpactScore: BigDecimal,
+        val interceptions: Int = 0,
     ) : AwardMetrics
 }
 

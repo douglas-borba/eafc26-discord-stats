@@ -335,6 +335,16 @@ object HistoricalMatchPresenter {
                 HistoricalFact("Gols", goals.toString()),
                 HistoricalFact("Leitura", category.label()),
             )
+            is StoryContent.BehindThePlay -> listOf(
+                HistoricalFact("Jogador", namesById[playerId] ?: playerId.value),
+                HistoricalFact("Pré-assistências", secondAssists.toString()),
+                HistoricalFact("Passes em profundidade", throughPasses.toString()),
+            )
+            is StoryContent.OneOnOne -> listOf(
+                HistoricalFact("Jogador", namesById[playerId] ?: playerId.value),
+                HistoricalFact("Adversários superados", beats.toString()),
+                HistoricalFact("Dribles completos", dribblesCompleted.toString()),
+            )
             is StoryContent.RedCard -> listOf(
                 HistoricalFact("Jogador", namesById[playerId] ?: playerId.value),
                 HistoricalFact("Cartões vermelhos", redCards.toString()),
@@ -367,6 +377,7 @@ object HistoricalMatchPresenter {
         )
         is AwardMetrics.Xerife -> listOf(
             HistoricalFact("Desarmes", "$tacklesCompleted/$tacklesAttempted ($accuracyPercent%)"),
+            HistoricalFact("Interceptações", interceptions.toString()),
             HistoricalFact("Impacto defensivo", defensiveImpactScore.plain()),
         )
     }
@@ -436,6 +447,8 @@ object HistoricalMatchPresenter {
         StoryType.HIGHLIGHTS -> "Destaques"
         StoryType.BAGRE_PERFORMANCE -> "Menor Desempenho"
         StoryType.OFFENSIVE_NARRATIVE -> "Narrativa ofensiva"
+        StoryType.BEHIND_THE_PLAY -> "Por Trás da Jogada"
+        StoryType.ONE_ON_ONE -> "No Um Contra Um"
         StoryType.RED_CARD -> "Cartão vermelho"
         StoryType.PASS_PRECISION -> "Passe de Precisão"
         StoryType.LOST_MAIL -> "Correio Extraviado"
