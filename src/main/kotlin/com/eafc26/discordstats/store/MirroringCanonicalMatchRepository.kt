@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.store
 
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.application.repository.CanonicalMatchOverview
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
@@ -38,6 +39,9 @@ class MirroringCanonicalMatchRepository(
 
     override fun findRecentMatchIds(clubId: ClubId, limit: Int): List<MatchId> =
         primary.findRecentMatchIds(clubId, limit)
+
+    override fun findRecentOverview(clubId: ClubId, limit: Int): List<CanonicalMatchOverview> =
+        primary.findRecentOverview(clubId, limit)
 
     override fun findAll(clubId: ClubId): List<CanonicalMatch> = primary.findAll(clubId)
 

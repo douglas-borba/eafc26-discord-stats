@@ -1,12 +1,19 @@
 package com.eafc26.discordstats.store
 
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.application.repository.CanonicalMatchOverview
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.canonical.CanonicalSchemaVersion
 import com.eafc26.discordstats.canonical.EngineVersion
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.ClubName
+import com.eafc26.discordstats.domain.match.CompetitionType
+import com.eafc26.discordstats.domain.match.MatchCompletion
+import com.eafc26.discordstats.domain.match.MatchCompletionStatus
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.Score
+import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnostics
 import com.eafc26.discordstats.diagnostics.CanonicalReadOperation
 import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
@@ -208,6 +215,41 @@ class PostgresCanonicalMatchRepository(
         return results.map(::MatchId)
     }
 
+    override fun findRecentOverview(clubId: ClubId, limit: Int): List<CanonicalMatchOverview> {
+        require(limit >= 0) { "limit must be non-negative" }
+        val results = jdbcTemplate.query(
+            """
+            SELECT
+                match_id,
+                club_id,
+                COALESCE(opponent_club_id, payload #>> '{interpretation,result,opponentClub}') AS opponent_club_id,
+                played_at,
+                COALESCE(match_type, payload #>> '{footballMatch,competition}') AS match_type,
+                COALESCE(outcome, payload #>> '{interpretation,result,outcome}') AS outcome,
+                COALESCE(our_score, (payload #>> '{interpretation,result,ourScore}')::integer) AS our_score,
+                COALESCE(opponent_score, (payload #>> '{interpretation,result,opponentScore}')::integer) AS opponent_score,
+                our_club_name,
+                opponent_club_name,
+                COALESCE(payload #>> '{footballMatch,completion,status}', 'UNKNOWN') AS completion_status,
+                payload #>> '{footballMatch,completion,dnfClubId}' AS dnf_club_id
+            FROM canonical_matches
+            WHERE club_id = ?
+            ORDER BY played_at DESC, match_id ASC
+            LIMIT ?
+            """.trimIndent(),
+            { rs, _ -> readOverview(rs) },
+            clubId.value,
+            limit,
+        )
+        readDiagnostics.record(
+            CanonicalReadOperation.FIND_RECENT_OVERVIEW,
+            readOriginContext.current(),
+            results.size,
+            results.sumOf { it.estimatedReturnedBytes },
+        )
+        return results.map(OverviewRead::overview)
+    }
+
     override fun findAll(clubId: ClubId): List<CanonicalMatch> {
         val results = jdbcTemplate.query(
             "SELECT payload FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC",
@@ -287,5 +329,53 @@ class PostgresCanonicalMatchRepository(
         )
     }
 
+    private fun readOverview(rs: ResultSet): OverviewRead {
+        val overview = CanonicalMatchOverview(
+            matchId = MatchId(rs.getString("match_id")),
+            perspectiveClubId = ClubId(rs.getString("club_id")),
+            opponentClubId = ClubId(requireNotNull(rs.getString("opponent_club_id")) {
+                "Canonical overview row is missing opponent club identity"
+            }),
+            playedAt = rs.getTimestamp("played_at").toInstant(),
+            competition = rs.getString("match_type")?.let(CompetitionType::valueOf),
+            ourClubName = rs.getString("our_club_name")?.let(::ClubName),
+            opponentClubName = rs.getString("opponent_club_name")?.let(::ClubName),
+            ourScore = Score(requireNotNull(rs.getObject("our_score") as? Number) {
+                "Canonical overview row is missing our score"
+            }.toInt()),
+            opponentScore = Score(requireNotNull(rs.getObject("opponent_score") as? Number) {
+                "Canonical overview row is missing opponent score"
+            }.toInt()),
+            outcome = MatchOutcome.valueOf(requireNotNull(rs.getString("outcome")) {
+                "Canonical overview row is missing outcome"
+            }),
+            completion = MatchCompletion(
+                status = MatchCompletionStatus.valueOf(rs.getString("completion_status")),
+                dnfClubId = rs.getString("dnf_club_id")?.let(::ClubId),
+            ),
+        )
+        return OverviewRead(overview, overview.estimatedReturnedBytes())
+    }
+
     private data class PayloadRead(val match: CanonicalMatch, val payloadBytes: Long)
+
+    private data class OverviewRead(
+        val overview: CanonicalMatchOverview,
+        val estimatedReturnedBytes: Long,
+    )
+
+    private fun CanonicalMatchOverview.estimatedReturnedBytes(): Long = listOfNotNull(
+        matchId.value,
+        perspectiveClubId.value,
+        opponentClubId.value,
+        playedAt.toString(),
+        competition?.name,
+        ourClubName?.value,
+        opponentClubName?.value,
+        ourScore.goals.toString(),
+        opponentScore.goals.toString(),
+        outcome.name,
+        completion.status.name,
+        completion.dnfClubId?.value,
+    ).sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() }
 }

@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.service
 
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.application.repository.CanonicalMatchOverview
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
@@ -92,6 +93,15 @@ class MatchHistoryService(
         origin: CanonicalReadOrigin = CanonicalReadOrigin.DASHBOARD_OVERVIEW,
     ): List<CanonicalMatch> = readOriginContext.withOrigin(origin) {
         repository.findRecent(clubId, limit)
+    }
+
+    /** Bounded canonical sports facts for the public Overview fallback feed. */
+    fun recentOverview(
+        clubId: ClubId,
+        limit: Int,
+        origin: CanonicalReadOrigin = CanonicalReadOrigin.DASHBOARD_OVERVIEW,
+    ): List<CanonicalMatchOverview> = readOriginContext.withOrigin(origin) {
+        repository.findRecentOverview(clubId, limit)
     }
 
     fun metadata(clubId: ClubId): CanonicalRepositoryMetadata = repository.metadata(clubId)

@@ -4,6 +4,7 @@ import com.eafc26.discordstats.application.interpretation.MatchInterpreter
 import com.eafc26.discordstats.application.story.MatchStoryExtractor
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.ea.mapping.EaMatchMapper
 import com.eafc26.discordstats.ea.mapping.MatchNormalizationResult
@@ -11,6 +12,7 @@ import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
+import com.eafc26.discordstats.presentation.history.HistoricalMatchPresenter
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -127,6 +129,50 @@ class JsonCanonicalMatchRepositoryTest {
         ).forEach(repository::save)
 
         assertThat(repository.findRecentMatchIds(OUR_CLUB, 10).map { it.value })
+            .containsExactly("a", "b", "old")
+    }
+
+    @Test
+    fun `findRecentOverview preserves bounded canonical ordering and club isolation`() {
+        val otherClub = ClubId("other-club")
+        val ours = (1..12).map { index -> canonicalMatch("match-$index", 1_700_000_000L + index) }
+        val other = canonicalMatch("other-match", 1_900_000_000L, otherClub)
+        (ours + other).forEach(repository::save)
+
+        assertThat(repository.findRecentOverview(OUR_CLUB, 0)).isEmpty()
+        assertThat(repository.findRecentOverview(OUR_CLUB, 3).map { it.matchId.value })
+            .containsExactly("match-12", "match-11", "match-10")
+        assertThat(repository.findRecentOverview(OUR_CLUB, 10)).hasSize(10)
+        assertThat(repository.findRecentOverview(OUR_CLUB, 20)).hasSize(12)
+        assertThat(repository.findRecentOverview(otherClub, 10).map { it.matchId })
+            .containsExactly(other.matchId)
+        assertThat(repository.findRecentOverview(ClubId("empty-club"), 10)).isEmpty()
+    }
+
+    @Test
+    fun `findRecentOverview matches full canonical summaries including DNF`() {
+        val completed = canonicalMatch("completed", 1_800_000_000L)
+        val dnf = canonicalMatch("dnf", 1_900_000_000L, completion = MatchCompletion.dnf(OUR_CLUB))
+        repository.save(completed)
+        repository.save(dnf)
+
+        val fullSummaries = repository.findRecent(OUR_CLUB, 10).map(HistoricalMatchPresenter::summary)
+        val overviewSummaries = repository.findRecentOverview(OUR_CLUB, 10).map(HistoricalMatchPresenter::summary)
+
+        assertThat(overviewSummaries).containsExactlyElementsOf(fullSummaries)
+        assertThat(overviewSummaries.first().completionStatus).isEqualTo("DNF")
+        assertThat(overviewSummaries.first().dnfClubId).isEqualTo(OUR_CLUB.value)
+    }
+
+    @Test
+    fun `findRecentOverview uses canonical match ID tie break`() {
+        listOf(
+            canonicalMatch("b", 1_800_000_000L),
+            canonicalMatch("a", 1_800_000_000L),
+            canonicalMatch("old", 1_700_000_000L),
+        ).forEach(repository::save)
+
+        assertThat(repository.findRecentOverview(OUR_CLUB, 10).map { it.matchId.value })
             .containsExactly("a", "b", "old")
     }
 
@@ -265,6 +311,7 @@ class JsonCanonicalMatchRepositoryTest {
         id: String,
         timestamp: Long,
         perspectiveClubId: ClubId = OUR_CLUB,
+        completion: MatchCompletion? = null,
     ): CanonicalMatch {
         val opponentClubId = if (perspectiveClubId.value == "opponent") "other-opponent" else "opponent"
         val source = MatchResponse(
@@ -297,6 +344,7 @@ class JsonCanonicalMatchRepositoryTest {
             ),
         )
         val footballMatch = (EaMatchMapper().map(source) as MatchNormalizationResult.Success).match
+            .let { mapped -> completion?.let { mapped.copy(completion = it) } ?: mapped }
         val interpretation = MatchInterpreter().interpret(footballMatch, perspectiveClubId)
         val stories = MatchStoryExtractor().extract(interpretation)
         return CanonicalMatch.current(

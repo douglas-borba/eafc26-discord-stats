@@ -2,6 +2,7 @@ package com.eafc26.discordstats.store
 
 import com.eafc26.discordstats.application.interpretation.MatchInterpreter
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.application.repository.CanonicalMatchOverview
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
 import com.eafc26.discordstats.application.story.MatchStoryExtractor
 import com.eafc26.discordstats.canonical.CanonicalMatch
@@ -99,6 +100,18 @@ class MirroringCanonicalMatchRepositoryTest {
     }
 
     @Test
+    fun `recent overview reads delegate to primary only`() {
+        val match = testMatch("m1")
+        primary.store[match.matchId] = match
+        mirror.failOnRecentOverviewRead = true
+
+        assertThat(repo.findRecentOverview(CLUB_ID, 10).map { it.matchId })
+            .containsExactly(match.matchId)
+        assertThat(primary.recentOverviewReads).isEqualTo(1)
+        assertThat(mirror.recentOverviewReads).isZero()
+    }
+
+    @Test
     fun `metadata delegates to primary only`() {
         assertThat(repo.metadata(CLUB_ID).matchCount).isZero()
     }
@@ -133,6 +146,8 @@ class MirroringCanonicalMatchRepositoryTest {
         var pollingIdentityReads = 0
         var failOnRecentMatchIdRead = false
         var recentMatchIdReads = 0
+        var failOnRecentOverviewRead = false
+        var recentOverviewReads = 0
 
         override fun save(match: CanonicalMatch) {
             if (failOnSave) throw RuntimeException("simulated failure")
@@ -161,6 +176,14 @@ class MirroringCanonicalMatchRepositoryTest {
                 .sortedWith(compareByDescending<CanonicalMatch> { it.footballMatch.playedAt }.thenBy { it.matchId.value })
                 .take(limit)
                 .map { it.matchId }
+        }
+        override fun findRecentOverview(clubId: ClubId, limit: Int): List<CanonicalMatchOverview> {
+            recentOverviewReads++
+            if (failOnRecentOverviewRead) throw RuntimeException("secondary recent overview read should not happen")
+            return findAll(clubId)
+                .sortedWith(compareByDescending<CanonicalMatch> { it.footballMatch.playedAt }.thenBy { it.matchId.value })
+                .take(limit)
+                .map(CanonicalMatchOverview::from)
         }
         override fun findAll(clubId: ClubId) =
             store.values.filter { it.interpretation.perspectiveClubId == clubId }

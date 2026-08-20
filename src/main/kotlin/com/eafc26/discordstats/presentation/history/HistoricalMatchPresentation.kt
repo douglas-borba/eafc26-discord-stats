@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.presentation.history
 
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
+import com.eafc26.discordstats.application.repository.CanonicalMatchOverview
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.interpretation.AwardDecisionReason
 import com.eafc26.discordstats.domain.interpretation.AwardMetrics
@@ -147,35 +148,30 @@ object HistoricalMatchPresenter {
     fun summary(
         canonical: CanonicalMatch,
         zoneId: ZoneId = MatchPresentationTimeZone.BRAZIL,
-    ): HistoricalMatchSummary {
-        val interpretation = canonical.interpretation
-        val result = interpretation.result
-        val participants = canonical.footballMatch.participants.associateBy { it.club.id }
-        val ourClub = requireNotNull(participants[result.ourClub]) {
-            "Canonical match is missing the interpreted perspective club"
-        }
-        val opponent = requireNotNull(participants[result.opponentClub]) {
-            "Canonical match is missing the interpreted opponent club"
-        }
+    ): HistoricalMatchSummary = summary(CanonicalMatchOverview.from(canonical), zoneId)
 
+    fun summary(
+        canonical: CanonicalMatchOverview,
+        zoneId: ZoneId = MatchPresentationTimeZone.BRAZIL,
+    ): HistoricalMatchSummary {
         return HistoricalMatchSummary(
             matchId = canonical.matchId.value,
-            playedAt = canonical.footballMatch.playedAt,
-            dateLabel = dateFormatter.withZone(zoneId).format(canonical.footballMatch.playedAt),
-            competition = canonical.footballMatch.competition?.label(),
+            playedAt = canonical.playedAt,
+            dateLabel = dateFormatter.withZone(zoneId).format(canonical.playedAt),
+            competition = canonical.competition?.label(),
             ourClub = HistoricalClub(
-                id = ourClub.club.id.value,
-                name = ourClub.club.name?.value ?: "Nosso clube",
-                score = result.ourScore.goals,
+                id = canonical.perspectiveClubId.value,
+                name = canonical.ourClubName?.value ?: "Nosso clube",
+                score = canonical.ourScore.goals,
             ),
             opponentClub = HistoricalClub(
-                id = opponent.club.id.value,
-                name = opponent.club.name?.value ?: "Adversário",
-                score = result.opponentScore.goals,
+                id = canonical.opponentClubId.value,
+                name = canonical.opponentClubName?.value ?: "Adversário",
+                score = canonical.opponentScore.goals,
             ),
-            outcome = result.outcome.presentation(),
-            completionStatus = canonical.footballMatch.completion.status.name,
-            dnfClubId = canonical.footballMatch.completion.dnfClubId?.value,
+            outcome = canonical.outcome.presentation(),
+            completionStatus = canonical.completion.status.name,
+            dnfClubId = canonical.completion.dnfClubId?.value,
         )
     }
 

@@ -145,6 +145,16 @@ class MatchHistoryServiceTest {
     }
 
     @Test
+    fun `recentOverview delegates the bounded overview projection without loading canonical payloads`() {
+        whenever(repository.findRecentOverview(CLUB_ID, 10)).thenReturn(emptyList())
+
+        assertThat(service.recentOverview(CLUB_ID, 10)).isEmpty()
+        verify(repository).findRecentOverview(CLUB_ID, 10)
+        verify(repository, never()).findRecent(CLUB_ID, 10)
+        verify(repository, never()).findAll(CLUB_ID)
+    }
+
+    @Test
     fun `metadata delegates without interpretation`() {
         val metadata = CanonicalRepositoryMetadata(
             matchCount = 2,

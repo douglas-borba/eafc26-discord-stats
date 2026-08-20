@@ -4,6 +4,7 @@ import com.eafc26.discordstats.application.interpretation.MatchInterpreter
 import com.eafc26.discordstats.application.story.MatchStoryExtractor
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.ea.mapping.EaMatchMapper
 import com.eafc26.discordstats.ea.mapping.MatchNormalizationResult
@@ -12,6 +13,7 @@ import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.store.PostgresCanonicalMatchRepository
+import com.eafc26.discordstats.presentation.history.HistoricalMatchPresenter
 import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnostics
 import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
 import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
@@ -94,6 +96,9 @@ class PostgresCanonicalMatchRepositoryTest {
         readOriginContext.withOrigin(CanonicalReadOrigin.LLM_PANORAMA) {
             repository.findRecentMatchIds(OUR_CLUB, 1)
         }
+        readOriginContext.withOrigin(CanonicalReadOrigin.DASHBOARD_OVERVIEW) {
+            repository.findRecentOverview(OUR_CLUB, 1)
+        }
 
         val snapshot = readDiagnostics.snapshot()
         val findAll = snapshot.operations.getValue("findAll")
@@ -106,6 +111,7 @@ class PostgresCanonicalMatchRepositoryTest {
         assertThat(snapshot.operations.getValue("findLatestMatchId").rows).isEqualTo(1)
         assertThat(snapshot.operations.getValue("findExistingMatchIds").rows).isEqualTo(1)
         assertThat(snapshot.operations.getValue("findRecentMatchIds").rows).isEqualTo(1)
+        assertThat(snapshot.operations.getValue("findRecentOverview").rows).isEqualTo(1)
         assertThat(snapshot.origins.getValue("history.list").estimatedReturnedBytes).isGreaterThan(0)
         assertThat(snapshot.origins.getValue("polling.checkpoint").estimatedReturnedBytes).isGreaterThan(0)
     }
@@ -234,6 +240,65 @@ class PostgresCanonicalMatchRepositoryTest {
         assertThat(source).contains(
             "SELECT match_id FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC LIMIT ?"
         )
+    }
+
+    @Test
+    fun `findRecentOverview applies ordering and limit without selecting canonical payload`() {
+        val otherClub = ClubId("opponent")
+        val ours = (1..12).map { index -> canonicalMatch("match-$index", 1_700_000_000L + index) }
+        val other = canonicalMatch("other-match", 1_900_000_000L, otherClub)
+        (ours + other).forEach(repository::save)
+        jdbcTemplate.update("UPDATE canonical_matches SET payload = ?::jsonb", "{}")
+
+        assertThat(repository.findRecentOverview(OUR_CLUB, 0)).isEmpty()
+        assertThat(repository.findRecentOverview(OUR_CLUB, 3).map { it.matchId.value })
+            .containsExactly("match-12", "match-11", "match-10")
+        assertThat(repository.findRecentOverview(OUR_CLUB, 10)).hasSize(10)
+        assertThat(repository.findRecentOverview(OUR_CLUB, 20)).hasSize(12)
+        assertThat(repository.findRecentOverview(otherClub, 10).map { it.matchId })
+            .containsExactly(other.matchId)
+        assertThat(repository.findRecentOverview(ClubId("empty-club"), 10)).isEmpty()
+    }
+
+    @Test
+    fun `findRecentOverview matches full canonical summaries including DNF`() {
+        val completed = canonicalMatch("completed", 1_800_000_000L)
+        val dnf = canonicalMatch("dnf", 1_900_000_000L, completion = MatchCompletion.dnf(OUR_CLUB))
+        repository.save(completed)
+        repository.save(dnf)
+
+        val fullSummaries = repository.findRecent(OUR_CLUB, 10).map(HistoricalMatchPresenter::summary)
+        val overviewSummaries = repository.findRecentOverview(OUR_CLUB, 10).map(HistoricalMatchPresenter::summary)
+
+        assertThat(overviewSummaries).containsExactlyElementsOf(fullSummaries)
+        assertThat(overviewSummaries.first().completionStatus).isEqualTo("DNF")
+        assertThat(overviewSummaries.first().dnfClubId).isEqualTo(OUR_CLUB.value)
+    }
+
+    @Test
+    fun `findRecentOverview retains canonical match ID tie break`() {
+        listOf(
+            canonicalMatch("b", 1_800_000_000L),
+            canonicalMatch("a", 1_800_000_000L),
+            canonicalMatch("old", 1_700_000_000L),
+        ).forEach(repository::save)
+
+        assertThat(repository.findRecentOverview(OUR_CLUB, 10).map { it.matchId.value })
+            .containsExactly("a", "b", "old")
+    }
+
+    @Test
+    fun `findRecentOverview query selects only scalar overview facts`() {
+        val source = Files.readString(
+            java.nio.file.Path.of("src/main/kotlin/com/eafc26/discordstats/store/PostgresCanonicalMatchRepository.kt")
+        )
+        val overviewQuery = source
+            .substringAfter("override fun findRecentOverview")
+            .substringBefore("override fun findAll")
+
+        assertThat(overviewQuery).contains("SELECT\n                match_id,")
+        assertThat(overviewQuery).contains("payload #>> '{footballMatch,completion,status}'")
+        assertThat(overviewQuery).doesNotContain("SELECT payload")
     }
 
     @Test
@@ -501,6 +566,7 @@ class PostgresCanonicalMatchRepositoryTest {
         id: String,
         timestamp: Long,
         perspectiveClubId: ClubId = OUR_CLUB,
+        completion: MatchCompletion? = null,
     ): CanonicalMatch {
         val source = MatchResponse(
             matchId = id,
@@ -530,6 +596,7 @@ class PostgresCanonicalMatchRepositoryTest {
             ),
         )
         val footballMatch = (EaMatchMapper().map(source) as MatchNormalizationResult.Success).match
+            .let { mapped -> completion?.let { mapped.copy(completion = it) } ?: mapped }
         val interpretation = MatchInterpreter().interpret(footballMatch, perspectiveClubId)
         val stories = MatchStoryExtractor().extract(interpretation)
         return CanonicalMatch.current(footballMatch, interpretation, stories, generatedAt = Instant.parse("2026-07-30T10:00:00Z"))

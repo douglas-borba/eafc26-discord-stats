@@ -17,12 +17,13 @@ class CanonicalReadDiagnosticsTest {
         diagnostics.record(CanonicalReadOperation.FIND_LATEST_MATCH_ID, CanonicalReadOrigin.POLLING_CHECKPOINT, rows = 1, estimatedReturnedBytes = 10)
         diagnostics.record(CanonicalReadOperation.FIND_EXISTING_MATCH_IDS, CanonicalReadOrigin.POLLING_CHECKPOINT, rows = 1, estimatedReturnedBytes = 10)
         diagnostics.record(CanonicalReadOperation.FIND_RECENT_MATCH_IDS, CanonicalReadOrigin.LLM_PANORAMA, rows = 2, estimatedReturnedBytes = 20)
+        diagnostics.record(CanonicalReadOperation.FIND_RECENT_OVERVIEW, CanonicalReadOrigin.DASHBOARD_OVERVIEW, rows = 2, estimatedReturnedBytes = 60)
 
         val snapshot = diagnostics.snapshot()
 
-        assertThat(snapshot.total.calls).isEqualTo(7)
-        assertThat(snapshot.total.rows).isEqualTo(14)
-        assertThat(snapshot.total.estimatedReturnedBytes).isEqualTo(580)
+        assertThat(snapshot.total.calls).isEqualTo(8)
+        assertThat(snapshot.total.rows).isEqualTo(16)
+        assertThat(snapshot.total.estimatedReturnedBytes).isEqualTo(640)
         val findAll = snapshot.operations.getValue("findAll")
         assertThat(findAll.calls).isEqualTo(1)
         assertThat(findAll.rows).isEqualTo(3)
@@ -32,8 +33,9 @@ class CanonicalReadDiagnosticsTest {
         assertThat(snapshot.operations.getValue("findLatestMatchId").rows).isEqualTo(1)
         assertThat(snapshot.operations.getValue("findExistingMatchIds").rows).isEqualTo(1)
         assertThat(snapshot.operations.getValue("findRecentMatchIds").rows).isEqualTo(2)
+        assertThat(snapshot.operations.getValue("findRecentOverview").rows).isEqualTo(2)
         assertThat(snapshot.origins.getValue("polling.checkpoint").rows).isEqualTo(6)
-        assertThat(snapshot.origins.getValue("dashboard.overview").estimatedReturnedBytes).isEqualTo(120)
+        assertThat(snapshot.origins.getValue("dashboard.overview").estimatedReturnedBytes).isEqualTo(180)
     }
 
     @Test

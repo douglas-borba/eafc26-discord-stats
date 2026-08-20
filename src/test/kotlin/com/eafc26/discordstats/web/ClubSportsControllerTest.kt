@@ -6,9 +6,13 @@ import com.eafc26.discordstats.application.club.MonitoredClub
 import com.eafc26.discordstats.application.club.MonitoredClubService
 import com.eafc26.discordstats.application.club.ClubAccessStatus
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
+import com.eafc26.discordstats.application.repository.CanonicalMatchOverview
+import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
+import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.Score
 import com.eafc26.discordstats.llm.LlmEditorialService
 import com.eafc26.discordstats.service.MatchCardService
 import com.eafc26.discordstats.service.MatchComparisonService
@@ -68,7 +72,7 @@ class ClubSportsControllerTest {
     fun `trial allows overview but denies deeper dashboard areas`() {
         val trial = club("1104972", "Trial").copy(accessStatus = ClubAccessStatus.TRIAL, monitoringEnabled = false)
         whenever(clubs.find(trial.clubId)).thenReturn(trial)
-        whenever(history.recent(trial.clubId, 10)).thenReturn(emptyList())
+        whenever(history.recentOverview(trial.clubId, 10)).thenReturn(emptyList())
         whenever(history.metadata(trial.clubId)).thenReturn(metadata())
 
         assertThat(controller.overviewMatches(trial.clubId.value).status).isEqualTo("empty")
@@ -87,12 +91,43 @@ class ClubSportsControllerTest {
     fun `overview requests only the bounded recent feed`() {
         val club = club("1104972", "Associação BF")
         whenever(clubs.find(club.clubId)).thenReturn(club)
-        whenever(history.recent(club.clubId, 10)).thenReturn(emptyList())
+        whenever(history.recentOverview(club.clubId, 10)).thenReturn(emptyList())
         whenever(history.metadata(club.clubId)).thenReturn(metadata())
 
         assertThat(controller.overviewMatches(club.clubId.value).status).isEqualTo("empty")
-        verify(history).recent(club.clubId, 10)
+        verify(history).recentOverview(club.clubId, 10)
+        verify(history, never()).recent(club.clubId, 10)
         verify(history, never()).list(club.clubId)
+    }
+
+    @Test
+    fun `overview preserves canonical summary semantics from lightweight projection`() {
+        val club = club("1104972", "Associação BF")
+        val overview = CanonicalMatchOverview(
+            matchId = MatchId("dnf-match"),
+            perspectiveClubId = club.clubId,
+            opponentClubId = ClubId("opponent"),
+            playedAt = Instant.parse("2026-08-20T17:30:00Z"),
+            competition = null,
+            ourClubName = ClubName("Associação BF"),
+            opponentClubName = ClubName("Adversário"),
+            ourScore = Score(4),
+            opponentScore = Score(1),
+            outcome = MatchOutcome.WIN,
+            completion = MatchCompletion.dnf(ClubId("opponent")),
+        )
+        whenever(clubs.find(club.clubId)).thenReturn(club)
+        whenever(history.recentOverview(club.clubId, 10)).thenReturn(listOf(overview))
+        whenever(history.metadata(club.clubId)).thenReturn(metadata())
+
+        val summary = controller.overviewMatches(club.clubId.value).matches.single()
+
+        assertThat(summary.matchId).isEqualTo("dnf-match")
+        assertThat(summary.ourClub.score).isEqualTo(4)
+        assertThat(summary.opponentClub.score).isEqualTo(1)
+        assertThat(summary.outcome.code).isEqualTo("WIN")
+        assertThat(summary.completionStatus).isEqualTo("DNF")
+        assertThat(summary.dnfClubId).isEqualTo("opponent")
     }
 
     @Test
