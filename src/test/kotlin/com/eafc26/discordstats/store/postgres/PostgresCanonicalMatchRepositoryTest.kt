@@ -6,6 +6,7 @@ import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.ea.mapping.EaMatchMapper
 import com.eafc26.discordstats.ea.mapping.MatchNormalizationResult
 import com.eafc26.discordstats.ea.model.ClubDetails
@@ -13,10 +14,14 @@ import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.store.PostgresCanonicalMatchRepository
+import com.eafc26.discordstats.store.PostgresPlayerProfileReadRepository
 import com.eafc26.discordstats.presentation.history.HistoricalMatchPresenter
 import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnostics
 import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
 import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
+import com.eafc26.discordstats.history.MatchHistoryQuery
+import com.eafc26.discordstats.service.MatchHistoryService
+import com.eafc26.discordstats.service.PlayerProfileService
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -25,6 +30,9 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIf
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.verifyNoInteractions
+import org.mockito.kotlin.whenever
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.testcontainers.containers.PostgreSQLContainer
@@ -62,6 +70,7 @@ class PostgresCanonicalMatchRepositoryTest {
     }
 
     private lateinit var repository: PostgresCanonicalMatchRepository
+    private lateinit var playerProfileReadRepository: PostgresPlayerProfileReadRepository
     private lateinit var readDiagnostics: CanonicalReadDiagnostics
     private lateinit var readOriginContext: CanonicalReadOriginContext
 
@@ -72,6 +81,11 @@ class PostgresCanonicalMatchRepositoryTest {
         repository = PostgresCanonicalMatchRepository(
             jdbcTemplate,
             jacksonObjectMapper().findAndRegisterModules(),
+            readDiagnostics,
+            readOriginContext,
+        )
+        playerProfileReadRepository = PostgresPlayerProfileReadRepository(
+            jdbcTemplate,
             readDiagnostics,
             readOriginContext,
         )
@@ -540,6 +554,68 @@ class PostgresCanonicalMatchRepositoryTest {
     }
 
     @Test
+    fun `player profile projection preserves canonical profile facts without selecting payload`() {
+        val complete = canonicalMatch(
+            "complete", 1_718_500_000L,
+            proNames = mapOf("MVP" to "MVP Pro"),
+            extraPlayers = 15,
+        )
+        val unknown = canonicalMatch("unknown", 1_718_500_100L, completion = MatchCompletion.UNKNOWN)
+        val partial = canonicalMatch("partial", 1_718_500_150L).withMvpPartialStats()
+        val dnf = canonicalMatch("dnf", 1_718_500_200L, completion = MatchCompletion.dnf(OUR_CLUB))
+        listOf(complete, unknown, partial, dnf).forEach(repository::save)
+
+        val appearances = playerProfileReadRepository.findAppearances(OUR_CLUB)
+        val mvp = appearances.first { it.matchId == MatchId("complete") && it.playerId == PlayerId("mvp") }
+
+        assertThat(mvp.proName).isEqualTo("MVP Pro")
+        assertThat(mvp.preferredDisplayName).isEqualTo("MVP Pro")
+        assertThat(mvp.awards).containsExactly(com.eafc26.discordstats.domain.interpretation.AwardType.CRAQUE)
+        assertThat(appearances.first { it.matchId == MatchId("unknown") }.completion).isEqualTo(MatchCompletion.UNKNOWN)
+        assertThat(appearances.first { it.matchId == MatchId("dnf") }.completion).isEqualTo(MatchCompletion.dnf(OUR_CLUB))
+        assertThat(appearances.first { it.matchId == MatchId("partial") && it.playerId == PlayerId("mvp") })
+            .extracting({ it.rating }, { it.goals }, { it.assists })
+            .containsExactly(null, null, null)
+
+        val canonicalHistory = mock<MatchHistoryService>()
+        val canonicalMatches = listOf(dnf, partial, unknown, complete)
+        whenever(canonicalHistory.list(OUR_CLUB)).thenReturn(canonicalMatches)
+        whenever(canonicalHistory.list(OUR_CLUB, MatchHistoryQuery(playerId = PlayerId("mvp")))).thenReturn(canonicalMatches)
+        val canonicalProfiles = PlayerProfileService(canonicalHistory).listProfiles(OUR_CLUB)
+        val canonicalDetail = PlayerProfileService(canonicalHistory).findById(OUR_CLUB, PlayerId("mvp"))
+
+        readDiagnostics.reset()
+        val optimizedHistory = mock<MatchHistoryService>()
+        val optimizedProfiles = PlayerProfileService(
+            optimizedHistory,
+            readOriginContext,
+            playerProfileReadRepository,
+        ).listProfiles(OUR_CLUB)
+        val optimizedDetail = PlayerProfileService(
+            optimizedHistory,
+            readOriginContext,
+            playerProfileReadRepository,
+        ).findById(OUR_CLUB, PlayerId("mvp"))
+
+        assertThat(optimizedProfiles.map(::normalizeDecimalScale))
+            .containsExactlyElementsOf(canonicalProfiles.map(::normalizeDecimalScale))
+        assertThat(optimizedProfiles).hasSize(18)
+        assertThat(optimizedDetail?.let(::normalizeDecimalScale))
+            .isEqualTo(canonicalDetail?.let(::normalizeDecimalScale))
+        verifyNoInteractions(optimizedHistory)
+        val diagnostics = readDiagnostics.snapshot()
+        assertThat(diagnostics.operations.getValue("findPlayerProfileAppearances").calls).isEqualTo(2)
+        assertThat(diagnostics.operations).doesNotContainKey("findAll")
+        assertThat(diagnostics.origins.getValue("players").rows).isEqualTo(appearances.size + 4L)
+
+        val source = Files.readString(
+            java.nio.file.Path.of("src/main/kotlin/com/eafc26/discordstats/store/PostgresPlayerProfileReadRepository.kt")
+        ).substringAfter("private fun query").substringBefore("private fun readAppearance")
+        assertThat(source).doesNotContain("SELECT payload")
+        assertThat(source).contains("player_match_stats", "cm.payload #>>")
+    }
+
+    @Test
     fun `upsert replaces player_match_stats without duplicates`() {
         val match = canonicalMatch("upsert-players", 1_718_500_000L)
         repository.save(match)
@@ -550,6 +626,27 @@ class PostgresCanonicalMatchRepositoryTest {
             "upsert-players",
         )
         assertThat(count).isEqualTo(3)
+    }
+
+    @Test
+    fun `player profile projection preserves match ID tie breaking and club isolation`() {
+        val timestamp = 1_718_500_000L
+        val laterId = canonicalMatch("match-b", timestamp)
+        val earlierId = canonicalMatch("match-a", timestamp)
+        val otherPerspective = canonicalMatch(
+            "other-club-match",
+            timestamp,
+            perspectiveClubId = ClubId("opponent"),
+            opponentPlayerId = "mvp",
+        )
+        listOf(laterId, earlierId, otherPerspective).forEach(repository::save)
+
+        assertThat(playerProfileReadRepository.findAppearances(OUR_CLUB, PlayerId("mvp")).map { it.matchId.value })
+            .containsExactly("match-a", "match-b")
+        assertThat(playerProfileReadRepository.findAppearances(OUR_CLUB))
+            .noneMatch { it.matchId == MatchId("other-club-match") }
+        assertThat(playerProfileReadRepository.findAppearances(ClubId("opponent"), PlayerId("mvp")).map { it.matchId.value })
+            .containsExactly("other-club-match")
     }
 
     @Test
@@ -567,7 +664,18 @@ class PostgresCanonicalMatchRepositoryTest {
         timestamp: Long,
         perspectiveClubId: ClubId = OUR_CLUB,
         completion: MatchCompletion? = null,
+        proNames: Map<String, String> = emptyMap(),
+        extraPlayers: Int = 0,
+        opponentPlayerId: String = "opponent-player",
     ): CanonicalMatch {
+        val ourPlayers = linkedMapOf(
+            "mvp" to player("MVP", "9.2", goals = "2", mom = "1"),
+            "defender" to player("Defender", "8.0", tacklesMade = "5", tackleAttempts = "6"),
+            "bagre" to player("Bagre", "5.5"),
+        )
+        repeat(extraPlayers) { index ->
+            ourPlayers["extra-$index"] = player("Extra $index", "7.0")
+        }
         val source = MatchResponse(
             matchId = id,
             timestamp = timestamp,
@@ -585,22 +693,33 @@ class PostgresCanonicalMatchRepositoryTest {
                 ),
             ),
             players = mapOf(
-                OUR_CLUB.value to linkedMapOf(
-                    "mvp" to player("MVP", "9.2", goals = "2", mom = "1"),
-                    "defender" to player("Defender", "8.0", tacklesMade = "5", tackleAttempts = "6"),
-                    "bagre" to player("Bagre", "5.5"),
-                ),
+                OUR_CLUB.value to ourPlayers,
                 "opponent" to linkedMapOf(
-                    "opponent-player" to player("Opponent Player", "7.0"),
+                    opponentPlayerId to player("Opponent Player", "7.0"),
                 ),
             ),
         )
-        val footballMatch = (EaMatchMapper().map(source) as MatchNormalizationResult.Success).match
+        val footballMatch = (EaMatchMapper().map(source, proNames) as MatchNormalizationResult.Success).match
             .let { mapped -> completion?.let { mapped.copy(completion = it) } ?: mapped }
         val interpretation = MatchInterpreter().interpret(footballMatch, perspectiveClubId)
         val stories = MatchStoryExtractor().extract(interpretation)
         return CanonicalMatch.current(footballMatch, interpretation, stories, generatedAt = Instant.parse("2026-07-30T10:00:00Z"))
     }
+
+    private fun CanonicalMatch.withMvpPartialStats(): CanonicalMatch = copy(
+        footballMatch = footballMatch.copy(
+            participants = footballMatch.participants.map { participant ->
+                if (participant.club.id != OUR_CLUB) participant else participant.copy(
+                    players = participant.players.map { performance ->
+                        if (performance.player.id != PlayerId("mvp")) performance else performance.copy(
+                            rating = null,
+                            attacking = performance.attacking.copy(goals = null, assists = null),
+                        )
+                    },
+                )
+            },
+        ),
+    )
 
     private fun player(
         name: String, rating: String, goals: String = "0", mom: String = "0",
@@ -610,5 +729,12 @@ class PostgresCanonicalMatchRepositoryTest {
         assists = "0", shots = "3", manOfTheMatch = mom, passesMade = "18",
         passAttempts = "20", tacklesMade = tacklesMade, tackleAttempts = tackleAttempts,
         redCards = "0", secondsPlayed = "5400",
+    )
+
+    private fun normalizeDecimalScale(profile: com.eafc26.discordstats.profile.PlayerProfile) = profile.copy(
+        averageRating = profile.averageRating?.stripTrailingZeros(),
+        recentMatches = profile.recentMatches.map { match ->
+            match.copy(rating = match.rating?.stripTrailingZeros())
+        },
     )
 }

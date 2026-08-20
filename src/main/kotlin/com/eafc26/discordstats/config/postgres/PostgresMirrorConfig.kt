@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.config.postgres
 
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.application.repository.PlayerProfileReadRepository
 import com.eafc26.discordstats.application.club.LegacyDefaultClubImporter
 import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.application.club.MonitoredClubRepository
@@ -14,6 +15,7 @@ import com.eafc26.discordstats.store.JsonCanonicalMatchRepository
 import com.eafc26.discordstats.service.PostgresSyncService
 import com.eafc26.discordstats.store.MirroringCanonicalMatchRepository
 import com.eafc26.discordstats.store.PostgresCanonicalMatchRepository
+import com.eafc26.discordstats.store.PostgresPlayerProfileReadRepository
 import com.eafc26.discordstats.store.PostgresMonitoredClubRepository
 import com.eafc26.discordstats.store.PostgresPublishedMatchStore
 import com.eafc26.discordstats.store.PublicationStateStore
@@ -74,6 +76,18 @@ class PostgresMirrorConfig {
     ): PostgresCanonicalMatchRepository {
         return PostgresCanonicalMatchRepository(jdbcTemplate, objectMapper, canonicalReadDiagnostics, canonicalReadOriginContext)
     }
+
+    /** PostgreSQL is the primary mirror source, so player reads never query JSON secondary storage. */
+    @Bean
+    fun playerProfileReadRepository(
+        jdbcTemplate: JdbcTemplate,
+        canonicalReadDiagnostics: CanonicalReadDiagnostics,
+        canonicalReadOriginContext: CanonicalReadOriginContext,
+    ): PlayerProfileReadRepository = PostgresPlayerProfileReadRepository(
+        jdbcTemplate,
+        canonicalReadDiagnostics,
+        canonicalReadOriginContext,
+    )
 
     @Bean
     fun monitoredClubRepository(jdbcTemplate: JdbcTemplate): MonitoredClubRepository =

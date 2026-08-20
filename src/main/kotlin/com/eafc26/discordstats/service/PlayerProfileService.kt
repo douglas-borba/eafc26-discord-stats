@@ -1,16 +1,17 @@
 package com.eafc26.discordstats.service
 
 import com.eafc26.discordstats.canonical.CanonicalMatch
-import com.eafc26.discordstats.domain.interpretation.AwardDecision
 import com.eafc26.discordstats.domain.interpretation.AwardType
 import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
+import com.eafc26.discordstats.application.repository.PlayerProfileReadRepository
 import com.eafc26.discordstats.history.MatchHistoryQuery
 import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
 import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import com.eafc26.discordstats.profile.PlayerProfile
+import com.eafc26.discordstats.profile.PlayerProfileAppearance
 import com.eafc26.discordstats.profile.PlayerProfileIndexEntry
 import com.eafc26.discordstats.profile.PlayerProfileMatch
 import org.springframework.stereotype.Service
@@ -21,9 +22,10 @@ import java.math.RoundingMode
 class PlayerProfileService(
     private val matchHistoryService: MatchHistoryService,
     private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
+    private val playerProfileReadRepository: PlayerProfileReadRepository? = null,
 ) {
     fun listPlayers(clubId: ClubId): List<PlayerProfileIndexEntry> = readOriginContext.withOrigin(CanonicalReadOrigin.PLAYERS) {
-        playerIndex(matchHistoryService.list(clubId))
+        playerIndex(loadAppearances(clubId))
     }
 
     /**
@@ -39,9 +41,9 @@ class PlayerProfileService(
     ): List<PlayerProfile> = readOriginContext.withOrigin(CanonicalReadOrigin.PLAYERS) {
         require(recentMatchLimit > 0) { "Recent match limit must be positive" }
 
-        val history = matchHistoryService.list(clubId)
-        playerIndex(history).mapNotNull { entry ->
-            profileFrom(history, entry.playerId, recentMatchLimit)
+        val appearances = loadAppearances(clubId)
+        playerIndex(appearances).mapNotNull { entry ->
+            profileFrom(appearances, entry.playerId, recentMatchLimit)
         }
     }
 
@@ -52,29 +54,30 @@ class PlayerProfileService(
     ): PlayerProfile? = readOriginContext.withOrigin(CanonicalReadOrigin.PLAYERS) {
         require(recentMatchLimit > 0) { "Recent match limit must be positive" }
 
-        profileFrom(
-            matchHistoryService.list(clubId, MatchHistoryQuery(playerId = playerId)),
-            playerId,
-            recentMatchLimit,
-        )
+        profileFrom(loadAppearances(clubId, playerId), playerId, recentMatchLimit)
     }
 
-    private fun playerIndex(history: List<CanonicalMatch>): List<PlayerProfileIndexEntry> {
+    private fun loadAppearances(clubId: ClubId): List<PlayerProfileAppearance> =
+        playerProfileReadRepository?.findAppearances(clubId)
+            ?: canonicalAppearances(matchHistoryService.list(clubId))
+
+    private fun loadAppearances(clubId: ClubId, playerId: PlayerId): List<PlayerProfileAppearance> =
+        playerProfileReadRepository?.findAppearances(clubId, playerId)
+            ?: canonicalAppearances(matchHistoryService.list(clubId, MatchHistoryQuery(playerId = playerId)))
+
+    private fun playerIndex(appearances: List<PlayerProfileAppearance>): List<PlayerProfileIndexEntry> {
         val accumulated = linkedMapOf<PlayerId, MutablePlayerIndex>()
 
-        history.forEach { canonical ->
-            if (!canonical.footballMatch.completion.hasCompleteSportingStatistics) return@forEach
-            canonical.perspectivePlayers().forEach { performance ->
-                val player = performance.player
-                val current = accumulated.getOrPut(player.id) {
-                    MutablePlayerIndex(
-                        displayName = player.preferredDisplayName?.value ?: player.id.value,
-                        matchCount = 0,
-                        latestMatchAt = canonical.footballMatch.playedAt,
-                    )
-                }
-                current.matchCount += 1
+        appearances.forEach { appearance ->
+            if (!appearance.completion.hasCompleteSportingStatistics) return@forEach
+            val current = accumulated.getOrPut(appearance.playerId) {
+                MutablePlayerIndex(
+                    displayName = appearance.preferredDisplayName,
+                    matchCount = 0,
+                    latestMatchAt = appearance.playedAt,
+                )
             }
+            current.matchCount += 1
         }
 
         return accumulated.map { (playerId, value) ->
@@ -92,47 +95,80 @@ class PlayerProfileService(
     }
 
     private fun profileFrom(
-        history: List<CanonicalMatch>,
+        allAppearances: List<PlayerProfileAppearance>,
         playerId: PlayerId,
         recentMatchLimit: Int,
     ): PlayerProfile? {
-        val appearances = history
-            .filter { it.footballMatch.completion.hasCompleteSportingStatistics }
-            .mapNotNull { canonical ->
-                canonical.perspectivePlayers()
-                    .firstOrNull { it.player.id == playerId }
-                    ?.let { performance -> Appearance(canonical, performance) }
-            }
+        val appearances = allAppearances
+            .asSequence()
+            .filter { it.playerId == playerId }
+            .filter { it.completion.hasCompleteSportingStatistics }
+            .toList()
 
         if (appearances.isEmpty()) return null
 
-        val ratings = appearances.mapNotNull { it.performance.rating?.value }
-        val awards = appearances.flatMap { it.canonical.interpretation.awards.all() }
-        val latestIdentity = appearances.first().performance.player
+        val ratings = appearances.mapNotNull { it.rating }
+        val latestAppearance = appearances.first()
 
         return PlayerProfile(
             playerId = playerId,
-            displayName = latestIdentity.preferredDisplayName?.value ?: playerId.value,
+            displayName = latestAppearance.preferredDisplayName,
             matchCount = appearances.size,
-            wins = appearances.count { it.canonical.interpretation.result.outcome == MatchOutcome.WIN },
-            draws = appearances.count { it.canonical.interpretation.result.outcome == MatchOutcome.DRAW },
-            losses = appearances.count { it.canonical.interpretation.result.outcome == MatchOutcome.LOSS },
+            wins = appearances.count { it.outcome == MatchOutcome.WIN },
+            draws = appearances.count { it.outcome == MatchOutcome.DRAW },
+            losses = appearances.count { it.outcome == MatchOutcome.LOSS },
             averageRating = ratings.averageOrNull(),
             ratedMatchCount = ratings.size,
-            goals = appearances.sumOf { it.performance.attacking.goals ?: 0 },
-            assists = appearances.sumOf { it.performance.attacking.assists ?: 0 },
-            craques = awards.countWinner(playerId, AwardType.CRAQUE),
-            bagres = awards.countWinner(playerId, AwardType.BAGRE),
-            xerifes = awards.countWinner(playerId, AwardType.XERIFE),
-            redCards = appearances.sumOf { it.performance.discipline.redCards ?: 0 },
-            shots = appearances.sumOf { it.performance.attacking.shots ?: 0 },
-            passesCompleted = appearances.sumOf { it.performance.passing.completed ?: 0 },
-            passesAttempted = appearances.sumOf { it.performance.passing.attempted ?: 0 },
-            tacklesCompleted = appearances.sumOf { it.performance.defending.tacklesCompleted ?: 0 },
-            tacklesAttempted = appearances.sumOf { it.performance.defending.tacklesAttempted ?: 0 },
-            recentMatches = appearances.take(recentMatchLimit).map { it.toProfileMatch(playerId) },
+            goals = appearances.sumOf { it.goals ?: 0 },
+            assists = appearances.sumOf { it.assists ?: 0 },
+            craques = appearances.count { AwardType.CRAQUE in it.awards },
+            bagres = appearances.count { AwardType.BAGRE in it.awards },
+            xerifes = appearances.count { AwardType.XERIFE in it.awards },
+            redCards = appearances.sumOf { it.redCards ?: 0 },
+            shots = appearances.sumOf { it.shots ?: 0 },
+            passesCompleted = appearances.sumOf { it.passesCompleted ?: 0 },
+            passesAttempted = appearances.sumOf { it.passesAttempted ?: 0 },
+            tacklesCompleted = appearances.sumOf { it.tacklesCompleted ?: 0 },
+            tacklesAttempted = appearances.sumOf { it.tacklesAttempted ?: 0 },
+            recentMatches = appearances.take(recentMatchLimit).map { it.toProfileMatch() },
         )
     }
+
+    private fun canonicalAppearances(history: List<CanonicalMatch>): List<PlayerProfileAppearance> =
+        history.flatMap { canonical ->
+            val result = canonical.interpretation.result
+            val participants = canonical.footballMatch.participants.associateBy { it.club.id }
+            val ourClub = participants[result.ourClub]
+            val opponentClub = participants[result.opponentClub]
+            canonical.perspectivePlayers().map { performance ->
+                PlayerProfileAppearance(
+                    playerId = performance.player.id,
+                    platformName = performance.player.platformName?.value,
+                    proName = performance.player.proName?.value,
+                    matchId = canonical.matchId,
+                    playedAt = canonical.footballMatch.playedAt,
+                    competition = canonical.footballMatch.competition,
+                    ourClubName = ourClub?.club?.name?.value,
+                    opponentClubName = opponentClub?.club?.name?.value,
+                    ourScore = result.ourScore.goals,
+                    opponentScore = result.opponentScore.goals,
+                    outcome = result.outcome,
+                    completion = canonical.footballMatch.completion,
+                    rating = performance.rating?.value,
+                    goals = performance.attacking.goals,
+                    assists = performance.attacking.assists,
+                    shots = performance.attacking.shots,
+                    passesCompleted = performance.passing.completed,
+                    passesAttempted = performance.passing.attempted,
+                    tacklesCompleted = performance.defending.tacklesCompleted,
+                    tacklesAttempted = performance.defending.tacklesAttempted,
+                    redCards = performance.discipline.redCards,
+                    awards = canonical.interpretation.awards.all()
+                        .filter { it.winnerId == performance.player.id }
+                        .mapTo(linkedSetOf()) { it.type },
+                )
+            }
+        }
 
     private fun CanonicalMatch.perspectivePlayers(): List<PlayerMatchPerformance> =
         footballMatch.participants
@@ -140,28 +176,20 @@ class PlayerProfileService(
             ?.players
             .orEmpty()
 
-    private fun Appearance.toProfileMatch(playerId: PlayerId): PlayerProfileMatch {
-        val result = canonical.interpretation.result
-        val participants = canonical.footballMatch.participants.associateBy { it.club.id }
-        val ourClub = participants[result.ourClub]
-        val opponentClub = participants[result.opponentClub]
-        val wonAwards = canonical.interpretation.awards.all()
-            .filter { it.winnerId == playerId }
-            .mapTo(linkedSetOf()) { it.type }
-
+    private fun PlayerProfileAppearance.toProfileMatch(): PlayerProfileMatch {
         return PlayerProfileMatch(
-            matchId = canonical.matchId,
-            playedAt = canonical.footballMatch.playedAt,
-            competition = canonical.footballMatch.competition,
-            ourClubName = ourClub?.club?.name?.value,
-            opponentClubName = opponentClub?.club?.name?.value,
-            ourScore = result.ourScore.goals,
-            opponentScore = result.opponentScore.goals,
-            outcome = result.outcome,
-            rating = performance.rating?.value,
-            goals = performance.attacking.goals,
-            assists = performance.attacking.assists,
-            awards = wonAwards,
+            matchId = matchId,
+            playedAt = playedAt,
+            competition = competition,
+            ourClubName = ourClubName,
+            opponentClubName = opponentClubName,
+            ourScore = ourScore,
+            opponentScore = opponentScore,
+            outcome = outcome,
+            rating = rating,
+            goals = goals,
+            assists = assists,
+            awards = awards,
         )
     }
 
@@ -170,16 +198,8 @@ class PlayerProfileService(
             ?.reduce(BigDecimal::add)
             ?.divide(size.toBigDecimal(), 2, RoundingMode.HALF_UP)
 
-    private fun List<AwardDecision>.countWinner(playerId: PlayerId, type: AwardType): Int =
-        count { it.type == type && it.winnerId == playerId }
-
     private fun com.eafc26.discordstats.domain.interpretation.MatchAwards.all() =
         listOf(craque, bagre, xerife)
-
-    private data class Appearance(
-        val canonical: CanonicalMatch,
-        val performance: PlayerMatchPerformance,
-    )
 
     private data class MutablePlayerIndex(
         val displayName: String,

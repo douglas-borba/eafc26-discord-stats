@@ -19,6 +19,7 @@ enum class CanonicalReadOperation {
     FIND_EXISTING_MATCH_IDS,
     FIND_RECENT_MATCH_IDS,
     FIND_RECENT_OVERVIEW,
+    FIND_PLAYER_PROFILE_APPEARANCES,
 }
 
 enum class CanonicalReadOrigin(val value: String) {
@@ -58,7 +59,8 @@ data class CanonicalReadDiagnosticsSnapshot(
 )
 
 /**
- * Process-local observation of bytes returned by canonical repository reads.
+ * Process-local observation of bytes returned by canonical repositories and
+ * their bounded derived projections.
  * These counters deliberately do not represent JDBC protocol bytes or Supabase billing.
  */
 @Component
@@ -147,6 +149,7 @@ internal fun CanonicalReadOperation.apiName(): String = when (this) {
     CanonicalReadOperation.FIND_EXISTING_MATCH_IDS -> "findExistingMatchIds"
     CanonicalReadOperation.FIND_RECENT_MATCH_IDS -> "findRecentMatchIds"
     CanonicalReadOperation.FIND_RECENT_OVERVIEW -> "findRecentOverview"
+    CanonicalReadOperation.FIND_PLAYER_PROFILE_APPEARANCES -> "findPlayerProfileAppearances"
 }
 
 /** Thread-local logical source propagated by application services around synchronous JDBC reads. */

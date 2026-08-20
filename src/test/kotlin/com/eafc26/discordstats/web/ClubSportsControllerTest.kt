@@ -7,14 +7,20 @@ import com.eafc26.discordstats.application.club.MonitoredClubService
 import com.eafc26.discordstats.application.club.ClubAccessStatus
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
 import com.eafc26.discordstats.application.repository.CanonicalMatchOverview
+import com.eafc26.discordstats.application.repository.PlayerProfileReadRepository
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
+import com.eafc26.discordstats.domain.interpretation.AwardType
 import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
+import com.eafc26.discordstats.domain.match.CompetitionType
 import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.match.Score
 import com.eafc26.discordstats.llm.LlmEditorialService
 import com.eafc26.discordstats.profile.PlayerProfile
+import com.eafc26.discordstats.profile.PlayerProfileAppearance
 import com.eafc26.discordstats.service.MatchCardService
 import com.eafc26.discordstats.service.MatchComparisonService
 import com.eafc26.discordstats.service.MatchHistoryService
@@ -26,6 +32,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoInteractions
 import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
 import org.springframework.web.server.ResponseStatusException
@@ -166,6 +173,28 @@ class ClubSportsControllerTest {
         verifyNoMoreInteractions(players)
     }
 
+    @Test
+    fun `players list and detail endpoints use the PostgreSQL projection without canonical history reads`() {
+        val club = club("1104972", "Associação BF")
+        val playerId = PlayerId("ana")
+        val appearances = listOf(playerAppearance(playerId))
+        val readModel = mock<PlayerProfileReadRepository>()
+        val optimizedPlayers = PlayerProfileService(history, CanonicalReadOriginContext(), readModel)
+        val optimizedController = ClubSportsController(
+            clubs, history, optimizedPlayers, opponents, comparisons, cards, editorial, ClubAccessPolicy(clubs),
+        )
+        whenever(clubs.find(club.clubId)).thenReturn(club)
+        whenever(readModel.findAppearances(club.clubId)).thenReturn(appearances)
+        whenever(readModel.findAppearances(club.clubId, playerId)).thenReturn(appearances)
+
+        val list = optimizedController.players(club.clubId.value)
+        val detail = optimizedController.player(club.clubId.value, playerId.value)
+
+        assertThat(list.players).singleElement().extracting { it.playerId }.isEqualTo(playerId.value)
+        assertThat(detail.statusCode.value()).isEqualTo(200)
+        verifyNoInteractions(history)
+    }
+
     private fun club(id: String, name: String) = MonitoredClub(
         ClubId(id), ClubName(name), EaPlatform("common-gen5"), true, null,
         Instant.parse("2026-08-09T12:00:00Z"), Instant.parse("2026-08-09T12:00:00Z"),
@@ -189,5 +218,30 @@ class ClubSportsControllerTest {
         xerifes = 0,
         redCards = 0,
         recentMatches = emptyList(),
+    )
+
+    private fun playerAppearance(playerId: PlayerId) = PlayerProfileAppearance(
+        playerId = playerId,
+        platformName = "Ana",
+        proName = null,
+        matchId = MatchId("match"),
+        playedAt = Instant.parse("2026-08-20T17:30:00Z"),
+        competition = CompetitionType.LEAGUE,
+        ourClubName = "Associação BF",
+        opponentClubName = "Adversário",
+        ourScore = 2,
+        opponentScore = 1,
+        outcome = MatchOutcome.WIN,
+        completion = MatchCompletion.UNKNOWN,
+        rating = BigDecimal("7.0"),
+        goals = 1,
+        assists = 0,
+        shots = 2,
+        passesCompleted = 10,
+        passesAttempted = 12,
+        tacklesCompleted = 1,
+        tacklesAttempted = 2,
+        redCards = 0,
+        awards = setOf(AwardType.CRAQUE),
     )
 }
