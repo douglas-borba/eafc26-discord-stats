@@ -34,6 +34,7 @@ class PostgresSyncSchedulerTest {
             override fun findMatchIds(clubId: ClubId) = emptySet<MatchId>()
             override fun findLatestMatchId(clubId: ClubId) = null
             override fun findExistingMatchIds(clubId: ClubId, candidateMatchIds: Collection<MatchId>) = emptySet<MatchId>()
+            override fun findRecentMatchIds(clubId: ClubId, limit: Int) = emptyList<MatchId>()
             override fun findAll(clubId: ClubId) = emptyList<CanonicalMatch>()
             override fun metadata(clubId: ClubId) = CanonicalRepositoryMetadata(0, null, null, null, emptySet(), emptySet())
         }

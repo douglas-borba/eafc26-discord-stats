@@ -68,6 +68,21 @@ class MatchHistoryService(
     }
 
     /**
+     * Ordered recent identifiers for consumers that only need to identify a
+     * canonical context, without loading complete canonical records.
+     */
+    fun latestMatchIds(
+        clubId: ClubId,
+        limit: Int,
+        origin: CanonicalReadOrigin? = null,
+    ): List<MatchId> = readOriginContext.withOrigin(
+        origin ?: readOriginContext.current().takeUnless { it == CanonicalReadOrigin.UNKNOWN }
+            ?: CanonicalReadOrigin.HISTORY_LATEST,
+    ) {
+        repository.findRecentMatchIds(clubId, limit)
+    }
+
+    /**
      * Shallow newest-first feed for consumers that do not need to filter or inspect
      * the complete history. The repository applies the limit before loading payloads.
      */

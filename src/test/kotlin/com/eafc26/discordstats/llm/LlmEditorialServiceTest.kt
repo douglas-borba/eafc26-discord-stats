@@ -373,7 +373,8 @@ class LlmEditorialServiceTest {
         @Test
         fun `reads persisted panorama from repository for current context`() {
             val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
-            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentMatches)
+            val recentIds = recentMatches.map { it.matchId }
+            whenever(historyService.latestMatchIds(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentIds)
             
             val expectedKey = LlmEditorialService.computeContextKey(
                 "club1", listOf("m1", "m2", "m3"), "v3", enabledProps.model
@@ -389,12 +390,16 @@ class LlmEditorialServiceTest {
 
             val result = service.getPersistedPanorama(ClubId("club1"))
             assertThat(result).isEqualTo("AI panorama text")
+            verify(historyService).latestMatchIds(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)
+            verify(historyService, never()).latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)
         }
 
         @Test
         fun `returns null when no panorama exists for current context`() {
             val recentMatches = listOf(canonical("m1"), canonical("m2"), canonical("m3"))
-            whenever(historyService.latest(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT)).thenReturn(recentMatches)
+            val recentIds = recentMatches.map { it.matchId }
+            whenever(historyService.latestMatchIds(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT))
+                .thenReturn(recentIds)
             
             val expectedKey = LlmEditorialService.computeContextKey(
                 "club1", listOf("m1", "m2", "m3"), "v3", enabledProps.model
@@ -404,6 +409,36 @@ class LlmEditorialServiceTest {
 
             val result = service.getPersistedPanorama(ClubId("club1"))
             assertThat(result).isNull()
+        }
+
+        @Test
+        fun `lightweight recent IDs preserve the legacy canonical context key byte for byte`() {
+            val recentMatches = listOf(canonical("m3"), canonical("m2"), canonical("m1"))
+            val lightweightIds = recentMatches.map { it.matchId }
+            val legacyKey = LlmEditorialService.computeContextKey(
+                "club1",
+                recentMatches.map { it.matchId.value },
+                LlmEditorialService.PROMPT_VERSION,
+                enabledProps.model,
+            )
+            val lightweightKey = LlmEditorialService.computeContextKey(
+                "club1",
+                lightweightIds.map { it.value },
+                LlmEditorialService.PROMPT_VERSION,
+                enabledProps.model,
+            )
+            whenever(historyService.latestMatchIds(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT))
+                .thenReturn(lightweightIds)
+            whenever(panoramaRepository.findSuccessfulByContextKey("club1", legacyKey))
+                .thenReturn(PanoramaRecord(
+                    clubId = "club1", contextKey = legacyKey, matchIds = lightweightIds.map { it.value },
+                    narrative = "Panorama já persistido", provider = "openrouter", model = enabledProps.model,
+                    promptVersion = LlmEditorialService.PROMPT_VERSION, status = "success", generatedAt = fixedInstant,
+                ))
+
+            assertThat(lightweightKey).isEqualTo(legacyKey)
+            assertThat(service.getPersistedPanorama(ClubId("club1"))).isEqualTo("Panorama já persistido")
+            verify(panoramaRepository).findSuccessfulByContextKey("club1", legacyKey)
         }
     }
 

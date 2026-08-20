@@ -148,13 +148,12 @@ class LlmEditorialService(
         if (panoramaRepository == null) return null
         
         // Calculate current contextKey based on latest matches
-        val recentMatches = canonicalReadOriginContext.withOrigin(CanonicalReadOrigin.LLM_PANORAMA) {
-            historyService.latest(clubId, PANORAMA_MATCH_COUNT)
+        val matchIds = canonicalReadOriginContext.withOrigin(CanonicalReadOrigin.LLM_PANORAMA) {
+            historyService.latestMatchIds(clubId, PANORAMA_MATCH_COUNT)
         }
-        if (recentMatches.isEmpty()) return null
+        if (matchIds.isEmpty()) return null
         
-        val matchIds = recentMatches.map { it.matchId.value }
-        val contextKey = computeContextKey(clubId.value, matchIds, PROMPT_VERSION, properties.model)
+        val contextKey = computeContextKey(clubId.value, matchIds.map { it.value }, PROMPT_VERSION, properties.model)
         
         // Only return panorama if it belongs to the current context
         return panoramaRepository.findSuccessfulByContextKey(clubId.value, contextKey)?.narrative

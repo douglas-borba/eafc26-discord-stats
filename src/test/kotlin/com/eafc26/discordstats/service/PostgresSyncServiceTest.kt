@@ -190,6 +190,11 @@ class PostgresSyncServiceTest {
             findAll(clubId).maxByOrNull { it.footballMatch.playedAt }?.matchId
         override fun findExistingMatchIds(clubId: ClubId, candidateMatchIds: Collection<MatchId>) =
             candidateMatchIds.filterTo(linkedSetOf()) { findById(clubId, it) != null }
+        override fun findRecentMatchIds(clubId: ClubId, limit: Int) =
+            findAll(clubId)
+                .sortedWith(compareByDescending<CanonicalMatch> { it.footballMatch.playedAt }.thenBy { it.matchId.value })
+                .take(limit)
+                .map { it.matchId }
         override fun findAll(clubId: ClubId) =
             store.values.filter { it.interpretation.perspectiveClubId == clubId }
         override fun metadata(clubId: ClubId) =

@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.time.Instant
 import java.util.Base64
 import kotlin.io.path.exists
 import kotlin.io.path.extension
@@ -106,6 +107,23 @@ class JsonCanonicalMatchRepository(
     }
 
     @Synchronized
+    override fun findRecentMatchIds(clubId: ClubId, limit: Int): List<MatchId> {
+        require(limit >= 0) { "limit must be non-negative" }
+        migrateLegacyFilesIfNeeded(clubId)
+        val root = rootFor(clubId)
+        if (!root.exists()) return emptyList()
+        return Files.list(root).use { paths ->
+            paths
+                .filter { it.isRegularFile() && it.extension == JSON_EXTENSION }
+                .map(::readIdentity)
+                .sorted(compareByDescending<CanonicalMatchIdentity> { it.playedAt }.thenBy { it.matchId.value })
+                .limit(limit.toLong())
+                .map { it.matchId }
+                .toList()
+        }
+    }
+
+    @Synchronized
     override fun findAll(clubId: ClubId): List<CanonicalMatch> {
         migrateLegacyFilesIfNeeded(clubId)
         val root = rootFor(clubId)
@@ -151,12 +169,42 @@ class JsonCanonicalMatchRepository(
         throw IllegalStateException("Canonical match file at $path cannot be read", ex)
     }
 
+    private fun readIdentity(path: Path): CanonicalMatchIdentity = try {
+        mapper.factory.createParser(path.toFile()).use { parser ->
+            var matchId: MatchId? = null
+            var playedAt: Instant? = null
+            while (parser.nextToken() != null) {
+                if (parser.currentName != "footballMatch") continue
+                parser.nextToken()
+                while (parser.nextToken() != null && !parser.currentToken.isStructEnd) {
+                    when (parser.currentName) {
+                        "id" -> matchId = MatchId(parser.nextTextValue())
+                        "playedAt" -> playedAt = Instant.parse(parser.nextTextValue())
+                        else -> {
+                            parser.nextToken()
+                            parser.skipChildren()
+                        }
+                    }
+                }
+                break
+            }
+            CanonicalMatchIdentity(
+                matchId ?: error("Canonical match identity is missing footballMatch.id"),
+                playedAt ?: error("Canonical match identity is missing footballMatch.playedAt"),
+            )
+        }
+    } catch (ex: Exception) {
+        throw IllegalStateException("Canonical match identity at $path cannot be read", ex)
+    }
+
     private fun pathFor(root: Path, matchId: MatchId): Path {
         val encoded = Base64.getUrlEncoder()
             .withoutPadding()
             .encodeToString(matchId.value.toByteArray(StandardCharsets.UTF_8))
         return root.resolve("$encoded.$JSON_EXTENSION")
     }
+
+    private data class CanonicalMatchIdentity(val matchId: MatchId, val playedAt: Instant)
 
     private fun rootFor(clubId: ClubId): Path = appSupportRoot
         .resolve("clubs")

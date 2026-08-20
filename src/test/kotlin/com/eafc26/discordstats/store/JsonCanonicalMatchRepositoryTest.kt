@@ -102,6 +102,35 @@ class JsonCanonicalMatchRepositoryTest {
     }
 
     @Test
+    fun `findRecentMatchIds preserves bounded canonical ordering and club isolation`() {
+        val otherClub = ClubId("other-club")
+        val ours = (1..12).map { index -> canonicalMatch("match-$index", 1_700_000_000L + index) }
+        val other = canonicalMatch("other-match", 1_900_000_000L, otherClub)
+        (ours + other).forEach(repository::save)
+
+        assertThat(repository.findRecentMatchIds(OUR_CLUB, 0)).isEmpty()
+        assertThat(repository.findRecentMatchIds(OUR_CLUB, 3).map { it.value })
+            .containsExactly("match-12", "match-11", "match-10")
+        assertThat(repository.findRecentMatchIds(OUR_CLUB, 10).map { it.value })
+            .containsExactly("match-12", "match-11", "match-10", "match-9", "match-8", "match-7", "match-6", "match-5", "match-4", "match-3")
+        assertThat(repository.findRecentMatchIds(OUR_CLUB, 20)).hasSize(12)
+        assertThat(repository.findRecentMatchIds(otherClub, 10)).containsExactly(other.matchId)
+        assertThat(repository.findRecentMatchIds(ClubId("empty-club"), 10)).isEmpty()
+    }
+
+    @Test
+    fun `findRecentMatchIds uses canonical match ID tie break`() {
+        listOf(
+            canonicalMatch("b", 1_800_000_000L),
+            canonicalMatch("a", 1_800_000_000L),
+            canonicalMatch("old", 1_700_000_000L),
+        ).forEach(repository::save)
+
+        assertThat(repository.findRecentMatchIds(OUR_CLUB, 10).map { it.value })
+            .containsExactly("a", "b", "old")
+    }
+
+    @Test
     fun `findMatchIds reads file identities without deserializing canonical payloads`() {
         val canonical = canonicalMatch("lightweight-id", 1_700_000_000L)
         repository.save(canonical)

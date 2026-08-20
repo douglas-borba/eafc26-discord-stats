@@ -124,6 +124,17 @@ class MatchHistoryServiceTest {
     }
 
     @Test
+    fun `latestMatchIds delegates the bounded identity feed without loading canonical payloads`() {
+        val ids = listOf(MatchId("three"), MatchId("two"))
+        whenever(repository.findRecentMatchIds(CLUB_ID, 2)).thenReturn(ids)
+
+        assertThat(service.latestMatchIds(CLUB_ID, 2)).containsExactlyElementsOf(ids)
+        verify(repository).findRecentMatchIds(CLUB_ID, 2)
+        verify(repository, never()).findRecent(CLUB_ID, 2)
+        verify(repository, never()).findAll(CLUB_ID)
+    }
+
+    @Test
     fun `recent delegates the bounded overview feed without loading all history`() {
         val recent = canonical("recent", "2026-07-03T10:00:00Z")
         whenever(repository.findRecent(CLUB_ID, 10)).thenReturn(listOf(recent))

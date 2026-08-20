@@ -41,6 +41,13 @@ interface CanonicalMatchRepository {
     fun findExistingMatchIds(clubId: ClubId, candidateMatchIds: Collection<MatchId>): Set<MatchId>
 
     /**
+     * Returns only recent canonical identifiers, ordered by match time
+     * descending and then ID. Database-backed implementations must apply
+     * [limit] without reading canonical payloads.
+     */
+    fun findRecentMatchIds(clubId: ClubId, limit: Int): List<MatchId>
+
+    /**
      * Returns all records ordered by match time descending, then ID.
      */
     fun findAll(clubId: ClubId): List<CanonicalMatch>

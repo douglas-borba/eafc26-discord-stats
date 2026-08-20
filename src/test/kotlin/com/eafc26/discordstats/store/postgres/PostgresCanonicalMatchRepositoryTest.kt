@@ -91,6 +91,9 @@ class PostgresCanonicalMatchRepositoryTest {
         readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) {
             repository.findExistingMatchIds(OUR_CLUB, listOf(first.matchId, MatchId("missing")))
         }
+        readOriginContext.withOrigin(CanonicalReadOrigin.LLM_PANORAMA) {
+            repository.findRecentMatchIds(OUR_CLUB, 1)
+        }
 
         val snapshot = readDiagnostics.snapshot()
         val findAll = snapshot.operations.getValue("findAll")
@@ -102,6 +105,7 @@ class PostgresCanonicalMatchRepositoryTest {
         assertThat(snapshot.operations.getValue("findMatchIds").rows).isEqualTo(2)
         assertThat(snapshot.operations.getValue("findLatestMatchId").rows).isEqualTo(1)
         assertThat(snapshot.operations.getValue("findExistingMatchIds").rows).isEqualTo(1)
+        assertThat(snapshot.operations.getValue("findRecentMatchIds").rows).isEqualTo(1)
         assertThat(snapshot.origins.getValue("history.list").estimatedReturnedBytes).isGreaterThan(0)
         assertThat(snapshot.origins.getValue("polling.checkpoint").estimatedReturnedBytes).isGreaterThan(0)
     }
@@ -188,6 +192,47 @@ class PostgresCanonicalMatchRepositoryTest {
 
         assertThat(source).contains(
             "SELECT payload FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC LIMIT ?"
+        )
+    }
+
+    @Test
+    fun `findRecentMatchIds applies ordering and limit without reading payload`() {
+        val otherClub = ClubId("opponent")
+        val ours = (1..12).map { index -> canonicalMatch("match-$index", 1_700_000_000L + index) }
+        val other = canonicalMatch("other-match", 1_900_000_000L, otherClub)
+        (ours + other).forEach(repository::save)
+        jdbcTemplate.update("UPDATE canonical_matches SET payload = ?::jsonb", "{}")
+
+        assertThat(repository.findRecentMatchIds(OUR_CLUB, 0)).isEmpty()
+        assertThat(repository.findRecentMatchIds(OUR_CLUB, 3).map { it.value })
+            .containsExactly("match-12", "match-11", "match-10")
+        assertThat(repository.findRecentMatchIds(OUR_CLUB, 10).map { it.value })
+            .containsExactly("match-12", "match-11", "match-10", "match-9", "match-8", "match-7", "match-6", "match-5", "match-4", "match-3")
+        assertThat(repository.findRecentMatchIds(OUR_CLUB, 20)).hasSize(12)
+        assertThat(repository.findRecentMatchIds(otherClub, 10)).containsExactly(other.matchId)
+        assertThat(repository.findRecentMatchIds(ClubId("empty-club"), 10)).isEmpty()
+    }
+
+    @Test
+    fun `findRecentMatchIds retains canonical match ID tie break`() {
+        listOf(
+            canonicalMatch("b", 1_800_000_000L),
+            canonicalMatch("a", 1_800_000_000L),
+            canonicalMatch("old", 1_700_000_000L),
+        ).forEach(repository::save)
+
+        assertThat(repository.findRecentMatchIds(OUR_CLUB, 10).map { it.value })
+            .containsExactly("a", "b", "old")
+    }
+
+    @Test
+    fun `findRecentMatchIds query selects only canonical identifiers`() {
+        val source = Files.readString(
+            java.nio.file.Path.of("src/main/kotlin/com/eafc26/discordstats/store/PostgresCanonicalMatchRepository.kt")
+        )
+
+        assertThat(source).contains(
+            "SELECT match_id FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC LIMIT ?"
         )
     }
 

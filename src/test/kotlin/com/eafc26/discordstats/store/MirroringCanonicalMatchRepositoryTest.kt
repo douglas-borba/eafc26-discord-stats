@@ -88,6 +88,17 @@ class MirroringCanonicalMatchRepositoryTest {
     }
 
     @Test
+    fun `recent match ID reads delegate to primary only`() {
+        val match = testMatch("m1")
+        primary.store[match.matchId] = match
+        mirror.failOnRecentMatchIdRead = true
+
+        assertThat(repo.findRecentMatchIds(CLUB_ID, 10)).containsExactly(match.matchId)
+        assertThat(primary.recentMatchIdReads).isEqualTo(1)
+        assertThat(mirror.recentMatchIdReads).isZero()
+    }
+
+    @Test
     fun `metadata delegates to primary only`() {
         assertThat(repo.metadata(CLUB_ID).matchCount).isZero()
     }
@@ -120,6 +131,8 @@ class MirroringCanonicalMatchRepositoryTest {
         var recentReads = 0
         var failOnPollingIdentityRead = false
         var pollingIdentityReads = 0
+        var failOnRecentMatchIdRead = false
+        var recentMatchIdReads = 0
 
         override fun save(match: CanonicalMatch) {
             if (failOnSave) throw RuntimeException("simulated failure")
@@ -140,6 +153,14 @@ class MirroringCanonicalMatchRepositoryTest {
             pollingIdentityReads++
             if (failOnPollingIdentityRead) throw RuntimeException("secondary polling identity read should not happen")
             return candidateMatchIds.filterTo(linkedSetOf()) { findById(clubId, it) != null }
+        }
+        override fun findRecentMatchIds(clubId: ClubId, limit: Int): List<MatchId> {
+            recentMatchIdReads++
+            if (failOnRecentMatchIdRead) throw RuntimeException("secondary recent match ID read should not happen")
+            return findAll(clubId)
+                .sortedWith(compareByDescending<CanonicalMatch> { it.footballMatch.playedAt }.thenBy { it.matchId.value })
+                .take(limit)
+                .map { it.matchId }
         }
         override fun findAll(clubId: ClubId) =
             store.values.filter { it.interpretation.perspectiveClubId == clubId }

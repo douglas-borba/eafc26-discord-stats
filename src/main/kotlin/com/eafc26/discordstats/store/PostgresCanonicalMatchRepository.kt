@@ -191,6 +191,23 @@ class PostgresCanonicalMatchRepository(
             .toCollection(linkedSetOf())
     }
 
+    override fun findRecentMatchIds(clubId: ClubId, limit: Int): List<MatchId> {
+        require(limit >= 0) { "limit must be non-negative" }
+        val results = jdbcTemplate.query(
+            "SELECT match_id FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC LIMIT ?",
+            { rs, _ -> rs.getString("match_id") },
+            clubId.value,
+            limit,
+        )
+        readDiagnostics.record(
+            CanonicalReadOperation.FIND_RECENT_MATCH_IDS,
+            readOriginContext.current(),
+            results.size,
+            results.sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() },
+        )
+        return results.map(::MatchId)
+    }
+
     override fun findAll(clubId: ClubId): List<CanonicalMatch> {
         val results = jdbcTemplate.query(
             "SELECT payload FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC",
