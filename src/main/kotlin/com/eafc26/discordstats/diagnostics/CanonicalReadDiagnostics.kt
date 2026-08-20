@@ -15,6 +15,8 @@ enum class CanonicalReadOperation {
     FIND_RECENT,
     FIND_BY_ID,
     FIND_MATCH_IDS,
+    FIND_LATEST_MATCH_ID,
+    FIND_EXISTING_MATCH_IDS,
 }
 
 enum class CanonicalReadOrigin(val value: String) {
@@ -134,6 +136,8 @@ internal fun CanonicalReadOperation.apiName(): String = when (this) {
     CanonicalReadOperation.FIND_RECENT -> "findRecent"
     CanonicalReadOperation.FIND_BY_ID -> "findById"
     CanonicalReadOperation.FIND_MATCH_IDS -> "findMatchIds"
+    CanonicalReadOperation.FIND_LATEST_MATCH_ID -> "findLatestMatchId"
+    CanonicalReadOperation.FIND_EXISTING_MATCH_IDS -> "findExistingMatchIds"
 }
 
 /** Thread-local logical source propagated by application services around synchronous JDBC reads. */

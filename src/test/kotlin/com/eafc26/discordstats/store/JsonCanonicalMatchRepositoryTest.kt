@@ -112,6 +112,32 @@ class JsonCanonicalMatchRepositoryTest {
     }
 
     @Test
+    fun `findExistingMatchIds returns only requested files and preserves club isolation`() {
+        val otherClub = ClubId("other-club")
+        val ours = canonicalMatch("shared", 1_700_000_000L)
+        val other = canonicalMatch("other", 1_800_000_000L, otherClub)
+        repository.save(ours)
+        repository.save(other)
+
+        assertThat(repository.findExistingMatchIds(
+            OUR_CLUB,
+            listOf(MatchId("missing"), ours.matchId, ours.matchId, other.matchId),
+        )).containsExactly(ours.matchId)
+        assertThat(repository.findExistingMatchIds(OUR_CLUB, emptyList())).isEmpty()
+    }
+
+    @Test
+    fun `findLatestMatchId follows canonical ordering`() {
+        val old = canonicalMatch("old", 1_700_000_000L)
+        val sameTimeB = canonicalMatch("b", 1_800_000_000L)
+        val sameTimeA = canonicalMatch("a", 1_800_000_000L)
+        listOf(old, sameTimeB, sameTimeA).forEach(repository::save)
+
+        assertThat(repository.findLatestMatchId(OUR_CLUB)).isEqualTo(MatchId("a"))
+        assertThat(repository.findLatestMatchId(ClubId("empty-club"))).isNull()
+    }
+
+    @Test
     fun `metadata describes stored versions and time range`() {
         val old = canonicalMatch("old", 1_700_000_000L)
         val recent = canonicalMatch("recent", 1_800_000_000L)

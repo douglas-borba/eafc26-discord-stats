@@ -47,6 +47,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 class MatchAcquisitionServiceTest {
 
@@ -150,6 +151,32 @@ class MatchAcquisitionServiceTest {
         players = emptyMap(),
     )
 
+    /**
+     * Makes the repository mock behave like the bounded polling lookup: each
+     * acquisition sees one complete canonical-history snapshot, while each EA
+     * window is checked only against the IDs it returned.
+     */
+    private fun stubCanonicalHistory(
+        targetClubId: ClubId,
+        vararg snapshots: Set<MatchId>,
+    ) {
+        require(snapshots.isNotEmpty())
+        val nextSnapshot = AtomicInteger(0)
+        val currentSnapshot = AtomicReference<Set<MatchId>>(emptySet())
+        whenever(canonicalMatchRepository.findLatestMatchId(clubIdEq(targetClubId))).thenAnswer {
+            val snapshot = snapshots[nextSnapshot.getAndIncrement().coerceAtMost(snapshots.lastIndex)]
+            currentSnapshot.set(snapshot)
+            snapshot.firstOrNull()?.value
+        }
+        whenever(canonicalMatchRepository.findExistingMatchIds(clubIdEq(targetClubId), any())).thenAnswer { invocation ->
+            val candidates = invocation.getArgument<Collection<MatchId>>(1)
+            candidates.asSequence()
+                .distinct()
+                .filter { it in currentSnapshot.get() }
+                .toCollection(linkedSetOf())
+        }
+    }
+
     private class WindowedGateway(private vararg val responses: List<MatchResponse>) : WindowedEaClubsGateway {
         val windows = mutableListOf<Int>()
         val clubIds = mutableListOf<String>()
@@ -168,7 +195,7 @@ class MatchAcquisitionServiceTest {
         @Test
         fun `canonical empty preserves first run window semantics`() {
             val latest = match("latest", 200)
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(emptySet())
+            stubCanonicalHistory(LEGACY_TEST_CLUB, emptySet())
             val windowed = WindowedGateway(listOf(latest))
 
             service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
@@ -180,7 +207,7 @@ class MatchAcquisitionServiceTest {
         fun `trial initial acquisition persists the complete initial window without Discord`() {
             val first = match("first", 100)
             val latest = match("latest", 200)
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(emptySet())
+            stubCanonicalHistory(LEGACY_TEST_CLUB, emptySet())
             val windowed = WindowedGateway(listOf(latest, first))
 
             val result = service.acquire(LEGACY_TEST_CLUB, AcquisitionTrigger.TRIAL_INITIAL, windowed)
@@ -196,7 +223,7 @@ class MatchAcquisitionServiceTest {
         fun `first run retains league and playoff matches from the combined window`() {
             val league = match("league", 100, matchType = "leagueMatch")
             val playoff = match("playoff", 200, matchType = "playoffMatch")
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(emptySet())
+            stubCanonicalHistory(LEGACY_TEST_CLUB, emptySet())
             val windowed = WindowedGateway(listOf(playoff, league))
 
             service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
@@ -209,7 +236,7 @@ class MatchAcquisitionServiceTest {
         fun `checkpoint in initial window processes only the new match`() {
             val checkpoint = match("known", 100)
             val new = match("new", 200)
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(linkedSetOf(MatchId(checkpoint.matchId)))
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(checkpoint.matchId)))
             stubStore("existing")
             val windowed = WindowedGateway(listOf(new, checkpoint))
 
@@ -219,15 +246,20 @@ class MatchAcquisitionServiceTest {
             val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
             verify(canonicalMatchRepository).save(saved.capture())
             assertThat(saved.firstValue.matchId.value).isEqualTo("new")
-            verify(canonicalMatchRepository).findMatchIds(LEGACY_TEST_CLUB)
+            verify(canonicalMatchRepository).findLatestMatchId(LEGACY_TEST_CLUB)
+            verify(canonicalMatchRepository).findExistingMatchIds(
+                clubIdEq(LEGACY_TEST_CLUB),
+                argThat { map { it.value } == listOf(new.matchId, checkpoint.matchId) },
+            )
             verify(canonicalMatchRepository, never()).findAll(LEGACY_TEST_CLUB)
+            verify(canonicalMatchRepository, never()).findMatchIds(LEGACY_TEST_CLUB)
         }
 
         @Test
         fun `poll diagnostics distinguish EA window size from newly acquired matches`() {
             val checkpoint = match("known", 100)
             val new = match("new", 200)
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(linkedSetOf(MatchId(checkpoint.matchId)))
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(checkpoint.matchId)))
             stubStore("existing")
             val windowed = WindowedGateway(listOf(new, checkpoint))
 
@@ -241,7 +273,7 @@ class MatchAcquisitionServiceTest {
         fun `admin poll retains incremental synchronization semantics and records its own origin`() {
             val checkpoint = match("known", 100)
             val new = match("new", 200)
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(linkedSetOf(MatchId(checkpoint.matchId)))
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(checkpoint.matchId)))
             stubStore("existing")
             val windowed = WindowedGateway(listOf(new, checkpoint))
 
@@ -258,8 +290,7 @@ class MatchAcquisitionServiceTest {
         fun `league checkpoint stops expansion while newer playoff matches are acquired`() {
             val leagueCheckpoint = match("league-checkpoint", 100, matchType = "leagueMatch")
             val playoffNew = match("playoff-new", 200, matchType = "playoffMatch")
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB)))
-                .thenReturn(linkedSetOf(MatchId(leagueCheckpoint.matchId)))
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(leagueCheckpoint.matchId)))
             stubStore("existing")
             val windowed = WindowedGateway(listOf(playoffNew, leagueCheckpoint))
 
@@ -275,8 +306,7 @@ class MatchAcquisitionServiceTest {
         fun `playoff checkpoint stops expansion while newer league matches are acquired`() {
             val playoffCheckpoint = match("playoff-checkpoint", 100, matchType = "playoffMatch")
             val leagueNew = match("league-new", 200, matchType = "leagueMatch")
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB)))
-                .thenReturn(linkedSetOf(MatchId(playoffCheckpoint.matchId)))
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(playoffCheckpoint.matchId)))
             stubStore("existing")
             val windowed = WindowedGateway(listOf(leagueNew, playoffCheckpoint))
 
@@ -293,8 +323,7 @@ class MatchAcquisitionServiceTest {
             val checkpoint = match("league-checkpoint", 100, matchType = "leagueMatch")
             val playoffNew = match("playoff-new", 200, matchType = "playoffMatch")
             val leagueNew = match("league-new", 300, matchType = "leagueMatch")
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB)))
-                .thenReturn(linkedSetOf(MatchId(checkpoint.matchId)))
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(checkpoint.matchId)))
             stubStore("existing")
             val windowed = WindowedGateway(listOf(leagueNew, checkpoint, playoffNew))
 
@@ -310,7 +339,7 @@ class MatchAcquisitionServiceTest {
             val leagueCheckpoint = match("league-checkpoint", 100, matchType = "leagueMatch")
             val playoff = match("playoff", 200, matchType = "playoffMatch")
             val league = match("league", 300, matchType = "leagueMatch")
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(
+            stubCanonicalHistory(LEGACY_TEST_CLUB,
                 linkedSetOf(MatchId(leagueCheckpoint.matchId)),
                 linkedSetOf(MatchId(playoff.matchId), MatchId(leagueCheckpoint.matchId)),
             )
@@ -332,7 +361,7 @@ class MatchAcquisitionServiceTest {
         @Test
         fun `known-only initial window returns zero new without reprocessing canonical even when publication previously failed`() {
             val checkpoint = match("known", 100)
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(linkedSetOf(MatchId(checkpoint.matchId)))
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(checkpoint.matchId)))
             whenever(store.loadRecords(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(
                 mapOf("known" to PublicationRecord("known", PublicationState.FAILED_TRANSIENT)),
             )
@@ -349,29 +378,61 @@ class MatchAcquisitionServiceTest {
         @Test
         fun `checkpoint absence expands until found and stops`() {
             val checkpoint = match("known", 100)
-            val new = match("new", 200)
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(linkedSetOf(MatchId(checkpoint.matchId)))
+            val firstWindow = (1..5).map { index -> match("new-$index", 200L + index) }
+            val expandedWindow = firstWindow + (6..9).map { index -> match("new-$index", 200L + index) } + checkpoint
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(checkpoint.matchId)))
             stubStore("existing")
-            val windowed = WindowedGateway(listOf(new), listOf(new, checkpoint))
+            val windowed = WindowedGateway(firstWindow, expandedWindow)
 
             service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
 
             assertThat(windowed.windows).containsExactly(5, 10)
-            verify(canonicalMatchRepository, times(1)).save(any())
+            val candidates = argumentCaptor<Collection<MatchId>>()
+            verify(canonicalMatchRepository, times(2)).findExistingMatchIds(clubIdEq(LEGACY_TEST_CLUB), candidates.capture())
+            assertThat(candidates.allValues.map { ids -> ids.map { it.value } })
+                .containsExactly(
+                    firstWindow.map { it.matchId },
+                    expandedWindow.map { it.matchId },
+                )
+            verify(canonicalMatchRepository, times(9)).save(any())
+        }
+
+        @Test
+        fun `checkpoint first observed in window twenty expands through every bounded window`() {
+            val checkpoint = match("known", 100)
+            val firstWindow = (1..5).map { index -> match("new-$index", 200L + index) }
+            val secondWindow = (1..10).map { index -> match("new-$index", 200L + index) }
+            val maximumWindow = (1..19).map { index -> match("new-$index", 200L + index) } + checkpoint
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(checkpoint.matchId)))
+            stubStore("existing")
+            val windowed = WindowedGateway(firstWindow, secondWindow, maximumWindow)
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(windowed.windows).containsExactly(5, 10, 20)
+            val candidates = argumentCaptor<Collection<MatchId>>()
+            verify(canonicalMatchRepository, times(3)).findExistingMatchIds(clubIdEq(LEGACY_TEST_CLUB), candidates.capture())
+            assertThat(candidates.allValues.map { ids -> ids.map { it.value }.size }).containsExactly(5, 10, 20)
+            verify(canonicalMatchRepository, times(19)).save(any())
         }
 
         @Test
         fun `checkpoint missing at maximum window is bounded and deduplicated`() {
             val old = match("known", 1)
-            val new = match("new", 200)
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(linkedSetOf(MatchId(old.matchId)))
+            val duplicate = match("new", 200)
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(old.matchId)))
             stubStore("existing")
-            val windowed = WindowedGateway(listOf(new), listOf(new), listOf(new, new))
+            val windowed = WindowedGateway(listOf(duplicate), listOf(duplicate), listOf(duplicate, duplicate))
 
             service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
 
             assertThat(windowed.windows).containsExactly(5, 10, 20)
             verify(canonicalMatchRepository, times(1)).save(any())
+            val candidates = argumentCaptor<Collection<MatchId>>()
+            verify(canonicalMatchRepository, times(3)).findExistingMatchIds(clubIdEq(LEGACY_TEST_CLUB), candidates.capture())
+            assertThat(candidates.allValues).allSatisfy { ids ->
+                assertThat(ids).containsExactly(MatchId(duplicate.matchId))
+            }
         }
 
         @Test
@@ -381,7 +442,7 @@ class MatchAcquisitionServiceTest {
             val e = match("E", 500)
             val f = match("F", 600)
             val g = match("G", 700)
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(
+            stubCanonicalHistory(LEGACY_TEST_CLUB,
                 linkedSetOf(MatchId(anchor.matchId)),
                 linkedSetOf(MatchId(g.matchId), MatchId(f.matchId), MatchId(e.matchId), MatchId(d.matchId), MatchId(anchor.matchId)),
             )
@@ -410,7 +471,7 @@ class MatchAcquisitionServiceTest {
             val f = match("F", 600)
             val g = match("G", 700)
             val h = match("H", 800)
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(
+            stubCanonicalHistory(LEGACY_TEST_CLUB,
                 linkedSetOf(MatchId(anchor.matchId)),
                 linkedSetOf(MatchId(g.matchId), MatchId(f.matchId), MatchId(e.matchId), MatchId(d.matchId), MatchId(anchor.matchId)),
             )
@@ -435,7 +496,7 @@ class MatchAcquisitionServiceTest {
             val checkpoint = match("known", 50)
             val older = match("older", 100)
             val newer = match("newer", 200)
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB))).thenReturn(linkedSetOf(MatchId(checkpoint.matchId)))
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(checkpoint.matchId)))
             stubStore("existing")
             val windowed = WindowedGateway(listOf(newer, checkpoint, older))
 
@@ -451,10 +512,8 @@ class MatchAcquisitionServiceTest {
             val secondClubId = "67890"
             val firstCheckpoint = match("first-known")
             val secondCheckpoint = match("second-known", ownerClubId = secondClubId)
-            whenever(canonicalMatchRepository.findMatchIds(clubIdEq(LEGACY_TEST_CLUB)))
-                .thenReturn(linkedSetOf(MatchId(firstCheckpoint.matchId)))
-            whenever(canonicalMatchRepository.findMatchIds(ClubId(secondClubId)))
-                .thenReturn(linkedSetOf(MatchId(secondCheckpoint.matchId)))
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(firstCheckpoint.matchId)))
+            stubCanonicalHistory(ClubId(secondClubId), linkedSetOf(MatchId(secondCheckpoint.matchId)))
             val windowed = WindowedGateway(listOf(firstCheckpoint), listOf(secondCheckpoint))
 
             service.acquire(AcquisitionTrigger.SCHEDULER, windowed)

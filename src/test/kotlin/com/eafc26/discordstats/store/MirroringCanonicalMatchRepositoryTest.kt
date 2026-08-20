@@ -75,6 +75,19 @@ class MirroringCanonicalMatchRepositoryTest {
     }
 
     @Test
+    fun `bounded polling identity reads delegate to primary only`() {
+        val match = testMatch("m1")
+        primary.store[match.matchId] = match
+        mirror.failOnPollingIdentityRead = true
+
+        assertThat(repo.findLatestMatchId(CLUB_ID)).isEqualTo(match.matchId)
+        assertThat(repo.findExistingMatchIds(CLUB_ID, listOf(match.matchId, MatchId("missing"))))
+            .containsExactly(match.matchId)
+        assertThat(primary.pollingIdentityReads).isEqualTo(2)
+        assertThat(mirror.pollingIdentityReads).isZero()
+    }
+
+    @Test
     fun `metadata delegates to primary only`() {
         assertThat(repo.metadata(CLUB_ID).matchCount).isZero()
     }
@@ -105,6 +118,8 @@ class MirroringCanonicalMatchRepositoryTest {
         var failOnSave = false
         var failOnRecentRead = false
         var recentReads = 0
+        var failOnPollingIdentityRead = false
+        var pollingIdentityReads = 0
 
         override fun save(match: CanonicalMatch) {
             if (failOnSave) throw RuntimeException("simulated failure")
@@ -116,6 +131,16 @@ class MirroringCanonicalMatchRepositoryTest {
             store[matchId]?.takeIf { it.interpretation.perspectiveClubId == clubId }
         override fun findMatchIds(clubId: ClubId) =
             store.values.filter { it.interpretation.perspectiveClubId == clubId }.mapTo(linkedSetOf()) { it.matchId }
+        override fun findLatestMatchId(clubId: ClubId): MatchId? {
+            pollingIdentityReads++
+            if (failOnPollingIdentityRead) throw RuntimeException("secondary polling identity read should not happen")
+            return findAll(clubId).maxByOrNull { it.footballMatch.playedAt }?.matchId
+        }
+        override fun findExistingMatchIds(clubId: ClubId, candidateMatchIds: Collection<MatchId>): Set<MatchId> {
+            pollingIdentityReads++
+            if (failOnPollingIdentityRead) throw RuntimeException("secondary polling identity read should not happen")
+            return candidateMatchIds.filterTo(linkedSetOf()) { findById(clubId, it) != null }
+        }
         override fun findAll(clubId: ClubId) =
             store.values.filter { it.interpretation.perspectiveClubId == clubId }
         override fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> {

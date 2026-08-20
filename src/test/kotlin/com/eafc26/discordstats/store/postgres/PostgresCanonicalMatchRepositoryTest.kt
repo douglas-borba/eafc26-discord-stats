@@ -87,6 +87,10 @@ class PostgresCanonicalMatchRepositoryTest {
         readOriginContext.withOrigin(CanonicalReadOrigin.DASHBOARD_OVERVIEW) { repository.findRecent(OUR_CLUB, 1) }
         readOriginContext.withOrigin(CanonicalReadOrigin.COMPARISON) { repository.findById(OUR_CLUB, first.matchId) }
         readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) { repository.findMatchIds(OUR_CLUB) }
+        readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) { repository.findLatestMatchId(OUR_CLUB) }
+        readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) {
+            repository.findExistingMatchIds(OUR_CLUB, listOf(first.matchId, MatchId("missing")))
+        }
 
         val snapshot = readDiagnostics.snapshot()
         val findAll = snapshot.operations.getValue("findAll")
@@ -96,6 +100,8 @@ class PostgresCanonicalMatchRepositoryTest {
         assertThat(snapshot.operations.getValue("findRecent").rows).isEqualTo(1)
         assertThat(snapshot.operations.getValue("findById").rows).isEqualTo(1)
         assertThat(snapshot.operations.getValue("findMatchIds").rows).isEqualTo(2)
+        assertThat(snapshot.operations.getValue("findLatestMatchId").rows).isEqualTo(1)
+        assertThat(snapshot.operations.getValue("findExistingMatchIds").rows).isEqualTo(1)
         assertThat(snapshot.origins.getValue("history.list").estimatedReturnedBytes).isGreaterThan(0)
         assertThat(snapshot.origins.getValue("polling.checkpoint").estimatedReturnedBytes).isGreaterThan(0)
     }
@@ -225,6 +231,73 @@ class PostgresCanonicalMatchRepositoryTest {
         assertThat(repository.findMatchIds(OUR_CLUB)).containsExactly(ours.matchId)
         assertThat(repository.findMatchIds(otherClub)).containsExactly(MatchId("other-match"))
         assertThat(repository.findMatchIds(ClubId("empty-club"))).isEmpty()
+    }
+
+    @Test
+    fun `findLatestMatchId is lightweight and uses canonical ordering`() {
+        val old = canonicalMatch("old", 1_700_000_000L)
+        val sameTimeB = canonicalMatch("b", 1_800_000_000L)
+        val sameTimeA = canonicalMatch("a", 1_800_000_000L)
+        listOf(old, sameTimeB, sameTimeA).forEach(repository::save)
+        jdbcTemplate.update(
+            "UPDATE canonical_matches SET payload = ?::jsonb WHERE club_id = ?",
+            "{}",
+            OUR_CLUB.value,
+        )
+
+        assertThat(repository.findLatestMatchId(OUR_CLUB)).isEqualTo(MatchId("a"))
+        assertThat(repository.findLatestMatchId(ClubId("empty-club"))).isNull()
+    }
+
+    @Test
+    fun `findExistingMatchIds reads only bounded candidate identities and isolates clubs`() {
+        val otherClub = ClubId("other-club")
+        val ours = canonicalMatch("shared", 1_700_000_000L)
+        repository.save(ours)
+        jdbcTemplate.update(
+            "UPDATE canonical_matches SET payload = ?::jsonb WHERE club_id = ? AND match_id = ?",
+            "{}",
+            OUR_CLUB.value,
+            ours.matchId.value,
+        )
+        jdbcTemplate.update(
+            """
+            INSERT INTO canonical_matches
+                (match_id, club_id, opponent_club_id, played_at, match_type,
+                 canonical_schema_version, payload, created_at, updated_at,
+                 outcome, our_score, opponent_score, our_club_name, opponent_club_name)
+            SELECT ?, ?, opponent_club_id, played_at, match_type,
+                   canonical_schema_version, payload, created_at, updated_at,
+                   outcome, our_score, opponent_score, our_club_name, opponent_club_name
+            FROM canonical_matches
+            WHERE club_id = ? AND match_id = ?
+            """.trimIndent(),
+            "other-only",
+            otherClub.value,
+            OUR_CLUB.value,
+            ours.matchId.value,
+        )
+
+        assertThat(repository.findExistingMatchIds(
+            OUR_CLUB,
+            listOf(MatchId("missing"), ours.matchId, ours.matchId, MatchId("other-only")),
+        )).containsExactly(ours.matchId)
+        assertThat(repository.findExistingMatchIds(
+            otherClub,
+            listOf(ours.matchId, MatchId("other-only")),
+        )).containsExactly(MatchId("other-only"))
+        assertThat(repository.findExistingMatchIds(OUR_CLUB, emptyList())).isEmpty()
+    }
+
+    @Test
+    fun `bounded polling lookup does not select canonical payload`() {
+        val source = Files.readString(
+            java.nio.file.Path.of("src/main/kotlin/com/eafc26/discordstats/store/PostgresCanonicalMatchRepository.kt")
+        )
+
+        assertThat(source).contains(
+            "SELECT match_id FROM canonical_matches WHERE club_id = ? AND match_id IN (\$placeholders)"
+        )
     }
 
     @Test

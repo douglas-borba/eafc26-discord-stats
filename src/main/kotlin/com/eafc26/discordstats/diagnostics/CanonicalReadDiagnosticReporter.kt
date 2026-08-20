@@ -26,7 +26,7 @@ class CanonicalReadDiagnosticReporter(
         val period = baseline?.lastUpdatedAt?.let { Duration.between(it, current.lastUpdatedAt ?: it) }
             ?: Duration.ofMillis(INTERVAL_MS)
         log.info(
-            "DB_EGRESS_DIAGNOSTIC instance={} period={} calls={} rows={} estimatedReturnedBytes={} findAllCalls={} findRecentCalls={} findByIdCalls={} findMatchIdsCalls={}",
+            "DB_EGRESS_DIAGNOSTIC instance={} period={} calls={} rows={} estimatedReturnedBytes={} findAllCalls={} findRecentCalls={} findByIdCalls={} findMatchIdsCalls={} findLatestMatchIdCalls={} findExistingMatchIdsCalls={}",
             current.instanceId,
             "${period.toMinutes()}m",
             total.calls,
@@ -36,6 +36,8 @@ class CanonicalReadDiagnosticReporter(
             operations.getValue("findRecent").calls,
             operations.getValue("findById").calls,
             operations.getValue("findMatchIds").calls,
+            operations.getValue("findLatestMatchId").calls,
+            operations.getValue("findExistingMatchIds").calls,
         )
         previous = current
     }

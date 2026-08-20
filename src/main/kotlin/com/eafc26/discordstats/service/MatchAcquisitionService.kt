@@ -282,10 +282,10 @@ class MatchAcquisitionService(
             return SynchronizationFetch(gateway.getLatestMatches(clubId.value), null, null)
         }
 
-        val knownIds = readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) {
-            canonicalMatchRepository.findMatchIds(clubId)
+        val latestCanonicalMatchId = readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) {
+            canonicalMatchRepository.findLatestMatchId(clubId)
         }
-        if (knownIds.isEmpty()) {
+        if (latestCanonicalMatchId == null) {
             val window = props.ea.incrementalMaxWindow
             return SynchronizationFetch(
                 gateway.getLatestMatches(clubId.value, window),
@@ -301,7 +301,10 @@ class MatchAcquisitionService(
             if (result !is EaApiResult.Success) return SynchronizationFetch(result, "window=$window", null)
 
             val deduplicated = result.data.distinctBy { it.matchId }
-            val checkpointFound = deduplicated.any { MatchId(it.matchId) in knownIds }
+            val knownIds = readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) {
+                canonicalMatchRepository.findExistingMatchIds(clubId, deduplicated.map { MatchId(it.matchId) })
+            }
+            val checkpointFound = knownIds.isNotEmpty()
             val newMatches = deduplicated.filterNot { MatchId(it.matchId) in knownIds }
             if (checkpointFound) {
                 return SynchronizationFetch(
@@ -315,7 +318,7 @@ class MatchAcquisitionService(
                 synchronizationGapStore.openGap(
                     SynchronizationGap(
                         clubId = clubId,
-                        anchorMatchId = knownIds.first().value,
+                        anchorMatchId = latestCanonicalMatchId.value,
                         firstObservableMatchId = deduplicated.minByOrNull { it.timestamp }?.matchId,
                     ),
                 )

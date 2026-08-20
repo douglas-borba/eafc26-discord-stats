@@ -14,19 +14,23 @@ class CanonicalReadDiagnosticsTest {
         diagnostics.record(CanonicalReadOperation.FIND_RECENT, CanonicalReadOrigin.DASHBOARD_OVERVIEW, rows = 2, estimatedReturnedBytes = 120)
         diagnostics.record(CanonicalReadOperation.FIND_BY_ID, CanonicalReadOrigin.COMPARISON, rows = 1, estimatedReturnedBytes = 80)
         diagnostics.record(CanonicalReadOperation.FIND_MATCH_IDS, CanonicalReadOrigin.POLLING_CHECKPOINT, rows = 4, estimatedReturnedBytes = 40)
+        diagnostics.record(CanonicalReadOperation.FIND_LATEST_MATCH_ID, CanonicalReadOrigin.POLLING_CHECKPOINT, rows = 1, estimatedReturnedBytes = 10)
+        diagnostics.record(CanonicalReadOperation.FIND_EXISTING_MATCH_IDS, CanonicalReadOrigin.POLLING_CHECKPOINT, rows = 1, estimatedReturnedBytes = 10)
 
         val snapshot = diagnostics.snapshot()
 
-        assertThat(snapshot.total.calls).isEqualTo(4)
-        assertThat(snapshot.total.rows).isEqualTo(10)
-        assertThat(snapshot.total.estimatedReturnedBytes).isEqualTo(540)
+        assertThat(snapshot.total.calls).isEqualTo(6)
+        assertThat(snapshot.total.rows).isEqualTo(12)
+        assertThat(snapshot.total.estimatedReturnedBytes).isEqualTo(560)
         val findAll = snapshot.operations.getValue("findAll")
         assertThat(findAll.calls).isEqualTo(1)
         assertThat(findAll.rows).isEqualTo(3)
         assertThat(findAll.estimatedReturnedBytes).isEqualTo(300)
         assertThat(snapshot.operations.getValue("findRecent").firstObservedAt).isNotNull
         assertThat(snapshot.operations.getValue("findById").lastObservedAt).isNotNull
-        assertThat(snapshot.origins.getValue("polling.checkpoint").rows).isEqualTo(4)
+        assertThat(snapshot.operations.getValue("findLatestMatchId").rows).isEqualTo(1)
+        assertThat(snapshot.operations.getValue("findExistingMatchIds").rows).isEqualTo(1)
+        assertThat(snapshot.origins.getValue("polling.checkpoint").rows).isEqualTo(6)
         assertThat(snapshot.origins.getValue("dashboard.overview").estimatedReturnedBytes).isEqualTo(120)
     }
 

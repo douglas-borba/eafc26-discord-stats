@@ -18,9 +18,27 @@ interface CanonicalMatchRepository {
     /**
      * Returns canonical identifiers without loading or deserializing full match payloads.
      *
-     * This is the acquisition checkpoint query and must remain lightweight for polling.
+     * This remains available for consumers that explicitly need the complete
+     * identifier archive. Bounded polling must use [findExistingMatchIds].
      */
     fun findMatchIds(clubId: ClubId): Set<MatchId>
+
+    /**
+     * Returns the newest canonical identifier for [clubId], or null when no
+     * canonical history exists. This is a lightweight bootstrap check for
+     * bounded acquisition. Database-backed implementations must not load
+     * canonical payloads for this lookup.
+     */
+    fun findLatestMatchId(clubId: ClubId): MatchId?
+
+    /**
+     * Returns the subset of [candidateMatchIds] that already exists for
+     * [clubId], without loading canonical payloads.
+     *
+     * The candidate collection comes from a bounded EA window. Implementations
+     * must return an empty set safely when it is empty.
+     */
+    fun findExistingMatchIds(clubId: ClubId, candidateMatchIds: Collection<MatchId>): Set<MatchId>
 
     /**
      * Returns all records ordered by match time descending, then ID.

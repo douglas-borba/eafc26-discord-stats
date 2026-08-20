@@ -313,6 +313,9 @@ class PostgresSyncIntegrationTest {
         }
         override fun findById(clubId: ClubId, matchId: MatchId) = delegate.findById(clubId, matchId)
         override fun findMatchIds(clubId: ClubId) = delegate.findMatchIds(clubId)
+        override fun findLatestMatchId(clubId: ClubId) = delegate.findLatestMatchId(clubId)
+        override fun findExistingMatchIds(clubId: ClubId, candidateMatchIds: Collection<MatchId>) =
+            delegate.findExistingMatchIds(clubId, candidateMatchIds)
         override fun findAll(clubId: ClubId) = delegate.findAll(clubId)
         override fun metadata(clubId: ClubId) = delegate.metadata(clubId)
     }

@@ -92,6 +92,20 @@ class JsonCanonicalMatchRepository(
     }
 
     @Synchronized
+    override fun findLatestMatchId(clubId: ClubId): MatchId? = findAll(clubId).firstOrNull()?.matchId
+
+    @Synchronized
+    override fun findExistingMatchIds(clubId: ClubId, candidateMatchIds: Collection<MatchId>): Set<MatchId> {
+        migrateLegacyFilesIfNeeded(clubId)
+        val root = rootFor(clubId)
+        if (!root.exists() || candidateMatchIds.isEmpty()) return emptySet()
+        return candidateMatchIds.asSequence()
+            .distinct()
+            .filter { pathFor(root, it).exists() }
+            .toCollection(linkedSetOf())
+    }
+
+    @Synchronized
     override fun findAll(clubId: ClubId): List<CanonicalMatch> {
         migrateLegacyFilesIfNeeded(clubId)
         val root = rootFor(clubId)

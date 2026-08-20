@@ -31,6 +31,11 @@ class MirroringCanonicalMatchRepository(
 
     override fun findMatchIds(clubId: ClubId): Set<MatchId> = primary.findMatchIds(clubId)
 
+    override fun findLatestMatchId(clubId: ClubId): MatchId? = primary.findLatestMatchId(clubId)
+
+    override fun findExistingMatchIds(clubId: ClubId, candidateMatchIds: Collection<MatchId>): Set<MatchId> =
+        primary.findExistingMatchIds(clubId, candidateMatchIds)
+
     override fun findAll(clubId: ClubId): List<CanonicalMatch> = primary.findAll(clubId)
 
     override fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> = primary.findRecent(clubId, limit)

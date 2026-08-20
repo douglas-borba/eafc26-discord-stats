@@ -145,6 +145,52 @@ class PostgresCanonicalMatchRepository(
         return results.mapTo(linkedSetOf(), ::MatchId)
     }
 
+    override fun findLatestMatchId(clubId: ClubId): MatchId? {
+        val results = jdbcTemplate.query(
+            "SELECT match_id FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC LIMIT 1",
+            { rs, _ -> rs.getString("match_id") },
+            clubId.value,
+        )
+        readDiagnostics.record(
+            CanonicalReadOperation.FIND_LATEST_MATCH_ID,
+            readOriginContext.current(),
+            results.size,
+            results.sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() },
+        )
+        return results.firstOrNull()?.let(::MatchId)
+    }
+
+    override fun findExistingMatchIds(clubId: ClubId, candidateMatchIds: Collection<MatchId>): Set<MatchId> {
+        val candidates = candidateMatchIds.map { it.value }.distinct()
+        if (candidates.isEmpty()) {
+            readDiagnostics.record(
+                CanonicalReadOperation.FIND_EXISTING_MATCH_IDS,
+                readOriginContext.current(),
+                rows = 0,
+                estimatedReturnedBytes = 0,
+            )
+            return emptySet()
+        }
+
+        val placeholders = candidates.joinToString(", ") { "?" }
+        val results = jdbcTemplate.query(
+            "SELECT match_id FROM canonical_matches WHERE club_id = ? AND match_id IN ($placeholders)",
+            { rs, _ -> rs.getString("match_id") },
+            *arrayOf(clubId.value, *candidates.toTypedArray()),
+        )
+        val existing = results.toSet()
+        readDiagnostics.record(
+            CanonicalReadOperation.FIND_EXISTING_MATCH_IDS,
+            readOriginContext.current(),
+            results.size,
+            results.sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() },
+        )
+        return candidateMatchIds.asSequence()
+            .distinct()
+            .filter { it.value in existing }
+            .toCollection(linkedSetOf())
+    }
+
     override fun findAll(clubId: ClubId): List<CanonicalMatch> {
         val results = jdbcTemplate.query(
             "SELECT payload FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC",
