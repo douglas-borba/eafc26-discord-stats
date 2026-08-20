@@ -4,6 +4,8 @@ import com.eafc26.discordstats.application.club.DefaultClubProvider
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.store.JsonCanonicalMatchRepository
 import com.eafc26.discordstats.store.PostgresCanonicalMatchRepository
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
@@ -14,6 +16,7 @@ class PostgresBackfillService(
     private val jsonRepository: JsonCanonicalMatchRepository,
     private val postgresRepository: PostgresCanonicalMatchRepository,
     private val defaultClubProvider: DefaultClubProvider,
+    private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -30,7 +33,9 @@ class PostgresBackfillService(
 
         allMatches.forEach { match ->
             try {
-                val existed = postgresRepository.findById(clubId, match.matchId) != null
+                val existed = readOriginContext.withOrigin(CanonicalReadOrigin.CLI_POSTGRES_BACKFILL) {
+                    postgresRepository.findById(clubId, match.matchId) != null
+                }
                 postgresRepository.save(match)
                 if (existed) updated++ else created++
             } catch (ex: Exception) {

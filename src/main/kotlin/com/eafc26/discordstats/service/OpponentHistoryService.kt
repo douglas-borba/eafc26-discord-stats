@@ -17,25 +17,30 @@ import com.eafc26.discordstats.opponent.OpponentRun
 import com.eafc26.discordstats.opponent.OpponentRunRecord
 import com.eafc26.discordstats.opponent.OpponentRunType
 import com.eafc26.discordstats.opponent.OpponentSummary
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import org.springframework.stereotype.Service
 
 @Service
 class OpponentHistoryService(
     private val matchHistoryService: MatchHistoryService,
+    private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) {
-    fun listOpponents(clubId: ClubId): List<OpponentSummary> = groupedMatches(clubId).map { (opponentClubId, matches) ->
-        val ordered = matches.sortedCanonicalNewestFirst()
-        OpponentSummary(
-            clubId = opponentClubId,
-            displayName = ordered.latestOpponentName() ?: FALLBACK_NAME,
-            meetings = ordered.size,
-            record = ordered.record(),
-            latestMatch = ordered.first().opponentMatch(),
-        )
-    }.sortedWith(compareByDescending<OpponentSummary> { it.latestMatch.playedAt }.thenBy { it.clubId.value })
+    fun listOpponents(clubId: ClubId): List<OpponentSummary> = readOriginContext.withOrigin(CanonicalReadOrigin.OPPONENTS) {
+        groupedMatches(clubId).map { (opponentClubId, matches) ->
+            val ordered = matches.sortedCanonicalNewestFirst()
+            OpponentSummary(
+                clubId = opponentClubId,
+                displayName = ordered.latestOpponentName() ?: FALLBACK_NAME,
+                meetings = ordered.size,
+                record = ordered.record(),
+                latestMatch = ordered.first().opponentMatch(),
+            )
+        }.sortedWith(compareByDescending<OpponentSummary> { it.latestMatch.playedAt }.thenBy { it.clubId.value })
+    }
 
-    fun findByClubId(clubId: ClubId, opponentClubId: ClubId): OpponentHistory? {
-        val newest = groupedMatches(clubId)[opponentClubId]?.sortedCanonicalNewestFirst() ?: return null
+    fun findByClubId(clubId: ClubId, opponentClubId: ClubId): OpponentHistory? = readOriginContext.withOrigin(CanonicalReadOrigin.OPPONENTS) {
+        val newest = groupedMatches(clubId)[opponentClubId]?.sortedCanonicalNewestFirst() ?: return@withOrigin null
         val oldest = newest.asReversed()
         val allNames = newest.mapNotNull { it.opponentName() }.toSet()
         val biggestWins = newest.extreme(MatchOutcome.WIN, maximum = true)
@@ -52,7 +57,7 @@ class OpponentHistoryService(
             runRecords.forEach { run -> add(OpponentCriterionEvidence("maior_sequencia_${run.type.name.lowercase()}", TIES, run.count.toString(), run.runs.flatten())) }
             leaders.forEach { leader -> add(OpponentCriterionEvidence("lider_${leader.type.name.lowercase()}", PLAYER_TIES, leader.value.toString(), newest.map(CanonicalMatch::matchId))) }
         }
-        return OpponentHistory(
+        OpponentHistory(
             clubId = opponentClubId,
             displayName = newest.latestOpponentName() ?: FALLBACK_NAME,
             previousNames = allNames - setOfNotNull(newest.latestOpponentName()),

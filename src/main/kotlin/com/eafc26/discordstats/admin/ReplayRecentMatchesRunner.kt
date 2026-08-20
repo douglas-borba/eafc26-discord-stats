@@ -11,6 +11,8 @@ import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.story.StoryContent
 import com.eafc26.discordstats.domain.story.StoryType
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import com.eafc26.discordstats.llm.LlmEditorialService
 import org.slf4j.LoggerFactory
 import org.springframework.boot.CommandLineRunner
@@ -55,6 +57,7 @@ class ReplayRecentMatchesRunner(
     private val llmEditorialService: LlmEditorialService,
     private val destinationResolver: DiscordDestinationResolver,
     private val defaultClubProvider: DefaultClubProvider,
+    private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) : CommandLineRunner {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -109,13 +112,15 @@ class ReplayRecentMatchesRunner(
             log.info("")
         }
 
-        val matches = selectReplayMatches(
-            repository = canonicalMatchRepository,
-            clubId = clubId,
-            specificMatchId = specificMatchId,
-            excludedIds = excludedIds,
-            limit = limit ?: 10,
-        )
+        val matches = readOriginContext.withOrigin(CanonicalReadOrigin.CLI_REPLAY) {
+            selectReplayMatches(
+                repository = canonicalMatchRepository,
+                clubId = clubId,
+                specificMatchId = specificMatchId,
+                excludedIds = excludedIds,
+                limit = limit ?: 10,
+            )
+        }
 
         if (matches.isEmpty()) {
             if (specificMatchId != null) {

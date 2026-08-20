@@ -8,6 +8,8 @@ import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
 import com.eafc26.discordstats.history.MatchHistoryQuery
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import com.eafc26.discordstats.profile.PlayerProfile
 import com.eafc26.discordstats.profile.PlayerProfileIndexEntry
 import com.eafc26.discordstats.profile.PlayerProfileMatch
@@ -18,8 +20,9 @@ import java.math.RoundingMode
 @Service
 class PlayerProfileService(
     private val matchHistoryService: MatchHistoryService,
+    private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) {
-    fun listPlayers(clubId: ClubId): List<PlayerProfileIndexEntry> {
+    fun listPlayers(clubId: ClubId): List<PlayerProfileIndexEntry> = readOriginContext.withOrigin(CanonicalReadOrigin.PLAYERS) {
         val accumulated = linkedMapOf<PlayerId, MutablePlayerIndex>()
 
         matchHistoryService.list(clubId).forEach { canonical ->
@@ -37,7 +40,7 @@ class PlayerProfileService(
             }
         }
 
-        return accumulated.map { (playerId, value) ->
+        accumulated.map { (playerId, value) ->
             PlayerProfileIndexEntry(
                 playerId = playerId,
                 displayName = value.displayName,
@@ -55,7 +58,7 @@ class PlayerProfileService(
         clubId: ClubId,
         playerId: PlayerId,
         recentMatchLimit: Int = DEFAULT_RECENT_MATCH_LIMIT,
-    ): PlayerProfile? {
+    ): PlayerProfile? = readOriginContext.withOrigin(CanonicalReadOrigin.PLAYERS) {
         require(recentMatchLimit > 0) { "Recent match limit must be positive" }
 
         val appearances = matchHistoryService
@@ -67,13 +70,13 @@ class PlayerProfileService(
                     ?.let { performance -> Appearance(canonical, performance) }
             }
 
-        if (appearances.isEmpty()) return null
+        if (appearances.isEmpty()) return@withOrigin null
 
         val ratings = appearances.mapNotNull { it.performance.rating?.value }
         val awards = appearances.flatMap { it.canonical.interpretation.awards.all() }
         val latestIdentity = appearances.first().performance.player
 
-        return PlayerProfile(
+        PlayerProfile(
             playerId = playerId,
             displayName = latestIdentity.preferredDisplayName?.value ?: playerId.value,
             matchCount = appearances.size,

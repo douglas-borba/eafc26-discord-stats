@@ -25,6 +25,7 @@ enum class CanonicalReadOrigin(val value: String) {
     POLLING_CHECKPOINT("polling.checkpoint"),
     DASHBOARD_OVERVIEW("dashboard.overview"),
     HISTORY_LIST("history.list"),
+    HISTORY_DETAIL("history.detail"),
     HISTORY_LATEST("history.latest"),
     LLM_PANORAMA("llm.panorama"),
     LLM_DISCORD("llm.discord"),
@@ -32,6 +33,10 @@ enum class CanonicalReadOrigin(val value: String) {
     OPPONENTS("opponents"),
     COMPARISON("comparison"),
     ADMIN("admin"),
+    CLI_REPLAY("cli.replay"),
+    CLI_EDITORIAL_BACKFILL("cli.editorial-backfill"),
+    CLI_CANONICAL_BACKFILL("cli.canonical-backfill"),
+    CLI_POSTGRES_BACKFILL("cli.postgres-backfill"),
     UNKNOWN("unknown"),
 }
 

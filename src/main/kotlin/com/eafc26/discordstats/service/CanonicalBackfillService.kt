@@ -7,6 +7,8 @@ import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.model.MatchResponse
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 
@@ -20,6 +22,7 @@ class CanonicalBackfillService(
     private val canonicalMatchFactory: CanonicalMatchFactory,
     private val canonicalMatchRepository: CanonicalMatchRepository,
     private val defaultClubProvider: DefaultClubProvider,
+    private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) {
     /** Legacy adapter for the single-club command. New callers must pass [ClubId]. */
     fun backfill(): CanonicalBackfillResult {
@@ -72,7 +75,9 @@ class CanonicalBackfillService(
         orderedUnique.forEach { source ->
             try {
                 val canonical = canonicalMatchFactory.create(source, clubId.value, proNames)
-                val existed = canonicalMatchRepository.findById(clubId, canonical.matchId) != null
+                val existed = readOriginContext.withOrigin(CanonicalReadOrigin.CLI_CANONICAL_BACKFILL) {
+                    canonicalMatchRepository.findById(clubId, canonical.matchId) != null
+                }
                 canonicalMatchRepository.save(canonical)
                 if (existed) updated++ else created++
             } catch (ex: Exception) {

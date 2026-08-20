@@ -10,6 +10,8 @@ import com.eafc26.discordstats.service.PublicationStateClassifier
 import com.eafc26.discordstats.store.OperationalEventRepository
 import com.eafc26.discordstats.store.AdminAuditLogRepository
 import com.eafc26.discordstats.store.PublicationStateStore
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -32,6 +34,7 @@ class PublicationAdminController(
     private val monitoredClubRepository: MonitoredClubRepository,
     private val eventRepository: OperationalEventRepository? = null,
     private val auditLog: AdminAuditLogRepository? = null,
+    private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -66,7 +69,9 @@ class PublicationAdminController(
         Mono.fromCallable {
             val club = requireClub(clubId)
             val audit = startAudit(admin, "FORCE_PUBLISH", club, matchId)
-            val canonical = canonicalMatchRepository.findById(club, MatchId(matchId))
+            val canonical = readOriginContext.withOrigin(CanonicalReadOrigin.ADMIN) {
+                canonicalMatchRepository.findById(club, MatchId(matchId))
+            }
                 ?: run {
                     completeAudit(audit, admin, "FORCE_PUBLISH", club, matchId, result = "NOT_FOUND")
                     return@fromCallable ResponseEntity.notFound().build<Map<String, Any>>()

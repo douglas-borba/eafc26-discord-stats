@@ -20,29 +20,34 @@ import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
 import com.eafc26.discordstats.domain.story.StoryType
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
 
 @Service
 class MatchComparisonService(
     private val matchHistoryService: MatchHistoryService,
+    private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) {
     fun listOptions(clubId: ClubId): List<MatchComparisonOption> =
-        matchHistoryService.list(clubId).map { canonical ->
-            val result = canonical.interpretation.result
-            val participants = canonical.footballMatch.participants.associateBy { it.club.id }
-            MatchComparisonOption(
-                matchId = canonical.matchId,
-                playedAt = canonical.footballMatch.playedAt,
-                outcome = result.outcome,
-                ourClubName = participants[result.ourClub]?.club?.name?.value,
-                opponentClubName = participants[result.opponentClub]?.club?.name?.value,
-                ourScore = result.ourScore.goals,
-                opponentScore = result.opponentScore.goals,
-            )
+        readOriginContext.withOrigin(CanonicalReadOrigin.COMPARISON) {
+            matchHistoryService.list(clubId).map { canonical ->
+                val result = canonical.interpretation.result
+                val participants = canonical.footballMatch.participants.associateBy { it.club.id }
+                MatchComparisonOption(
+                    matchId = canonical.matchId,
+                    playedAt = canonical.footballMatch.playedAt,
+                    outcome = result.outcome,
+                    ourClubName = participants[result.ourClub]?.club?.name?.value,
+                    opponentClubName = participants[result.opponentClub]?.club?.name?.value,
+                    ourScore = result.ourScore.goals,
+                    opponentScore = result.opponentScore.goals,
+                )
+            }
         }
 
-    fun compare(clubId: ClubId, firstMatchId: MatchId, secondMatchId: MatchId): MatchComparisonResult {
+    fun compare(clubId: ClubId, firstMatchId: MatchId, secondMatchId: MatchId): MatchComparisonResult = readOriginContext.withOrigin(CanonicalReadOrigin.COMPARISON) {
         val firstCanonical = matchHistoryService.findById(clubId, firstMatchId)
         val secondCanonical = if (firstMatchId == secondMatchId) {
             firstCanonical
@@ -53,11 +58,11 @@ class MatchComparisonService(
             if (firstCanonical == null) add(firstMatchId)
             if (secondCanonical == null) add(secondMatchId)
         }
-        if (missing.isNotEmpty()) return MatchComparisonResult.NotFound(missing)
+        if (missing.isNotEmpty()) return@withOrigin MatchComparisonResult.NotFound(missing)
 
         val first = requireNotNull(firstCanonical).compared()
         val second = requireNotNull(secondCanonical).compared()
-        return MatchComparisonResult.Success(
+        MatchComparisonResult.Success(
             MatchComparison(
                 first = first,
                 second = second,

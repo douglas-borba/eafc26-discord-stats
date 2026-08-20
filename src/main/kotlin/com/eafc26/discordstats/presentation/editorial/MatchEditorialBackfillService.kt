@@ -2,6 +2,8 @@ package com.eafc26.discordstats.presentation.editorial
 
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
@@ -22,6 +24,7 @@ class MatchEditorialBackfillService(
     private val canonicalMatchRepository: CanonicalMatchRepository,
     private val editorialPresentationService: MatchEditorialPresentationService,
     private val editorialRepository: MatchEditorialPresentationRepository,
+    private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -35,7 +38,9 @@ class MatchEditorialBackfillService(
     fun backfillForClub(clubId: ClubId, dryRun: Boolean = false): BackfillResult {
         log.info("Starting editorial backfill for club {} (dryRun={})", clubId.value, dryRun)
 
-        val allCanonical = canonicalMatchRepository.findAll(clubId)
+        val allCanonical = readOriginContext.withOrigin(CanonicalReadOrigin.CLI_EDITORIAL_BACKFILL) {
+            canonicalMatchRepository.findAll(clubId)
+        }
         log.info("Found {} canonical match(es) for club {}", allCanonical.size, clubId.value)
 
         if (allCanonical.isEmpty()) {
@@ -114,7 +119,9 @@ class MatchEditorialBackfillService(
     fun regenerateForClub(clubId: ClubId): BackfillResult {
         log.info("Starting EXPLICIT editorial regeneration for club {}", clubId.value)
 
-        val allCanonical = canonicalMatchRepository.findAll(clubId)
+        val allCanonical = readOriginContext.withOrigin(CanonicalReadOrigin.CLI_EDITORIAL_BACKFILL) {
+            canonicalMatchRepository.findAll(clubId)
+        }
         log.info("Found {} canonical match(es) for club {}", allCanonical.size, clubId.value)
 
         if (allCanonical.isEmpty()) {

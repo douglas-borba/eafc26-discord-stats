@@ -10,6 +10,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Instant
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
+import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 
 /**
  * Safe administrative reconciliation of publication status.
@@ -31,6 +33,7 @@ class PublicationReconciliationService(
     private val canonicalMatchRepository: CanonicalMatchRepository,
     private val store: PublicationStateStore,
     private val publicationService: DiscordMatchPublicationService,
+    private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -43,7 +46,9 @@ class PublicationReconciliationService(
     fun inspectLatestPublications(clubId: ClubId, limit: Int = 5): ReconciliationReport {
         require(limit > 0) { "limit must be positive" }
 
-        val allMatches = canonicalMatchRepository.findAll(clubId).take(limit)
+        val allMatches = readOriginContext.withOrigin(CanonicalReadOrigin.ADMIN) {
+            canonicalMatchRepository.findAll(clubId)
+        }.take(limit)
         val records = store.loadRecords(clubId)
 
         val inspections = allMatches.map { match ->
@@ -96,7 +101,9 @@ class PublicationReconciliationService(
      * Returns the number of matches published and any errors encountered.
      */
     fun autoPublishSafe(clubId: ClubId): AutoPublishResult {
-        val allMatches = canonicalMatchRepository.findAll(clubId)
+        val allMatches = readOriginContext.withOrigin(CanonicalReadOrigin.ADMIN) {
+            canonicalMatchRepository.findAll(clubId)
+        }
         val records = store.loadRecords(clubId)
 
         val published = mutableListOf<String>()

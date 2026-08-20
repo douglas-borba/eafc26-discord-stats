@@ -22,9 +22,11 @@ class MatchHistoryService(
     private val repository: CanonicalMatchRepository,
     private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) {
-    fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch? = repository.findById(clubId, matchId)
+    fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch? = attributed(CanonicalReadOrigin.HISTORY_DETAIL) {
+        repository.findById(clubId, matchId)
+    }
 
-    fun list(clubId: ClubId, query: MatchHistoryQuery = MatchHistoryQuery()): List<CanonicalMatch> {
+    fun list(clubId: ClubId, query: MatchHistoryQuery = MatchHistoryQuery()): List<CanonicalMatch> = attributed(CanonicalReadOrigin.HISTORY_LIST) {
         val comparator = if (query.order == MatchHistoryOrder.NEWEST_FIRST) {
             compareByDescending<CanonicalMatch> { it.footballMatch.playedAt }
                 .thenBy { it.matchId.value }
@@ -53,8 +55,7 @@ class MatchHistoryService(
                     }
             }
             .sortedWith(comparator)
-
-        return query.limit?.let(matches::take)?.toList() ?: matches.toList()
+        query.limit?.let(matches::take)?.toList() ?: matches.toList()
     }
 
     fun latest(
@@ -105,4 +106,9 @@ class MatchHistoryService(
     }
 
     fun metadata(clubId: ClubId): CanonicalRepositoryMetadata = repository.metadata(clubId)
+
+    private fun <T> attributed(defaultOrigin: CanonicalReadOrigin, block: () -> T): T = readOriginContext.withOrigin(
+        readOriginContext.current().takeUnless { it == CanonicalReadOrigin.UNKNOWN } ?: defaultOrigin,
+        block,
+    )
 }
