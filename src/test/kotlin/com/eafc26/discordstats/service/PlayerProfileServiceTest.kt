@@ -11,6 +11,7 @@ import com.eafc26.discordstats.domain.match.AttackingStats
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubIdentity
 import com.eafc26.discordstats.domain.match.ClubMatchPerformance
+import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.ClubName
 import com.eafc26.discordstats.domain.match.DefendingStats
 import com.eafc26.discordstats.domain.match.DisciplineStats
@@ -32,7 +33,10 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
 import java.math.BigDecimal
 import java.time.Duration
@@ -56,6 +60,16 @@ class PlayerProfileServiceTest {
     }
 
     @Test
+    fun `complete profile list is empty when history is empty and reads history once`() {
+        whenever(history.list(OUR_CLUB)).thenReturn(emptyList())
+
+        assertThat(service.listProfiles(OUR_CLUB)).isEmpty()
+
+        verify(history, times(1)).list(OUR_CLUB)
+        verifyNoMoreInteractions(history)
+    }
+
+    @Test
     fun `unknown player has no profile`() {
         whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = PlayerId("missing")))).thenReturn(emptyList())
 
@@ -71,9 +85,11 @@ class PlayerProfileServiceTest {
             canonical("m2", "2026-07-02T10:00:00Z", playerId, "Old Name", MatchOutcome.DRAW, "6.0", 0, 2, 1, setOf(AwardType.BAGRE)),
             canonical("m1", "2026-07-01T10:00:00Z", playerId, "Old Name", MatchOutcome.LOSS, null, 1, 0, 0, setOf(AwardType.XERIFE)),
         )
+        whenever(history.list(OUR_CLUB)).thenReturn(matches)
         whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
 
-        val profile = service.findById(OUR_CLUB, playerId)!!
+        val profile = service.listProfiles(OUR_CLUB).single()
+        val detail = service.findById(OUR_CLUB, playerId)
 
         assertThat(profile.displayName).isEqualTo("Current Name")
         assertThat(profile.matchCount).isEqualTo(3)
@@ -90,6 +106,7 @@ class PlayerProfileServiceTest {
         assertThat(profile.redCards).isEqualTo(1)
         assertThat(profile.recentMatches.map { it.matchId.value }).containsExactly("m3", "m2", "m1")
         assertThat(profile.recentMatches.first().awards).containsExactly(AwardType.CRAQUE)
+        assertThat(profile).isEqualTo(detail)
     }
 
     @Test
@@ -132,6 +149,58 @@ class PlayerProfileServiceTest {
     }
 
     @Test
+    fun `complete profile list uses one shared history snapshot regardless of player count`() {
+        val matches = listOf(
+            canonical("m4", "2026-07-04T10:00:00Z", PlayerId("one"), "Ana", MatchOutcome.WIN, "8", 1, 0, 0, emptySet()),
+            canonical("m3", "2026-07-03T10:00:00Z", PlayerId("two"), "Bruno", MatchOutcome.DRAW, "7", 0, 1, 0, emptySet()),
+            canonical("m2", "2026-07-02T10:00:00Z", PlayerId("three"), "Carla", MatchOutcome.LOSS, null, 0, 0, 1, emptySet()),
+            canonical("m1", "2026-07-01T10:00:00Z", PlayerId("one"), "Ana antiga", MatchOutcome.WIN, "9", 2, 0, 0, emptySet()),
+        )
+        whenever(history.list(OUR_CLUB)).thenReturn(matches)
+
+        val profiles = service.listProfiles(OUR_CLUB)
+
+        assertThat(profiles.map { it.playerId.value }).containsExactly("one", "two", "three")
+        assertThat(profiles.first().matchCount).isEqualTo(2)
+        assertThat(profiles.first().goals).isEqualTo(3)
+        verify(history, times(1)).list(OUR_CLUB)
+        verifyNoMoreInteractions(history)
+    }
+
+    @Test
+    fun `DNF is excluded while unknown completion remains eligible in the shared snapshot`() {
+        val unknown = canonical(
+            "unknown", "2026-07-03T10:00:00Z", PlayerId("unknown"), "Disponível", MatchOutcome.WIN,
+            "7", 0, 0, 0, emptySet(), completion = MatchCompletion.UNKNOWN,
+        )
+        val dnf = canonical(
+            "dnf", "2026-07-02T10:00:00Z", PlayerId("dnf"), "Ausente", MatchOutcome.LOSS,
+            "8", 1, 0, 0, emptySet(), completion = MatchCompletion.dnf(OUR_CLUB),
+        )
+        whenever(history.list(OUR_CLUB)).thenReturn(listOf(unknown, dnf))
+
+        val profiles = service.listProfiles(OUR_CLUB)
+
+        assertThat(profiles).singleElement().extracting { it.playerId.value }.isEqualTo("unknown")
+        verify(history, times(1)).list(OUR_CLUB)
+        verifyNoMoreInteractions(history)
+    }
+
+    @Test
+    fun `latest pro name takes precedence over the platform name`() {
+        val playerId = PlayerId("player-1")
+        val latest = canonical(
+            "latest", "2026-07-03T10:00:00Z", playerId, "Platform name", MatchOutcome.WIN,
+            "7", 0, 0, 0, emptySet(), proName = "Pro name",
+        )
+        whenever(history.list(OUR_CLUB)).thenReturn(listOf(latest))
+
+        assertThat(service.listProfiles(OUR_CLUB)).singleElement()
+            .extracting { it.displayName }
+            .isEqualTo("Pro name")
+    }
+
+    @Test
     fun `same player ID and name in two clubs never mix profile statistics`() {
         val otherClub = ClubId("other-club")
         val playerId = PlayerId("ronaldo")
@@ -151,6 +220,20 @@ class PlayerProfileServiceTest {
         assertThat(theirs.bagres).isEqualTo(1)
     }
 
+    @Test
+    fun `detail profile reads its history exactly once`() {
+        val playerId = PlayerId("player-1")
+        val query = MatchHistoryQuery(playerId = playerId)
+        val match = canonical("m1", "2026-07-01T10:00:00Z", playerId, "Player", MatchOutcome.WIN, "7", 0, 0, 0, emptySet())
+        whenever(history.list(OUR_CLUB, query)).thenReturn(listOf(match))
+
+        assertThat(service.findById(OUR_CLUB, playerId)).isNotNull
+
+        verify(history, times(1)).list(OUR_CLUB, query)
+        verify(history, never()).list(OUR_CLUB)
+        verifyNoMoreInteractions(history)
+    }
+
     private fun canonical(
         id: String,
         playedAt: String,
@@ -163,9 +246,11 @@ class PlayerProfileServiceTest {
         redCards: Int,
         awards: Set<AwardType>,
         perspectiveClubId: ClubId = OUR_CLUB,
+        completion: MatchCompletion = MatchCompletion.UNKNOWN,
+        proName: String? = null,
     ): CanonicalMatch {
         val player = PlayerMatchPerformance(
-            player = PlayerIdentity(playerId, DisplayName(name), null),
+            player = PlayerIdentity(playerId, DisplayName(name), proName?.let(::DisplayName)),
             role = PlayerRole.Outfield(null),
             participation = Participation(Duration.ofMinutes(90), ParticipationStatus.COMPLETED),
             rating = rating?.let { MatchRating(BigDecimal(it)) },
@@ -193,6 +278,7 @@ class PlayerProfileServiceTest {
             Instant.parse(playedAt),
             null,
             listOf(ours, opponent),
+            completion,
         )
         val result = mock<ResultDecision>()
         whenever(result.ourClub).thenReturn(perspectiveClubId)

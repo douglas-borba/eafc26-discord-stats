@@ -92,7 +92,7 @@ class ClubSportsController(
 
     @GetMapping("/players")
     fun players(@PathVariable clubId: String): SportsPlayerListResponse = scope(clubId, ClubDashboardCapability.PLAYERS) { id ->
-        val result = players.listPlayers(id).mapNotNull { players.findById(id, it.playerId) }.map(PlayerProfilePresenter::profile)
+        val result = players.listProfiles(id).map(PlayerProfilePresenter::profile)
         SportsPlayerListResponse(if (result.isEmpty()) "empty" else "success", result)
     }
 

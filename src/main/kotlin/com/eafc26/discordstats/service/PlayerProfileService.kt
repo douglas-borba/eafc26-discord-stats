@@ -23,9 +23,46 @@ class PlayerProfileService(
     private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) {
     fun listPlayers(clubId: ClubId): List<PlayerProfileIndexEntry> = readOriginContext.withOrigin(CanonicalReadOrigin.PLAYERS) {
+        playerIndex(matchHistoryService.list(clubId))
+    }
+
+    /**
+     * Builds the complete player collection from one canonical history snapshot.
+     *
+     * The public player-list endpoint needs both the index and every profile, so
+     * loading history once keeps every profile consistent and avoids per-player
+     * canonical reads.
+     */
+    fun listProfiles(
+        clubId: ClubId,
+        recentMatchLimit: Int = DEFAULT_RECENT_MATCH_LIMIT,
+    ): List<PlayerProfile> = readOriginContext.withOrigin(CanonicalReadOrigin.PLAYERS) {
+        require(recentMatchLimit > 0) { "Recent match limit must be positive" }
+
+        val history = matchHistoryService.list(clubId)
+        playerIndex(history).mapNotNull { entry ->
+            profileFrom(history, entry.playerId, recentMatchLimit)
+        }
+    }
+
+    fun findById(
+        clubId: ClubId,
+        playerId: PlayerId,
+        recentMatchLimit: Int = DEFAULT_RECENT_MATCH_LIMIT,
+    ): PlayerProfile? = readOriginContext.withOrigin(CanonicalReadOrigin.PLAYERS) {
+        require(recentMatchLimit > 0) { "Recent match limit must be positive" }
+
+        profileFrom(
+            matchHistoryService.list(clubId, MatchHistoryQuery(playerId = playerId)),
+            playerId,
+            recentMatchLimit,
+        )
+    }
+
+    private fun playerIndex(history: List<CanonicalMatch>): List<PlayerProfileIndexEntry> {
         val accumulated = linkedMapOf<PlayerId, MutablePlayerIndex>()
 
-        matchHistoryService.list(clubId).forEach { canonical ->
+        history.forEach { canonical ->
             if (!canonical.footballMatch.completion.hasCompleteSportingStatistics) return@forEach
             canonical.perspectivePlayers().forEach { performance ->
                 val player = performance.player
@@ -40,7 +77,7 @@ class PlayerProfileService(
             }
         }
 
-        accumulated.map { (playerId, value) ->
+        return accumulated.map { (playerId, value) ->
             PlayerProfileIndexEntry(
                 playerId = playerId,
                 displayName = value.displayName,
@@ -54,15 +91,12 @@ class PlayerProfileService(
         )
     }
 
-    fun findById(
-        clubId: ClubId,
+    private fun profileFrom(
+        history: List<CanonicalMatch>,
         playerId: PlayerId,
-        recentMatchLimit: Int = DEFAULT_RECENT_MATCH_LIMIT,
-    ): PlayerProfile? = readOriginContext.withOrigin(CanonicalReadOrigin.PLAYERS) {
-        require(recentMatchLimit > 0) { "Recent match limit must be positive" }
-
-        val appearances = matchHistoryService
-            .list(clubId, MatchHistoryQuery(playerId = playerId))
+        recentMatchLimit: Int,
+    ): PlayerProfile? {
+        val appearances = history
             .filter { it.footballMatch.completion.hasCompleteSportingStatistics }
             .mapNotNull { canonical ->
                 canonical.perspectivePlayers()
@@ -70,13 +104,13 @@ class PlayerProfileService(
                     ?.let { performance -> Appearance(canonical, performance) }
             }
 
-        if (appearances.isEmpty()) return@withOrigin null
+        if (appearances.isEmpty()) return null
 
         val ratings = appearances.mapNotNull { it.performance.rating?.value }
         val awards = appearances.flatMap { it.canonical.interpretation.awards.all() }
         val latestIdentity = appearances.first().performance.player
 
-        PlayerProfile(
+        return PlayerProfile(
             playerId = playerId,
             displayName = latestIdentity.preferredDisplayName?.value ?: playerId.value,
             matchCount = appearances.size,

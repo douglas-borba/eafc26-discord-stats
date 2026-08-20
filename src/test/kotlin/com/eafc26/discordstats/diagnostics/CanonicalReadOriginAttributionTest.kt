@@ -56,7 +56,7 @@ class CanonicalReadOriginAttributionTest {
             emptyList<CanonicalMatch>()
         }
 
-        PlayerProfileService(history, context).listPlayers(clubId)
+        PlayerProfileService(history, context).listProfiles(clubId)
         OpponentHistoryService(history, context).listOpponents(clubId)
         MatchComparisonService(history, context).listOptions(clubId)
 

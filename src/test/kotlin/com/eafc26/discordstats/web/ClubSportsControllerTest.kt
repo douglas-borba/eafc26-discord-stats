@@ -14,6 +14,7 @@ import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.match.Score
 import com.eafc26.discordstats.llm.LlmEditorialService
+import com.eafc26.discordstats.profile.PlayerProfile
 import com.eafc26.discordstats.service.MatchCardService
 import com.eafc26.discordstats.service.MatchComparisonService
 import com.eafc26.discordstats.service.MatchHistoryService
@@ -25,8 +26,10 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
 import org.springframework.web.server.ResponseStatusException
+import java.math.BigDecimal
 import java.time.Instant
 
 class ClubSportsControllerTest {
@@ -146,10 +149,45 @@ class ClubSportsControllerTest {
         verify(history).findById(brasil.clubId, shared)
     }
 
+    @Test
+    fun `players endpoint delegates the complete collection to the shared snapshot operation`() {
+        val club = club("1104972", "Associação BF")
+        whenever(clubs.find(club.clubId)).thenReturn(club)
+        whenever(players.listProfiles(club.clubId)).thenReturn(
+            listOf(profile("ana", "Ana"), profile("bruno", "Bruno"))
+        )
+
+        val response = controller.players(club.clubId.value)
+
+        assertThat(response.status).isEqualTo("success")
+        assertThat(response.players.map { it.playerId }).containsExactly("ana", "bruno")
+        verify(players).listProfiles(club.clubId)
+        verify(players, never()).listPlayers(club.clubId)
+        verifyNoMoreInteractions(players)
+    }
+
     private fun club(id: String, name: String) = MonitoredClub(
         ClubId(id), ClubName(name), EaPlatform("common-gen5"), true, null,
         Instant.parse("2026-08-09T12:00:00Z"), Instant.parse("2026-08-09T12:00:00Z"),
     )
 
     private fun metadata() = CanonicalRepositoryMetadata(0, null, null, null, emptySet(), emptySet())
+
+    private fun profile(id: String, name: String) = PlayerProfile(
+        playerId = com.eafc26.discordstats.domain.match.PlayerId(id),
+        displayName = name,
+        matchCount = 1,
+        wins = 1,
+        draws = 0,
+        losses = 0,
+        averageRating = BigDecimal("7.00"),
+        ratedMatchCount = 1,
+        goals = 0,
+        assists = 0,
+        craques = 0,
+        bagres = 0,
+        xerifes = 0,
+        redCards = 0,
+        recentMatches = emptyList(),
+    )
 }
