@@ -55,8 +55,8 @@ class ClubSportsControllerTest {
         val brasil = club("8874106", "BRASIL 2030")
         whenever(clubs.find(association.clubId)).thenReturn(association)
         whenever(clubs.find(brasil.clubId)).thenReturn(brasil)
-        whenever(history.list(association.clubId)).thenReturn(emptyList())
-        whenever(history.list(brasil.clubId)).thenReturn(emptyList())
+        whenever(history.listSummaries(association.clubId)).thenReturn(emptyList())
+        whenever(history.listSummaries(brasil.clubId)).thenReturn(emptyList())
         whenever(history.metadata(association.clubId)).thenReturn(metadata())
         whenever(history.metadata(brasil.clubId)).thenReturn(metadata())
 
@@ -64,8 +64,10 @@ class ClubSportsControllerTest {
         assertThat(controller.club("8874106").displayName).isEqualTo("BRASIL 2030")
         assertThat(controller.matches("1104972").status).isEqualTo("empty")
         assertThat(controller.matches("8874106").matches).isEmpty()
-        verify(history).list(association.clubId)
-        verify(history).list(brasil.clubId)
+        verify(history).listSummaries(association.clubId)
+        verify(history).listSummaries(brasil.clubId)
+        verify(history, never()).list(association.clubId)
+        verify(history, never()).list(brasil.clubId)
     }
 
     @Test
@@ -75,7 +77,7 @@ class ClubSportsControllerTest {
         assertThatThrownBy { controller.matches("999999999") }
             .isInstanceOf(ResponseStatusException::class.java)
             .extracting("statusCode.value").isEqualTo(404)
-        verify(history, never()).list(ClubId("999999999"))
+        verify(history, never()).listSummaries(ClubId("999999999"))
     }
 
     @Test
@@ -107,6 +109,33 @@ class ClubSportsControllerTest {
         assertThat(controller.overviewMatches(club.clubId.value).status).isEqualTo("empty")
         verify(history).recentOverview(club.clubId, 10)
         verify(history, never()).recent(club.clubId, 10)
+        verify(history, never()).list(club.clubId)
+    }
+
+    @Test
+    fun `history list requests only lightweight summaries while detail remains independent`() {
+        val club = club("1104972", "Associação BF")
+        val summary = CanonicalMatchOverview(
+            matchId = MatchId("summary"),
+            perspectiveClubId = club.clubId,
+            opponentClubId = ClubId("opponent"),
+            playedAt = Instant.parse("2026-08-20T17:30:00Z"),
+            competition = CompetitionType.LEAGUE,
+            ourClubName = ClubName("Associação BF"),
+            opponentClubName = ClubName("Adversário"),
+            ourScore = Score(2),
+            opponentScore = Score(1),
+            outcome = MatchOutcome.WIN,
+            completion = MatchCompletion.COMPLETED,
+        )
+        whenever(clubs.find(club.clubId)).thenReturn(club)
+        whenever(history.listSummaries(club.clubId)).thenReturn(listOf(summary))
+        whenever(history.metadata(club.clubId)).thenReturn(metadata())
+
+        val response = controller.matches(club.clubId.value)
+
+        assertThat(response.matches.single().matchId).isEqualTo(summary.matchId.value)
+        verify(history).listSummaries(club.clubId)
         verify(history, never()).list(club.clubId)
     }
 

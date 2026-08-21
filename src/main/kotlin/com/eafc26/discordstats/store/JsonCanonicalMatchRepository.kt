@@ -164,6 +164,20 @@ class JsonCanonicalMatchRepository(
     }
 
     @Synchronized
+    override fun findHistorySummaries(clubId: ClubId): List<CanonicalMatchOverview> {
+        migrateLegacyFilesIfNeeded(clubId)
+        val root = rootFor(clubId)
+        if (!root.exists()) return emptyList()
+        return Files.list(root).use { paths ->
+            paths
+                .filter { it.isRegularFile() && it.extension == JSON_EXTENSION }
+                .map { readOverview(it, clubId) }
+                .sorted(compareByDescending<CanonicalMatchOverview> { it.playedAt }.thenBy { it.matchId.value })
+                .toList()
+        }
+    }
+
+    @Synchronized
     override fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> {
         require(limit >= 0) { "limit must be non-negative" }
         return findAll(clubId).take(limit)

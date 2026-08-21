@@ -19,6 +19,7 @@ enum class CanonicalReadOperation {
     FIND_EXISTING_MATCH_IDS,
     FIND_RECENT_MATCH_IDS,
     FIND_RECENT_OVERVIEW,
+    FIND_HISTORY_SUMMARIES,
     FIND_PLAYER_PROFILE_APPEARANCES,
 }
 
@@ -149,6 +150,7 @@ internal fun CanonicalReadOperation.apiName(): String = when (this) {
     CanonicalReadOperation.FIND_EXISTING_MATCH_IDS -> "findExistingMatchIds"
     CanonicalReadOperation.FIND_RECENT_MATCH_IDS -> "findRecentMatchIds"
     CanonicalReadOperation.FIND_RECENT_OVERVIEW -> "findRecentOverview"
+    CanonicalReadOperation.FIND_HISTORY_SUMMARIES -> "findHistorySummaries"
     CanonicalReadOperation.FIND_PLAYER_PROFILE_APPEARANCES -> "findPlayerProfileAppearances"
 }
 

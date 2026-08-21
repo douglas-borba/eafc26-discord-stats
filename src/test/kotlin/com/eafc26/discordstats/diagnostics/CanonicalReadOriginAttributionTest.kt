@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.diagnostics
 
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.application.repository.CanonicalMatchOverview
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
@@ -33,12 +34,18 @@ class CanonicalReadOriginAttributionTest {
             observed += context.current()
             null
         }
+        whenever(repository.findHistorySummaries(clubId)).thenAnswer {
+            observed += context.current()
+            emptyList<CanonicalMatchOverview>()
+        }
 
         history.list(clubId)
+        history.listSummaries(clubId)
         history.findById(clubId, MatchId("match"))
         context.withOrigin(CanonicalReadOrigin.PLAYERS) { history.list(clubId) }
 
         assertThat(observed).containsExactly(
+            CanonicalReadOrigin.HISTORY_LIST,
             CanonicalReadOrigin.HISTORY_LIST,
             CanonicalReadOrigin.HISTORY_DETAIL,
             CanonicalReadOrigin.PLAYERS,

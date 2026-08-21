@@ -57,7 +57,7 @@ class ClubSportsController(
 
     @GetMapping("/history/matches")
     fun matches(@PathVariable clubId: String): HistoricalMatchListResponse = scope(clubId, ClubDashboardCapability.MATCHES) { id ->
-        val matches = history.list(id)
+        val matches = history.listSummaries(id)
         HistoricalMatchListResponse(
             status = if (matches.isEmpty()) "empty" else "success",
             matches = matches.map(HistoricalMatchPresenter::summary),

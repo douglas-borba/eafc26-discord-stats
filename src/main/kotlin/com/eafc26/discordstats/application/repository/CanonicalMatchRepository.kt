@@ -62,6 +62,18 @@ interface CanonicalMatchRepository {
     }
 
     /**
+     * Complete, newest-first history of shallow canonical sports facts.
+     *
+     * This is for list experiences that need every match identity and result,
+     * but never player-level facts, stories, or interpretation evidence.
+     * Database-backed implementations must avoid loading complete canonical
+     * payloads. The default preserves compatibility for implementations that
+     * do not yet have a selective representation.
+     */
+    fun findHistorySummaries(clubId: ClubId): List<CanonicalMatchOverview> =
+        findAll(clubId).map(CanonicalMatchOverview::from)
+
+    /**
      * Returns all records ordered by match time descending, then ID.
      */
     fun findAll(clubId: ClubId): List<CanonicalMatch>
@@ -90,7 +102,12 @@ data class CanonicalRepositoryMetadata(
     val engineVersions: Set<EngineVersion>,
 )
 
-/** Canonical sports-fact projection used exclusively by the bounded Overview feed. */
+/**
+ * Shallow canonical sports facts shared by match-list experiences.
+ *
+ * It deliberately excludes player-level data, stories and interpretation
+ * evidence, while retaining the factual result needed to identify a match.
+ */
 data class CanonicalMatchOverview(
     val matchId: MatchId,
     val perspectiveClubId: ClubId,

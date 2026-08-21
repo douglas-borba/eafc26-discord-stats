@@ -113,6 +113,9 @@ class PostgresCanonicalMatchRepositoryTest {
         readOriginContext.withOrigin(CanonicalReadOrigin.DASHBOARD_OVERVIEW) {
             repository.findRecentOverview(OUR_CLUB, 1)
         }
+        readOriginContext.withOrigin(CanonicalReadOrigin.HISTORY_LIST) {
+            repository.findHistorySummaries(OUR_CLUB)
+        }
 
         val snapshot = readDiagnostics.snapshot()
         val findAll = snapshot.operations.getValue("findAll")
@@ -126,6 +129,7 @@ class PostgresCanonicalMatchRepositoryTest {
         assertThat(snapshot.operations.getValue("findExistingMatchIds").rows).isEqualTo(1)
         assertThat(snapshot.operations.getValue("findRecentMatchIds").rows).isEqualTo(1)
         assertThat(snapshot.operations.getValue("findRecentOverview").rows).isEqualTo(1)
+        assertThat(snapshot.operations.getValue("findHistorySummaries").rows).isEqualTo(2)
         assertThat(snapshot.origins.getValue("history.list").estimatedReturnedBytes).isGreaterThan(0)
         assertThat(snapshot.origins.getValue("polling.checkpoint").estimatedReturnedBytes).isGreaterThan(0)
     }
@@ -313,6 +317,116 @@ class PostgresCanonicalMatchRepositoryTest {
         assertThat(overviewQuery).contains("SELECT\n                match_id,")
         assertThat(overviewQuery).contains("payload #>> '{footballMatch,completion,status}'")
         assertThat(overviewQuery).doesNotContain("SELECT payload")
+    }
+
+    @Test
+    fun `findHistorySummaries returns a complete ordered club-scoped projection without loading payload`() {
+        val otherClub = ClubId("opponent")
+        val ours = (1..101).map { index -> canonicalMatch("match-$index", 1_700_000_000L + index) }
+        val other = canonicalMatch("other-match", 1_900_000_000L, perspectiveClubId = otherClub)
+        (ours + other).forEach(repository::save)
+
+        // The scalar columns are sufficient. An accidental CanonicalMatch read would fail on this payload.
+        jdbcTemplate.update("UPDATE canonical_matches SET payload = ?::jsonb", "{}")
+
+        val summaries = readOriginContext.withOrigin(CanonicalReadOrigin.HISTORY_LIST) {
+            repository.findHistorySummaries(OUR_CLUB)
+        }
+
+        assertThat(summaries).hasSize(101)
+        assertThat(summaries.map { it.matchId.value }.take(3)).containsExactly("match-101", "match-100", "match-99")
+        assertThat(summaries).allMatch { it.perspectiveClubId == OUR_CLUB }
+        assertThat(repository.findHistorySummaries(otherClub).map { it.matchId })
+            .containsExactly(other.matchId)
+        assertThat(repository.findHistorySummaries(ClubId("empty-club"))).isEmpty()
+
+        val snapshot = readDiagnostics.snapshot()
+        val operation = snapshot.operations.getValue("findHistorySummaries")
+        assertThat(operation.calls).isEqualTo(3)
+        assertThat(operation.rows).isEqualTo(102)
+        assertThat(operation.estimatedReturnedBytes).isGreaterThan(0)
+        assertThat(snapshot.origins.getValue("history.list").rows).isEqualTo(101)
+    }
+
+    @Test
+    fun `findHistorySummaries preserves canonical summary semantics through legacy relational fallbacks`() {
+        val normalWin = canonicalMatch("win", 1_800_000_000L, ourScore = "3", opponentScore = "1")
+        val normalLoss = canonicalMatch("loss", 1_800_000_100L, ourScore = "1", opponentScore = "3")
+        val normalDraw = canonicalMatch("draw", 1_800_000_200L, ourScore = "2", opponentScore = "2")
+        val dnfByUs = canonicalMatch(
+            "dnf-us",
+            1_800_000_300L,
+            completion = MatchCompletion.dnf(OUR_CLUB),
+        )
+        val dnfByOpponent = canonicalMatch(
+            "dnf-opponent",
+            1_800_000_400L,
+            completion = MatchCompletion.dnf(ClubId("opponent")),
+        )
+        val unknown = canonicalMatch("unknown", 1_800_000_500L, completion = MatchCompletion.UNKNOWN)
+        listOf(normalWin, normalLoss, normalDraw, dnfByUs, dnfByOpponent, unknown).forEach(repository::save)
+
+        val expected = repository.findAll(OUR_CLUB).map(HistoricalMatchPresenter::summary)
+
+        jdbcTemplate.update(
+            """
+            UPDATE canonical_matches
+            SET opponent_club_id = NULL,
+                match_type = NULL,
+                outcome = NULL,
+                our_score = NULL,
+                opponent_score = NULL,
+                our_club_name = NULL,
+                opponent_club_name = NULL
+            WHERE club_id = ?
+            """.trimIndent(),
+            OUR_CLUB.value,
+        )
+        jdbcTemplate.update(
+            """
+            UPDATE canonical_matches
+            SET payload = payload #- '{footballMatch,completion}'
+            WHERE club_id = ? AND match_id = ?
+            """.trimIndent(),
+            OUR_CLUB.value,
+            unknown.matchId.value,
+        )
+
+        val summaries = repository.findHistorySummaries(OUR_CLUB).map(HistoricalMatchPresenter::summary)
+
+        assertThat(summaries).containsExactlyElementsOf(expected)
+        assertThat(summaries.map { it.outcome.code }).contains("WIN", "LOSS", "DRAW")
+        assertThat(summaries.first { it.matchId == "dnf-us" }.dnfClubId).isEqualTo(OUR_CLUB.value)
+        assertThat(summaries.first { it.matchId == "dnf-opponent" }.dnfClubId).isEqualTo("opponent")
+        assertThat(summaries.first { it.matchId == "unknown" }.completionStatus).isEqualTo("UNKNOWN")
+    }
+
+    @Test
+    fun `findHistorySummaries retains canonical match ID tie break`() {
+        listOf(
+            canonicalMatch("b", 1_800_000_000L),
+            canonicalMatch("a", 1_800_000_000L),
+            canonicalMatch("old", 1_700_000_000L),
+        ).forEach(repository::save)
+
+        assertThat(repository.findHistorySummaries(OUR_CLUB).map { it.matchId.value })
+            .containsExactly("a", "b", "old")
+    }
+
+    @Test
+    fun `findHistorySummaries query selects scalar facts rather than canonical payload`() {
+        val source = Files.readString(
+            java.nio.file.Path.of("src/main/kotlin/com/eafc26/discordstats/store/PostgresCanonicalMatchRepository.kt")
+        )
+        val historyQuery = source
+            .substringAfter("override fun findHistorySummaries")
+            .substringBefore("override fun findRecent")
+
+        assertThat(historyQuery).contains("SELECT\n                match_id,")
+        assertThat(historyQuery).contains("payload #>> '{footballMatch,completion,status}'")
+        assertThat(historyQuery).contains("jsonb_array_elements(payload->'footballMatch'->'participants')")
+        assertThat(historyQuery).doesNotContain("SELECT payload")
+        assertThat(historyQuery).contains("ORDER BY played_at DESC, match_id ASC")
     }
 
     @Test
@@ -664,6 +778,8 @@ class PostgresCanonicalMatchRepositoryTest {
         timestamp: Long,
         perspectiveClubId: ClubId = OUR_CLUB,
         completion: MatchCompletion? = null,
+        ourScore: String = "3",
+        opponentScore: String = "1",
         proNames: Map<String, String> = emptyMap(),
         extraPlayers: Int = 0,
         opponentPlayerId: String = "opponent-player",
@@ -683,13 +799,13 @@ class PostgresCanonicalMatchRepositoryTest {
             clubs = linkedMapOf(
                 OUR_CLUB.value to ClubMatchEntry(
                     details = ClubDetails("Our FC", OUR_CLUB.value),
-                    score = "3",
-                    result = "1",
+                    score = ourScore,
+                    result = if (ourScore.toInt() > opponentScore.toInt()) "1" else if (ourScore == opponentScore) "2" else "0",
                 ),
                 "opponent" to ClubMatchEntry(
                     details = ClubDetails("Opponent FC", "opponent"),
-                    score = "1",
-                    result = "0",
+                    score = opponentScore,
+                    result = if (opponentScore.toInt() > ourScore.toInt()) "1" else if (ourScore == opponentScore) "2" else "0",
                 ),
             ),
             players = mapOf(

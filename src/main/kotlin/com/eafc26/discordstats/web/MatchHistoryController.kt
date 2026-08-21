@@ -31,7 +31,7 @@ class MatchHistoryController(
     fun listMatches(): Mono<ResponseEntity<HistoricalMatchListResponse>> =
         Mono.fromCallable {
             val clubId = defaultClubProvider.get().clubId
-            val matches = matchHistoryService.list(clubId)
+            val matches = matchHistoryService.listSummaries(clubId)
             val response = HistoricalMatchListResponse(
                 status = if (matches.isEmpty()) "empty" else "success",
                 matches = matches.map(HistoricalMatchPresenter::summary),

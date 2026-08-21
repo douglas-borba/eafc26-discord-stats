@@ -1,17 +1,22 @@
 package com.eafc26.discordstats.service
 
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.application.repository.CanonicalMatchOverview
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubMatchPerformance
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.ClubName
 import com.eafc26.discordstats.domain.match.CompetitionType
 import com.eafc26.discordstats.domain.match.DisplayName
 import com.eafc26.discordstats.domain.match.FootballMatch
+import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.match.PlayerIdentity
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
+import com.eafc26.discordstats.domain.match.Score
+import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.history.MatchHistoryOrder
 import com.eafc26.discordstats.history.MatchHistoryQuery
 import org.assertj.core.api.Assertions.assertThat
@@ -120,6 +125,28 @@ class MatchHistoryServiceTest {
 
         assertThat(service.latest(CLUB_ID, 2)).containsExactly(three, two)
         verify(repository).findRecent(CLUB_ID, 2)
+        verify(repository, never()).findAll(CLUB_ID)
+    }
+
+    @Test
+    fun `list summaries delegates to the lightweight history projection without loading canonical history`() {
+        val summary = CanonicalMatchOverview(
+            matchId = MatchId("summary"),
+            perspectiveClubId = CLUB_ID,
+            opponentClubId = ClubId("opponent"),
+            playedAt = Instant.parse("2026-07-03T10:00:00Z"),
+            competition = CompetitionType.LEAGUE,
+            ourClubName = ClubName("Our FC"),
+            opponentClubName = ClubName("Opponent FC"),
+            ourScore = Score(2),
+            opponentScore = Score(1),
+            outcome = MatchOutcome.WIN,
+            completion = MatchCompletion.COMPLETED,
+        )
+        whenever(repository.findHistorySummaries(CLUB_ID)).thenReturn(listOf(summary))
+
+        assertThat(service.listSummaries(CLUB_ID)).containsExactly(summary)
+        verify(repository).findHistorySummaries(CLUB_ID)
         verify(repository, never()).findAll(CLUB_ID)
     }
 

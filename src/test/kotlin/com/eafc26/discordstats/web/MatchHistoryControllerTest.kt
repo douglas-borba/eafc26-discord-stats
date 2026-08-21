@@ -2,6 +2,7 @@ package com.eafc26.discordstats.web
 
 import com.eafc26.discordstats.application.interpretation.MatchInterpreter
 import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadata
+import com.eafc26.discordstats.application.repository.CanonicalMatchOverview
 import com.eafc26.discordstats.application.story.MatchStoryExtractor
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
@@ -18,6 +19,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
@@ -37,7 +39,9 @@ class MatchHistoryControllerTest {
     fun `list exposes persisted matches in service chronological order`() {
         val newest = canonical("newest", 1_801_000_000L)
         val oldest = canonical("oldest", 1_701_000_000L)
-        whenever(historyService.list(OUR_CLUB)).thenReturn(listOf(newest, oldest))
+        whenever(historyService.listSummaries(OUR_CLUB)).thenReturn(
+            listOf(CanonicalMatchOverview.from(newest), CanonicalMatchOverview.from(oldest))
+        )
         whenever(historyService.metadata(OUR_CLUB)).thenReturn(metadata(2))
 
         val response = controller.listMatches().block()!!
@@ -48,13 +52,14 @@ class MatchHistoryControllerTest {
         assertThat(response.body!!.matches.first().outcome.code).isEqualTo("WIN")
         assertThat(response.body!!.matches.first().ourClub.score).isEqualTo(3)
         assertThat(response.body!!.matches.first().competition).isEqualTo("Liga")
-        verify(historyService).list(OUR_CLUB)
+        verify(historyService).listSummaries(OUR_CLUB)
+        verify(historyService, never()).list(OUR_CLUB)
         verify(historyService).metadata(OUR_CLUB)
     }
 
     @Test
     fun `empty history returns an explicit empty state`() {
-        whenever(historyService.list(OUR_CLUB)).thenReturn(emptyList())
+        whenever(historyService.listSummaries(OUR_CLUB)).thenReturn(emptyList())
         whenever(historyService.metadata(OUR_CLUB)).thenReturn(metadata(0))
 
         val response = controller.listMatches().block()!!
@@ -62,6 +67,7 @@ class MatchHistoryControllerTest {
         assertThat(response.body!!.status).isEqualTo("empty")
         assertThat(response.body!!.matches).isEmpty()
         assertThat(response.body!!.metadata.matchCount).isZero()
+        verify(historyService).listSummaries(OUR_CLUB)
     }
 
     @Test

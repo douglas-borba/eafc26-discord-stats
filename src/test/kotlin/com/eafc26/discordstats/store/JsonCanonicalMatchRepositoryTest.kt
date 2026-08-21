@@ -177,6 +177,29 @@ class JsonCanonicalMatchRepositoryTest {
     }
 
     @Test
+    fun `findHistorySummaries preserves complete history ordering isolation and canonical summary semantics`() {
+        val otherClub = ClubId("other-club")
+        val completed = canonicalMatch("completed", 1_800_000_000L)
+        val dnfByUs = canonicalMatch("dnf-us", 1_900_000_000L, completion = MatchCompletion.dnf(OUR_CLUB))
+        val dnfByOpponent = canonicalMatch("dnf-opponent", 1_900_000_001L, completion = MatchCompletion.dnf(ClubId("opponent")))
+        val unknown = canonicalMatch("unknown", 1_900_000_002L, completion = MatchCompletion.UNKNOWN)
+        val other = canonicalMatch("other", 1_900_000_003L, otherClub)
+        listOf(completed, dnfByUs, dnfByOpponent, unknown, other).forEach(repository::save)
+
+        val summaries = repository.findHistorySummaries(OUR_CLUB)
+
+        assertThat(summaries.map { it.matchId.value })
+            .containsExactly("unknown", "dnf-opponent", "dnf-us", "completed")
+        assertThat(summaries.map(HistoricalMatchPresenter::summary))
+            .containsExactlyElementsOf(repository.findAll(OUR_CLUB).map(HistoricalMatchPresenter::summary))
+        assertThat(summaries.first { it.matchId.value == "dnf-us" }.completion).isEqualTo(MatchCompletion.dnf(OUR_CLUB))
+        assertThat(summaries.first { it.matchId.value == "dnf-opponent" }.completion)
+            .isEqualTo(MatchCompletion.dnf(ClubId("opponent")))
+        assertThat(repository.findHistorySummaries(otherClub).map { it.matchId }).containsExactly(other.matchId)
+        assertThat(repository.findHistorySummaries(ClubId("empty-club"))).isEmpty()
+    }
+
+    @Test
     fun `findMatchIds reads file identities without deserializing canonical payloads`() {
         val canonical = canonicalMatch("lightweight-id", 1_700_000_000L)
         repository.save(canonical)

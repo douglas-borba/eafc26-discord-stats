@@ -58,6 +58,15 @@ class MatchHistoryService(
         query.limit?.let(matches::take)?.toList() ?: matches.toList()
     }
 
+    /**
+     * Complete, newest-first collection of shallow facts for match list routes.
+     * Full canonical history remains available through [list] for consumers
+     * that explicitly need players, interpretation or stories.
+     */
+    fun listSummaries(clubId: ClubId): List<CanonicalMatchOverview> = attributed(CanonicalReadOrigin.HISTORY_LIST) {
+        repository.findHistorySummaries(clubId)
+    }
+
     fun latest(
         clubId: ClubId,
         limit: Int,

@@ -112,6 +112,18 @@ class MirroringCanonicalMatchRepositoryTest {
     }
 
     @Test
+    fun `history summary reads delegate to primary only`() {
+        val match = testMatch("m1")
+        primary.store[match.matchId] = match
+        mirror.failOnHistorySummaryRead = true
+
+        assertThat(repo.findHistorySummaries(CLUB_ID).map { it.matchId })
+            .containsExactly(match.matchId)
+        assertThat(primary.historySummaryReads).isEqualTo(1)
+        assertThat(mirror.historySummaryReads).isZero()
+    }
+
+    @Test
     fun `metadata delegates to primary only`() {
         assertThat(repo.metadata(CLUB_ID).matchCount).isZero()
     }
@@ -148,6 +160,8 @@ class MirroringCanonicalMatchRepositoryTest {
         var recentMatchIdReads = 0
         var failOnRecentOverviewRead = false
         var recentOverviewReads = 0
+        var failOnHistorySummaryRead = false
+        var historySummaryReads = 0
 
         override fun save(match: CanonicalMatch) {
             if (failOnSave) throw RuntimeException("simulated failure")
@@ -183,6 +197,13 @@ class MirroringCanonicalMatchRepositoryTest {
             return findAll(clubId)
                 .sortedWith(compareByDescending<CanonicalMatch> { it.footballMatch.playedAt }.thenBy { it.matchId.value })
                 .take(limit)
+                .map(CanonicalMatchOverview::from)
+        }
+        override fun findHistorySummaries(clubId: ClubId): List<CanonicalMatchOverview> {
+            historySummaryReads++
+            if (failOnHistorySummaryRead) throw RuntimeException("secondary history summary read should not happen")
+            return findAll(clubId)
+                .sortedWith(compareByDescending<CanonicalMatch> { it.footballMatch.playedAt }.thenBy { it.matchId.value })
                 .map(CanonicalMatchOverview::from)
         }
         override fun findAll(clubId: ClubId) =

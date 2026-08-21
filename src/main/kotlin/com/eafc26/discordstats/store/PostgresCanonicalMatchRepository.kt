@@ -265,6 +265,57 @@ class PostgresCanonicalMatchRepository(
         return results.map(PayloadRead::match)
     }
 
+    override fun findHistorySummaries(clubId: ClubId): List<CanonicalMatchOverview> {
+        val results = jdbcTemplate.query(
+            """
+            SELECT
+                match_id,
+                club_id,
+                COALESCE(opponent_club_id, payload #>> '{interpretation,result,opponentClub}') AS opponent_club_id,
+                played_at,
+                COALESCE(match_type, payload #>> '{footballMatch,competition}') AS match_type,
+                COALESCE(outcome, payload #>> '{interpretation,result,outcome}') AS outcome,
+                COALESCE(our_score, (payload #>> '{interpretation,result,ourScore}')::integer) AS our_score,
+                COALESCE(opponent_score, (payload #>> '{interpretation,result,opponentScore}')::integer) AS opponent_score,
+                COALESCE(
+                    our_club_name,
+                    (
+                        SELECT participant->'club'->>'name'
+                        FROM jsonb_array_elements(payload->'footballMatch'->'participants') AS participant
+                        WHERE participant->'club'->>'id' = club_id
+                        LIMIT 1
+                    )
+                ) AS our_club_name,
+                COALESCE(
+                    opponent_club_name,
+                    (
+                        SELECT participant->'club'->>'name'
+                        FROM jsonb_array_elements(payload->'footballMatch'->'participants') AS participant
+                        WHERE participant->'club'->>'id' = COALESCE(
+                            opponent_club_id,
+                            payload #>> '{interpretation,result,opponentClub}'
+                        )
+                        LIMIT 1
+                    )
+                ) AS opponent_club_name,
+                COALESCE(payload #>> '{footballMatch,completion,status}', 'UNKNOWN') AS completion_status,
+                payload #>> '{footballMatch,completion,dnfClubId}' AS dnf_club_id
+            FROM canonical_matches
+            WHERE club_id = ?
+            ORDER BY played_at DESC, match_id ASC
+            """.trimIndent(),
+            { rs, _ -> readOverview(rs) },
+            clubId.value,
+        )
+        readDiagnostics.record(
+            CanonicalReadOperation.FIND_HISTORY_SUMMARIES,
+            readOriginContext.current(),
+            results.size,
+            results.sumOf { it.estimatedReturnedBytes },
+        )
+        return results.map(OverviewRead::overview)
+    }
+
     override fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> {
         require(limit >= 0) { "limit must be non-negative" }
         val results = jdbcTemplate.query(
