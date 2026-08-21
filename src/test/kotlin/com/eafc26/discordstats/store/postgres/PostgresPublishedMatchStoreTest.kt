@@ -107,12 +107,22 @@ class PostgresPublishedMatchStoreTest {
 
     @Test
     fun `upgradeDeliveringRecords converts DELIVERING to DELIVERY_UNCERTAIN`() {
-        store.saveRecord(CLUB_A, PublicationRecord("match-1", PublicationState.DELIVERING))
+        store.saveRecord(CLUB_A, PublicationRecord(
+            matchId = "match-1",
+            state = PublicationState.DELIVERING,
+            attemptCount = 2,
+            lastAttemptAt = Instant.now().epochSecond,
+        ))
         store.saveRecord(CLUB_A, PublicationRecord("match-2", PublicationState.DELIVERED))
 
-        store.upgradeDeliveringRecords()
+        val recovered = store.upgradeDeliveringRecords()
 
-        assertThat(store.find(CLUB_A, "match-1")!!.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+        assertThat(recovered).singleElement().extracting { it.clubId }.isEqualTo(CLUB_A)
+        val record = store.find(CLUB_A, "match-1")!!
+        assertThat(record.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+        assertThat(record.attemptCount).isEqualTo(2)
+        assertThat(record.lastAttemptAt).isNotNull()
+        assertThat(record.lastError).startsWith("STARTUP_RECOVERY:")
         assertThat(store.find(CLUB_A, "match-2")!!.state).isEqualTo(PublicationState.DELIVERED)
     }
 

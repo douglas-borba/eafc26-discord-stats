@@ -69,6 +69,46 @@ class DiscordRenderer(
                 )
             )
         }
+        addSection(summary.behindThePlay?.let {
+            val secondAssistLabel = if (it.secondAssists == 1) "assistência prévia" else "assistências prévias"
+            val throughPassLabel = if (it.throughPasses == 1) "passe em profundidade" else "passes em profundidade"
+            EmbedField(
+                "🧠 POR TRÁS DA JOGADA",
+                "$BLANK\n${it.name}\n$BLANK\n" +
+                    "🎯 ${it.secondAssists} $secondAssistLabel\n" +
+                    "📤 ${it.throughPasses} $throughPassLabel\n$BLANK\n" +
+                    "💬 \"${it.phrase}\"",
+            )
+        })
+        addSection(summary.oneOnOne?.let {
+            val beatLabel = if (it.beats == 1) "adversário superado" else "adversários superados"
+            val dribbleLabel = if (it.dribblesCompleted == 1) "drible completo" else "dribles completos"
+            EmbedField(
+                "🪄 NO UM CONTRA UM",
+                "$BLANK\n${it.name}\n$BLANK\n" +
+                    "⚡ ${it.beats} $beatLabel\n" +
+                    "🌀 ${it.dribblesCompleted} $dribbleLabel\n$BLANK\n" +
+                    "💬 \"${it.phrase}\"",
+            )
+        })
+        addSection(summary.xerife?.let {
+            val defensiveActions = it.tacklesMade + it.interceptions
+            EmbedField(
+                "🚧 XERIFE DA PARTIDA",
+                buildString {
+                    append("$BLANK\n${it.name}\n$BLANK\n")
+                    if (it.interceptions > 0) {
+                        append("🛡️ $defensiveActions ações defensivas\n")
+                    }
+                    append("🛡️ ${it.tacklesMade}/${it.tackleAttempts} desarmes\n")
+                    if (it.interceptions > 0) append("🧲 ${it.interceptions} interceptações\n")
+                    if (it.interceptions == 0 || it.tackleAttempts > 0) {
+                        append("📈 Aproveitamento: ${it.successRate}%\n")
+                    }
+                    append("$BLANK\n💬 \"${it.phrase}\"")
+                },
+            )
+        })
         addSection(summary.bagre?.let {
             EmbedField(
                 "🍍 BAGRE DA PARTIDA",
@@ -86,14 +126,6 @@ class DiscordRenderer(
             EmbedField(
                 "🟥 PERDEU A CABEÇA",
                 "$BLANK\n${it.name}\n$BLANK\nCartão vermelho\n$BLANK\n💬 \"${it.phrase}\"",
-            )
-        })
-        addSection(summary.xerife?.let {
-            EmbedField(
-                "🚧 XERIFE DA PARTIDA",
-                "$BLANK\n${it.name}\n$BLANK\n" +
-                    "🛡️ ${it.tacklesMade}/${it.tackleAttempts} desarmes\n" +
-                    "📈 Aproveitamento: ${it.successRate}%\n$BLANK\n💬 \"${it.phrase}\"",
             )
         })
         addSection(summary.passePrecisao?.let {
@@ -136,18 +168,59 @@ class DiscordRenderer(
             //     append(editorialNarrative)
             // }
         }
+        val title = "🏆 ${summary.ourName} ${summary.ourScore} × ${summary.oppScore} ${summary.oppName}"
 
         return DiscordPayload(
-            listOf(
-                DiscordEmbed(
-                    title = "🏆 ${summary.ourName} ${summary.ourScore} × ${summary.oppScore} ${summary.oppName}",
-                    description = description,
-                    color = summary.outcome.color,
-                    fields = fields,
-                    timestamp = summary.timestamp,
-                )
-            )
+            splitIntoEmbeds(title, description, summary.outcome.color, summary.timestamp, fields)
         )
+    }
+
+    /**
+     * Discord accepts at most 25 fields and 6,000 characters per embed. A rich
+     * match can legitimately contain more conditional sections than fit in one
+     * embed, so it is continued in a second embed instead of hiding a section.
+     */
+    private fun splitIntoEmbeds(
+        title: String,
+        description: String,
+        color: Int,
+        timestamp: String,
+        fields: List<EmbedField>,
+    ): List<DiscordEmbed> {
+        val chunks = mutableListOf<List<EmbedField>>()
+        var current = mutableListOf<EmbedField>()
+        var currentCharacters = title.length + description.length
+
+        fun flush() {
+            val trimmed = current.dropWhile { it == SEPARATOR }.dropLastWhile { it == SEPARATOR }
+            if (trimmed.isNotEmpty()) chunks += trimmed
+            current = mutableListOf()
+            currentCharacters = title.length + DISCORD_CONTINUATION_TITLE_RESERVE
+        }
+
+        fields.forEach { field ->
+            val fieldCharacters = field.name.length + field.value.length
+            if (current.isNotEmpty() &&
+                (current.size == DISCORD_MAX_FIELDS_PER_EMBED ||
+                    currentCharacters + fieldCharacters > DISCORD_MAX_EMBED_CHARACTERS)
+            ) {
+                flush()
+            }
+            current += field
+            currentCharacters += fieldCharacters
+        }
+        flush()
+
+        val nonEmptyChunks = if (chunks.isEmpty()) listOf(emptyList()) else chunks
+        return nonEmptyChunks.mapIndexed { index, chunk ->
+            DiscordEmbed(
+                title = if (index == 0) title else "$title · continuação ${index + 1}",
+                description = description.takeIf { index == 0 },
+                color = color,
+                fields = chunk,
+                timestamp = timestamp,
+            )
+        }
     }
 
     private fun highlights(
@@ -194,5 +267,8 @@ class DiscordRenderer(
         val MEDALS = listOf("🥇", "🥈", "🥉")
         const val BLANK = "\u200B"
         const val DISCORD_OFFENSIVE_STORY_LIMIT = 2
+        const val DISCORD_MAX_FIELDS_PER_EMBED = 25
+        const val DISCORD_MAX_EMBED_CHARACTERS = 6_000
+        const val DISCORD_CONTINUATION_TITLE_RESERVE = 20
     }
 }

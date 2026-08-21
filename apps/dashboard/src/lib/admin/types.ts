@@ -65,7 +65,17 @@ export interface ClubOperationalStatus {
   discordConfigured: boolean;
   lastDiscordSuccess: string | null;
   lastDiscordError: string | null;
+  lastDiscordUncertain: DiscordUncertainDelivery | null;
+  healthReason: string | null;
   healthIndicator: "healthy" | "warning" | "error" | "idle";
+}
+
+export interface DiscordUncertainDelivery {
+  matchId: string;
+  occurredAt: string;
+  reason: string | null;
+  attemptCount: number;
+  httpStatus: number | null;
 }
 
 export interface SystemHealth {

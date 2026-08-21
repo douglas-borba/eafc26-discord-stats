@@ -23,10 +23,10 @@ package com.eafc26.discordstats.store
  *   window. On startup all DELIVERING records are upgraded to [PublicationState.DELIVERY_UNCERTAIN].
  * - [PublicationState.DELIVERED]: Discord returned HTTP 2xx AND the state was atomically
  *   persisted after the response. This is the only terminal-success state.
- * - [PublicationState.DELIVERY_UNCERTAIN]: Post-restart upgrade of a DELIVERING record.
- *   The process died between the pre-send write and the 2xx confirmation. The message
- *   MAY or MAY NOT have reached Discord. Automatic resend is permanently blocked until
- *   explicit administrative resolution.
+ * - [PublicationState.DELIVERY_UNCERTAIN]: The send outcome cannot be proven, either after
+ *   a network failure or during startup recovery of a DELIVERING record. The message MAY or
+ *   MAY NOT have reached Discord. Automatic resend is permanently blocked until explicit
+ *   administrative resolution. Its preserved diagnostic uses [DeliveryUncertaintyReason].
  * - [PublicationState.FAILED_PERMANENT]: Discord explicitly rejected the request with a
  *   definitive error (404, 401, 403, 400, 413). The message was NOT delivered.
  */
@@ -46,6 +46,40 @@ data class PublicationRecord(
     /** Why this match was baselined (only meaningful when state == BASELINED). */
     val baselineReason: BaselineReason? = null,
 )
+
+/**
+ * Classified reason persisted inside [PublicationRecord.lastError] while a delivery is
+ * uncertain. The database schema intentionally keeps the existing sanitized diagnostic
+ * field; the prefix makes the reason stable and machine-readable without inventing a new
+ * persistence model before durable publication work is designed.
+ */
+enum class DeliveryUncertaintyReason {
+    NETWORK_TIMEOUT,
+    NETWORK_EXCEPTION,
+    STARTUP_RECOVERY,
+    DELIVERED_STATE_PERSISTENCE_FAILURE,
+    UNKNOWN,
+    ;
+
+    fun diagnosticMessage(detail: String?): String =
+        buildString {
+            append(name)
+            detail?.takeIf { it.isNotBlank() }?.let {
+                append(": ")
+                append(it)
+            }
+        }
+}
+
+/**
+ * Origin recorded in immutable operational events. It is deliberately not stored as the
+ * current publication state: a manual resend must not erase the previous automatic attempt.
+ */
+enum class DiscordPublicationOrigin {
+    AUTOMATIC_ACQUISITION,
+    FORCE_PUBLISH,
+    STARTUP_RECOVERY,
+}
 
 enum class BaselineReason {
     FIRST_RUN,
@@ -94,4 +128,3 @@ enum class PublicationState {
      */
     BASELINED,
 }
-

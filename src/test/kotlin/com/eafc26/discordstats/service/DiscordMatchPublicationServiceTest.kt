@@ -16,7 +16,11 @@ import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.store.PublicationRecord
 import com.eafc26.discordstats.store.PublicationState
+import com.eafc26.discordstats.store.PublicationStateStore
 import com.eafc26.discordstats.store.PublishedMatchStore
+import com.eafc26.discordstats.store.EventStatus
+import com.eafc26.discordstats.store.OperationalEvent
+import com.eafc26.discordstats.store.OperationalEventRepository
 import com.eafc26.discordstats.domain.match.ClubId
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
@@ -87,7 +91,10 @@ class DiscordMatchPublicationServiceTest {
     }
 
     private fun makeStore() = PublishedMatchStore(ObjectMapper().registerModule(KotlinModule.Builder().build()))
-    private fun makeService(s: PublishedMatchStore) = DiscordMatchPublicationService(
+    private fun makeService(
+        s: PublicationStateStore,
+        eventRecorder: OperationalEventRecorder? = null,
+    ) = DiscordMatchPublicationService(
         s, webhookClient, DiscordRenderer(MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))),
         LlmEditorialService(
             com.eafc26.discordstats.llm.EditorialContextBuilder(),
@@ -95,6 +102,8 @@ class DiscordMatchPublicationServiceTest {
             mock(),
             LlmProperties(enabled = false),
         ),
+        DiscordDestinationResolver { DiscordDestination("https://discord.test/default") },
+        eventRecorder = eventRecorder,
     )
 
     private fun canonical(id: String, ourScore: String = "2", oppScore: String = "1") =
@@ -114,13 +123,28 @@ class DiscordMatchPublicationServiceTest {
             perspectiveClubId = perspective.value,
         )
 
-    private fun serviceWith(resolver: DiscordDestinationResolver) = DiscordMatchPublicationService(
+    private fun serviceWith(
+        resolver: DiscordDestinationResolver,
+        eventRecorder: OperationalEventRecorder? = null,
+    ) = DiscordMatchPublicationService(
         store,
         webhookClient,
         DiscordRenderer(MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))),
         LlmEditorialService(EditorialContextBuilder(), null, mock(), LlmProperties(enabled = false)),
         resolver,
+        eventRecorder = eventRecorder,
     )
+
+    private class DeliveredWriteFailingStore(
+        private val delegate: PublicationStateStore,
+    ) : PublicationStateStore by delegate {
+        override fun saveRecord(clubId: ClubId, record: PublicationRecord) {
+            if (record.state == PublicationState.DELIVERED) {
+                throw IllegalStateException("state storage unavailable")
+            }
+            delegate.saveRecord(clubId, record)
+        }
+    }
 
     @Nested
     inner class ClubIsolation {
@@ -252,7 +276,77 @@ class DiscordMatchPublicationServiceTest {
 
             // Ambiguous: request may have reached Discord → DELIVERY_UNCERTAIN, NOT removed
             assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_AMBIGUOUS)
-            assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+            val record = store.loadRecords()["m1"]!!
+            assertThat(record.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+            assertThat(record.attemptCount).isEqualTo(1)
+            assertThat(record.lastAttemptAt).isNotNull()
+            assertThat(record.lastError).startsWith("NETWORK_EXCEPTION:")
+        }
+
+        @Test
+        fun `timeout uncertainty preserves attempt metadata and classified reason`() {
+            doThrow(DiscordDeliveryException("read timed out", SocketTimeoutException("Read timed out")))
+                .whenever(webhookClient).send(any(), any())
+
+            val result = service.publishIfNeeded(canonical("m-timeout"))
+
+            val record = store.loadRecords()["m-timeout"]!!
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_AMBIGUOUS)
+            assertThat(record.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+            assertThat(record.attemptCount).isEqualTo(1)
+            assertThat(record.lastAttemptAt).isNotNull()
+            assertThat(record.lastError).startsWith("NETWORK_TIMEOUT:")
+        }
+
+        @Test
+        fun `uncertain state redacts webhook URL from persisted diagnostic`() {
+            doThrow(DiscordDeliveryException(
+                "POST https://discord.com/api/webhooks/123456/secret-token reset by peer",
+                java.io.IOException("Connection reset"),
+            )).whenever(webhookClient).send(any(), any())
+
+            service.publishIfNeeded(canonical("m-redacted"))
+
+            assertThat(store.loadRecords()["m-redacted"]!!.lastError)
+                .contains("[Discord webhook]")
+                .doesNotContain("secret-token")
+        }
+
+        @Test
+        fun `uncertainty preserves prior transient diagnostic when a retry becomes ambiguous`() {
+            store.saveRecord(PublicationRecord(
+                matchId = "m-retry-context",
+                state = PublicationState.FAILED_TRANSIENT,
+                attemptCount = 1,
+                lastAttemptAt = 1_724_207_200,
+                lastError = "HTTP 429: rate limited",
+                lastHttpStatus = 429,
+            ))
+            doThrow(DiscordDeliveryException("connection reset", java.io.IOException("Connection reset")))
+                .whenever(webhookClient).send(any(), any())
+
+            service.publishIfNeeded(canonical("m-retry-context"))
+
+            val record = store.loadRecords()["m-retry-context"]!!
+            assertThat(record.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+            assertThat(record.attemptCount).isEqualTo(2)
+            assertThat(record.lastHttpStatus).isEqualTo(429)
+            assertThat(record.lastError).contains("previousState=FAILED_TRANSIENT", "previousDiagnostic=HTTP 429: rate limited")
+        }
+
+        @Test
+        fun `delivery persistence failure preserves the attempt as explicitly uncertain`() {
+            val failingDeliveredStore = DeliveredWriteFailingStore(store)
+            val serviceWithPersistenceFailure = makeService(failingDeliveredStore)
+
+            val result = serviceWithPersistenceFailure.publishIfNeeded(canonical("m-delivered-write-failure"))
+
+            val record = store.loadRecords()["m-delivered-write-failure"]!!
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN)
+            assertThat(record.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+            assertThat(record.attemptCount).isEqualTo(1)
+            assertThat(record.lastAttemptAt).isNotNull()
+            assertThat(record.lastError).startsWith("DELIVERED_STATE_PERSISTENCE_FAILURE:")
         }
 
         @Test
@@ -279,12 +373,20 @@ class DiscordMatchPublicationServiceTest {
         @Test
         fun `DELIVERING left in store after crash → DELIVERY_UNCERTAIN after restart → zero resends`() {
             // Simulate crash: write DELIVERING manually (as if pre-send write completed but process died)
-            store.saveRecord(PublicationRecord("m1", PublicationState.DELIVERING))
+            store.saveRecord(PublicationRecord(
+                matchId = "m1",
+                state = PublicationState.DELIVERING,
+                attemptCount = 3,
+                lastAttemptAt = 1_723_000_000,
+            ))
 
             // Simulate restart: new store instance reads the file
             val restartedStore = makeStore()
-            assertThat(restartedStore.loadRecords()["m1"]?.state)
-                .isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+            val recovered = restartedStore.loadRecords()["m1"]!!
+            assertThat(recovered.state).isEqualTo(PublicationState.DELIVERY_UNCERTAIN)
+            assertThat(recovered.attemptCount).isEqualTo(3)
+            assertThat(recovered.lastAttemptAt).isEqualTo(1_723_000_000)
+            assertThat(recovered.lastError).startsWith("STARTUP_RECOVERY:")
 
             // New service on restarted store
             val restartedService = makeService(restartedStore)
@@ -373,6 +475,39 @@ class DiscordMatchPublicationServiceTest {
             assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
             verify(webhookClient).send(any(), any())
             assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
+        fun `force publish records prior uncertain diagnostic before replacing current state`() {
+            val events = mock<OperationalEventRepository>()
+            val recorder = OperationalEventRecorder(events)
+            val diagnosticService = serviceWith(
+                DiscordDestinationResolver { DiscordDestination("https://discord.test/default") },
+                recorder,
+            )
+            store.saveRecord(PublicationRecord(
+                matchId = "m-forensic",
+                state = PublicationState.DELIVERY_UNCERTAIN,
+                attemptCount = 2,
+                lastAttemptAt = 1_723_000_000,
+                lastError = "NETWORK_TIMEOUT: Read timed out",
+            ))
+
+            diagnosticService.forcePublish(canonical("m-forensic"))
+
+            val captured = argumentCaptor<OperationalEvent>()
+            verify(events, org.mockito.Mockito.atLeast(3)).save(captured.capture())
+            assertThat(captured.allValues).anySatisfy { event ->
+                assertThat(event).extracting(OperationalEvent::phase, OperationalEvent::status)
+                    .containsExactly("MANUAL_RESEND_REQUESTED", EventStatus.INFO)
+                assertThat(event.message).contains("estado anterior: DELIVERY_UNCERTAIN")
+                assertThat(event.message).contains("NETWORK_TIMEOUT: Read timed out")
+            }
+            assertThat(captured.allValues).anySatisfy { event ->
+                assertThat(event).extracting(OperationalEvent::phase, OperationalEvent::status)
+                    .containsExactly("DELIVERED", EventStatus.SUCCESS)
+                assertThat(event.message).contains("Origem: reenvio manual")
+            }
         }
     }
 

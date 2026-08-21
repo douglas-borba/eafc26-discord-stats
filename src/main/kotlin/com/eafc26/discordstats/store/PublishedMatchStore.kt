@@ -153,7 +153,13 @@ class PublishedMatchStore(private val objectMapper: ObjectMapper) : PublicationS
         if (records.values.none { it.state == PublicationState.DELIVERING }) return
         val upgraded = records.mapValues { (_, record) ->
             if (record.state == PublicationState.DELIVERING) {
-                record.copy(state = PublicationState.DELIVERY_UNCERTAIN, updatedAt = Instant.now().epochSecond)
+                record.copy(
+                    state = PublicationState.DELIVERY_UNCERTAIN,
+                    updatedAt = Instant.now().epochSecond,
+                    lastError = record.lastError ?: DeliveryUncertaintyReason.STARTUP_RECOVERY.diagnosticMessage(
+                        "Registro DELIVERING encontrado na inicialização; a causa original não está disponível.",
+                    ),
+                )
             } else record
         }
         saveAllRecordsAtomic(path, upgraded.values.toList())

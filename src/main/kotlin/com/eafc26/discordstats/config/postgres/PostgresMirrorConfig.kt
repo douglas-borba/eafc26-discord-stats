@@ -22,6 +22,8 @@ import com.eafc26.discordstats.store.PublicationStateStore
 import com.eafc26.discordstats.store.OperationalEventRepository
 import com.eafc26.discordstats.store.AdminAuditLogRepository
 import com.eafc26.discordstats.service.OperationalEventRecorder
+import com.eafc26.discordstats.store.DeliveryUncertaintyReason
+import com.eafc26.discordstats.store.DiscordPublicationOrigin
 import com.eafc26.discordstats.service.SynchronizationGapStore
 import com.eafc26.discordstats.store.PostgresSynchronizationGapStore
 import com.eafc26.discordstats.store.PostgresTrialRequestRepository
@@ -168,8 +170,17 @@ class PostgresMirrorConfig {
     fun publicationStateUpgradeRunner(
         flyway: Flyway,
         store: PostgresPublishedMatchStore,
+        events: OperationalEventRecorder,
     ): ApplicationRunner = ApplicationRunner {
         flyway.info()
-        store.upgradeDeliveringRecords()
+        store.upgradeDeliveringRecords().forEach { recovered ->
+            events.discordUncertain(
+                clubId = recovered.clubId,
+                matchId = recovered.record.matchId,
+                reason = DeliveryUncertaintyReason.STARTUP_RECOVERY,
+                message = recovered.record.lastError ?: "Registro DELIVERING encontrado na inicialização; a causa original não está disponível.",
+                origin = DiscordPublicationOrigin.STARTUP_RECOVERY,
+            )
+        }
     }
 }

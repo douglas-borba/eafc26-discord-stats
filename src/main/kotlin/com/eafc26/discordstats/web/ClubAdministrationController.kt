@@ -17,6 +17,7 @@ import com.eafc26.discordstats.service.LatestMatchHolder
 import com.eafc26.discordstats.store.EventStatus
 import com.eafc26.discordstats.store.OperationalEventRepository
 import com.eafc26.discordstats.store.PublicationStateStore
+import com.eafc26.discordstats.store.PublicationRecord
 import com.eafc26.discordstats.store.PublicationState
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -184,7 +185,7 @@ class ClubAdministrationController(
                 }
                 if (lastError == null) {
                     eventRepository.findByClub(club.clubId, limit = 50)
-                        .firstOrNull { it.status == EventStatus.FAILURE }
+                        .firstOrNull { it.status == EventStatus.FAILURE && it.eventType != "DISCORD" }
                         ?.let { lastError = it.message }
                 }
             } catch (_: Exception) { /* event fallback unavailable */ }
@@ -201,20 +202,31 @@ class ClubAdministrationController(
             } catch (_: Exception) { /* discord event fallback unavailable */ }
         }
 
-        val hasUncertainOrPermanentFailure = publicationStore?.let { pubStore ->
+        val publicationRecords = publicationStore?.let { pubStore ->
             try {
-                pubStore.loadRecords(club.clubId).values.any {
-                    it.state == PublicationState.DELIVERY_UNCERTAIN || it.state == PublicationState.FAILED_PERMANENT || it.state == PublicationState.FAILED_TRANSIENT
-                }
+                pubStore.loadRecords(club.clubId).values
             } catch (_: Exception) {
-                false
+                emptyList()
             }
-        } ?: false
+        } ?: emptyList()
+
+        val latestUncertainDelivery = publicationRecords
+            .filter { it.state == PublicationState.DELIVERY_UNCERTAIN }
+            .maxByOrNull(PublicationRecord::updatedAt)
+        val latestConfirmedDiscordFailure = publicationRecords
+            .filter { it.state == PublicationState.FAILED_TRANSIENT || it.state == PublicationState.FAILED_PERMANENT }
+            .maxByOrNull(PublicationRecord::updatedAt)
+        val discordHealthReason = when {
+            latestUncertainDelivery != null -> "Entrega Discord incerta"
+            latestConfirmedDiscordFailure?.state == PublicationState.FAILED_TRANSIENT -> "Falha transitória no Discord"
+            latestConfirmedDiscordFailure?.state == PublicationState.FAILED_PERMANENT -> "Falha permanente no Discord"
+            else -> null
+        }
 
         val healthIndicator = when {
             lastPollAt == null && latestMatchId == null -> "idle"
             lastError != null -> "error"
-            hasUncertainOrPermanentFailure -> "warning"
+            discordHealthReason != null -> "warning"
             else -> "healthy"
         }
 
@@ -235,6 +247,8 @@ class ClubAdministrationController(
             discordConfigured = isDiscordDestinationResolvable(club),
             lastDiscordSuccess = lastDiscordSuccess,
             lastDiscordError = lastDiscordError,
+            lastDiscordUncertain = latestUncertainDelivery?.asDiscordUncertainDeliveryResponse(),
+            healthReason = discordHealthReason,
             healthIndicator = healthIndicator,
         )
     }
@@ -267,6 +281,14 @@ class ClubAdministrationController(
 
     private fun isDiscordDestinationResolvable(club: MonitoredClub): Boolean =
         club.discordWebhookSecretReference?.let(secretStore::resolve) != null
+
+    private fun PublicationRecord.asDiscordUncertainDeliveryResponse() = DiscordUncertainDeliveryResponse(
+        matchId = matchId,
+        occurredAt = java.time.Instant.ofEpochSecond(updatedAt).toString(),
+        reason = lastError,
+        attemptCount = attemptCount,
+        httpStatus = lastHttpStatus,
+    )
 
     companion object {
         private val logger = LoggerFactory.getLogger(ClubAdministrationController::class.java)
@@ -315,5 +337,15 @@ data class ClubOperationalStatusResponse(
     val discordConfigured: Boolean,
     val lastDiscordSuccess: String? = null,
     val lastDiscordError: String? = null,
+    val lastDiscordUncertain: DiscordUncertainDeliveryResponse? = null,
+    val healthReason: String? = null,
     val healthIndicator: String = "idle",
+)
+
+data class DiscordUncertainDeliveryResponse(
+    val matchId: String,
+    val occurredAt: String,
+    val reason: String?,
+    val attemptCount: Int,
+    val httpStatus: Int?,
 )

@@ -17,6 +17,12 @@ import com.eafc26.discordstats.scheduler.PollingStatusHolder
 import com.eafc26.discordstats.security.SecurityConfig
 import com.eafc26.discordstats.service.AcquisitionStateHolder
 import com.eafc26.discordstats.service.LatestMatchHolder
+import com.eafc26.discordstats.store.EventStatus
+import com.eafc26.discordstats.store.OperationalEvent
+import com.eafc26.discordstats.store.OperationalEventRepository
+import com.eafc26.discordstats.store.PublicationRecord
+import com.eafc26.discordstats.store.PublicationState
+import com.eafc26.discordstats.store.PublicationStateStore
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.never
@@ -47,6 +53,8 @@ class ClubAdministrationControllerTest {
     @MockBean private lateinit var webhookConfigService: WebhookConfigService
     @MockBean private lateinit var defaultClubProvider: DefaultClubProvider
     @MockBean private lateinit var editorialRepository: MatchEditorialPresentationRepository
+    @MockBean private lateinit var eventRepository: OperationalEventRepository
+    @MockBean private lateinit var publicationStore: PublicationStateStore
 
     private val association = club("1104972", "Associação BF", enabled = true, reference = "legacy:default")
     private val brasil = club("8874106", "BRASIL 2030", enabled = false)
@@ -240,6 +248,80 @@ class ClubAdministrationControllerTest {
             .jsonPath("$.pollingStatus").isEqualTo("DISABLED")
             .jsonPath("$.discordConfigured").isEqualTo(false)
             .jsonPath("$.lastError").doesNotExist()
+    }
+
+    @Test
+    fun `status distinguishes uncertain Discord delivery from confirmed failure and explains warning health`() {
+        whenever(acquisitionState.current(association.clubId)).thenReturn(com.eafc26.discordstats.service.AcquisitionState.idle())
+        whenever(pollingStatus.current(association.clubId)).thenReturn(
+            com.eafc26.discordstats.scheduler.PollingStatus(lastCheck = Instant.parse("2026-08-21T03:02:00Z")),
+        )
+        whenever(latestMatch.presentation(association.clubId)).thenReturn(null)
+        whenever(eventRepository.findByClub(association.clubId, 50)).thenReturn(listOf(
+            OperationalEvent(
+                clubId = association.clubId,
+                matchId = "990976744430293",
+                eventType = "DISCORD",
+                phase = "UNCERTAIN",
+                status = EventStatus.WARNING,
+                message = "Origem: aquisição automática; motivo: NETWORK_TIMEOUT; read timed out",
+            ),
+        ))
+        whenever(eventRepository.findLatestByClubAndType(association.clubId, "POLLING")).thenReturn(null)
+        whenever(publicationStore.loadRecords(association.clubId)).thenReturn(mapOf(
+            "990976744430293" to PublicationRecord(
+                matchId = "990976744430293",
+                state = PublicationState.DELIVERY_UNCERTAIN,
+                updatedAt = 1_724_207_320,
+                attemptCount = 1,
+                lastAttemptAt = 1_724_207_320,
+                lastError = "NETWORK_TIMEOUT: read timed out",
+            ),
+        ))
+
+        client.get().uri("/api/admin/clubs/1104972/status").exchange().expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.healthIndicator").isEqualTo("warning")
+            .jsonPath("$.healthReason").isEqualTo("Entrega Discord incerta")
+            .jsonPath("$.lastDiscordError").doesNotExist()
+            .jsonPath("$.lastDiscordUncertain.matchId").isEqualTo("990976744430293")
+            .jsonPath("$.lastDiscordUncertain.reason").isEqualTo("NETWORK_TIMEOUT: read timed out")
+            .jsonPath("$.lastDiscordUncertain.attemptCount").isEqualTo(1)
+    }
+
+    @Test
+    fun `status exposes confirmed Discord failure separately from uncertainty`() {
+        whenever(acquisitionState.current(association.clubId)).thenReturn(com.eafc26.discordstats.service.AcquisitionState.idle())
+        whenever(pollingStatus.current(association.clubId)).thenReturn(
+            com.eafc26.discordstats.scheduler.PollingStatus(lastCheck = Instant.parse("2026-08-21T03:02:00Z")),
+        )
+        whenever(latestMatch.presentation(association.clubId)).thenReturn(null)
+        whenever(eventRepository.findByClub(association.clubId, 50)).thenReturn(listOf(
+            OperationalEvent(
+                clubId = association.clubId,
+                matchId = "match-confirmed-failure",
+                eventType = "DISCORD",
+                phase = "FAILED",
+                status = EventStatus.FAILURE,
+                message = "Origem: aquisição automática; HTTP 403",
+            ),
+        ))
+        whenever(eventRepository.findLatestByClubAndType(association.clubId, "POLLING")).thenReturn(null)
+        whenever(publicationStore.loadRecords(association.clubId)).thenReturn(mapOf(
+            "match-confirmed-failure" to PublicationRecord(
+                matchId = "match-confirmed-failure",
+                state = PublicationState.FAILED_PERMANENT,
+                lastError = "HTTP 403: Forbidden",
+                lastHttpStatus = 403,
+            ),
+        ))
+
+        client.get().uri("/api/admin/clubs/1104972/status").exchange().expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.healthIndicator").isEqualTo("warning")
+            .jsonPath("$.healthReason").isEqualTo("Falha permanente no Discord")
+            .jsonPath("$.lastDiscordError").isEqualTo("Origem: aquisição automática; HTTP 403")
+            .jsonPath("$.lastDiscordUncertain").doesNotExist()
     }
 
     @Test

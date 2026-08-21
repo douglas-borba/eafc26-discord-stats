@@ -136,20 +136,52 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
     /**
      * Startup upgrade mirroring the filesystem store's behavior: any record still in
      * DELIVERING state (process died mid-delivery) is upgraded to DELIVERY_UNCERTAIN,
-     * across all clubs, in a single statement.
+     * across all clubs while preserving the original attempt metadata. A corresponding
+     * startup-recovery operational event is emitted by the configuration runner.
      */
-    fun upgradeDeliveringRecords() {
-        val updated = jdbcTemplate.update(
-            """
-            UPDATE discord_publication_state
-            SET state = ?, updated_at = now()
-            WHERE state = ?
-            """.trimIndent(),
-            PublicationState.DELIVERY_UNCERTAIN.name,
+    fun upgradeDeliveringRecords(): List<RecoveredPublication> {
+        val interrupted = jdbcTemplate.query(
+            "SELECT * FROM discord_publication_state WHERE state = ?",
+            RowMapper { rs, rowNum ->
+                RecoveredPublication(
+                    clubId = ClubId(rs.getString("club_id")),
+                    record = rowMapper.mapRow(rs, rowNum)!!,
+                )
+            },
             PublicationState.DELIVERING.name,
         )
-        if (updated > 0) {
-            log.warn("Interrupted publications marked DELIVERY_UNCERTAIN (postgres): count={}", updated)
+
+        val recovered = interrupted.filter { interruptedPublication ->
+            val record = interruptedPublication.record
+            val diagnostic = DeliveryUncertaintyReason.STARTUP_RECOVERY.diagnosticMessage(
+                "Registro DELIVERING encontrado na inicialização; a causa original não está disponível.",
+            )
+            jdbcTemplate.update(
+                """
+                UPDATE discord_publication_state
+                SET state = ?,
+                    last_error = CASE
+                        WHEN last_error IS NULL OR btrim(last_error) = '' THEN ?
+                        ELSE last_error
+                    END,
+                    updated_at = now()
+                WHERE club_id = ? AND match_id = ? AND state = ?
+                """.trimIndent(),
+                PublicationState.DELIVERY_UNCERTAIN.name,
+                diagnostic,
+                interruptedPublication.clubId.value,
+                record.matchId,
+                PublicationState.DELIVERING.name,
+            ) > 0
         }
+        if (recovered.isNotEmpty()) {
+            log.warn("Interrupted publications marked DELIVERY_UNCERTAIN (postgres): count={}", recovered.size)
+        }
+        return recovered
     }
 }
+
+data class RecoveredPublication(
+    val clubId: ClubId,
+    val record: PublicationRecord,
+)

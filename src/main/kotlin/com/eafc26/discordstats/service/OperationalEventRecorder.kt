@@ -4,6 +4,10 @@ import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.store.EventStatus
 import com.eafc26.discordstats.store.OperationalEvent
 import com.eafc26.discordstats.store.OperationalEventRepository
+import com.eafc26.discordstats.store.DeliveryUncertaintyReason
+import com.eafc26.discordstats.store.DiscordPublicationOrigin
+import com.eafc26.discordstats.store.PublicationRecord
+import com.eafc26.discordstats.store.PublicationState
 import org.slf4j.LoggerFactory
 
 /**
@@ -84,17 +88,84 @@ class OperationalEventRecorder(private val repository: OperationalEventRepositor
     fun panoramaFailed(clubId: ClubId, matchId: String, message: String?) =
         record(OperationalEvent(clubId = clubId, matchId = matchId, eventType = "PANORAMA", status = EventStatus.FAILURE, message = message))
 
-    fun discordAttempt(clubId: ClubId, matchId: String) =
-        record(OperationalEvent(clubId = clubId, matchId = matchId, eventType = "DISCORD", phase = "ATTEMPT", status = EventStatus.INFO))
+    fun discordAttempt(
+        clubId: ClubId,
+        matchId: String,
+        origin: DiscordPublicationOrigin = DiscordPublicationOrigin.AUTOMATIC_ACQUISITION,
+    ) = record(OperationalEvent(
+        clubId = clubId,
+        matchId = matchId,
+        eventType = "DISCORD",
+        phase = "ATTEMPT",
+        status = EventStatus.INFO,
+        message = "Origem: ${origin.label()}",
+    ))
 
-    fun discordSuccess(clubId: ClubId, matchId: String) =
-        record(OperationalEvent(clubId = clubId, matchId = matchId, eventType = "DISCORD", phase = "DELIVERED", status = EventStatus.SUCCESS))
+    fun discordSuccess(
+        clubId: ClubId,
+        matchId: String,
+        origin: DiscordPublicationOrigin = DiscordPublicationOrigin.AUTOMATIC_ACQUISITION,
+    ) = record(OperationalEvent(
+        clubId = clubId,
+        matchId = matchId,
+        eventType = "DISCORD",
+        phase = "DELIVERED",
+        status = EventStatus.SUCCESS,
+        message = "Origem: ${origin.label()}",
+    ))
 
-    fun discordFailed(clubId: ClubId, matchId: String, statusCode: Int?, message: String?) =
-        record(OperationalEvent(clubId = clubId, matchId = matchId, eventType = "DISCORD", phase = "FAILED", status = EventStatus.FAILURE, errorCode = statusCode?.toString(), message = message))
+    fun discordFailed(
+        clubId: ClubId,
+        matchId: String,
+        statusCode: Int?,
+        message: String?,
+        origin: DiscordPublicationOrigin = DiscordPublicationOrigin.AUTOMATIC_ACQUISITION,
+    ) = record(OperationalEvent(
+        clubId = clubId,
+        matchId = matchId,
+        eventType = "DISCORD",
+        phase = "FAILED",
+        status = EventStatus.FAILURE,
+        errorCode = statusCode?.toString(),
+        message = "Origem: ${origin.label()}${message?.let { "; ${sanitizeDiscordDiagnostic(it)}" } ?: ""}",
+    ))
 
-    fun discordUncertain(clubId: ClubId, matchId: String, message: String?) =
-        record(OperationalEvent(clubId = clubId, matchId = matchId, eventType = "DISCORD", phase = "UNCERTAIN", status = EventStatus.WARNING, message = message))
+    fun discordUncertain(
+        clubId: ClubId,
+        matchId: String,
+        reason: DeliveryUncertaintyReason,
+        message: String?,
+        origin: DiscordPublicationOrigin,
+        previousState: PublicationState? = null,
+    ) = record(OperationalEvent(
+        clubId = clubId,
+        matchId = matchId,
+        eventType = "DISCORD",
+        phase = "UNCERTAIN",
+        status = EventStatus.WARNING,
+        message = buildString {
+            append("Origem: ${origin.label()}; motivo: ${reason.name}")
+            previousState?.let { append("; estado anterior: ${it.name}") }
+            message?.let { append("; ${sanitizeDiscordDiagnostic(it)}") }
+        },
+    ))
+
+    fun discordManualResendRequested(clubId: ClubId, matchId: String, previous: PublicationRecord?) =
+        record(OperationalEvent(
+            clubId = clubId,
+            matchId = matchId,
+            eventType = "DISCORD",
+            phase = "MANUAL_RESEND_REQUESTED",
+            status = EventStatus.INFO,
+            message = buildString {
+                append("Origem: ${DiscordPublicationOrigin.FORCE_PUBLISH.label()}")
+                previous?.let {
+                    append("; estado anterior: ${it.state.name}")
+                    append("; tentativas anteriores: ${it.attemptCount}")
+                    it.lastError?.takeIf(String::isNotBlank)?.let { reason -> append("; diagnóstico anterior: ${sanitizeDiscordDiagnostic(reason)}") }
+                }
+            },
+        ))
 
     fun discordSkipped(clubId: ClubId, matchId: String, reason: String) =
         record(OperationalEvent(clubId = clubId, matchId = matchId, eventType = "DISCORD", phase = "SKIPPED", status = EventStatus.INFO, message = reason))
@@ -102,4 +173,17 @@ class OperationalEventRecorder(private val repository: OperationalEventRepositor
     fun trialApproved(clubId: ClubId) =
         record(OperationalEvent(clubId = clubId, eventType = "TRIAL", phase = "APPROVED", status = EventStatus.INFO))
 
+    private fun DiscordPublicationOrigin.label(): String = when (this) {
+        DiscordPublicationOrigin.AUTOMATIC_ACQUISITION -> "aquisição automática"
+        DiscordPublicationOrigin.FORCE_PUBLISH -> "reenvio manual"
+        DiscordPublicationOrigin.STARTUP_RECOVERY -> "recuperação na inicialização"
+    }
+
+    private fun sanitizeDiscordDiagnostic(value: String): String = value
+        .replace(DISCORD_WEBHOOK_URL, "[Discord webhook]")
+        .take(500)
+
+    private companion object {
+        val DISCORD_WEBHOOK_URL = Regex("""https?://[^\s]+/api/webhooks/[^\s]+""")
+    }
 }

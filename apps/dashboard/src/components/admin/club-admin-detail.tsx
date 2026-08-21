@@ -253,6 +253,7 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
             <Status label="Última partida" value={status?.latestMatchId ?? "—"} />
             <Status label="Erro recente" value={status?.lastError ?? "Nenhum"} tone={status?.lastError ? "error" : undefined} />
             <Status label="Saúde" value={healthLabel(status?.healthIndicator)} tone={status?.healthIndicator === "error" ? "error" : status?.healthIndicator === "warning" ? "warning" : undefined} />
+            {status?.healthIndicator === "warning" && <Status label="Motivo da atenção" value={status.healthReason ?? "Diagnóstico indisponível"} tone="warning" />}
           </dl>
         </Panel>
 
@@ -262,6 +263,13 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
           <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
             <Status label="Último envio OK" value={formatDate(status?.lastDiscordSuccess)} />
             <Status label="Último erro Discord" value={status?.lastDiscordError ?? "Nenhum"} tone={status?.lastDiscordError ? "error" : undefined} />
+            {status?.lastDiscordUncertain && (
+              <Status
+                label="Última entrega incerta"
+                value={formatUncertainDelivery(status.lastDiscordUncertain)}
+                tone="warning"
+              />
+            )}
           </dl>
           <form onSubmit={saveWebhook} className="mt-4 space-y-3">
             <label className="block"><span className="mb-1.5 block text-sm text-text-soft">Nova URL de webhook</span><input type="url" value={webhookUrl} onChange={(event) => setWebhookUrl(event.target.value)} placeholder="https://discord.com/api/webhooks/…" className="min-h-10 w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-text-primary outline-none focus:border-accent" /></label>
@@ -388,6 +396,15 @@ function healthLabel(indicator?: string) {
 
 function formatDate(value?: string | null) {
   return value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—";
+}
+
+function formatUncertainDelivery(delivery: NonNullable<ClubOperationalStatus["lastDiscordUncertain"]>) {
+  const detail = [
+    formatDate(delivery.occurredAt),
+    `partida ${delivery.matchId}`,
+    delivery.reason ?? "Motivo não disponível",
+  ];
+  return detail.join(" · ");
 }
 
 function PublicationStatusBadge({ presentation }: { presentation: ReturnType<typeof publicationStatus> }) {

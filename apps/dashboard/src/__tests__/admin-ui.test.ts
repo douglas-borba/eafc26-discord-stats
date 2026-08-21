@@ -117,6 +117,17 @@ describe("multi-club administration UI", () => {
     expect(detail).toContain("acquisitionLabel(status?.acquisitionStatus)");
   });
 
+  it("keeps uncertain Discord delivery visible and explains warning health locally", () => {
+    const detail = read("components/admin/club-admin-detail.tsx");
+    const types = read("lib/admin/types.ts");
+    expect(detail).toContain('label="Última entrega incerta"');
+    expect(detail).toContain('label="Motivo da atenção"');
+    expect(detail).toContain("formatUncertainDelivery(status.lastDiscordUncertain)");
+    expect(detail).toContain("Não é possível confirmar se o Discord recebeu esta partida. Reenviar pode gerar duplicação.");
+    expect(types).toContain("lastDiscordUncertain: DiscordUncertainDelivery | null");
+    expect(types).toContain("healthReason: string | null");
+  });
+
   it("requires selecting an EA search result before registration", () => {
     const source = read("components/admin/new-club-form.tsx");
     expect(source).toContain("/api/admin/clubs/search?query=");
