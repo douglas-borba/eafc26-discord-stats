@@ -75,6 +75,121 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
         log.debug("Saved publication record (postgres): clubId={}, matchId={}, state={}", clubId.value, record.matchId, record.state)
     }
 
+    override fun createRecordIfAbsent(clubId: ClubId, record: PublicationRecord): Boolean {
+        val inserted = jdbcTemplate.update(
+            """
+            INSERT INTO discord_publication_state
+                (club_id, match_id, state, attempt_count, last_attempt_at, last_error, last_http_status, baseline_reason, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, now())
+            ON CONFLICT (club_id, match_id) DO NOTHING
+            """.trimIndent(),
+            clubId.value,
+            record.matchId,
+            record.state.name,
+            record.attemptCount,
+            record.lastAttemptAt?.let { Timestamp.from(Instant.ofEpochSecond(it)) },
+            record.lastError,
+            record.lastHttpStatus,
+            record.baselineReason?.name,
+        ) > 0
+        if (inserted) {
+            log.debug("Created publication record (postgres): clubId={}, matchId={}, state={}", clubId.value, record.matchId, record.state)
+        }
+        return inserted
+    }
+
+    override fun claimForAutomaticDelivery(
+        clubId: ClubId,
+        expected: PublicationRecord,
+        attemptedAt: Instant,
+    ): PublicationRecord? {
+        require(expected.isAutomaticClaimable()) {
+            "State ${expected.state} cannot be claimed for automatic delivery"
+        }
+        val claimed = jdbcTemplate.query(
+            """
+            UPDATE discord_publication_state
+            SET state = ?,
+                attempt_count = attempt_count + 1,
+                last_attempt_at = ?,
+                updated_at = now()
+            WHERE club_id = ?
+              AND match_id = ?
+              AND state = ?
+              AND attempt_count = ?
+              AND baseline_reason IS NOT DISTINCT FROM ?
+            RETURNING match_id, state, updated_at, attempt_count, last_attempt_at,
+                      last_error, last_http_status, baseline_reason
+            """.trimIndent(),
+            rowMapper,
+            PublicationState.DELIVERING.name,
+            Timestamp.from(attemptedAt),
+            clubId.value,
+            expected.matchId,
+            expected.state.name,
+            expected.attemptCount,
+            expected.baselineReason?.name,
+        ).firstOrNull()
+        if (claimed != null) {
+            log.debug("Claimed publication record (postgres): clubId={}, matchId={}, state={}", clubId.value, claimed.matchId, expected.state)
+        }
+        return claimed
+    }
+
+    /**
+     * Returns only lightweight, currently eligible automatic work. Canonical payload is
+     * intentionally not selected; it is loaded after a successful atomic claim.
+     */
+    fun findAutomaticPublicationCandidates(
+        now: Instant,
+        limit: Int,
+    ): List<PublicationWorkCandidate> {
+        require(limit > 0) { "limit must be positive" }
+        val retryAfterOneMinute = Timestamp.from(now.minus(requireNotNull(PublicationRetryPolicy.delayAfter(1))))
+        val retryAfterTwoMinutes = Timestamp.from(now.minus(requireNotNull(PublicationRetryPolicy.delayAfter(2))))
+        val retryAfterFiveMinutes = Timestamp.from(now.minus(requireNotNull(PublicationRetryPolicy.delayAfter(3))))
+        val retryAfterFifteenMinutes = Timestamp.from(now.minus(requireNotNull(PublicationRetryPolicy.delayAfter(4))))
+        return jdbcTemplate.query(
+            """
+            SELECT ps.club_id, ps.match_id, ps.state, ps.updated_at, ps.attempt_count,
+                   ps.last_attempt_at, ps.last_error, ps.last_http_status, ps.baseline_reason,
+                   cm.played_at
+            FROM discord_publication_state ps
+            JOIN canonical_matches cm
+              ON cm.club_id = ps.club_id AND cm.match_id = ps.match_id
+            WHERE ps.state = ?
+               OR (
+                    ps.state = ? AND (
+                        ps.attempt_count = 0 OR
+                        (ps.attempt_count = 1 AND ps.last_attempt_at <= ?) OR
+                        (ps.attempt_count = 2 AND ps.last_attempt_at <= ?) OR
+                        (ps.attempt_count = 3 AND ps.last_attempt_at <= ?) OR
+                        (ps.attempt_count = 4 AND ps.last_attempt_at <= ?)
+                    )
+               )
+               OR (ps.state = ? AND ps.baseline_reason = ?)
+            ORDER BY cm.played_at ASC, ps.match_id ASC
+            LIMIT ?
+            """.trimIndent(),
+            { rs, rowNum ->
+                PublicationWorkCandidate(
+                    clubId = ClubId(rs.getString("club_id")),
+                    record = rowMapper.mapRow(rs, rowNum)!!,
+                    playedAt = rs.getTimestamp("played_at").toInstant(),
+                )
+            },
+            PublicationState.PENDING.name,
+            PublicationState.FAILED_TRANSIENT.name,
+            retryAfterOneMinute,
+            retryAfterTwoMinutes,
+            retryAfterFiveMinutes,
+            retryAfterFifteenMinutes,
+            PublicationState.BASELINED.name,
+            BaselineReason.NO_DESTINATION.name,
+            limit,
+        )
+    }
+
     override fun removeRecord(clubId: ClubId, matchId: String) {
         jdbcTemplate.update(
             "DELETE FROM discord_publication_state WHERE club_id = ? AND match_id = ?",
@@ -185,3 +300,15 @@ data class RecoveredPublication(
     val clubId: ClubId,
     val record: PublicationRecord,
 )
+
+/** Lightweight publication work selected without reading canonical JSON payloads. */
+data class PublicationWorkCandidate(
+    val clubId: ClubId,
+    val record: PublicationRecord,
+    val playedAt: Instant,
+)
+
+private fun PublicationRecord.isAutomaticClaimable(): Boolean =
+    state == PublicationState.PENDING ||
+        state == PublicationState.FAILED_TRANSIENT ||
+        state == PublicationState.BASELINED && baselineReason == BaselineReason.NO_DESTINATION

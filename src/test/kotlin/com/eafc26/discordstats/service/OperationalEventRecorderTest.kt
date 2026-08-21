@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.verify
+import java.time.Instant
 
 class OperationalEventRecorderTest {
     private val repository = mock<OperationalEventRepository>()
@@ -83,5 +84,26 @@ class OperationalEventRecorderTest {
 
         assertThat(event.firstValue.message).contains("[Discord webhook]")
         assertThat(event.firstValue.message).doesNotContain("secret-token")
+    }
+
+    @Test
+    fun `records durable automatic publication transitions without secret material`() {
+        recorder.discordPendingCreated(club, "pending-match")
+        recorder.discordClaimed(club, "pending-match", DiscordPublicationOrigin.AUTOMATIC_RECONCILIATION)
+        recorder.discordRetryScheduled(club, "pending-match", Instant.parse("2026-08-21T12:01:00Z"))
+        recorder.discordRetryExhausted(club, "pending-match", 5, DiscordPublicationOrigin.AUTOMATIC_RECONCILIATION)
+        recorder.discordNoDestinationRecovered(club, "pending-match")
+
+        val events = argumentCaptor<OperationalEvent>()
+        verify(repository, org.mockito.Mockito.times(5)).save(events.capture())
+
+        assertThat(events.allValues.map { it.phase }).containsExactly(
+            "PENDING_CREATED",
+            "CLAIMED",
+            "RETRY_SCHEDULED",
+            "RETRY_EXHAUSTED",
+            "NO_DESTINATION_RECOVERED",
+        )
+        assertThat(events.allValues).allMatch { it.clubId == club && !it.message.orEmpty().contains("webhooks/") }
     }
 }

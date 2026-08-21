@@ -214,12 +214,17 @@ class ClubAdministrationController(
             .filter { it.state == PublicationState.DELIVERY_UNCERTAIN }
             .maxByOrNull(PublicationRecord::updatedAt)
         val latestConfirmedDiscordFailure = publicationRecords
-            .filter { it.state == PublicationState.FAILED_TRANSIENT || it.state == PublicationState.FAILED_PERMANENT }
+            .filter {
+                it.state == PublicationState.FAILED_TRANSIENT ||
+                    it.state == PublicationState.FAILED_PERMANENT ||
+                    it.state == PublicationState.RETRY_EXHAUSTED
+            }
             .maxByOrNull(PublicationRecord::updatedAt)
         val discordHealthReason = when {
             latestUncertainDelivery != null -> "Entrega Discord incerta"
             latestConfirmedDiscordFailure?.state == PublicationState.FAILED_TRANSIENT -> "Falha transitória no Discord"
             latestConfirmedDiscordFailure?.state == PublicationState.FAILED_PERMANENT -> "Falha permanente no Discord"
+            latestConfirmedDiscordFailure?.state == PublicationState.RETRY_EXHAUSTED -> "Tentativas automáticas do Discord esgotadas"
             else -> null
         }
 

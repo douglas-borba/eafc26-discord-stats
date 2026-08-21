@@ -22,6 +22,8 @@ import com.eafc26.discordstats.store.PublicationStateStore
 import com.eafc26.discordstats.store.OperationalEventRepository
 import com.eafc26.discordstats.store.AdminAuditLogRepository
 import com.eafc26.discordstats.service.OperationalEventRecorder
+import com.eafc26.discordstats.service.CanonicalPublicationPersistence
+import com.eafc26.discordstats.service.PostgresCanonicalPublicationPersistence
 import com.eafc26.discordstats.store.DeliveryUncertaintyReason
 import com.eafc26.discordstats.store.DiscordPublicationOrigin
 import com.eafc26.discordstats.service.SynchronizationGapStore
@@ -41,6 +43,8 @@ import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.boot.ApplicationRunner
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
 import javax.sql.DataSource
 
 @Configuration
@@ -122,6 +126,23 @@ class PostgresMirrorConfig {
             secondary = jsonRepository,
         )
     }
+
+    /**
+     * Authoritative PostgreSQL transaction that couples a new canonical fact to its
+     * initial durable Discord publication state. The JSON mirror remains secondary.
+     */
+    @Bean
+    fun canonicalPublicationPersistence(
+        postgresRepository: PostgresCanonicalMatchRepository,
+        publicationStore: PostgresPublishedMatchStore,
+        jsonRepository: JsonCanonicalMatchRepository,
+        transactionManager: PlatformTransactionManager,
+    ): CanonicalPublicationPersistence = PostgresCanonicalPublicationPersistence(
+        canonicalRepository = postgresRepository,
+        publicationStore = publicationStore,
+        jsonMirror = jsonRepository,
+        transactions = TransactionTemplate(transactionManager),
+    )
 
     @Bean
     fun postgresSyncService(

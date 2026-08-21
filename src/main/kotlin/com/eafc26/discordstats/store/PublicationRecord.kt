@@ -6,18 +6,21 @@ package com.eafc26.discordstats.store
  * The state machine follows a Write-Ahead Log (WAL) pattern:
  *
  * ```
- *  (not in store) ──or── FAILED_TRANSIENT (retry)
+ *  PENDING ──or── FAILED_TRANSIENT (after its bounded retry delay)
  *       │
  *       ▼  lock + write before HTTP
  *   DELIVERING ──── crash / die ──► DELIVERY_UNCERTAIN (after restart)
  *       │
  *       ├── HTTP 2xx ──► DELIVERED
  *       ├── HTTP 404/410/4xx permanent ──► FAILED_PERMANENT
- *       ├── HTTP 429/5xx transient ──► FAILED_TRANSIENT (auto-retry next cycle)
+ *       ├── HTTP 429/5xx transient ──► FAILED_TRANSIENT ──► RETRY_EXHAUSTED (after attempt 5)
  *       └── network error (ambiguous) ──► DELIVERY_UNCERTAIN
  * ```
  *
  * State semantics:
+ * - [PublicationState.PENDING]: A canonical match is durably marked for automatic
+ *   publication before the fast-path delivery begins. No Discord request has been
+ *   attempted yet, so a recovery worker may safely claim it.
  * - [PublicationState.DELIVERING]: Written to disk BEFORE the Discord HTTP call starts.
  *   If this state is found on startup it means the process was killed during the delivery
  *   window. On startup all DELIVERING records are upgraded to [PublicationState.DELIVERY_UNCERTAIN].
@@ -29,6 +32,10 @@ package com.eafc26.discordstats.store
  *   administrative resolution. Its preserved diagnostic uses [DeliveryUncertaintyReason].
  * - [PublicationState.FAILED_PERMANENT]: Discord explicitly rejected the request with a
  *   definitive error (404, 401, 403, 400, 413). The message was NOT delivered.
+ * - [PublicationState.FAILED_TRANSIENT]: Discord explicitly proved non-delivery, so the
+ *   bounded automatic retry policy may schedule another attempt.
+ * - [PublicationState.RETRY_EXHAUSTED]: The bounded automatic retry budget ended without a
+ *   confirmed delivery. It requires a deliberate administrative resend.
  */
 data class PublicationRecord(
     val matchId: String,
@@ -77,6 +84,7 @@ enum class DeliveryUncertaintyReason {
  */
 enum class DiscordPublicationOrigin {
     AUTOMATIC_ACQUISITION,
+    AUTOMATIC_RECONCILIATION,
     FORCE_PUBLISH,
     STARTUP_RECOVERY,
 }
@@ -87,6 +95,9 @@ enum class BaselineReason {
 }
 
 enum class PublicationState {
+    /** Durable, unattempted intention to publish. Safe for automatic processing. */
+    PENDING,
+
     /** Pre-send write-ahead marker. Persisted BEFORE the HTTP call. */
     DELIVERING,
 
@@ -115,6 +126,13 @@ enum class PublicationState {
     FAILED_TRANSIENT,
 
     /**
+     * The configured budget for safe automatic attempts was exhausted. This is neither
+     * an ambiguous delivery nor an explicit permanent Discord rejection; it requires a
+     * deliberate administrative decision.
+     */
+    RETRY_EXHAUSTED,
+
+    /**
      * Match is part of the initial baseline (historical window).
      * These matches were known to the system but intentionally NOT published to Discord
      * to avoid flooding with old data.
@@ -127,4 +145,31 @@ enum class PublicationState {
      * - Enable future selective publication of historical matches
      */
     BASELINED,
+}
+
+/**
+ * Retry policy for failures for which Discord explicitly proved that delivery did not
+ * happen. [PublicationRecord.attemptCount] is incremented immediately before every
+ * HTTP attempt; after attempts 1–4 fail, the corresponding delay applies before the
+ * next attempt. A fifth failed automatic attempt moves the record to RETRY_EXHAUSTED.
+ */
+object PublicationRetryPolicy {
+    const val MAX_AUTOMATIC_ATTEMPTS = 5
+
+    fun delayAfter(attemptCount: Int): java.time.Duration? = when (attemptCount) {
+        1 -> java.time.Duration.ofMinutes(1)
+        2 -> java.time.Duration.ofMinutes(2)
+        3 -> java.time.Duration.ofMinutes(5)
+        4 -> java.time.Duration.ofMinutes(15)
+        else -> null
+    }
+
+    fun nextRetryAt(record: PublicationRecord): java.time.Instant? {
+        if (record.state != PublicationState.FAILED_TRANSIENT) return null
+        val lastAttemptAt = record.lastAttemptAt ?: return null
+        val delay = delayAfter(record.attemptCount) ?: return null
+        return java.time.Instant.ofEpochSecond(lastAttemptAt).plus(delay)
+    }
+
+    fun isRetryExhausted(attemptCount: Int): Boolean = attemptCount >= MAX_AUTOMATIC_ATTEMPTS
 }

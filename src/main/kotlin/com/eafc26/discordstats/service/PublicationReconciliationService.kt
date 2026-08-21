@@ -17,14 +17,14 @@ import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
  * Safe administrative reconciliation of publication status.
  *
  * ## Design principles
- * - Only automatically publish when provably safe (no record OR failed before HTTP)
+ * - Only automatically publish an already persisted, safe publication intention
  * - Never automatically resend DELIVERY_UNCERTAIN
  * - Provide detailed diagnostic information for manual resolution
  *
  * ## Automatic safe publication
  * A match can be automatically published ONLY if:
- * - No publication record exists (never attempted), OR
- * - Previous failure occurred before any HTTP POST was attempted (FAILED_BEFORE_SEND)
+ * - PENDING, or
+ * - Previous failure was explicitly safe to retry (FAILED_TRANSIENT)
  *
  * Everything else requires manual review.
  */
@@ -95,8 +95,8 @@ class PublicationReconciliationService(
      * Automatically publishes all matches that are provably safe to publish.
      *
      * Safe conditions:
-     * - No publication record exists (never attempted)
-     * - FAILED_PERMANENT state (Discord explicitly rejected, safe to retry after correction)
+     * - PENDING state
+     * - FAILED_TRANSIENT state after its delivery backoff
      *
      * Returns the number of matches published and any errors encountered.
      */

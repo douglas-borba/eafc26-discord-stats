@@ -76,6 +76,56 @@ class OperationalEventRecorder(private val repository: OperationalEventRepositor
     fun canonicalPersisted(clubId: ClubId, matchId: String) =
         record(OperationalEvent(clubId = clubId, matchId = matchId, eventType = "CANONICAL", phase = "PERSISTED", status = EventStatus.SUCCESS))
 
+    fun discordPendingCreated(clubId: ClubId, matchId: String) =
+        record(OperationalEvent(
+            clubId = clubId,
+            matchId = matchId,
+            eventType = "DISCORD",
+            phase = "PENDING_CREATED",
+            status = EventStatus.INFO,
+            message = "Origem: intenção durável de publicação",
+        ))
+
+    fun discordClaimed(clubId: ClubId, matchId: String, origin: DiscordPublicationOrigin) =
+        record(OperationalEvent(
+            clubId = clubId,
+            matchId = matchId,
+            eventType = "DISCORD",
+            phase = "CLAIMED",
+            status = EventStatus.INFO,
+            message = "Origem: ${origin.label()}",
+        ))
+
+    fun discordRetryScheduled(clubId: ClubId, matchId: String, nextRetryAt: java.time.Instant) =
+        record(OperationalEvent(
+            clubId = clubId,
+            matchId = matchId,
+            eventType = "DISCORD",
+            phase = "RETRY_SCHEDULED",
+            status = EventStatus.WARNING,
+            message = "Próxima tentativa: $nextRetryAt",
+        ))
+
+    fun discordRetryExhausted(clubId: ClubId, matchId: String, attempts: Int, origin: DiscordPublicationOrigin) =
+        record(OperationalEvent(
+            clubId = clubId,
+            matchId = matchId,
+            eventType = "DISCORD",
+            phase = "RETRY_EXHAUSTED",
+            status = EventStatus.WARNING,
+            message = "Origem: ${origin.label()}; tentativas automáticas: $attempts",
+        ))
+
+    fun discordNoDestinationRecovered(clubId: ClubId, matchId: String) =
+        record(OperationalEvent(
+            clubId = clubId,
+            matchId = matchId,
+            eventType = "DISCORD",
+            phase = "NO_DESTINATION_RECOVERED",
+            status = EventStatus.INFO,
+            message = "Origem: recuperação automática",
+        ))
+
     fun editorialSuccess(clubId: ClubId, matchId: String) =
         record(OperationalEvent(clubId = clubId, matchId = matchId, eventType = "EDITORIAL", status = EventStatus.SUCCESS))
 
@@ -175,6 +225,7 @@ class OperationalEventRecorder(private val repository: OperationalEventRepositor
 
     private fun DiscordPublicationOrigin.label(): String = when (this) {
         DiscordPublicationOrigin.AUTOMATIC_ACQUISITION -> "aquisição automática"
+        DiscordPublicationOrigin.AUTOMATIC_RECONCILIATION -> "reconciliação automática"
         DiscordPublicationOrigin.FORCE_PUBLISH -> "reenvio manual"
         DiscordPublicationOrigin.STARTUP_RECOVERY -> "recuperação na inicialização"
     }

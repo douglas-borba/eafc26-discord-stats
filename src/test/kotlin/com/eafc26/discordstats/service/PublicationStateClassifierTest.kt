@@ -7,8 +7,8 @@ import org.junit.jupiter.api.Test
 class PublicationStateClassifierTest {
 
     @Test
-    fun `null state is safe to auto-publish`() {
-        assertThat(PublicationStateClassifier.isSafeToAutoPublish(null)).isTrue
+    fun `null state is not safe because a durable publication intent is required`() {
+        assertThat(PublicationStateClassifier.isSafeToAutoPublish(null)).isFalse
     }
 
     @Test
@@ -34,11 +34,11 @@ class PublicationStateClassifierTest {
     }
 
     @Test
-    fun `only FAILED_TRANSIENT is safe for auto-publish among existing states`() {
+    fun `only PENDING and FAILED_TRANSIENT are safe for auto-publish`() {
         val safeStates = PublicationState.values().filter {
             PublicationStateClassifier.isSafeToAutoPublish(it)
         }
-        assertThat(safeStates).containsExactly(PublicationState.FAILED_TRANSIENT)
+        assertThat(safeStates).containsExactly(PublicationState.PENDING, PublicationState.FAILED_TRANSIENT)
     }
 
     @Test
@@ -84,4 +84,3 @@ class PublicationStateClassifierTest {
         assertThat(neverAttempted.requiresAction).isFalse
     }
 }
-

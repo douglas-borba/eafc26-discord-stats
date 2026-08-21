@@ -49,6 +49,43 @@ class PublishedMatchStore(private val objectMapper: ObjectMapper) : PublicationS
         log.debug("Saved publication record: clubId={}, matchId={}, state={}", clubId.value, record.matchId, record.state)
     }
 
+    override fun createRecordIfAbsent(clubId: ClubId, record: PublicationRecord): Boolean = storeLock.withLock {
+        ensureInitialized(clubId)
+        val path = pathFor(clubId)
+        val current = loadRecordsInternal(path).toMutableMap()
+        if (current.containsKey(record.matchId)) return@withLock false
+        current[record.matchId] = record
+        saveAllRecordsAtomic(path, current.values.toList())
+        true
+    }
+
+    override fun claimForAutomaticDelivery(
+        clubId: ClubId,
+        expected: PublicationRecord,
+        attemptedAt: Instant,
+    ): PublicationRecord? = storeLock.withLock {
+        ensureInitialized(clubId)
+        val path = pathFor(clubId)
+        val current = loadRecordsInternal(path).toMutableMap()
+        val actual = current[expected.matchId] ?: return@withLock null
+        if (
+            actual.state != expected.state ||
+            actual.attemptCount != expected.attemptCount ||
+            actual.baselineReason != expected.baselineReason ||
+            !actual.isAutomaticClaimable()
+        ) return@withLock null
+
+        val claimed = actual.copy(
+            state = PublicationState.DELIVERING,
+            attemptCount = actual.attemptCount + 1,
+            lastAttemptAt = attemptedAt.epochSecond,
+            updatedAt = attemptedAt.epochSecond,
+        )
+        current[claimed.matchId] = claimed
+        saveAllRecordsAtomic(path, current.values.toList())
+        claimed
+    }
+
     override fun removeRecord(clubId: ClubId, matchId: String) = storeLock.withLock {
         ensureInitialized(clubId)
         val path = pathFor(clubId)
@@ -210,6 +247,11 @@ class PublishedMatchStore(private val objectMapper: ObjectMapper) : PublicationS
         val LEGACY_ASSOCIATION_BF = ClubId("1104972")
     }
 }
+
+private fun PublicationRecord.isAutomaticClaimable(): Boolean =
+    state == PublicationState.PENDING ||
+        state == PublicationState.FAILED_TRANSIENT ||
+        state == PublicationState.BASELINED && baselineReason == BaselineReason.NO_DESTINATION
 
 data class PublicationStoreMetadata(
     val clubId: ClubId,

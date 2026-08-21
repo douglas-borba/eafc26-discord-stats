@@ -22,10 +22,14 @@ export function publicationStatus(record?: PublicationHistoryRecord): Publicatio
   switch (record.state) {
     case "DELIVERED":
       return { label: "Enviado", description: "Publicado no Discord", tone: "success", actionLabel: "Reenviar", disabled: false };
+    case "PENDING":
+      return { label: "Aguardando publicação", description: "A entrega será processada automaticamente", tone: "neutral", actionLabel: "Enviar agora", disabled: false };
     case "BASELINED":
       return baselineStatus(record.baselineReason);
     case "FAILED_TRANSIENT":
       return { label: "Falha temporária", description: "A entrega não foi concluída", tone: "warning", actionLabel: "Tentar novamente", disabled: false };
+    case "RETRY_EXHAUSTED":
+      return { label: "Tentativas automáticas esgotadas", description: "Requer uma decisão administrativa", tone: "warning", actionLabel: "Reenviar", disabled: false };
     case "FAILED_PERMANENT":
       return { label: "Falha permanente", description: "O Discord recusou a entrega", tone: "danger", actionLabel: "Forçar envio", disabled: false };
     case "DELIVERY_UNCERTAIN":

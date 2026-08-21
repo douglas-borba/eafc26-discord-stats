@@ -14,6 +14,8 @@ import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationService
 import com.eafc26.discordstats.store.PublicationState
 import com.eafc26.discordstats.store.PublicationStateStore
+import com.eafc26.discordstats.store.PublicationRecord
+import com.eafc26.discordstats.store.BaselineReason
 import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
 import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import org.slf4j.LoggerFactory
@@ -64,6 +66,7 @@ class MatchAcquisitionService(
     private val eventRecorder: OperationalEventRecorder? = null,
     private val synchronizationGapStore: SynchronizationGapStore = InMemorySynchronizationGapStore(),
     private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
+    private val canonicalPublicationPersistence: CanonicalPublicationPersistence? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
@@ -197,6 +200,8 @@ class MatchAcquisitionService(
         // Phase: PROCESSING
         stateHolder.enterPhase(clubId, AcquisitionPhase.PROCESSING, "Processando partidas...")
 
+        val publicationPlan = publicationPlan(clubId, trigger, matches)
+
         // Canonical storage is independent from presentation and Discord delivery.
         // Development fixtures remain intentionally non-persistent.
         val canonicalByMatchId = matches
@@ -210,9 +215,16 @@ class MatchAcquisitionService(
         if (trigger != AcquisitionTrigger.DEV_SIMULATOR) {
             stateHolder.enterPhase(clubId, AcquisitionPhase.PERSISTING, "Salvando acervo canônico...")
             acceptedCanonical.forEach { canonical ->
-                // Step 1: Save canonical match (always first)
-                canonicalMatchRepository.save(canonical)
+                val initialPublication = publicationPlan.initialRecords[canonical.matchId.value]
+                val publicationCreated = canonicalPublicationPersistence?.persist(canonical, initialPublication)
+                    ?: run {
+                        canonicalMatchRepository.save(canonical)
+                        initialPublication?.let { store.createRecordIfAbsent(clubId, it) } ?: false
+                    }
                 eventRecorder?.canonicalPersisted(clubId, canonical.matchId.value)
+                if (publicationCreated && initialPublication?.state == PublicationState.PENDING) {
+                    eventRecorder?.discordPendingCreated(clubId, canonical.matchId.value)
+                }
 
                 try {
                     editorialPresentationService?.generateAndPersist(canonical)
@@ -236,8 +248,12 @@ class MatchAcquisitionService(
         // Step 3: Route to appropriate processing mode
         val result = when (trigger) {
             AcquisitionTrigger.FORCE_RESEND -> processForceResend(clubId, acceptedMatches, canonicalByMatchId)
-            AcquisitionTrigger.MANUAL, AcquisitionTrigger.CLI -> processLatestOnly(clubId, acceptedMatches, canonicalByMatchId)
-            AcquisitionTrigger.SCHEDULER, AcquisitionTrigger.ADMIN_POLL -> processAllNew(clubId, acceptedMatches, canonicalByMatchId)
+            AcquisitionTrigger.MANUAL, AcquisitionTrigger.CLI -> processLatestOnly(
+                clubId, acceptedMatches, canonicalByMatchId, publicationPlan.firstRun,
+            )
+            AcquisitionTrigger.SCHEDULER, AcquisitionTrigger.ADMIN_POLL -> processAllNew(
+                clubId, acceptedMatches, canonicalByMatchId, publicationPlan.firstRun,
+            )
             AcquisitionTrigger.TRIAL_INITIAL -> processTrialSnapshot()
             AcquisitionTrigger.DEV_SIMULATOR -> processSimulation(clubId, matches, canonicalByMatchId)
         }
@@ -349,6 +365,52 @@ class MatchAcquisitionService(
         val newMatches: Int,
     )
 
+    /**
+     * Defines durable publication intent before canonical persistence. This preserves the
+     * existing first-run policy: scheduler/admin first-run publishes only the newest
+     * match, while manual/CLI first-run establishes an all-history baseline.
+     */
+    private fun publicationPlan(
+        clubId: ClubId,
+        trigger: AcquisitionTrigger,
+        matches: List<MatchResponse>,
+    ): PublicationIntentPlan {
+        if (!trigger.shouldDeliverToDiscord() || matches.isEmpty()) return PublicationIntentPlan.EMPTY
+        val firstRun = store.loadRecords(clubId).isEmpty()
+        val latestMatchId = matches.maxByOrNull { it.timestamp }?.matchId
+        val records = when (trigger) {
+            AcquisitionTrigger.SCHEDULER, AcquisitionTrigger.ADMIN_POLL -> matches.associate { match ->
+                match.matchId to if (firstRun && match.matchId != latestMatchId) {
+                    PublicationRecord(match.matchId, PublicationState.BASELINED, baselineReason = BaselineReason.FIRST_RUN)
+                } else {
+                    PublicationRecord(match.matchId, PublicationState.PENDING)
+                }
+            }
+            AcquisitionTrigger.MANUAL, AcquisitionTrigger.CLI -> if (firstRun) {
+                matches.associate { match ->
+                    match.matchId to PublicationRecord(
+                        match.matchId,
+                        PublicationState.BASELINED,
+                        baselineReason = BaselineReason.FIRST_RUN,
+                    )
+                }
+            } else {
+                latestMatchId?.let { mapOf(it to PublicationRecord(it, PublicationState.PENDING)) } ?: emptyMap()
+            }
+            else -> emptyMap()
+        }
+        return PublicationIntentPlan(firstRun, records)
+    }
+
+    private data class PublicationIntentPlan(
+        val firstRun: Boolean,
+        val initialRecords: Map<String, PublicationRecord>,
+    ) {
+        companion object {
+            val EMPTY = PublicationIntentPlan(firstRun = false, initialRecords = emptyMap())
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Processing modes
     // -------------------------------------------------------------------------
@@ -360,6 +422,7 @@ class MatchAcquisitionService(
         clubId: ClubId,
         matches: List<MatchResponse>,
         canonicalByMatchId: Map<String, CanonicalMatch>,
+        firstRun: Boolean,
     ): AcquisitionResult {
         val latest = matches.maxByOrNull { it.timestamp }
             ?: return AcquisitionResult.NoMatches
@@ -373,9 +436,15 @@ class MatchAcquisitionService(
         log.debug("Cached presentation for match {} (version={})", latest.matchId, newVersion)
 
         // First-run: establish baseline without publishing
-        val publishedIds = store.loadIds(clubId)
-        if (publishedIds.isEmpty()) {
-            return establishBaseline(clubId, matches)
+        if (firstRun) {
+            // Initial BASELINED/FIRST_RUN records were created atomically with canonical
+            // persistence. Manual/CLI keeps its historical baseline-only behaviour.
+            return AcquisitionResult.Processed(
+                published = emptyList(),
+                alreadyPublished = emptyList(),
+                failed = emptyList(),
+                baselineEstablished = true,
+            )
         }
 
         // Delegate to centralized publication service (handles dedup + mutex + persistence)
@@ -415,6 +484,22 @@ class MatchAcquisitionService(
                     )),
                 )
             }
+            PublicationOutcome.SKIPPED_RETRY_EXHAUSTED -> {
+                log.warn("Match {} exhausted automatic Discord retries", latest.matchId)
+                AcquisitionResult.Processed(
+                    published = emptyList(),
+                    alreadyPublished = emptyList(),
+                    failed = listOf(AcquisitionResult.MatchFailure(
+                        latest.matchId, summary,
+                        "Tentativas automáticas de publicação esgotadas - requer reenvio manual"
+                    )),
+                )
+            }
+            PublicationOutcome.SKIPPED_RETRY_BACKOFF -> AcquisitionResult.Processed(
+                published = emptyList(),
+                alreadyPublished = emptyList(),
+                failed = emptyList(),
+            )
             PublicationOutcome.PUBLISHED, PublicationOutcome.DELIVERED_BUT_STATE_UNCERTAIN -> {
                 stateHolder.enterPhase(clubId, AcquisitionPhase.PERSISTING, "Salvando histórico...")
                 log.info("Published match {}", latest.matchId)
@@ -512,11 +597,12 @@ class MatchAcquisitionService(
         clubId: ClubId,
         matches: List<MatchResponse>,
         canonicalByMatchId: Map<String, CanonicalMatch>,
+        firstRun: Boolean,
     ): AcquisitionResult {
         val allRecords = store.loadRecords(clubId)
 
         // First-run detection
-        if (allRecords.isEmpty()) {
+        if (firstRun) {
             return handleFirstRun(clubId, matches, canonicalByMatchId)
         }
 
@@ -531,11 +617,11 @@ class MatchAcquisitionService(
             log.debug("Cached presentation for match {} (version={})", latestMatch.matchId, newVersion)
         }
 
-        // Find matches eligible for publication: new ones + FAILED_TRANSIENT retries
+        // New records are durably PENDING before this fast path begins.
         val newMatches = matches
             .filter { match ->
                 val record = allRecords[match.matchId]
-                record == null || record.state == PublicationState.FAILED_TRANSIENT
+                record == null || record.state == PublicationState.PENDING || record.state == PublicationState.FAILED_TRANSIENT
             }
             .sortedBy { it.timestamp }
 
@@ -584,6 +670,12 @@ class MatchAcquisitionService(
                 }
                 PublicationOutcome.SKIPPED_FAILED_PERMANENT -> {
                     log.warn("Match {} has FAILED_PERMANENT — blocked from automatic resend", match.matchId)
+                }
+                PublicationOutcome.SKIPPED_RETRY_EXHAUSTED -> {
+                    log.warn("Match {} exhausted automatic Discord retries", match.matchId)
+                }
+                PublicationOutcome.SKIPPED_RETRY_BACKOFF -> {
+                    log.debug("Match {} is waiting for its Discord retry backoff", match.matchId)
                 }
                 PublicationOutcome.FAILED_BEFORE_SEND, PublicationOutcome.FAILED_HTTP -> {
                     val reason = pubResult.errorMessage ?: pubResult.outcome.name
@@ -774,7 +866,9 @@ class MatchAcquisitionService(
             }
             PublicationOutcome.SKIPPED_ALREADY_DELIVERED,
             PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN,
-            PublicationOutcome.SKIPPED_FAILED_PERMANENT -> error("forcePublish never returns SKIPPED")
+            PublicationOutcome.SKIPPED_FAILED_PERMANENT,
+            PublicationOutcome.SKIPPED_RETRY_EXHAUSTED,
+            PublicationOutcome.SKIPPED_RETRY_BACKOFF -> error("forcePublish never returns SKIPPED")
             PublicationOutcome.SKIPPED_NO_DESTINATION -> AcquisitionResult.WebhookNotConfigured
         }
     }

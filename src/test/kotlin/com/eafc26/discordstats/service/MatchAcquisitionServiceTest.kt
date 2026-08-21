@@ -119,6 +119,20 @@ class MatchAcquisitionServiceTest {
         val records = set.associateWith { PublicationRecord(it, PublicationState.DELIVERED) }
         whenever(store.loadIds()).thenReturn(set)
         whenever(store.loadRecords()).thenReturn(records)
+        whenever(store.find(clubIdEq(LEGACY_TEST_CLUB), any())).thenAnswer { invocation ->
+            records[invocation.getArgument<String>(1)]
+        }
+        whenever(store.createRecordIfAbsent(clubIdEq(LEGACY_TEST_CLUB), any())).thenReturn(true)
+        whenever(store.claimForAutomaticDelivery(clubIdEq(LEGACY_TEST_CLUB), any(), any<java.time.Instant>())).thenAnswer { invocation ->
+            val expected = invocation.getArgument<PublicationRecord>(1)
+            val attemptedAt = invocation.getArgument<java.time.Instant>(2)
+            expected.copy(
+                state = PublicationState.DELIVERING,
+                attemptCount = expected.attemptCount + 1,
+                lastAttemptAt = attemptedAt.epochSecond,
+                updatedAt = attemptedAt.epochSecond,
+            )
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -781,7 +795,10 @@ class MatchAcquisitionServiceTest {
             assertThat(processed.baselineEstablished).isTrue()
             assertThat(processed.published).isEmpty()
             verify(webhookClient, never()).send(any(), any())
-            verify(store).saveIds(setOf("m1"))
+            verify(store).createRecordIfAbsent(
+                clubIdEq(LEGACY_TEST_CLUB),
+                argThat { matchId == "m1" && state == PublicationState.BASELINED },
+            )
         }
 
         @Test
@@ -795,7 +812,10 @@ class MatchAcquisitionServiceTest {
             val processed = result as AcquisitionResult.Processed
             assertThat(processed.baselineEstablished).isTrue()
             verify(webhookClient, never()).send(any(), any())
-            verify(store).saveIds(setOf("m1"))
+            verify(store).createRecordIfAbsent(
+                clubIdEq(LEGACY_TEST_CLUB),
+                argThat { matchId == "m1" && state == PublicationState.BASELINED },
+            )
         }
 
         @Test
@@ -803,6 +823,9 @@ class MatchAcquisitionServiceTest {
             var records = mutableMapOf<String, PublicationRecord>()
             whenever(store.loadIds()).thenAnswer { records.keys.toSet() }
             whenever(store.loadRecords()).thenAnswer { records.toMap() }
+            whenever(store.find(clubIdEq(LEGACY_TEST_CLUB), any())).thenAnswer {
+                records[it.getArgument<String>(1)]
+            }
             whenever(store.saveIds(clubIdEq(LEGACY_TEST_CLUB), any())).thenAnswer { invocation ->
                 val ids = invocation.getArgument<Set<String>>(1)
                 records = ids.associateWith { PublicationRecord(it, PublicationState.DELIVERED) }.toMutableMap()
@@ -812,6 +835,28 @@ class MatchAcquisitionServiceTest {
                 val r = invocation.getArgument<PublicationRecord>(1)
                 records[r.matchId] = r
                 Unit
+            }
+            whenever(store.createRecordIfAbsent(clubIdEq(LEGACY_TEST_CLUB), any())).thenAnswer { invocation ->
+                val record = invocation.getArgument<PublicationRecord>(1)
+                if (records.containsKey(record.matchId)) false else {
+                    records[record.matchId] = record
+                    true
+                }
+            }
+            whenever(store.claimForAutomaticDelivery(clubIdEq(LEGACY_TEST_CLUB), any(), any<java.time.Instant>())).thenAnswer { invocation ->
+                val expected = invocation.getArgument<PublicationRecord>(1)
+                val at = invocation.getArgument<java.time.Instant>(2)
+                val actual = records[expected.matchId]
+                if (actual?.state != expected.state || actual.attemptCount != expected.attemptCount) {
+                    null
+                } else {
+                    actual.copy(
+                        state = PublicationState.DELIVERING,
+                        attemptCount = actual.attemptCount + 1,
+                        lastAttemptAt = at.epochSecond,
+                        updatedAt = at.epochSecond,
+                    ).also { records[it.matchId] = it }
+                }
             }
             whenever(store.removeRecord(clubIdEq(LEGACY_TEST_CLUB), any())).thenAnswer { invocation ->
                 records.remove(invocation.getArgument<String>(1))
@@ -830,8 +875,8 @@ class MatchAcquisitionServiceTest {
             assertThat(firstNewCycle.published.map { it.matchId }).containsExactly("new")
             assertThat(repeatedCycle.published).isEmpty()
             assertThat(records.keys).containsExactlyInAnyOrder("baseline", "new")
-            assertThat(records.values.filter { it.state == PublicationState.DELIVERED }.map { it.matchId })
-                .containsExactlyInAnyOrder("baseline", "new")
+            assertThat(records["baseline"]?.state).isEqualTo(PublicationState.BASELINED)
+            assertThat(records["new"]?.state).isEqualTo(PublicationState.DELIVERED)
             verify(webhookClient, times(1)).send(any(), any())
         }
 

@@ -17,7 +17,8 @@ object PublicationStateClassifier {
      * is safe to automatically publish via `publishIfNeeded()`.
      *
      * Safe conditions:
-     * - No record exists (null) - never attempted
+     * - A durable PENDING record exists
+     * - A prior explicit non-delivery is recorded as FAILED_TRANSIENT
      *
      * Unsafe conditions (require manual intervention):
      * - DELIVERED - already published
@@ -25,11 +26,17 @@ object PublicationStateClassifier {
      * - DELIVERY_UNCERTAIN - may have been delivered
      * - FAILED_PERMANENT - explicit rejection, requires correction AND manual resend via forcePublish
      * - BASELINED - intentionally not published, requires explicit action to publish
+     * - No record exists - it may be historical data that predates the durable intent model
      */
     fun isSafeToAutoPublish(state: PublicationState?): Boolean {
         return when (state) {
-            null -> true // Never attempted - safe to try
+            // A missing record may be historical canonical data from before the durable
+            // intent model. Only a persisted PENDING record proves automatic delivery was
+            // intended, so an admin scan must never create a new intent for it.
+            null -> false
+            PublicationState.PENDING -> true // Durable safe automatic intent
             PublicationState.FAILED_TRANSIENT -> true // Transient failure - retry allowed
+            PublicationState.RETRY_EXHAUSTED -> false // Automatic retry budget exhausted
             PublicationState.DELIVERED -> false // Already delivered
             PublicationState.DELIVERING -> false // Ambiguous (should be upgraded to UNCERTAIN)
             PublicationState.DELIVERY_UNCERTAIN -> false // Requires manual resolution
@@ -49,6 +56,13 @@ object PublicationStateClassifier {
                 label = "Nunca tentada",
                 cssClass = "never-attempted",
                 color = "#8b949e",
+                requiresAction = false,
+            )
+            PublicationState.PENDING -> PublicationStateDisplay(
+                icon = "⏱️",
+                label = "Aguardando publicação",
+                cssClass = "pending",
+                color = "#58a6ff",
                 requiresAction = false,
             )
             PublicationState.DELIVERED -> PublicationStateDisplay(
@@ -86,6 +100,13 @@ object PublicationStateClassifier {
                 color = "#f0883e",
                 requiresAction = false,
             )
+            PublicationState.RETRY_EXHAUSTED -> PublicationStateDisplay(
+                icon = "⛔",
+                label = "Tentativas automáticas esgotadas",
+                cssClass = "retry-exhausted",
+                color = "#f0883e",
+                requiresAction = true,
+            )
             PublicationState.BASELINED -> PublicationStateDisplay(
                 icon = "📚",
                 label = "Baseline (não publicada)",
@@ -102,7 +123,8 @@ object PublicationStateClassifier {
     fun requiresAdministrativeAction(state: PublicationState?): Boolean {
         return when (state) {
             PublicationState.DELIVERY_UNCERTAIN,
-            PublicationState.FAILED_PERMANENT -> true
+            PublicationState.FAILED_PERMANENT,
+            PublicationState.RETRY_EXHAUSTED -> true
             else -> false
         }
     }
@@ -125,4 +147,3 @@ data class PublicationStateDisplay(
     val color: String,
     val requiresAction: Boolean,
 )
-

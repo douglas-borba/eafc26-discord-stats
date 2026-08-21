@@ -33,6 +33,21 @@ describe("publicationStatus", () => {
     expect(publicationStatus(record("BASELINED", "NO_DESTINATION"))).toMatchObject({ label: "Não enviado", description: "Discord indisponível na ocasião", actionLabel: "Enviar agora", tone: "warning" });
   });
 
+  it("presents durable pending and retry exhaustion as distinct operational states", () => {
+    expect(publicationStatus(record("PENDING"))).toMatchObject({
+      label: "Aguardando publicação",
+      description: "A entrega será processada automaticamente",
+      actionLabel: "Enviar agora",
+      tone: "neutral",
+    });
+    expect(publicationStatus(record("RETRY_EXHAUSTED"))).toMatchObject({
+      label: "Tentativas automáticas esgotadas",
+      description: "Requer uma decisão administrativa",
+      actionLabel: "Reenviar",
+      tone: "warning",
+    });
+  });
+
   it.each([
     ["FAILED_TRANSIENT", "Falha temporária", "Tentar novamente", "warning"],
     ["FAILED_PERMANENT", "Falha permanente", "Forçar envio", "danger"],

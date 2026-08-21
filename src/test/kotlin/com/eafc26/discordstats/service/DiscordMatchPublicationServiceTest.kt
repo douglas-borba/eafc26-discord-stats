@@ -15,6 +15,7 @@ import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.store.PublicationRecord
+import com.eafc26.discordstats.store.PublicationRetryPolicy
 import com.eafc26.discordstats.store.PublicationState
 import com.eafc26.discordstats.store.PublicationStateStore
 import com.eafc26.discordstats.store.PublishedMatchStore
@@ -752,6 +753,17 @@ class DiscordMatchPublicationServiceTest {
         fun `HTTP success + DELIVERED write failure → DELIVERED_BUT_STATE_UNCERTAIN`() {
             val failingStore: PublishedMatchStore = mock()
             whenever(failingStore.loadRecords()).thenReturn(emptyMap())
+            whenever(failingStore.createRecordIfAbsent(clubIdEq(CLUB_ID), any())).thenReturn(true)
+            whenever(failingStore.claimForAutomaticDelivery(clubIdEq(CLUB_ID), any(), any())).thenAnswer { invocation ->
+                val expected = invocation.getArgument<PublicationRecord>(1)
+                val attemptedAt = invocation.getArgument<java.time.Instant>(2)
+                expected.copy(
+                    state = PublicationState.DELIVERING,
+                    attemptCount = expected.attemptCount + 1,
+                    lastAttemptAt = attemptedAt.epochSecond,
+                    updatedAt = attemptedAt.epochSecond,
+                )
+            }
             // Allow DELIVERING write, fail only DELIVERED write
             whenever(failingStore.saveRecord(clubIdEq(CLUB_ID), argThat { state == PublicationState.DELIVERING })).then { }
             doThrow(RuntimeException("disk full")).whenever(failingStore)
@@ -1109,6 +1121,212 @@ class DiscordMatchPublicationServiceTest {
                 PublicationOutcome.PUBLISHED,
                 PublicationOutcome.FAILED_AMBIGUOUS,
             )
+        }
+    }
+
+    // =========================================================================
+    // Durable automatic publication intent and retry recovery
+    // =========================================================================
+
+    @Nested
+    inner class DurablePublicationRecovery {
+
+        @Test
+        fun `durable PENDING is delivered by the immediate automatic fast path`() {
+            store.saveRecord(CLUB_ID, PublicationRecord("pending-fast-path", PublicationState.PENDING))
+
+            val result = service.publishIfNeeded(canonical("pending-fast-path"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            assertThat(store.find(CLUB_ID, "pending-fast-path")?.state).isEqualTo(PublicationState.DELIVERED)
+            assertThat(store.find(CLUB_ID, "pending-fast-path")?.attemptCount).isEqualTo(1)
+            verify(webhookClient).send(any(), any())
+        }
+
+        @Test
+        fun `PENDING survives a restart and remains safely publishable`() {
+            store.saveRecord(CLUB_ID, PublicationRecord("restart-pending", PublicationState.PENDING))
+            val restartedStore = makeStore()
+            val restartedService = makeService(restartedStore)
+
+            val result = restartedService.publishIfNeeded(canonical("restart-pending"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            assertThat(restartedStore.find(CLUB_ID, "restart-pending")?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
+        fun `four durable publication intents eventually deliver every safely retryable match`() {
+            val transient = WebClientResponseException.create(
+                503, "Service Unavailable", HttpHeaders.EMPTY, ByteArray(0), null,
+            )
+            listOf("match-1", "match-2", "match-3", "match-4").forEach { matchId ->
+                store.saveRecord(CLUB_ID, PublicationRecord(matchId, PublicationState.PENDING))
+            }
+            val immediateAttempt = AtomicInteger(0)
+            whenever(webhookClient.send(any(), any())).thenAnswer {
+                when (immediateAttempt.incrementAndGet()) {
+                    2, 4 -> throw DiscordDeliveryException("Discord 503", transient)
+                    else -> Unit
+                }
+            }
+
+            listOf("match-1", "match-2", "match-3", "match-4").forEach { matchId ->
+                service.publishIfNeeded(canonical(matchId))
+            }
+
+            assertThat(store.find(CLUB_ID, "match-1")?.state).isEqualTo(PublicationState.DELIVERED)
+            assertThat(store.find(CLUB_ID, "match-2")?.state).isEqualTo(PublicationState.FAILED_TRANSIENT)
+            assertThat(store.find(CLUB_ID, "match-3")?.state).isEqualTo(PublicationState.DELIVERED)
+            assertThat(store.find(CLUB_ID, "match-4")?.state).isEqualTo(PublicationState.FAILED_TRANSIENT)
+
+            listOf("match-2", "match-4").forEach { matchId ->
+                val failed = requireNotNull(store.find(CLUB_ID, matchId))
+                store.saveRecord(
+                    CLUB_ID,
+                    failed.copy(lastAttemptAt = java.time.Instant.now().minusSeconds(61).epochSecond),
+                )
+            }
+            org.mockito.Mockito.reset(webhookClient)
+
+            val retryTwo = service.publishIfNeeded(canonical("match-2"))
+            val retryFour = service.publishIfNeeded(canonical("match-4"))
+
+            assertThat(retryTwo.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            assertThat(retryFour.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            assertThat(store.loadRecords().values.map { it.state }).allMatch { it == PublicationState.DELIVERED }
+            verify(webhookClient, times(2)).send(any(), any())
+        }
+
+        @Test
+        fun `safe transient failures follow the approved one two five and fifteen minute backoff`() {
+            assertThat(PublicationRetryPolicy.delayAfter(1)).isEqualTo(java.time.Duration.ofMinutes(1))
+            assertThat(PublicationRetryPolicy.delayAfter(2)).isEqualTo(java.time.Duration.ofMinutes(2))
+            assertThat(PublicationRetryPolicy.delayAfter(3)).isEqualTo(java.time.Duration.ofMinutes(5))
+            assertThat(PublicationRetryPolicy.delayAfter(4)).isEqualTo(java.time.Duration.ofMinutes(15))
+
+            val now = java.time.Instant.now().epochSecond
+            val record = PublicationRecord(
+                "backoff",
+                PublicationState.FAILED_TRANSIENT,
+                attemptCount = 1,
+                lastAttemptAt = now,
+            )
+            store.saveRecord(CLUB_ID, record)
+
+            val result = service.publishIfNeeded(canonical("backoff"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_RETRY_BACKOFF)
+            verify(webhookClient, never()).send(any(), any())
+            assertThat(store.find(CLUB_ID, "backoff")).isEqualTo(record)
+        }
+
+        @Test
+        fun `fifth safe automatic failure becomes RETRY_EXHAUSTED and is never automatically resent`() {
+            val error = WebClientResponseException.create(
+                503, "Service Unavailable", HttpHeaders.EMPTY, ByteArray(0), null,
+            )
+            doThrow(DiscordDeliveryException("Discord 503", error)).whenever(webhookClient).send(any(), any())
+            store.saveRecord(CLUB_ID, PublicationRecord("retry-exhausted", PublicationState.PENDING))
+
+            repeat(PublicationRetryPolicy.MAX_AUTOMATIC_ATTEMPTS) { index ->
+                val result = service.publishIfNeeded(canonical("retry-exhausted"))
+                assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
+                val record = requireNotNull(store.find(CLUB_ID, "retry-exhausted"))
+                val attempt = index + 1
+                if (attempt < PublicationRetryPolicy.MAX_AUTOMATIC_ATTEMPTS) {
+                    assertThat(record.state).isEqualTo(PublicationState.FAILED_TRANSIENT)
+                    store.saveRecord(
+                        CLUB_ID,
+                        record.copy(
+                            lastAttemptAt = java.time.Instant.now()
+                                .minus(requireNotNull(PublicationRetryPolicy.delayAfter(attempt)))
+                                .minusSeconds(1)
+                                .epochSecond,
+                        ),
+                    )
+                } else {
+                    assertThat(record.state).isEqualTo(PublicationState.RETRY_EXHAUSTED)
+                    assertThat(record.attemptCount).isEqualTo(PublicationRetryPolicy.MAX_AUTOMATIC_ATTEMPTS)
+                }
+            }
+
+            val blocked = service.publishIfNeeded(canonical("retry-exhausted"))
+            assertThat(blocked.outcome).isEqualTo(PublicationOutcome.SKIPPED_RETRY_EXHAUSTED)
+            verify(webhookClient, times(PublicationRetryPolicy.MAX_AUTOMATIC_ATTEMPTS)).send(any(), any())
+        }
+
+        @Test
+        fun `legacy transient record at the retry limit is made exhausted without a sixth automatic send`() {
+            store.saveRecord(
+                CLUB_ID,
+                PublicationRecord(
+                    "retry-limit",
+                    PublicationState.FAILED_TRANSIENT,
+                    attemptCount = PublicationRetryPolicy.MAX_AUTOMATIC_ATTEMPTS,
+                    lastAttemptAt = java.time.Instant.now().epochSecond,
+                ),
+            )
+
+            val result = service.publishIfNeeded(canonical("retry-limit"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_RETRY_EXHAUSTED)
+            assertThat(store.find(CLUB_ID, "retry-limit")?.state).isEqualTo(PublicationState.RETRY_EXHAUSTED)
+            verify(webhookClient, never()).send(any(), any())
+        }
+
+        @Test
+        fun `forensic DELIVERY_UNCERTAIN match is never automatically retried`() {
+            store.saveRecord(
+                CLUB_ID,
+                PublicationRecord("990976744430293", PublicationState.DELIVERY_UNCERTAIN, attemptCount = 1),
+            )
+
+            val result = service.publishIfNeeded(canonical("990976744430293"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
+            verify(webhookClient, never()).send(any(), any())
+        }
+
+        @Test
+        fun `NO_DESTINATION baseline is not mutated when destination remains unavailable`() {
+            store.saveRecord(
+                CLUB_ID,
+                PublicationRecord(
+                    "no-destination",
+                    PublicationState.BASELINED,
+                    baselineReason = com.eafc26.discordstats.store.BaselineReason.NO_DESTINATION,
+                ),
+            )
+            val events = mock<OperationalEventRepository>()
+            val unavailable = serviceWith(DiscordDestinationResolver { null }, OperationalEventRecorder(events))
+            val before = requireNotNull(store.find(CLUB_ID, "no-destination"))
+
+            val claim = unavailable.claimForReconciliation(CLUB_ID, before)
+
+            assertThat(claim).isNull()
+            assertThat(store.find(CLUB_ID, "no-destination")).isEqualTo(before)
+            verify(webhookClient, never()).send(any(), any())
+            verify(events, never()).save(any())
+        }
+
+        @Test
+        fun `NO_DESTINATION baseline is recovered only after a destination is resolvable`() {
+            store.saveRecord(
+                CLUB_ID,
+                PublicationRecord(
+                    "recover-destination",
+                    PublicationState.BASELINED,
+                    baselineReason = com.eafc26.discordstats.store.BaselineReason.NO_DESTINATION,
+                ),
+            )
+            val record = requireNotNull(store.find(CLUB_ID, "recover-destination"))
+
+            val claim = requireNotNull(service.claimForReconciliation(CLUB_ID, record))
+            val result = service.deliverReconciliationClaim(canonical("recover-destination"), claim)
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            assertThat(store.find(CLUB_ID, "recover-destination")?.state).isEqualTo(PublicationState.DELIVERED)
         }
     }
 }

@@ -127,7 +127,7 @@ class PublicationReconciliationServiceTest {
 
             assertThat(report.summary.neverAttempted).isEqualTo(2)
             assertThat(report.inspections.all { it.publicationState == null }).isTrue
-            assertThat(report.inspections.all { it.safeToAutoPublish }).isTrue
+            assertThat(report.inspections.none { it.safeToAutoPublish }).isTrue
         }
 
         @Test
@@ -247,7 +247,7 @@ class PublicationReconciliationServiceTest {
     inner class AutoPublishSafe {
 
         @Test
-        fun `publishes never attempted matches`() {
+        fun `does not create publication intent for historical matches without a record`() {
             val matches = listOf(canonical("m1"), canonical("m2"))
             whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(emptyMap())
@@ -257,10 +257,10 @@ class PublicationReconciliationServiceTest {
 
             val result = reconciliationService.autoPublishSafe()
 
-            assertThat(result.publishedCount).isEqualTo(2)
-            assertThat(result.skippedCount).isEqualTo(0)
+            assertThat(result.publishedCount).isEqualTo(0)
+            assertThat(result.skippedCount).isEqualTo(2)
             assertThat(result.errorCount).isEqualTo(0)
-            verify(publicationService, times(2)).publishIfNeeded(any())
+            verify(publicationService, never()).publishIfNeeded(any())
         }
 
         @Test
@@ -327,7 +327,9 @@ class PublicationReconciliationServiceTest {
         fun `records errors when publication fails`() {
             val matches = listOf(canonical("m1"))
             whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
-            whenever(store.loadRecords()).thenReturn(emptyMap())
+            whenever(store.loadRecords()).thenReturn(mapOf(
+                "m1" to PublicationRecord("m1", PublicationState.PENDING),
+            ))
             whenever(publicationService.publishIfNeeded(any())).thenReturn(
                 DiscordPublicationResult(
                     PublicationOutcome.FAILED_BEFORE_SEND,
@@ -349,7 +351,9 @@ class PublicationReconciliationServiceTest {
         fun `handles exceptions during publication`() {
             val matches = listOf(canonical("m1"))
             whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
-            whenever(store.loadRecords()).thenReturn(emptyMap())
+            whenever(store.loadRecords()).thenReturn(mapOf(
+                "m1" to PublicationRecord("m1", PublicationState.PENDING),
+            ))
             whenever(publicationService.publishIfNeeded(any())).thenThrow(
                 RuntimeException("Database error")
             )
@@ -366,11 +370,13 @@ class PublicationReconciliationServiceTest {
             val matches = listOf(canonical("m1"), canonical("m2"), canonical("m3"), canonical("m4"))
             whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
+                "m1" to PublicationRecord("m1", PublicationState.PENDING),
                 "m2" to PublicationRecord("m2", PublicationState.DELIVERED), // Skip
                 "m3" to PublicationRecord("m3", PublicationState.DELIVERY_UNCERTAIN), // Skip
+                "m4" to PublicationRecord("m4", PublicationState.PENDING),
             ))
             
-            // m1 and m4 are safe to publish (no records)
+            // m1 and m4 already have durable publication intentions.
             whenever(publicationService.publishIfNeeded(argThat { matchId.value == "m1" })).thenReturn(
                 DiscordPublicationResult(PublicationOutcome.PUBLISHED, "m1")
             )
@@ -440,17 +446,16 @@ class PublicationReconciliationServiceTest {
         }
 
         @Test
-        fun `inspection correctly flags safe matches`() {
+        fun `inspection does not treat historical matches without publication intent as safe`() {
             val matches = listOf(canonical("m1"), canonical("m2"))
             whenever(canonicalRepo.findAll(CLUB_ID)).thenReturn(matches)
             whenever(store.loadRecords()).thenReturn(mapOf(
-                // m1 has no record - safe
-                // m2 has no record - safe
+                // m1 and m2 may predate the durable intent model.
             ))
 
             val report = reconciliationService.inspectLatestPublications()
 
-            assertThat(report.inspections.all { it.safeToAutoPublish }).isTrue
+            assertThat(report.inspections.none { it.safeToAutoPublish }).isTrue
         }
 
         @Test
