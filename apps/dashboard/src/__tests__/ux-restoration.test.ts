@@ -23,12 +23,6 @@ describe("UX: Split-pane pages use searchParams", () => {
     expect(page).toContain("result.content[0]?.playerId");
   });
 
-  it("opponents page accepts ?opponent= searchParam and auto-selects first", () => {
-    const page = readFile("app/clubs/[clubId]/(sidebar)/opponents/page.tsx");
-    expect(page).toContain("searchParams");
-    expect(page).toContain("opponent:");
-    expect(page).toContain("result.content[0]?.clubId");
-  });
 });
 
 describe("UX: Detail routes redirect to searchParam versions", () => {
@@ -44,10 +38,11 @@ describe("UX: Detail routes redirect to searchParam versions", () => {
     expect(page).toContain("?player=");
   });
 
-  it("opponents/[opponentClubId] redirects to ?opponent=", () => {
+  it("removed opponents detail route redirects to matches", () => {
     const page = readFile("app/clubs/[clubId]/(sidebar)/opponents/[opponentClubId]/page.tsx");
     expect(page).toContain("redirect");
-    expect(page).toContain("?opponent=");
+    expect(page).toContain("/matches");
+    expect(page).not.toContain("?opponent=");
   });
 });
 
@@ -66,12 +61,6 @@ describe("UX: Shell components exist for split-pane", () => {
     expect(shell).toContain("useSearchParams");
   });
 
-  it("opponents-shell.tsx exists and is a client component", () => {
-    const shell = readFile("components/opponents/opponents-shell.tsx");
-    expect(shell).toContain('"use client"');
-    expect(shell).toContain("useRouter");
-    expect(shell).toContain("useSearchParams");
-  });
 });
 
 describe("UX: Mobile back buttons", () => {
@@ -87,11 +76,6 @@ describe("UX: Mobile back buttons", () => {
     expect(shell).toContain("ArrowLeft");
   });
 
-  it("opponents shell has mobile back button", () => {
-    const shell = readFile("components/opponents/opponents-shell.tsx");
-    expect(shell).toContain("Todos os adversários");
-    expect(shell).toContain("ArrowLeft");
-  });
 });
 
 describe("UX: Active item uses inset left bar (original style)", () => {
@@ -102,11 +86,6 @@ describe("UX: Active item uses inset left bar (original style)", () => {
 
   it("player list uses inset shadow for active state", () => {
     const shell = readFile("components/players/players-shell.tsx");
-    expect(shell).toContain("shadow-[inset_3px_0_var(--color-accent)]");
-  });
-
-  it("opponent list uses inset shadow for active state", () => {
-    const shell = readFile("components/opponents/opponents-shell.tsx");
     expect(shell).toContain("shadow-[inset_3px_0_var(--color-accent)]");
   });
 
@@ -173,8 +152,9 @@ describe("UX: Match detail has editorial sections", () => {
     expect(detail).toContain("/players?player=");
   });
 
-  it("links opponent name to opponent history", () => {
-    expect(detail).toContain("/opponents?opponent=");
+  it("keeps the opponent as sporting data without a removed-history link", () => {
+    expect(detail).toContain("match.opponentClubName");
+    expect(detail).not.toContain("/opponents?opponent=");
   });
 });
 
@@ -199,29 +179,6 @@ describe("UX: Player profile completeness", () => {
 
   it("links recent matches to match detail", () => {
     expect(profile).toContain("/matches?match=");
-  });
-});
-
-describe("UX: Opponent history completeness", () => {
-  const history = readFile("components/opponents/opponent-history-view.tsx");
-
-  it("shows W/D/L as large numbers", () => {
-    expect(history).toContain("text-2xl font-black text-win");
-    expect(history).toContain("text-2xl font-black text-draw");
-    expect(history).toContain("text-2xl font-black text-loss");
-  });
-
-  it("shows aproveitamento percentage", () => {
-    expect(history).toContain("Aproveitamento");
-    expect(history).toContain("winRate");
-  });
-
-  it("highlights last match", () => {
-    expect(history).toContain("Último Confronto Registrado");
-  });
-
-  it("links matches to match detail", () => {
-    expect(history).toContain("/matches?match=");
   });
 });
 
@@ -289,13 +246,14 @@ describe("UX: Overview sub-components exist", () => {
 describe("UX: Sidebar nav order", () => {
   const sidebar = readFile("components/layout/sidebar-nav.tsx");
 
-  it("Jogadores appears immediately after Visão Geral", () => {
+  it("Partidas appears immediately after Visão Geral", () => {
     const visaoIdx = sidebar.indexOf('"Visão Geral"');
     const jogadoresIdx = sidebar.indexOf('"Jogadores"');
     const partidasIdx = sidebar.indexOf('"Partidas"');
     expect(visaoIdx).toBeGreaterThan(-1);
-    expect(jogadoresIdx).toBeGreaterThan(visaoIdx);
-    expect(partidasIdx).toBeGreaterThan(jogadoresIdx);
+    expect(partidasIdx).toBeGreaterThan(visaoIdx);
+    expect(jogadoresIdx).toBeGreaterThan(partidasIdx);
+    expect(sidebar).not.toContain('label: "Adversários"');
   });
 });
 
@@ -334,10 +292,6 @@ describe("UX: Desktop split-pane layout", () => {
     expect(shell).toContain("lg:grid lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]");
   });
 
-  it("opponents shell uses lg:grid with list and detail columns", () => {
-    const shell = readFile("components/opponents/opponents-shell.tsx");
-    expect(shell).toContain("lg:grid lg:grid-cols-[minmax(280px,350px)_minmax(0,1fr)]");
-  });
 });
 
 describe("UX: Mobile responsive", () => {
@@ -352,10 +306,6 @@ describe("UX: Mobile responsive", () => {
     expect(shell).toContain("mobileShowDetail");
   });
 
-  it("opponents shell hides list when detail is shown on mobile", () => {
-    const shell = readFile("components/opponents/opponents-shell.tsx");
-    expect(shell).toContain("mobileShowDetail");
-  });
 });
 
 describe("Security: preserved constraints", () => {
@@ -368,7 +318,6 @@ describe("Security: preserved constraints", () => {
     const shells = [
       "components/matches/matches-shell.tsx",
       "components/players/players-shell.tsx",
-      "components/opponents/opponents-shell.tsx",
     ];
     for (const path of shells) {
       const content = readFile(path);
@@ -380,7 +329,6 @@ describe("Security: preserved constraints", () => {
     const pages = [
       "app/clubs/[clubId]/(sidebar)/matches/page.tsx",
       "app/clubs/[clubId]/(sidebar)/players/page.tsx",
-      "app/clubs/[clubId]/(sidebar)/opponents/page.tsx",
       "app/clubs/[clubId]/(fullwidth)/overview/page.tsx",
     ];
     for (const path of pages) {
@@ -406,7 +354,6 @@ describe("Security: preserved constraints", () => {
     const pages = [
       readFile("app/clubs/[clubId]/(sidebar)/matches/page.tsx"),
       readFile("app/clubs/[clubId]/(sidebar)/players/page.tsx"),
-      readFile("app/clubs/[clubId]/(sidebar)/opponents/page.tsx"),
       readFile("app/clubs/[clubId]/(fullwidth)/overview/page.tsx"),
     ];
     for (const content of pages) {

@@ -18,21 +18,18 @@ class OpponentHistoryArchitectureTest {
             .doesNotContain("CanonicalMatchRepository","MatchHistoryService","MatchInterpreter","MatchStoryExtractor","MatchResponse")
     }
 
-    @Test fun `browser uses canonical links and has no subjective rivalry language`() {
-        val script=Path.of("src/main/resources/static/opponents.js").readText()
-        assertThat(script).contains("/history?matchId=","/players?playerId=","/compare?firstMatchId=","data.clubId")
-            .doesNotContain("freguês","carrasco","rival equilibrado","vantagem","costumamos ganhar")
-    }
-
-    @Test fun `latest meeting summary has no dominant open match action`() {
-        val script=Path.of("src/main/resources/static/opponents.js").readText()
-        assertThat(script).contains("match-summary-card", "Último confronto")
-            .doesNotContain("Abrir partida", "card-action")
-    }
-
-    @Test fun `memorial assets and page are removed`() {
+    @Test fun `removed legacy opponents assets stay absent`() {
+        assertThat(Path.of("src/main/resources/opponents.html")).doesNotExist()
+        assertThat(Path.of("src/main/resources/static/opponents.js")).doesNotExist()
+        assertThat(Path.of("src/main/resources/static/opponents.css")).doesNotExist()
         assertThat(Path.of("src/main/resources/insights.html")).doesNotExist()
         assertThat(Path.of("src/main/resources/static/club-history.js")).doesNotExist()
         assertThat(Path.of("src/main/resources/static/club-history.css")).doesNotExist()
+    }
+
+    @Test fun `legacy match detail keeps opponent text without a removed history link`() {
+        val script = Path.of("src/main/resources/static/match-history.js").readText()
+        assertThat(script).contains("<span class=\"match-hero-club\">")
+            .doesNotContain("href=\"/opponents/")
     }
 }

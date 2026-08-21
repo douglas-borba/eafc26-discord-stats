@@ -185,8 +185,6 @@
 }
 
 .match-hero-club:last-child { text-align: right; }
-.opponent-history-link { color: inherit; text-decoration-color: #58a6ff; text-underline-offset: 4px; }
-.opponent-history-link:hover { color: #79c0ff; }
 
 .match-hero-score strong {
   font-size: clamp(38px, 5vw, 62px);

@@ -112,12 +112,12 @@ describe("Security: sports repositories use the scoped Spring API", () => {
 
   it("sports repositories use the definitive club API", () => {
     const repos = allSource.filter((f) => f.path.includes("/repositories/"));
-    expect(repos.filter((f) => /match-repository|player-repository|opponent-repository/.test(f.path)).every((f) => f.content.includes("clubPath(clubId"))).toBe(true);
+    expect(repos.filter((f) => /match-repository|player-repository/.test(f.path)).every((f) => f.content.includes("clubPath(clubId"))).toBe(true);
   });
 
   it("sports repositories no longer access Supabase directly", () => {
     const repos = allSource.filter((f) => f.path.includes("/repositories/"));
-    for (const repo of repos.filter((f) => /match-repository|player-repository|opponent-repository/.test(f.path))) {
+    for (const repo of repos.filter((f) => /match-repository|player-repository/.test(f.path))) {
       expect(repo.content).not.toContain("createServerSupabase");
     }
   });
@@ -217,12 +217,10 @@ describe("Security: multi-club scoping", () => {
     expect(detailFn).toContain("clubPath(clubId");
   });
 
-  it("player and opponent requests scope identity by clubId", () => {
+  it("player requests scope identity by clubId", () => {
     const playerRepo = readFileSync(join(SRC, "lib/repositories/player-repository.ts"), "utf-8");
-    const opponentRepo = readFileSync(join(SRC, "lib/repositories/opponent-repository.ts"), "utf-8");
 
     expect(playerRepo).toContain("clubPath(clubId");
-    expect(opponentRepo).toContain("clubPath(clubId");
   });
 
   it("no hardcoded club id in source", () => {

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { Shield, Circle, Users, Swords } from "lucide-react";
+import { Shield, Circle, Users } from "lucide-react";
 import type { SequenceEditorial } from "@/lib/services/sequence-editorial-service";
 import type { MatchSummaryPresentation } from "@/lib/services/match-card-service";
 
@@ -12,7 +12,6 @@ const navItems = [
   { label: "Visão Geral", href: "overview", icon: Shield },
   { label: "Partidas", href: "matches", icon: Circle },
   { label: "Jogadores", href: "players", icon: Users },
-  { label: "Adversários", href: "opponents", icon: Swords },
 ];
 
 const resultDotColors = {

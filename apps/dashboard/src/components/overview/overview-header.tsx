@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Shield, Circle, Users, Menu, X, Swords } from "lucide-react";
+import { Shield, Circle, Users, Menu, X } from "lucide-react";
 import { useState, useEffect } from "react";
 
 const navItems = [
   { label: "Visão Geral", href: "overview", icon: Shield },
   { label: "Partidas", href: "matches", icon: Circle },
   { label: "Jogadores", href: "players", icon: Users },
-  { label: "Adversários", href: "opponents", icon: Swords },
 ];
 
 export function OverviewHeader({ clubId }: { clubId: string }) {

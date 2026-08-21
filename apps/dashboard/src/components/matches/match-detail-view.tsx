@@ -350,16 +350,7 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
             </p>
           </div>
           <div className="text-left">
-            {match.opponentClubId ? (
-              <a
-                href={`/clubs/${clubId}/opponents?opponent=${match.opponentClubId}`}
-                className="text-sm text-accent hover:underline"
-              >
-                {match.opponentClubName ?? "Adversário"}
-              </a>
-            ) : (
-              <p className="text-sm text-text-soft mb-1">{match.opponentClubName ?? "Adversário"}</p>
-            )}
+            <p className="text-sm text-text-soft mb-1">{match.opponentClubName ?? "Adversário"}</p>
           </div>
         </div>
       </section>

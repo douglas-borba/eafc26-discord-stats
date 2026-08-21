@@ -14,15 +14,15 @@ class OpponentHistoryControllerTest {
     private lateinit var controller: OpponentHistoryController
     @BeforeEach fun setUp(){service=mock();controller=OpponentHistoryController(service, defaultClubProvider(CLUB_ID))}
 
-    @Test fun `serves shared opponents page for index and detail routes`() {
-        assertThat(controller.page(null).body!!.path).isEqualTo("opponents.html")
-        assertThat(controller.page("club-1").body!!.path).isEqualTo("opponents.html")
+    @Test fun `legacy opponents page routes redirect to matches`() {
+        assertThat(controller.page(null).headers.location.toString()).isEqualTo("/history")
+        assertThat(controller.page("club-1").headers.location.toString()).isEqualTo("/history")
     }
 
-    @Test fun `legacy insights route redirects to opponents`() {
+    @Test fun `legacy insights route redirects to matches`() {
         val response=controller.legacyRedirect()
         assertThat(response.statusCode.value()).isEqualTo(302)
-        assertThat(response.headers.location.toString()).isEqualTo("/opponents")
+        assertThat(response.headers.location.toString()).isEqualTo("/history")
     }
 
     @Test fun `empty index has explicit status`() {

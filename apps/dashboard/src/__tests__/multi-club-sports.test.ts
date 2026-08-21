@@ -9,7 +9,6 @@ describe("explicit multi-club sports consumption", () => {
     const files = [
       "src/lib/repositories/match-repository.ts",
       "src/lib/repositories/player-repository.ts",
-      "src/lib/repositories/opponent-repository.ts",
       "src/lib/api/panorama-client.ts",
     ].map(source).join("\n");
     expect(files).toContain("clubPath(clubId");
@@ -23,10 +22,11 @@ describe("explicit multi-club sports consumption", () => {
     expect(client).toContain('cache: "no-store"');
   });
 
-  it("preserves clubId in navigation and exposes every sports area", () => {
+  it("preserves clubId in navigation and exposes the active sports areas", () => {
     const navigation = source("src/components/layout/sidebar-nav.tsx");
     expect(navigation).toContain("`/clubs/${clubId}/${href}`");
-    for (const destination of ["overview", "matches", "players", "opponents"]) expect(navigation).toContain(`href: "${destination}"`);
+    for (const destination of ["overview", "matches", "players"]) expect(navigation).toContain(`href: "${destination}"`);
+    expect(navigation).not.toContain('href: "opponents"');
   });
 
   it("contains no fixed Association identity in multi-club UI sources", () => {
@@ -35,8 +35,6 @@ describe("explicit multi-club sports consumption", () => {
       "src/components/overview/overview-match-card.tsx",
       "src/components/players/players-shell.tsx",
       "src/components/players/player-profile-view.tsx",
-      "src/components/opponents/opponents-shell.tsx",
-      "src/components/opponents/opponent-history-view.tsx",
     ].map(source).join("\n");
     expect(files).not.toContain("Associação BF");
   });

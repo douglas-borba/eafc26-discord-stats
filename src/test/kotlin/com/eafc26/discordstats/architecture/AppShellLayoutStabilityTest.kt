@@ -33,7 +33,6 @@ class AppShellLayoutStabilityTest {
             "players.html" to listOf("width:min(1280px,100%)", ".shell { padding:", "margin:auto"),
             "compare.html" to listOf("width:min(1440px,100%)", ".shell{padding:", "margin:auto"),
             "static/match-history.css" to listOf("width: min(1480px, 100%)", ".matches-page { padding:", "margin: 0 auto"),
-            "static/opponents.css" to listOf("width: min(1420px, 100%)", ".opponents-page {\n    padding:", "margin: auto"),
         )
 
         pageStyles.forEach { (file, forbiddenRules) ->

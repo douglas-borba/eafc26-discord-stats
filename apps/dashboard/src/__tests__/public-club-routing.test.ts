@@ -54,8 +54,15 @@ describe("public club routing", () => {
       expect(existsSync(resolve(root, "app/clubs/[clubId]/(sidebar)/players/page.tsx"))).toBe(true);
     });
 
-    it("opponents route still exists", () => {
-      expect(existsSync(resolve(root, "app/clubs/[clubId]/(sidebar)/opponents/page.tsx"))).toBe(true);
+    it("removed opponents routes redirect safely to matches", () => {
+      const opponents = read("app/clubs/[clubId]/(sidebar)/opponents/page.tsx");
+      const detail = read("app/clubs/[clubId]/(sidebar)/opponents/[opponentClubId]/page.tsx");
+      expect(opponents).toContain("redirect");
+      expect(opponents).toContain("/matches");
+      expect(opponents).not.toContain("getOpponents");
+      expect(opponents).not.toContain("searchParams");
+      expect(detail).toContain("redirect");
+      expect(detail).toContain("/matches");
     });
 
     it("matches route still exists", () => {

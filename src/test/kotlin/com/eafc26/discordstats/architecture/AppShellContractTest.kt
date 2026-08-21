@@ -12,7 +12,6 @@ class AppShellContractTest {
         "history.html" to "matches",
         "players.html" to "players",
         "compare.html" to "compare",
-        "opponents.html" to "opponents",
         "settings.html" to "settings",
     )
 
@@ -46,7 +45,7 @@ class AppShellContractTest {
             .contains("""label: "Visão Geral", href: "/" """.trim())
             .contains("""label: "Partidas", href: "/history"""")
             .contains("""label: "Jogadores", href: "/players"""")
-            .contains("""label: "Adversários", href: "/opponents"""")
+            .doesNotContain("Adversários", "icons.opponents")
             .doesNotContain("História do Clube")
             .doesNotContain("""href="/compare""", "Comparar partidas")
             .contains("<svg viewBox=\"0 0 24 24\">")

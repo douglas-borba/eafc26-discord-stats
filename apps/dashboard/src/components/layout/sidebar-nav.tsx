@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Shield, Circle, Users, Menu, X, Building2, Swords, Lock } from "lucide-react";
+import { Shield, Circle, Users, Menu, X, Building2, Lock } from "lucide-react";
 import { useState, useEffect } from "react";
 
 const navItems = [
   { label: "Visão Geral", href: "overview", icon: Shield },
-  { label: "Jogadores", href: "players", icon: Users },
   { label: "Partidas", href: "matches", icon: Circle },
-  { label: "Adversários", href: "opponents", icon: Swords },
+  { label: "Jogadores", href: "players", icon: Users },
 ];
 
 export function SidebarNav({ clubId, clubName, restricted = false }: { clubId: string; clubName: string; restricted?: boolean }) {
