@@ -12,4 +12,5 @@ data class PlayerMatchPerformance(
     val goalkeeping: GoalkeepingStats?,
     val eaRecognition: EaRecognition,
     val advanced: AdvancedPlayerStats = AdvancedPlayerStats(),
+    val advancedCoverage: AdvancedStatsCoverage = AdvancedStatsCoverage.UNAVAILABLE,
 )

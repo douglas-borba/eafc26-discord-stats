@@ -38,6 +38,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import java.math.BigDecimal
 import java.time.Instant
 import java.nio.file.Files
 
@@ -665,6 +666,10 @@ class PostgresCanonicalMatchRepositoryTest {
         assertThat(mvp["goals"]).isEqualTo(2)
         assertThat(mvp["man_of_the_match"]).isEqualTo(true)
         assertThat(mvp["rating"]).isNotNull
+        assertThat(mvp["advanced_coverage"]).isEqualTo("UNAVAILABLE")
+        assertThat(mvp["advanced_dribbles_completed"]).isNull()
+        assertThat(mvp["advanced_beats"]).isNull()
+        assertThat(mvp["duration_seconds"]).isEqualTo(5_400)
     }
 
     @Test
@@ -727,6 +732,37 @@ class PostgresCanonicalMatchRepositoryTest {
         ).substringAfter("private fun query").substringBefore("private fun readAppearance")
         assertThat(source).doesNotContain("SELECT payload")
         assertThat(source).contains("player_match_stats", "cm.payload #>>")
+    }
+
+    @Test
+    fun `player selector index aggregates eligible history without transferring canonical payload`() {
+        val complete = canonicalMatch("index-complete", 1_718_500_000L)
+        val unknown = canonicalMatch("index-unknown", 1_718_500_100L, completion = MatchCompletion.UNKNOWN)
+        val dnf = canonicalMatch("index-dnf", 1_718_500_200L, completion = MatchCompletion.dnf(OUR_CLUB))
+        listOf(complete, unknown, dnf).forEach(repository::save)
+
+        readDiagnostics.reset()
+        val index = playerProfileReadRepository.findPlayerIndex(OUR_CLUB)
+
+        assertThat(index).hasSize(3)
+        assertThat(index.first { it.playerId == PlayerId("mvp") })
+            .extracting({ it.matchCount }, { it.ratedMatchCount }, { it.averageRating })
+            .containsExactly(2, 2, BigDecimal("9.20"))
+        assertThat(index).allSatisfy { entry ->
+            assertThat(entry.matchCount).isEqualTo(2)
+        }
+
+        val diagnostics = readDiagnostics.snapshot()
+        assertThat(diagnostics.operations.getValue("findPlayerProfileIndex"))
+            .extracting({ it.calls }, { it.rows })
+            .containsExactly(1L, 3L)
+        assertThat(diagnostics.operations).doesNotContainKey("findPlayerProfileAppearances")
+
+        val source = Files.readString(
+            java.nio.file.Path.of("src/main/kotlin/com/eafc26/discordstats/store/PostgresPlayerProfileReadRepository.kt")
+        ).substringAfter("override fun findPlayerIndex").substringBefore("override fun findAppearances")
+        assertThat(source).doesNotContain("SELECT payload")
+        assertThat(source).contains("GROUP BY ps.player_id")
     }
 
     @Test

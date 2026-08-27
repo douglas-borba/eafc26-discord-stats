@@ -8,6 +8,8 @@ import com.eafc26.discordstats.domain.interpretation.MatchInterpretation
 import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.domain.interpretation.ResultDecision
 import com.eafc26.discordstats.domain.match.AttackingStats
+import com.eafc26.discordstats.domain.match.AdvancedPlayerStats
+import com.eafc26.discordstats.domain.match.AdvancedStatsCoverage
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubIdentity
 import com.eafc26.discordstats.domain.match.ClubMatchPerformance
@@ -234,6 +236,134 @@ class PlayerProfileServiceTest {
         verifyNoMoreInteractions(history)
     }
 
+    @Test
+    fun `current form compares five latest eligible appearances against only prior history`() {
+        val playerId = PlayerId("form-player")
+        val matches = (10 downTo 1).map { day ->
+            canonical(
+                "m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Forma",
+                MatchOutcome.WIN, if (day >= 6) "9.0" else "7.0", if (day >= 6) 2 else 0, 0, 0, emptySet(),
+            )
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        val form = service.findById(OUR_CLUB, playerId)!!.xRay!!.currentForm
+
+        assertThat(form.state.name).isEqualTo("COMPARED")
+        assertThat(form.recent!!.averageRating).isEqualByComparingTo("9.00")
+        assertThat(form.previous!!.averageRating).isEqualByComparingTo("7.00")
+        assertThat(form.previous!!.goalsPerMatch).isEqualByComparingTo("0.00")
+        assertThat(form.differences!!.goalsPerMatch).isEqualByComparingTo("2.00")
+    }
+
+    @Test
+    fun `current form remains factual without a trend below five eligible appearances`() {
+        val playerId = PlayerId("forming-player")
+        val matches = (4 downTo 1).map { day ->
+            canonical("m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Início", MatchOutcome.WIN, "7", 0, 0, 0, emptySet())
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        val form = service.findById(OUR_CLUB, playerId)!!.xRay!!.currentForm
+
+        assertThat(form.state.name).isEqualTo("FORMING")
+        assertThat(form.recent).isNull()
+        assertThat(form.differences).isNull()
+    }
+
+    @Test
+    fun `five to nine eligible appearances show recent facts without a baseline claim`() {
+        val playerId = PlayerId("recent-only-player")
+        val matches = (7 downTo 1).map { day ->
+            canonical("m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Recente", MatchOutcome.WIN, "7", 1, 0, 0, emptySet())
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        val form = service.findById(OUR_CLUB, playerId)!!.xRay!!.currentForm
+
+        assertThat(form.state.name).isEqualTo("RECENT_ONLY")
+        assertThat(form.recent!!.appearances).isEqualTo(5)
+        assertThat(form.previous).isNull()
+        assertThat(form.differences).isNull()
+    }
+
+    @Test
+    fun `advanced facts are exposed only for explicitly covered appearances`() {
+        val playerId = PlayerId("advanced-player")
+        val full = canonical(
+            "full", "2026-07-03T10:00:00Z", playerId, "Avançado", MatchOutcome.WIN, "8", 0, 0, 0, emptySet(),
+            advancedCoverage = AdvancedStatsCoverage.FULL, dribblesCompleted = 4, beats = 2,
+        )
+        val old = canonical("old", "2026-07-02T10:00:00Z", playerId, "Avançado", MatchOutcome.WIN, "8", 0, 0, 0, emptySet())
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(listOf(full, old))
+
+        val xRay = service.findById(OUR_CLUB, playerId)!!.xRay!!
+
+        assertThat(xRay.advancedCoverage.coverage).isEqualTo(AdvancedStatsCoverage.PARTIAL)
+        assertThat(xRay.advancedCoverage.fullAppearances).isEqualTo(1)
+        assertThat(xRay.advancedCoverage.unavailableAppearances).isEqualTo(1)
+        assertThat(xRay.oneOnOne!!.dribblesCompleted).isEqualTo(4)
+        assertThat(xRay.oneOnOne!!.opponentsBeaten).isEqualTo(2)
+    }
+
+    @Test
+    fun `historical appearances without explicit coverage stay unavailable rather than zero`() {
+        val playerId = PlayerId("historical-player")
+        val match = canonical("old", "2026-07-02T10:00:00Z", playerId, "Histórico", MatchOutcome.WIN, "8", 0, 0, 0, emptySet())
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(listOf(match))
+
+        val xRay = service.findById(OUR_CLUB, playerId)!!.xRay!!
+
+        assertThat(xRay.advancedCoverage.coverage).isEqualTo(AdvancedStatsCoverage.UNAVAILABLE)
+        assertThat(xRay.oneOnOne).isNull()
+    }
+
+    @Test
+    fun `personal record ties choose the newest match deterministically`() {
+        val playerId = PlayerId("record-player")
+        val earlier = canonical("a", "2026-07-01T10:00:00Z", playerId, "Recordista", MatchOutcome.WIN, "8", 3, 0, 0, emptySet())
+        val later = canonical("b", "2026-07-02T10:00:00Z", playerId, "Recordista", MatchOutcome.WIN, "8", 3, 0, 0, emptySet())
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(listOf(later, earlier))
+
+        val record = service.findById(OUR_CLUB, playerId)!!.xRay!!.records.mostGoalsInMatch
+
+        assertThat(record!!.matchId.value).isEqualTo("b")
+        assertThat(record.value).isEqualTo(3)
+    }
+
+    @Test
+    fun `passing opportunity requires volume and a material personal decline`() {
+        val playerId = PlayerId("passing-player")
+        val matches = (10 downTo 1).map { day ->
+            canonical(
+                "m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Passador",
+                MatchOutcome.WIN, "7", 0, 0, 0, emptySet(),
+                passAttempts = 30, passesCompleted = if (day >= 6) 15 else 27,
+            )
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        val opportunity = service.findById(OUR_CLUB, playerId)!!.xRay!!.analysis.opportunity
+
+        assertThat(opportunity!!.area.name).isEqualTo("PASSING")
+        assertThat(opportunity.message).contains("Eficiência de passe em atenção")
+    }
+
+    @Test
+    fun `no improvement opportunity is inferred without enough evidence volume`() {
+        val playerId = PlayerId("low-volume-player")
+        val matches = (10 downTo 1).map { day ->
+            canonical(
+                "m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Amostra curta",
+                MatchOutcome.WIN, "7", 0, 0, 0, emptySet(),
+                passAttempts = 1, passesCompleted = if (day >= 6) 0 else 1,
+            )
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        assertThat(service.findById(OUR_CLUB, playerId)!!.xRay!!.analysis.opportunity).isNull()
+    }
+
     private fun canonical(
         id: String,
         playedAt: String,
@@ -248,6 +378,13 @@ class PlayerProfileServiceTest {
         perspectiveClubId: ClubId = OUR_CLUB,
         completion: MatchCompletion = MatchCompletion.UNKNOWN,
         proName: String? = null,
+        passAttempts: Int = 20,
+        passesCompleted: Int = 18,
+        tackleAttempts: Int = 4,
+        tacklesCompleted: Int = 2,
+        advancedCoverage: AdvancedStatsCoverage = AdvancedStatsCoverage.UNAVAILABLE,
+        dribblesCompleted: Int = 0,
+        beats: Int = 0,
     ): CanonicalMatch {
         val player = PlayerMatchPerformance(
             player = PlayerIdentity(playerId, DisplayName(name), proName?.let(::DisplayName)),
@@ -255,11 +392,13 @@ class PlayerProfileServiceTest {
             participation = Participation(Duration.ofMinutes(90), ParticipationStatus.COMPLETED),
             rating = rating?.let { MatchRating(BigDecimal(it)) },
             attacking = AttackingStats(goals, assists, 3),
-            passing = PassingStats(20, 18),
-            defending = DefendingStats(4, 2),
+            passing = PassingStats(passAttempts, passesCompleted),
+            defending = DefendingStats(tackleAttempts, tacklesCompleted),
             discipline = DisciplineStats(redCards),
             goalkeeping = null,
             eaRecognition = EaRecognition(false),
+            advanced = AdvancedPlayerStats(dribblesCompleted = dribblesCompleted, beats = beats),
+            advancedCoverage = advancedCoverage,
         )
         val ours = ClubMatchPerformance(
             ClubIdentity(perspectiveClubId, ClubName("Our FC")),

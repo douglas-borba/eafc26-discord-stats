@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.ea.mapping
 
 import com.eafc26.discordstats.domain.match.AdvancedPlayerStats
+import com.eafc26.discordstats.domain.match.AdvancedStatsCoverage
 import com.eafc26.discordstats.ea.model.PlayerEntry
 
 /**
@@ -27,6 +28,17 @@ object EaAdvancedStatsDecoder {
             beats = aggregate0.valueAt(BEATS_CODE),
             interceptions = aggregate0.valueAt(INTERCEPTIONS_CODE) + aggregate1.valueAt(INTERCEPTIONS_CODE),
         )
+    }
+
+    /**
+     * Aggregate slot 0 contains the independently validated advanced facts
+     * used by the product. Slot 1 without slot 0 is retained as partial
+     * transport coverage but is not used to expose an advanced metric.
+     */
+    fun coverage(player: PlayerEntry): AdvancedStatsCoverage = when {
+        histogram(player.matchEventAggregate0).isNotEmpty() -> AdvancedStatsCoverage.FULL
+        histogram(player.matchEventAggregate1).isNotEmpty() -> AdvancedStatsCoverage.PARTIAL
+        else -> AdvancedStatsCoverage.UNAVAILABLE
     }
 
     private fun histogram(raw: String?): Map<Int, Int> = raw

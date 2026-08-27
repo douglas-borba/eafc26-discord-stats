@@ -268,7 +268,7 @@ export function PlayersShell({
             </button>
           )}
           {profile ? (
-            <PlayerProfileView profile={profile} clubId={clubId} clubName={clubName} />
+            <PlayerProfileView profile={profile} />
           ) : (
             <div
               style={{

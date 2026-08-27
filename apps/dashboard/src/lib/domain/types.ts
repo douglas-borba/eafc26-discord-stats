@@ -117,7 +117,73 @@ export interface PlayerProfile {
   totalPassesAttempted: number;
   totalTacklesCompleted: number;
   totalTacklesAttempted: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  ratedMatchCount: number;
+  bagreCount: number;
+  xerifeCount: number;
+  xRay: PlayerXRay | null;
   recentMatches: PlayerMatch[];
+}
+
+export interface PlayerMetricPeriod {
+  appearances: number;
+  averageRating: number | null;
+  goalsPerMatch: number;
+  assistsPerMatch: number;
+  directContributionsPerMatch: number;
+  passAccuracy: number | null;
+  tackleEfficiency: number | null;
+  finishingConversion: number | null;
+  passAttempts: number;
+  tackleAttempts: number;
+  shots: number;
+}
+
+export interface PlayerXRay {
+  currentForm: {
+    state: "FORMING" | "RECENT_ONLY" | "COMPARED";
+    recent: PlayerMetricPeriod | null;
+    previous: PlayerMetricPeriod | null;
+    differences: {
+      averageRating: number | null;
+      goalsPerMatch: number;
+      assistsPerMatch: number;
+      directContributionsPerMatch: number;
+      passAccuracyPoints: number | null;
+      tackleEfficiencyPoints: number | null;
+      finishingConversionPoints: number | null;
+    } | null;
+  };
+  attack: { goals:number; goalsPerMatch:number; shots:number; shotsPerMatch:number; finishingConversion:number | null };
+  creation: { assists:number; assistsPerMatch:number; passesAttempted:number; passesCompleted:number; passAccuracy:number | null; directContributions:number; directContributionsPerMatch:number };
+  defense: { tacklesAttempted:number; tacklesCompleted:number; tackleEfficiency:number | null; tacklesCompletedPerMatch:number };
+  advancedCoverage: { eligibleAppearances:number; fullAppearances:number; partialAppearances:number; unavailableAppearances:number; coverage:"UNAVAILABLE"|"PARTIAL"|"FULL" };
+  oneOnOne: { coveredAppearances:number; dribblesCompleted:number; opponentsBeaten:number } | null;
+  recognitions: { craques:number; bagres:number; xerifes:number };
+  records: {
+    mostGoalsInMatch: PlayerSingleMatchRecord | null;
+    mostAssistsInMatch: PlayerSingleMatchRecord | null;
+    mostDirectContributionsInMatch: PlayerSingleMatchRecord | null;
+    scoringStreak:number;
+    assistStreak:number;
+    directContributionStreak:number;
+    ratingTenMatches:number;
+  };
+  analysis: {
+    summary:string;
+    strengths:string[];
+    currentForm:string | null;
+    opportunity: { area:"PASSING"|"TACKLING"|"FINISHING"; differencePoints:number; message:string } | null;
+  };
+}
+
+export interface PlayerSingleMatchRecord {
+  value:number;
+  matchId:string;
+  playedAt:string;
+  opponentClubName:string | null;
 }
 
 export interface PlayerMatch {

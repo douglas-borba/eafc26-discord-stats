@@ -34,6 +34,7 @@ data class PlayerProfile(
     val tacklesCompleted: Int = 0,
     val tacklesAttempted: Int = 0,
     val recentMatches: List<PlayerProfileMatch>,
+    val xRay: PlayerXRay? = null,
 ) {
     init {
         require(matchCount == wins + draws + losses) {
@@ -65,4 +66,6 @@ data class PlayerProfileIndexEntry(
     val displayName: String,
     val matchCount: Int,
     val latestMatchAt: Instant,
+    val averageRating: BigDecimal? = null,
+    val ratedMatchCount: Int = 0,
 )

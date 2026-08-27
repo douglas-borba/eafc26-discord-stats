@@ -6,6 +6,7 @@ import com.eafc26.discordstats.domain.match.CompetitionType
 import com.eafc26.discordstats.profile.PlayerProfile
 import com.eafc26.discordstats.profile.PlayerProfileIndexEntry
 import com.eafc26.discordstats.profile.PlayerProfileMatch
+import com.eafc26.discordstats.profile.PlayerXRay
 import com.eafc26.discordstats.presentation.MatchPresentationTimeZone
 import java.math.BigDecimal
 import java.time.Instant
@@ -28,6 +29,8 @@ data class PlayerProfileListItem(
     val playerId: String,
     val name: String,
     val matchCount: Int,
+    val averageRating: BigDecimal?,
+    val ratedMatchCount: Int,
     val latestMatchAt: Instant,
     val latestMatchLabel: String,
 )
@@ -53,6 +56,7 @@ data class PlayerProfileView(
     val tacklesCompleted: Int,
     val tacklesAttempted: Int,
     val recentMatches: List<PlayerProfileMatchView>,
+    val xRay: PlayerXRay?,
 )
 
 data class PlayerProfileMatchView(
@@ -86,6 +90,8 @@ object PlayerProfilePresenter {
         playerId = entry.playerId.value,
         name = entry.displayName,
         matchCount = entry.matchCount,
+        averageRating = entry.averageRating,
+        ratedMatchCount = entry.ratedMatchCount,
         latestMatchAt = entry.latestMatchAt,
         latestMatchLabel = dateFormatter.withZone(zoneId).format(entry.latestMatchAt),
     )
@@ -114,6 +120,7 @@ object PlayerProfilePresenter {
         tacklesCompleted = profile.tacklesCompleted,
         tacklesAttempted = profile.tacklesAttempted,
         recentMatches = profile.recentMatches.map { it.presentation(zoneId) },
+        xRay = profile.xRay,
     )
 
     private fun PlayerProfileMatch.presentation(zoneId: ZoneId): PlayerProfileMatchView {

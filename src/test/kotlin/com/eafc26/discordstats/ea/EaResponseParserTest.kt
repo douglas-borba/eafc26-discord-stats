@@ -117,6 +117,17 @@ class EaResponseParserTest {
         assertThat(players["player_short"]!!.secondsPlayed).isEqualTo("900")
     }
 
+    @Test
+    fun `parseMatches accepts the live secondsPlayed casing`() {
+        val json = """
+            [{"matchId":"1","timestamp":1,"players":{"club":{"player":{"secondsPlayed":"123"}}}}]
+        """.trimIndent()
+
+        val player = (parser.parseMatches(json) as EaApiResult.Success).data.single().players["club"]!!["player"]!!
+
+        assertThat(player.secondsPlayed).isEqualTo("123")
+    }
+
     private fun fixture(name: String): String =
         javaClass.classLoader!!
             .getResourceAsStream("fixtures/$name")

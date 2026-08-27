@@ -86,7 +86,8 @@ data class PlayerEntry(
     // Cleansheet indicators
     @JsonProperty("cleansheetsgk") val cleanSheetsGk: String? = null,
     @JsonProperty("cleansheetsany") val cleanSheetsAny: String? = null,
-    @JsonProperty("secondsplayed") val secondsPlayed: String? = null,
+    @JsonAlias("secondsplayed")
+    @JsonProperty("secondsPlayed") val secondsPlayed: String? = null,
     @JsonProperty("status") val status: String? = null,
     /**
      * Sparse EA event histograms. Their codes are transport details and are

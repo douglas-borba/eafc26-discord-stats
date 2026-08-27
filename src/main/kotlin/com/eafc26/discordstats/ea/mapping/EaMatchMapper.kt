@@ -324,6 +324,7 @@ class EaMatchMapper {
                 manOfTheMatch = parser.booleanFlag(source.manOfTheMatch, "$path.mom"),
             ),
             advanced = advanced,
+            advancedCoverage = EaAdvancedStatsDecoder.coverage(source),
         )
     }
 

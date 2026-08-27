@@ -13,6 +13,7 @@ import com.eafc26.discordstats.domain.match.MatchCompletionStatus
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.profile.PlayerProfileAppearance
+import com.eafc26.discordstats.profile.PlayerProfileIndexEntry
 import org.springframework.jdbc.core.JdbcTemplate
 import java.sql.ResultSet
 
@@ -28,6 +29,50 @@ class PostgresPlayerProfileReadRepository(
     private val readDiagnostics: CanonicalReadDiagnostics = CanonicalReadDiagnostics(),
     private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) : PlayerProfileReadRepository {
+
+    override fun findPlayerIndex(clubId: ClubId): List<PlayerProfileIndexEntry> {
+        val rows = jdbcTemplate.query(
+            """
+            SELECT
+                ps.player_id,
+                COALESCE(
+                    (array_agg(ps.pro_name ORDER BY ps.played_at DESC, ps.match_id ASC) FILTER (WHERE ps.pro_name IS NOT NULL))[1],
+                    (array_agg(ps.platform_name ORDER BY ps.played_at DESC, ps.match_id ASC) FILTER (WHERE ps.platform_name IS NOT NULL))[1],
+                    ps.player_id
+                ) AS display_name,
+                COUNT(*) AS match_count,
+                MAX(ps.played_at) AS latest_match_at,
+                AVG(ps.rating) AS average_rating,
+                COUNT(ps.rating) AS rated_match_count
+            FROM player_match_stats ps
+            JOIN canonical_matches cm
+              ON cm.club_id = ps.club_id
+             AND cm.match_id = ps.match_id
+            WHERE ps.club_id = ?
+              AND COALESCE(cm.payload #>> '{footballMatch,completion,status}', 'UNKNOWN') <> 'DNF'
+            GROUP BY ps.player_id
+            ORDER BY MAX(ps.played_at) DESC, display_name ASC, ps.player_id ASC
+            """.trimIndent(),
+            { rs, _ ->
+                PlayerProfileIndexEntry(
+                    playerId = PlayerId(rs.getString("player_id")),
+                    displayName = rs.getString("display_name"),
+                    matchCount = rs.getInt("match_count"),
+                    latestMatchAt = rs.getTimestamp("latest_match_at").toInstant(),
+                    averageRating = rs.getBigDecimal("average_rating")?.setScale(2, java.math.RoundingMode.HALF_UP),
+                    ratedMatchCount = rs.getInt("rated_match_count"),
+                )
+            },
+            clubId.value,
+        )
+        readDiagnostics.record(
+            CanonicalReadOperation.FIND_PLAYER_PROFILE_INDEX,
+            readOriginContext.current(),
+            rows.size,
+            rows.sumOf { it.estimatedReturnedBytes() },
+        )
+        return rows
+    }
 
     override fun findAppearances(clubId: ClubId): List<PlayerProfileAppearance> = query(clubId)
 
@@ -55,6 +100,10 @@ class PostgresPlayerProfileReadRepository(
                 ps.tackles_completed,
                 ps.tackles_attempted,
                 ps.red_cards,
+                ps.advanced_coverage,
+                ps.advanced_dribbles_completed,
+                ps.advanced_beats,
+                ps.duration_seconds,
                 cm.match_id,
                 cm.played_at,
                 cm.match_type AS competition,
@@ -117,8 +166,8 @@ class PostgresPlayerProfileReadRepository(
             completion = MatchCompletion(completionStatus, dnfClubId),
             rating = rs.getBigDecimal("rating"),
             // The derived table intentionally stores nullable EA counters as zero for aggregation.
-            // Recent-match API fields preserve their canonical nullable representation via these
-            // two scalar paths, without transferring the canonical JSONB document.
+            // The profile projection preserves the canonical nullable values without
+            // transferring the canonical JSONB document.
             goals = if (rs.getBoolean("has_canonical_player")) {
                 rs.getNullableCanonicalInt("canonical_goals")
             } else {
@@ -140,6 +189,12 @@ class PostgresPlayerProfileReadRepository(
                 if (rs.getBoolean("is_bagre")) add(AwardType.BAGRE)
                 if (rs.getBoolean("is_xerife")) add(AwardType.XERIFE)
             },
+            advancedCoverage = rs.getString("advanced_coverage")
+                ?.let(com.eafc26.discordstats.domain.match.AdvancedStatsCoverage::valueOf)
+                ?: com.eafc26.discordstats.domain.match.AdvancedStatsCoverage.UNAVAILABLE,
+            advancedDribblesCompleted = rs.getIntOrNull("advanced_dribbles_completed"),
+            advancedBeats = rs.getIntOrNull("advanced_beats"),
+            durationSeconds = rs.getIntOrNull("duration_seconds"),
         )
     }
 
@@ -172,6 +227,15 @@ class PostgresPlayerProfileReadRepository(
         tacklesCompleted?.toString(),
         tacklesAttempted?.toString(),
         redCards?.toString(),
+        advancedCoverage.name,
+        advancedDribblesCompleted?.toString(),
+        advancedBeats?.toString(),
+        durationSeconds?.toString(),
         awards.joinToString(",") { it.name },
+    ).sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() }
+
+    private fun PlayerProfileIndexEntry.estimatedReturnedBytes(): Long = listOfNotNull(
+        playerId.value, displayName, matchCount.toString(), latestMatchAt.toString(),
+        averageRating?.toPlainString(), ratedMatchCount.toString(),
     ).sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() }
 }

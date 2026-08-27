@@ -92,7 +92,7 @@ class ClubSportsController(
 
     @GetMapping("/players")
     fun players(@PathVariable clubId: String): SportsPlayerListResponse = scope(clubId, ClubDashboardCapability.PLAYERS) { id ->
-        val result = players.listProfiles(id).map(PlayerProfilePresenter::profile)
+        val result = players.listPlayers(id).map(PlayerProfilePresenter::listItem)
         SportsPlayerListResponse(if (result.isEmpty()) "empty" else "success", result)
     }
 
@@ -176,4 +176,4 @@ data class SportsClubResponse(
     val monitoringEnabled: Boolean,
     val accessStatus: String = "ACTIVE",
 )
-data class SportsPlayerListResponse(val status: String, val players: List<com.eafc26.discordstats.presentation.profile.PlayerProfileView>)
+data class SportsPlayerListResponse(val status: String, val players: List<com.eafc26.discordstats.presentation.profile.PlayerProfileListItem>)

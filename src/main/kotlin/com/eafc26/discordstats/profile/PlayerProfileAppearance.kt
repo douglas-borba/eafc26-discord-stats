@@ -6,6 +6,7 @@ import com.eafc26.discordstats.domain.match.CompetitionType
 import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.match.PlayerId
+import com.eafc26.discordstats.domain.match.AdvancedStatsCoverage
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -39,6 +40,10 @@ data class PlayerProfileAppearance(
     val tacklesAttempted: Int?,
     val redCards: Int?,
     val awards: Set<AwardType>,
+    val advancedCoverage: AdvancedStatsCoverage = AdvancedStatsCoverage.UNAVAILABLE,
+    val advancedDribblesCompleted: Int? = null,
+    val advancedBeats: Int? = null,
+    val durationSeconds: Int? = null,
 ) {
     val preferredDisplayName: String
         get() = proName ?: platformName ?: playerId.value

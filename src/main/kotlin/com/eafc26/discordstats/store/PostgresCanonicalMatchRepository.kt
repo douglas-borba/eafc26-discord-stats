@@ -98,8 +98,9 @@ class PostgresCanonicalMatchRepository(
                 INSERT INTO player_match_stats
                     (club_id, match_id, player_id, platform_name, pro_name, rating,
                      goals, assists, shots, passes_completed, passes_attempted,
-                     tackles_completed, tackles_attempted, red_cards, man_of_the_match, played_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     tackles_completed, tackles_attempted, red_cards, man_of_the_match, played_at,
+                     advanced_coverage, advanced_dribbles_completed, advanced_beats, duration_seconds)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent(),
                 perspectiveClubId,
                 match.matchId.value,
@@ -117,6 +118,14 @@ class PostgresCanonicalMatchRepository(
                 playerPerf.discipline.redCards ?: 0,
                 playerPerf.eaRecognition.manOfTheMatch ?: false,
                 Timestamp.from(match.footballMatch.playedAt),
+                playerPerf.advancedCoverage.name,
+                playerPerf.advanced.dribblesCompleted.takeIf {
+                    playerPerf.advancedCoverage == com.eafc26.discordstats.domain.match.AdvancedStatsCoverage.FULL
+                },
+                playerPerf.advanced.beats.takeIf {
+                    playerPerf.advancedCoverage == com.eafc26.discordstats.domain.match.AdvancedStatsCoverage.FULL
+                },
+                playerPerf.participation.duration?.seconds?.toInt(),
             )
         }
     }

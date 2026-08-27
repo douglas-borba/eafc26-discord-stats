@@ -21,6 +21,7 @@ import com.eafc26.discordstats.domain.match.Score
 import com.eafc26.discordstats.llm.LlmEditorialService
 import com.eafc26.discordstats.profile.PlayerProfile
 import com.eafc26.discordstats.profile.PlayerProfileAppearance
+import com.eafc26.discordstats.profile.PlayerProfileIndexEntry
 import com.eafc26.discordstats.service.MatchCardService
 import com.eafc26.discordstats.service.MatchComparisonService
 import com.eafc26.discordstats.service.MatchHistoryService
@@ -186,19 +187,22 @@ class ClubSportsControllerTest {
     }
 
     @Test
-    fun `players endpoint delegates the complete collection to the shared snapshot operation`() {
+    fun `players endpoint uses the lightweight selector operation`() {
         val club = club("1104972", "Associação BF")
         whenever(clubs.find(club.clubId)).thenReturn(club)
-        whenever(players.listProfiles(club.clubId)).thenReturn(
-            listOf(profile("ana", "Ana"), profile("bruno", "Bruno"))
+        whenever(players.listPlayers(club.clubId)).thenReturn(
+            listOf(
+                PlayerProfileIndexEntry(PlayerId("ana"), "Ana", 4, Instant.parse("2026-08-20T10:00:00Z")),
+                PlayerProfileIndexEntry(PlayerId("bruno"), "Bruno", 3, Instant.parse("2026-08-19T10:00:00Z")),
+            )
         )
 
         val response = controller.players(club.clubId.value)
 
         assertThat(response.status).isEqualTo("success")
         assertThat(response.players.map { it.playerId }).containsExactly("ana", "bruno")
-        verify(players).listProfiles(club.clubId)
-        verify(players, never()).listPlayers(club.clubId)
+        verify(players).listPlayers(club.clubId)
+        verify(players, never()).listProfiles(club.clubId)
         verifyNoMoreInteractions(players)
     }
 
@@ -213,7 +217,9 @@ class ClubSportsControllerTest {
             clubs, history, optimizedPlayers, opponents, comparisons, cards, editorial, ClubAccessPolicy(clubs),
         )
         whenever(clubs.find(club.clubId)).thenReturn(club)
-        whenever(readModel.findAppearances(club.clubId)).thenReturn(appearances)
+        whenever(readModel.findPlayerIndex(club.clubId)).thenReturn(
+            listOf(PlayerProfileIndexEntry(playerId, "Ana", 1, appearances.single().playedAt, BigDecimal("7.00"), 1))
+        )
         whenever(readModel.findAppearances(club.clubId, playerId)).thenReturn(appearances)
 
         val list = optimizedController.players(club.clubId.value)
@@ -221,6 +227,9 @@ class ClubSportsControllerTest {
 
         assertThat(list.players).singleElement().extracting { it.playerId }.isEqualTo(playerId.value)
         assertThat(detail.statusCode.value()).isEqualTo(200)
+        verify(readModel).findPlayerIndex(club.clubId)
+        verify(readModel).findAppearances(club.clubId, playerId)
+        verify(readModel, never()).findAppearances(club.clubId)
         verifyNoInteractions(history)
     }
 

@@ -161,24 +161,29 @@ describe("UX: Match detail has editorial sections", () => {
 describe("UX: Player profile completeness", () => {
   const profile = readFile("components/players/player-profile-view.tsx");
 
-  it("has 'Perfil histórico' kicker", () => {
-    expect(profile).toContain("Perfil histórico");
+  it("uses the Player X-Ray hierarchy", () => {
+    expect(profile).toContain("RAIO-X DO JOGADOR");
+    expect(profile).toContain("ANÁLISE DO JOGADOR");
+    expect(profile).toContain("MOMENTO ATUAL");
+    expect(profile).toContain("RECORDES PESSOAIS");
   });
 
-  it("shows W/D/L record badges computed from recent matches", () => {
-    expect(profile).toContain('m.outcome === "WIN"');
-    expect(profile).toContain('m.outcome === "DRAW"');
-    expect(profile).toContain('m.outcome === "LOSS"');
+  it("uses profile-level W/D/L values instead of the recent subset", () => {
+    expect(profile).toContain("value={profile.wins}");
+    expect(profile).toContain("value={profile.draws}");
+    expect(profile).toContain("value={profile.losses}");
+    expect(profile).not.toContain('m.outcome === "WIN"');
   });
 
-  it("displays record badge values (not hardcoded 0)", () => {
-    expect(profile).toContain("value={wins}");
-    expect(profile).toContain("value={draws}");
-    expect(profile).toContain("value={losses}");
+  it("does not render a second match-history browser", () => {
+    expect(profile).not.toContain("Últimas partidas");
+    expect(profile).not.toContain("/matches?match=");
   });
 
-  it("links recent matches to match detail", () => {
-    expect(profile).toContain("/matches?match=");
+  it("keeps unavailable advanced data distinct from a factual zero", () => {
+    expect(profile).toContain("Dados avançados ainda não disponíveis para este período.");
+    expect(profile).not.toContain("Dribles falhos");
+    expect(profile).not.toContain("Perdas de posse");
   });
 });
 

@@ -2,6 +2,7 @@ package com.eafc26.discordstats.ea.mapping
 
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.CompetitionType
+import com.eafc26.discordstats.domain.match.AdvancedStatsCoverage
 import com.eafc26.discordstats.domain.match.DisplayName
 import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.match.PlayerRole
@@ -124,6 +125,7 @@ class EaMatchMapperTest {
         assertThat(advanced.beats).isEqualTo(8)
         assertThat(advanced.interceptions).isEqualTo(7)
         assertThat(defending.interceptions).isEqualTo(7)
+        assertThat(result.match.participants.first().players.single().advancedCoverage).isEqualTo(AdvancedStatsCoverage.FULL)
     }
 
     @Test
