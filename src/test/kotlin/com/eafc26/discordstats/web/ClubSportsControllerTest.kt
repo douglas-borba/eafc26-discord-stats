@@ -22,6 +22,7 @@ import com.eafc26.discordstats.llm.LlmEditorialService
 import com.eafc26.discordstats.profile.PlayerProfile
 import com.eafc26.discordstats.profile.PlayerProfileAppearance
 import com.eafc26.discordstats.profile.PlayerProfileIndexEntry
+import com.eafc26.discordstats.presentation.profile.PlayerProfilePresenter
 import com.eafc26.discordstats.service.MatchCardService
 import com.eafc26.discordstats.service.MatchComparisonService
 import com.eafc26.discordstats.service.MatchHistoryService
@@ -36,6 +37,7 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.verifyNoInteractions
 import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.springframework.web.server.ResponseStatusException
 import java.math.BigDecimal
 import java.time.Instant
@@ -204,6 +206,14 @@ class ClubSportsControllerTest {
         verify(players).listPlayers(club.clubId)
         verify(players, never()).listProfiles(club.clubId)
         verifyNoMoreInteractions(players)
+    }
+
+    @Test
+    fun `player profile serialization preserves the X Ray API property name`() {
+        val json = jacksonObjectMapper().writeValueAsString(PlayerProfilePresenter.profile(profile("ana", "Ana")))
+
+        assertThat(json).contains("\"xRay\":null")
+        assertThat(json).doesNotContain("\"xray\":null")
     }
 
     @Test

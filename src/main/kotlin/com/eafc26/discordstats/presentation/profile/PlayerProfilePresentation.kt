@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.presentation.profile
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.eafc26.discordstats.domain.interpretation.AwardType
 import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.domain.match.CompetitionType
@@ -56,6 +57,7 @@ data class PlayerProfileView(
     val tacklesCompleted: Int,
     val tacklesAttempted: Int,
     val recentMatches: List<PlayerProfileMatchView>,
+    @get:JsonProperty("xRay")
     val xRay: PlayerXRay?,
 )
 

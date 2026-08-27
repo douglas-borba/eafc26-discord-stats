@@ -307,15 +307,44 @@ class PlayerProfileServiceTest {
     }
 
     @Test
+    fun `fully covered appearances expose factual 1v1 totals for their complete scope`() {
+        val playerId = PlayerId("fully-covered-player")
+        val first = canonical(
+            "full-1", "2026-07-03T10:00:00Z", playerId, "Coberto", MatchOutcome.WIN, "8", 0, 0, 0, emptySet(),
+            advancedCoverage = AdvancedStatsCoverage.FULL, dribblesCompleted = 4, beats = 2,
+        )
+        val second = canonical(
+            "full-2", "2026-07-02T10:00:00Z", playerId, "Coberto", MatchOutcome.WIN, "8", 0, 0, 0, emptySet(),
+            advancedCoverage = AdvancedStatsCoverage.FULL, dribblesCompleted = 3, beats = 5,
+        )
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(listOf(first, second))
+
+        val xRay = service.findById(OUR_CLUB, playerId)!!.xRay!!
+
+        assertThat(xRay.advancedCoverage.coverage).isEqualTo(AdvancedStatsCoverage.FULL)
+        assertThat(xRay.advancedCoverage.fullAppearances).isEqualTo(2)
+        assertThat(xRay.oneOnOne).isNotNull
+        assertThat(xRay.oneOnOne!!.dribblesCompleted).isEqualTo(7)
+        assertThat(xRay.oneOnOne!!.opponentsBeaten).isEqualTo(7)
+    }
+
+    @Test
     fun `historical appearances without explicit coverage stay unavailable rather than zero`() {
         val playerId = PlayerId("historical-player")
         val match = canonical("old", "2026-07-02T10:00:00Z", playerId, "Histórico", MatchOutcome.WIN, "8", 0, 0, 0, emptySet())
         whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(listOf(match))
 
-        val xRay = service.findById(OUR_CLUB, playerId)!!.xRay!!
+        val profile = service.findById(OUR_CLUB, playerId)!!
+        val xRay = profile.xRay!!
 
         assertThat(xRay.advancedCoverage.coverage).isEqualTo(AdvancedStatsCoverage.UNAVAILABLE)
         assertThat(xRay.oneOnOne).isNull()
+        assertThat(xRay.analysis.summary).contains("Histórico")
+        assertThat(xRay.attack.goals).isZero()
+        assertThat(xRay.creation.assists).isZero()
+        assertThat(xRay.defense.tacklesAttempted).isGreaterThanOrEqualTo(0)
+        assertThat(xRay.records.ratingTenMatches).isZero()
+        assertThat(profile.matchCount).isEqualTo(1)
     }
 
     @Test

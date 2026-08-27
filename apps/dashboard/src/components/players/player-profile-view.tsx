@@ -33,7 +33,7 @@ export function PlayerProfileView({ profile }: { profile: PlayerProfile }) {
         <Metric value={directContributions} label="Participações diretas" />
       </div>
 
-      {xRay ? <XRayContent profile={profile} /> : <p style={{ color: "var(--color-text-muted)", fontSize: 14 }}>Dados detalhados ainda não estão disponíveis para este perfil.</p>}
+      {xRay ? <XRayContent xRay={xRay} profile={profile} /> : <p style={{ color: "var(--color-text-muted)", fontSize: 14 }}>Ainda não há dados básicos suficientes para gerar o Raio-X deste perfil.</p>}
 
       <style>{`
         .xray-primary-metrics { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
@@ -46,8 +46,7 @@ export function PlayerProfileView({ profile }: { profile: PlayerProfile }) {
   );
 }
 
-function XRayContent({ profile }: { profile: PlayerProfile }) {
-  const xRay = profile.xRay!;
+function XRayContent({ profile, xRay }: { profile: PlayerProfile; xRay: NonNullable<PlayerProfile["xRay"]> }) {
   const analysisLines = [xRay.analysis.summary, ...xRay.analysis.strengths, xRay.analysis.currentForm].filter(Boolean) as string[];
   return <>
     <section>
@@ -84,13 +83,13 @@ function XRayContent({ profile }: { profile: PlayerProfile }) {
       ]} />
     </div>
 
-    <section>
+    {xRay.oneOnOne && <section>
       <h3 style={sectionTitle}>1 CONTRA 1</h3>
-      {xRay.oneOnOne ? <div style={surfaceStyle}>
+      <div style={surfaceStyle}>
         <p style={{ ...analysisTextStyle, color: "var(--color-text-muted)", marginBottom: 10 }}>Dados avançados em {xRay.oneOnOne.coveredAppearances} de {xRay.advancedCoverage.eligibleAppearances} partidas elegíveis.</p>
         <div style={{ display: "flex", gap: 30, flexWrap: "wrap" }}><Fact label="Dribles completos" value={xRay.oneOnOne.dribblesCompleted} /><Fact label="Adversários superados" value={xRay.oneOnOne.opponentsBeaten} /></div>
-      </div> : <p style={{ ...analysisTextStyle, color: "var(--color-text-muted)" }}>Dados avançados ainda não disponíveis para este período.</p>}
-    </section>
+      </div>
+    </section>}
 
     <section>
       <h3 style={sectionTitle}>RECONHECIMENTOS</h3>

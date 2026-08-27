@@ -181,7 +181,7 @@ describe("UX: Player profile completeness", () => {
   });
 
   it("keeps unavailable advanced data distinct from a factual zero", () => {
-    expect(profile).toContain("Dados avançados ainda não disponíveis para este período.");
+    expect(profile).toContain("{xRay.oneOnOne && <section>");
     expect(profile).not.toContain("Dribles falhos");
     expect(profile).not.toContain("Perdas de posse");
   });
