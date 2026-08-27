@@ -202,11 +202,29 @@ describe("UX: Players master/detail navigation", () => {
     expect(shell).not.toContain("router.push");
   });
 
-  it("keeps the current detail visible with local loading and error states", () => {
+  it("uses explicit selected, displayed and loading identities instead of showing stale detail data", () => {
     expect(shell).toContain("profileCache");
-    expect(shell).toContain("aria-busy={detailLoading}");
-    expect(shell).toContain("Atualizando Raio-X…");
-    expect(shell).toContain('role="alert"');
+    expect(shell).toContain("displayedProfile");
+    expect(shell).toContain("loadingPlayerId");
+    expect(shell).toContain("setDisplayedProfile(null)");
+    expect(shell).toContain("PlayerXRaySkeleton");
+    expect(shell).toContain("displayedProfile?.playerId === selectedPlayerId");
+    expect(shell).not.toContain("opacity: detailLoading");
+    expect(shell).not.toContain("Atualizando Raio-X…");
+  });
+
+  it("keeps stale requests from replacing the latest selection while caching successful profiles", () => {
+    expect(shell).toContain("profileCache.current.set(playerId, body.profile)");
+    expect(shell).toContain("requestId === requestSequence.current");
+    expect(shell).toContain("body.profile.playerId !== playerId");
+    expect(shell).toContain("displayedProfile?.playerId !== playerId");
+    expect(shell).toContain("requestSequence.current += 1");
+  });
+
+  it("keeps errors tied to the selected player and retries the same identity", () => {
+    expect(shell).toContain("PlayerDetailFailure");
+    expect(shell).toContain("detailError?.playerId === selectedPlayerId");
+    expect(shell).toContain("onRetry={() => selectedPlayerId && void loadProfile(selectedPlayerId)}");
   });
 
   it("keeps the list accessible with native button semantics", () => {

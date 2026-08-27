@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PlayerProfileView } from "@/components/players/player-profile-view";
+import { PlayerXRaySkeleton } from "@/components/players/player-xray-skeleton";
 import type { PlayerProfile, PlayerSummary } from "@/lib/domain/types";
 
 function performanceBarColor(rating: number | null): { width: string; color: string } {
@@ -27,6 +28,11 @@ function playerUrl(playerId: string | null): string {
 
 class ProfileLoadError extends Error {}
 
+type PlayerDetailError = {
+  playerId: string;
+  message: string;
+};
+
 function isMobileViewport(): boolean {
   return window.matchMedia("(max-width: 1023px)").matches;
 }
@@ -48,9 +54,9 @@ export function PlayersShell({
 }) {
   const [search, setSearch] = useState("");
   const [selectedPlayerId, setSelectedPlayerId] = useState(initialSelectedPlayerId);
-  const [detailProfile, setDetailProfile] = useState(initialProfile);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
+  const [displayedProfile, setDisplayedProfile] = useState(initialProfile);
+  const [loadingPlayerId, setLoadingPlayerId] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<PlayerDetailError | null>(null);
   const [mobileShowDetail, setMobileShowDetail] = useState(showDetailOnMobile);
   const profileCache = useRef(new Map<string, PlayerProfile>());
   const requestSequence = useRef(0);
@@ -68,12 +74,13 @@ export function PlayersShell({
 
     const cached = profileCache.current.get(playerId);
     if (cached) {
-      setDetailProfile(cached);
-      setDetailLoading(false);
+      setDisplayedProfile(cached);
+      setLoadingPlayerId(null);
       return;
     }
 
-    setDetailLoading(true);
+    setDisplayedProfile(null);
+    setLoadingPlayerId(playerId);
     try {
       const response = await fetch(`/api/clubs/${encodeURIComponent(clubId)}/players/${encodeURIComponent(playerId)}`, {
         cache: "no-store",
@@ -83,17 +90,19 @@ export function PlayersShell({
       if (!response.ok) throw new ProfileLoadError("Não foi possível carregar o Raio-X agora.");
       const body = await response.json() as { profile?: PlayerProfile };
       if (!body.profile) throw new ProfileLoadError("Não foi possível carregar o Raio-X agora.");
+      if (body.profile.playerId !== playerId) throw new ProfileLoadError("Não foi possível carregar o Raio-X agora.");
 
+      profileCache.current.set(playerId, body.profile);
       if (requestId === requestSequence.current) {
-        profileCache.current.set(playerId, body.profile);
-        setDetailProfile(body.profile);
+        setDisplayedProfile(body.profile);
+        setLoadingPlayerId(null);
       }
     } catch (error) {
       if (requestId === requestSequence.current) {
-        setDetailError(error instanceof ProfileLoadError ? error.message : "Não foi possível carregar o Raio-X agora.");
+        setDisplayedProfile(null);
+        setLoadingPlayerId(null);
+        setDetailError({ playerId, message: error instanceof ProfileLoadError ? error.message : "Não foi possível carregar o Raio-X agora." });
       }
-    } finally {
-      if (requestId === requestSequence.current) setDetailLoading(false);
     }
   }, [clubId]);
 
@@ -102,15 +111,27 @@ export function PlayersShell({
       const playerIdFromUrl = playerFromLocation();
       const playerId = playerIdFromUrl ?? players[0]?.playerId ?? null;
       if (!playerId) {
+        requestSequence.current += 1;
+        setDisplayedProfile(null);
+        setLoadingPlayerId(null);
+        setDetailError(null);
+        setMobileShowDetail(false);
+        return;
+      }
+      if (!playerIdFromUrl && isMobileViewport()) {
+        requestSequence.current += 1;
+        setDisplayedProfile(null);
+        setLoadingPlayerId(null);
+        setDetailError(null);
         setMobileShowDetail(false);
         return;
       }
       setMobileShowDetail(Boolean(playerIdFromUrl));
-      if (playerId !== selectedPlayerId) void loadProfile(playerId);
+      if (playerId !== selectedPlayerId || displayedProfile?.playerId !== playerId) void loadProfile(playerId);
     };
     window.addEventListener("popstate", handleHistoryNavigation);
     return () => window.removeEventListener("popstate", handleHistoryNavigation);
-  }, [loadProfile, players, selectedPlayerId]);
+  }, [displayedProfile, loadProfile, players, selectedPlayerId]);
 
   const selectPlayer = useCallback((playerId: string) => {
     const isMobile = isMobileViewport();
@@ -119,6 +140,7 @@ export function PlayersShell({
     if (playerId === selectedPlayerId) {
       setMobileShowDetail(true);
       if (isMobile) window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
+      if (!profileCache.current.has(playerId) && loadingPlayerId !== playerId) void loadProfile(playerId);
       return;
     }
     // Native history keeps the shareable selection without re-running the page Server Component.
@@ -126,10 +148,14 @@ export function PlayersShell({
     setMobileShowDetail(true);
     if (isMobile) window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
     void loadProfile(playerId);
-  }, [loadProfile, selectedPlayerId]);
+  }, [loadProfile, loadingPlayerId, selectedPlayerId]);
 
   const handleBack = useCallback(() => {
+    requestSequence.current += 1;
     window.history.replaceState(null, "", playerUrl(null));
+    setDisplayedProfile(null);
+    setLoadingPlayerId(null);
+    setDetailError(null);
     setMobileShowDetail(false);
     window.requestAnimationFrame(() => {
       window.scrollTo({ top: listScrollPosition.current, behavior: "auto" });
@@ -143,6 +169,11 @@ export function PlayersShell({
     const name = (player.displayName ?? player.platformName ?? "").toLocaleLowerCase("pt-BR");
     return name.includes(term);
   });
+  const selectedPlayer = players.find((player) => player.playerId === selectedPlayerId) ?? null;
+  const selectedPlayerName = selectedPlayer?.displayName ?? selectedPlayer?.platformName ?? null;
+  const detailIsLoading = loadingPlayerId === selectedPlayerId;
+  const visibleProfile = displayedProfile?.playerId === selectedPlayerId ? displayedProfile : null;
+  const visibleError = detailError?.playerId === selectedPlayerId ? detailError : null;
 
   return (
     <div>
@@ -219,25 +250,31 @@ export function PlayersShell({
           </div>
         </div>
 
-        <section className={`players-detail-panel ${!mobileShowDetail ? "hidden" : "block"} lg:block`} aria-busy={detailLoading} style={{ border: "1px solid var(--color-border)", borderRadius: 12, background: "var(--color-surface-panel)", minHeight: 560, padding: 20, position: "relative" }}>
+        <section className={`players-detail-panel ${!mobileShowDetail ? "hidden" : "block"} lg:block`} aria-busy={detailIsLoading} style={{ border: "1px solid var(--color-border)", borderRadius: 12, background: "var(--color-surface-panel)", minHeight: 560, padding: 20, position: "relative" }}>
           {mobileShowDetail && <button type="button" onClick={handleBack} className="lg:hidden" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "var(--color-accent)", background: "none", border: "none", cursor: "pointer", marginBottom: 16 }}>
             <ArrowLeft style={{ width: 16, height: 16 }} />
             Todos os jogadores
           </button>}
 
-          <div className="players-detail-content" style={{ opacity: detailLoading ? 0.66 : 1 }}>
-            {detailProfile ? <PlayerProfileView profile={detailProfile} /> : <EmptyDetail />}
+          <div className="players-detail-content">
+            {detailIsLoading ? <PlayerXRaySkeleton playerName={selectedPlayerName} /> : visibleProfile ? <PlayerProfileView profile={visibleProfile} /> : visibleError ? <PlayerDetailFailure playerName={selectedPlayerName} message={visibleError.message} onRetry={() => selectedPlayerId && void loadProfile(selectedPlayerId)} /> : <EmptyDetail />}
           </div>
 
-          {detailLoading && <div role="status" aria-live="polite" style={{ position: "absolute", right: 20, top: 20, fontSize: 12, color: "var(--color-text-muted)", background: "var(--color-surface-raised)", border: "1px solid var(--color-border)", borderRadius: 999, padding: "6px 10px" }}>Atualizando Raio-X…</div>}
-          {detailError && <div role="alert" style={{ marginTop: 16, padding: 12, border: "1px solid var(--color-danger)", borderRadius: 8, color: "var(--color-danger)", fontSize: 14 }}>
-            <span>{detailError}</span>
-            {selectedPlayerId && <button type="button" onClick={() => void loadProfile(selectedPlayerId)} style={{ marginLeft: 12, border: "none", background: "none", color: "inherit", cursor: "pointer", fontWeight: 700, textDecoration: "underline" }}>Tentar novamente</button>}
-          </div>}
         </section>
       </div>
     </div>
   );
+}
+
+function PlayerDetailFailure({ playerName, message, onRetry }: { playerName: string | null; message: string; onRetry: () => void }) {
+  return <div role="alert" style={{ display: "grid", placeItems: "center", minHeight: 500, color: "var(--color-danger)", fontSize: 14 }}>
+    <div style={{ maxWidth: 360, textAlign: "center" }}>
+      <p style={{ color: "var(--color-text-muted)", fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", margin: "0 0 6px" }}>RAIO-X DO JOGADOR</p>
+      {playerName && <h2 style={{ color: "var(--color-text-primary)", fontSize: 24, margin: "0 0 12px", overflowWrap: "anywhere" }}>{playerName}</h2>}
+      <p style={{ margin: 0 }}>{message}</p>
+      <button type="button" onClick={onRetry} style={{ marginTop: 16, border: "none", background: "none", color: "inherit", cursor: "pointer", fontWeight: 700, textDecoration: "underline" }}>Tentar novamente</button>
+    </div>
+  </div>;
 }
 
 function EmptyDetail() {
