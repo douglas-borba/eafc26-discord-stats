@@ -28,6 +28,7 @@ export default async function PlayersPage({
       profile={profile}
       clubId={clubId}
       clubName={club.displayName}
+      showDetailOnMobile={Boolean(selectedPlayerId)}
     />
   );
 }

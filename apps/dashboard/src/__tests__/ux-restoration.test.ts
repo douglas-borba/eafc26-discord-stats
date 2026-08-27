@@ -57,8 +57,8 @@ describe("UX: Shell components exist for split-pane", () => {
   it("players-shell.tsx exists and is a client component", () => {
     const shell = readFile("components/players/players-shell.tsx");
     expect(shell).toContain('"use client"');
-    expect(shell).toContain("useRouter");
-    expect(shell).toContain("useSearchParams");
+    expect(shell).toContain("window.history.pushState");
+    expect(shell).toContain("popstate");
   });
 
 });
@@ -184,6 +184,28 @@ describe("UX: Player profile completeness", () => {
     expect(profile).toContain("{xRay.oneOnOne && <section>");
     expect(profile).not.toContain("Dribles falhos");
     expect(profile).not.toContain("Perdas de posse");
+  });
+});
+
+describe("UX: Players master/detail navigation", () => {
+  const shell = readFile("components/players/players-shell.tsx");
+
+  it("updates selection before requesting only the selected profile", () => {
+    expect(shell).toContain("setSelectedPlayerId(playerId)");
+    expect(shell).toContain("/api/clubs/${encodeURIComponent(clubId)}/players/${encodeURIComponent(playerId)}");
+    expect(shell).not.toContain("router.push");
+  });
+
+  it("keeps the current detail visible with local loading and error states", () => {
+    expect(shell).toContain("profileCache");
+    expect(shell).toContain("aria-busy={detailLoading}");
+    expect(shell).toContain("Atualizando Raio-X…");
+    expect(shell).toContain('role="alert"');
+  });
+
+  it("keeps the list accessible with native button semantics", () => {
+    expect(shell).toContain("aria-pressed={isActive}");
+    expect(shell).toContain('type="search"');
   });
 });
 
