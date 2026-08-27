@@ -185,6 +185,12 @@ describe("UX: Player profile completeness", () => {
     expect(profile).not.toContain("Dribles falhos");
     expect(profile).not.toContain("Perdas de posse");
   });
+
+  it("keeps profile grids and long player content within a narrow detail panel", () => {
+    expect(profile).toContain("minWidth: 0");
+    expect(profile).toContain("overflow-wrap:anywhere");
+    expect(profile).toContain("@media (max-width: 480px)");
+  });
 });
 
 describe("UX: Players master/detail navigation", () => {
@@ -206,6 +212,37 @@ describe("UX: Players master/detail navigation", () => {
   it("keeps the list accessible with native button semantics", () => {
     expect(shell).toContain("aria-pressed={isActive}");
     expect(shell).toContain('type="search"');
+  });
+});
+
+describe("UX: Players mobile master/detail", () => {
+  const shell = readFile("components/players/players-shell.tsx");
+
+  it("uses the page scroll instead of clipping the player list on narrow screens", () => {
+    expect(shell).toContain("@media (max-width: 1023px)");
+    expect(shell).toContain(".players-list-scroll { max-height: none !important; overflow: visible !important; }");
+    expect(shell).not.toContain("max-height: 300px");
+    expect(shell).not.toContain('style={{ maxHeight: "calc(100vh - 190px)", overflowY: "auto" }}');
+  });
+
+  it("keeps the list and detail as exclusive mobile states while desktop remains split-pane", () => {
+    expect(shell).toContain('mobileShowDetail ? "hidden" : "block"} lg:block');
+    expect(shell).toContain('!mobileShowDetail ? "hidden" : "block"} lg:block');
+    expect(shell).toContain("lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]");
+  });
+
+  it("keeps search and every filtered player renderable, including an empty state", () => {
+    expect(shell).toContain('type="search"');
+    expect(shell).toContain("filtered.map((player)");
+    expect(shell).toContain("Nenhum jogador encontrado.");
+  });
+
+  it("restores the in-app list position without changing the profile loading model", () => {
+    expect(shell).toContain("listScrollPosition");
+    expect(shell).toContain("window.scrollTo({ top: listScrollPosition.current, behavior: \"auto\" })");
+    expect(shell).toContain("window.history.replaceState");
+    expect(shell).toContain("playerButtonRefs.current.get(selectedPlayerId)?.focus()");
+    expect(shell).toContain("/api/clubs/${encodeURIComponent(clubId)}/players/${encodeURIComponent(playerId)}");
   });
 });
 

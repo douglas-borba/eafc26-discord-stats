@@ -27,6 +27,10 @@ function playerUrl(playerId: string | null): string {
 
 class ProfileLoadError extends Error {}
 
+function isMobileViewport(): boolean {
+  return window.matchMedia("(max-width: 1023px)").matches;
+}
+
 export function PlayersShell({
   players,
   selectedPlayerId: initialSelectedPlayerId,
@@ -50,6 +54,8 @@ export function PlayersShell({
   const [mobileShowDetail, setMobileShowDetail] = useState(showDetailOnMobile);
   const profileCache = useRef(new Map<string, PlayerProfile>());
   const requestSequence = useRef(0);
+  const listScrollPosition = useRef(0);
+  const playerButtonRefs = useRef(new Map<string, HTMLButtonElement>());
 
   useEffect(() => {
     if (initialSelectedPlayerId && initialProfile) profileCache.current.set(initialSelectedPlayerId, initialProfile);
@@ -107,22 +113,29 @@ export function PlayersShell({
   }, [loadProfile, players, selectedPlayerId]);
 
   const selectPlayer = useCallback((playerId: string) => {
+    const isMobile = isMobileViewport();
+    if (isMobile) listScrollPosition.current = window.scrollY;
+
     if (playerId === selectedPlayerId) {
       setMobileShowDetail(true);
+      if (isMobile) window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
       return;
     }
     // Native history keeps the shareable selection without re-running the page Server Component.
     window.history.pushState(null, "", playerUrl(playerId));
     setMobileShowDetail(true);
+    if (isMobile) window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
     void loadProfile(playerId);
   }, [loadProfile, selectedPlayerId]);
 
   const handleBack = useCallback(() => {
-    window.history.pushState(null, "", playerUrl(null));
+    window.history.replaceState(null, "", playerUrl(null));
     setMobileShowDetail(false);
-    const defaultPlayerId = players[0]?.playerId;
-    if (defaultPlayerId && defaultPlayerId !== selectedPlayerId) void loadProfile(defaultPlayerId);
-  }, [loadProfile, players, selectedPlayerId]);
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: listScrollPosition.current, behavior: "auto" });
+      if (selectedPlayerId) playerButtonRefs.current.get(selectedPlayerId)?.focus();
+    });
+  }, [selectedPlayerId]);
 
   const filtered = players.filter((player) => {
     if (!search) return true;
@@ -133,7 +146,7 @@ export function PlayersShell({
 
   return (
     <div>
-      <header style={{ marginBottom: 24 }}>
+      <header className="players-page-header" style={{ marginBottom: 24 }}>
         <p style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-text-muted)", marginBottom: 4 }}>
           EA FC 26 — {clubName}
         </p>
@@ -145,11 +158,18 @@ export function PlayersShell({
           .players-list-scroll { max-height: calc(100vh - 190px); overflow-y: auto; }
           .players-detail-content { transition: opacity 150ms ease; }
           @media (prefers-reduced-motion: reduce) { .players-detail-content { transition: none; } }
-          @media (max-width: 1024px) { .players-list-scroll { max-height: 300px !important; } }
+          @media (max-width: 1023px) {
+            .players-page-header { margin-bottom: 16px !important; }
+            .players-list-header { align-items: stretch !important; flex-direction: column; }
+            .players-list-search { max-width: none !important; min-height: 40px; width: 100%; }
+            .players-list-scroll { max-height: none !important; overflow: visible !important; }
+            .players-list-item { min-height: 72px; padding: 14px 16px !important; }
+            .players-detail-panel { min-width: 0; padding: 16px !important; }
+          }
         `}</style>
 
         <div className={`${mobileShowDetail ? "hidden" : "block"} lg:block`} style={{ border: "1px solid var(--color-border)", borderRadius: 12, background: "var(--color-surface-panel)", overflow: "hidden" }}>
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div className="players-list-header" style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)", margin: 0 }}>Jogadores</h2>
             <input
               type="search"
@@ -157,11 +177,12 @@ export function PlayersShell({
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Buscar..."
               aria-label="Buscar jogador"
+              className="players-list-search"
               style={{ flex: 1, maxWidth: 180, padding: "6px 10px", fontSize: 13, border: "1px solid var(--color-border)", borderRadius: 6, background: "var(--color-surface-raised)", color: "var(--color-text-primary)", outline: "none" }}
             />
           </div>
 
-          <div className="players-list-scroll" style={{ maxHeight: "calc(100vh - 190px)", overflowY: "auto" }}>
+          <div className="players-list-scroll">
             {filtered.map((player) => {
               const isActive = player.playerId === selectedPlayerId;
               const bar = performanceBarColor(player.averageRating);
@@ -172,7 +193,11 @@ export function PlayersShell({
                   type="button"
                   onClick={() => selectPlayer(player.playerId)}
                   aria-pressed={isActive}
-                  className={isActive ? "shadow-[inset_3px_0_var(--color-accent)]" : ""}
+                  ref={(node) => {
+                    if (node) playerButtonRefs.current.set(player.playerId, node);
+                    else playerButtonRefs.current.delete(player.playerId);
+                  }}
+                  className={`players-list-item ${isActive ? "shadow-[inset_3px_0_var(--color-accent)]" : ""}`}
                   style={{ display: "grid", gap: 7, padding: "11px 16px", width: "100%", textAlign: "left", border: "none", cursor: "pointer", background: isActive ? "var(--color-surface-raised)" : "transparent", transition: "background 0.15s" }}
                   onMouseEnter={(event) => { if (!isActive) event.currentTarget.style.background = "var(--color-surface-raised)"; }}
                   onMouseLeave={(event) => { if (!isActive) event.currentTarget.style.background = "transparent"; }}
@@ -190,10 +215,11 @@ export function PlayersShell({
                 </button>
               );
             })}
+            {filtered.length === 0 && <p style={{ margin: 0, padding: "24px 16px", color: "var(--color-text-muted)", fontSize: 14 }}>Nenhum jogador encontrado.</p>}
           </div>
         </div>
 
-        <section className={`${!mobileShowDetail ? "hidden" : "block"} lg:block`} aria-busy={detailLoading} style={{ border: "1px solid var(--color-border)", borderRadius: 12, background: "var(--color-surface-panel)", minHeight: 560, padding: 20, position: "relative" }}>
+        <section className={`players-detail-panel ${!mobileShowDetail ? "hidden" : "block"} lg:block`} aria-busy={detailLoading} style={{ border: "1px solid var(--color-border)", borderRadius: 12, background: "var(--color-surface-panel)", minHeight: 560, padding: 20, position: "relative" }}>
           {mobileShowDetail && <button type="button" onClick={handleBack} className="lg:hidden" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "var(--color-accent)", background: "none", border: "none", cursor: "pointer", marginBottom: 16 }}>
             <ArrowLeft style={{ width: 16, height: 16 }} />
             Todos os jogadores

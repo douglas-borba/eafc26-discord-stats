@@ -11,11 +11,11 @@ export function PlayerProfileView({ profile }: { profile: PlayerProfile }) {
   const directContributions = profile.totalGoals + profile.totalAssists;
 
   return (
-    <div>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, marginBottom: 20 }}>
+    <div className="player-xray-view" style={{ minWidth: 0 }}>
+      <header className="player-xray-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, marginBottom: 20 }}>
         <div>
           <p style={{ ...sectionTitle, margin: "0 0 5px" }}>RAIO-X DO JOGADOR</p>
-          <h2 style={{ fontSize: 29, lineHeight: 1.15, margin: 0, color: "var(--color-text-primary)" }}>{name}</h2>
+          <h2 className="player-xray-name" style={{ fontSize: 29, lineHeight: 1.15, margin: 0, color: "var(--color-text-primary)" }}>{name}</h2>
           <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "6px 0 0" }}>{profile.ratedMatchCount} partidas com nota no histórico elegível</p>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -39,7 +39,10 @@ export function PlayerProfileView({ profile }: { profile: PlayerProfile }) {
         .xray-primary-metrics { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
         .xray-stat-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
         .xray-record-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
-        @media (max-width: 800px) { .xray-primary-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .xray-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+        .xray-primary-metrics > *, .xray-stat-grid > *, .xray-record-grid > * { min-width:0; }
+        .player-xray-header > div:first-child { min-width:0; }
+        .player-xray-name { overflow-wrap:anywhere; }
+        @media (max-width: 800px) { .player-xray-header { align-items:flex-start !important; flex-direction:column; } .xray-primary-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .xray-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
         @media (max-width: 480px) { .xray-stat-grid,.xray-record-grid { grid-template-columns:1fr; } }
       `}</style>
     </div>
@@ -118,7 +121,7 @@ function CurrentForm({ form }: { form: NonNullable<PlayerProfile["xRay"]>["curre
   if (form.state === "FORMING") return <p style={{ ...analysisTextStyle, color: "var(--color-text-muted)" }}>Histórico em formação.</p>;
   const rows: [string, keyof PlayerMetricPeriod][] = [["Nota média", "averageRating"], ["Gols / jogo", "goalsPerMatch"], ["Assistências / jogo", "assistsPerMatch"], ["Participações / jogo", "directContributionsPerMatch"]];
   return <div style={surfaceStyle}>
-    <div style={{ display: "grid", gridTemplateColumns: form.previous ? "minmax(120px,1fr) repeat(2,minmax(0,1fr))" : "minmax(120px,1fr) minmax(0,1fr)", gap: 8, alignItems: "center" }}>
+    <div style={{ display: "grid", gridTemplateColumns: form.previous ? "minmax(0,1.25fr) repeat(2,minmax(0,1fr))" : "minmax(0,1.25fr) minmax(0,1fr)", gap: 8, alignItems: "center" }}>
       <span /><HeaderMetric>Últimas 5</HeaderMetric>{form.previous && <HeaderMetric>Histórico anterior</HeaderMetric>}
       {rows.map(([label, key]) => <MetricComparison key={label} label={label} recent={form.recent?.[key] ?? null} previous={form.previous?.[key] ?? null} />)}
     </div>
@@ -128,10 +131,10 @@ function CurrentForm({ form }: { form: NonNullable<PlayerProfile["xRay"]>["curre
 
 function MetricComparison({ label, recent, previous }: { label:string; recent:number|null; previous:number|null }) { return <><span style={{ color:"var(--color-text-muted)",fontSize:13 }}>{label}</span><span style={{ color:"var(--color-text-primary)",fontWeight:700,fontVariantNumeric:"tabular-nums" }}>{metricValue(recent)}</span>{previous !== null && <span style={{ color:"var(--color-text-primary)",fontWeight:700,fontVariantNumeric:"tabular-nums" }}>{metricValue(previous)}</span>}</>; }
 function HeaderMetric({ children }: { children: ReactNode }) { return <span style={{ color:"var(--color-text-muted)",fontSize:11,textTransform:"uppercase",letterSpacing:"0.05em" }}>{children}</span>; }
-function MetricSection({ title, values }: { title:string; values:[string,string|number][] }) { return <section style={surfaceStyle}><h3 style={{ ...sectionTitle, margin:"0 0 10px" }}>{title}</h3><div style={{ display:"grid",gap:7 }}>{values.map(([label,value])=><div key={label} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:13}}><span style={{color:"var(--color-text-muted)"}}>{label}</span><strong style={{color:"var(--color-text-primary)",fontVariantNumeric:"tabular-nums"}}>{value}</strong></div>)}</div></section>; }
+function MetricSection({ title, values }: { title:string; values:[string,string|number][] }) { return <section style={{ ...surfaceStyle, minWidth:0 }}><h3 style={{ ...sectionTitle, margin:"0 0 10px" }}>{title}</h3><div style={{ display:"grid",gap:7 }}>{values.map(([label,value])=><div key={label} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:13,minWidth:0}}><span style={{color:"var(--color-text-muted)",overflowWrap:"anywhere"}}>{label}</span><strong style={{color:"var(--color-text-primary)",fontVariantNumeric:"tabular-nums",flexShrink:0}}>{value}</strong></div>)}</div></section>; }
 function Metric({ label, value }: { label:string; value:string|number }) { return <div style={{ padding:"11px 12px",border:"1px solid var(--color-border)",borderRadius:8,background:"var(--color-surface-raised)" }}><strong style={{display:"block",color:"var(--color-text-primary)",fontSize:20,fontVariantNumeric:"tabular-nums"}}>{value}</strong><span style={{color:"var(--color-text-muted)",fontSize:11}}>{label}</span></div>; }
 function Fact({ label, value }: { label:string; value:string|number }) { return <div><strong style={{display:"block",fontSize:18,color:"var(--color-text-primary)",fontVariantNumeric:"tabular-nums"}}>{value}</strong><span style={{color:"var(--color-text-muted)",fontSize:12}}>{label}</span></div>; }
-function Record({ label, record }: { label:string; record:PlayerSingleMatchRecord|null }) { return <div style={surfaceStyle}><p style={{ ...sectionTitle,margin:"0 0 7px" }}>{label}</p>{record ? <><strong style={{fontSize:21,color:"var(--color-text-primary)"}}>{record.value}</strong><p style={{ ...analysisTextStyle,color:"var(--color-text-muted)",marginTop:5 }}>{record.opponentClubName ?? "Adversário"} · {new Intl.DateTimeFormat("pt-BR").format(new Date(record.playedAt))}</p></> : <p style={{ ...analysisTextStyle,color:"var(--color-text-muted)" }}>Ainda não registrado.</p>}</div>; }
+function Record({ label, record }: { label:string; record:PlayerSingleMatchRecord|null }) { return <div style={{ ...surfaceStyle, minWidth:0 }}><p style={{ ...sectionTitle,margin:"0 0 7px" }}>{label}</p>{record ? <><strong style={{fontSize:21,color:"var(--color-text-primary)"}}>{record.value}</strong><p style={{ ...analysisTextStyle,color:"var(--color-text-muted)",marginTop:5,overflowWrap:"anywhere" }}>{record.opponentClubName ?? "Adversário"} · {new Intl.DateTimeFormat("pt-BR").format(new Date(record.playedAt))}</p></> : <p style={{ ...analysisTextStyle,color:"var(--color-text-muted)" }}>Ainda não registrado.</p>}</div>; }
 function RecordBadge({ color, value, suffix }: { color:string; value:number; suffix:string }) { return <span style={{color,background:`color-mix(in srgb, ${color} 12%, transparent)`,padding:"5px 9px",borderRadius:999,fontWeight:700,fontSize:13}}>{value}{suffix}</span>; }
 function decimal(value:number):string { return value.toFixed(2); }
 function percentOrDash(value:number|null):string { return value === null ? "—" : `${value.toFixed(1)}%`; }
