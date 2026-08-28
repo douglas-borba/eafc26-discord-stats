@@ -121,6 +121,21 @@ class SetupRedirectFilterTest {
     }
 
     @Test
+    fun `advanced stats explorer routes are reachable when Discord is not configured`() {
+        whenever(webhookConfigService.isConfigured()).thenReturn(false)
+
+        listOf(
+            "/api/admin/explorer",
+            "/api/admin/explorer/clubs/1104972/matches?limit=20",
+        ).forEach { path ->
+            webClient.get().uri(path)
+                .exchange()
+                .expectStatus().isNotFound
+                .expectHeader().doesNotExist("Location")
+        }
+    }
+
+    @Test
     fun `static resources are never redirected to setup`() {
         whenever(webhookConfigService.isConfigured()).thenReturn(false)
 
