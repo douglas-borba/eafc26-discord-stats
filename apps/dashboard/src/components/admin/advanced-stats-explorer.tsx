@@ -45,12 +45,13 @@ type KnownStats = {
 };
 
 type UnknownFieldEntry = {
+  scope: string;
   name: string;
   jsonType: string;
   value: string;
   truncated: boolean;
   originalSize: number;
-  isAdditionalAggregate: boolean;
+  isAdditionalAggregateCandidate: boolean;
 };
 
 type UnknownFieldsData = {
@@ -426,6 +427,7 @@ function PlayerDetailView({
             <table style={tableStyle}>
               <thead>
                 <tr>
+                  <th style={thStyle}>Scope</th>
                   <th style={thStyle}>Field Name</th>
                   <th style={thStyle}>JSON Type</th>
                   <th style={thStyle}>Value</th>
@@ -434,18 +436,15 @@ function PlayerDetailView({
               </thead>
               <tbody>
                 {data.unknownFields.fields.map((f) => (
-                  <tr key={f.name} style={{ borderBottom: "1px solid #21262d", background: f.isAdditionalAggregate ? "#1a1f2b" : undefined }}>
+                  <tr key={`${f.scope}-${f.name}`} style={{ borderBottom: "1px solid #21262d", background: f.isAdditionalAggregateCandidate ? "#1a1f2b" : undefined }}>
+                    <td style={{ ...tdStyle, fontSize: 11, color: "#8b949e" }}>{f.scope}</td>
                     <td style={{ ...tdStyle, fontFamily: "monospace" }}>
                       {f.name}
-                      {f.isAdditionalAggregate && <span style={{ marginLeft: 6, fontSize: 10, color: "#f0883e", fontFamily: "sans-serif" }}>aggregate</span>}
+                      {f.isAdditionalAggregateCandidate && <span style={{ marginLeft: 6, fontSize: 10, color: "#f0883e", fontFamily: "sans-serif" }}>ADDITIONAL AGGREGATE CANDIDATE</span>}
                     </td>
                     <td style={{ ...tdStyle, fontSize: 11, color: "#8b949e" }}>{f.jsonType}</td>
                     <td style={tdStyle}>
-                      {f.jsonType === "object" || f.jsonType === "array" ? (
-                        <UnknownFieldExpandable value={f.value} truncated={f.truncated} />
-                      ) : (
-                        <span style={{ fontFamily: "monospace", fontSize: 12 }}>{f.value}{f.truncated && <span style={{ color: "#f0883e" }}> …</span>}</span>
-                      )}
+                      <UnknownFieldValue value={f.value} jsonType={f.jsonType} truncated={f.truncated} />
                     </td>
                     <td style={{ ...tdStyle, fontSize: 11, color: "#8b949e" }}>
                       {f.truncated ? `${f.originalSize}B (truncated)` : `${f.originalSize}B`}
@@ -553,12 +552,22 @@ function CompareView({
   );
 }
 
+function UnknownFieldValue({ value, jsonType, truncated }: { value: string; jsonType: string; truncated: boolean }) {
+  const shouldExpand = jsonType === "object" || jsonType === "array" || truncated || value.length > 240;
+  if (!shouldExpand) {
+    return <span style={{ fontFamily: "monospace", fontSize: 12 }}>{value}</span>;
+  }
+  return <UnknownFieldExpandable value={value} truncated={truncated} />;
+}
+
 function UnknownFieldExpandable({ value, truncated }: { value: string; truncated: boolean }) {
   const [expanded, setExpanded] = useState(false);
   let formatted = value;
   try { formatted = JSON.stringify(JSON.parse(value), null, 2); } catch {}
+  const preview = formatted.length > 240 ? `${formatted.slice(0, 240)}…` : formatted;
   return (
     <div>
+      {!expanded && <pre style={{ margin: "0 0 4px", whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: 12, color: "#c9d1d9" }}>{preview}</pre>}
       <button onClick={() => setExpanded(!expanded)} style={{ background: "none", border: "none", color: "#58a6ff", cursor: "pointer", fontSize: 12, padding: 0 }}>
         {expanded ? "▼ collapse" : "► expand"}
       </button>

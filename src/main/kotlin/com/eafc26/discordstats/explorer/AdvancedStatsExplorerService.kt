@@ -6,9 +6,14 @@ import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
 import com.eafc26.discordstats.domain.match.RawUnknownField
 import com.eafc26.discordstats.canonical.CanonicalMatch
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.TextNode
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 
 class AdvancedStatsExplorerService(
     private val matchRepository: CanonicalMatchRepository,
+    private val objectMapper: ObjectMapper = jacksonObjectMapper(),
 ) {
 
     data class MatchSummary(
@@ -54,12 +59,37 @@ class AdvancedStatsExplorerService(
     )
 
     data class UnknownFieldEntry(
+        val scope: String,
         val name: String,
         val jsonType: String,
         val value: String,
         val truncated: Boolean,
         val originalSize: Int,
-        val isAdditionalAggregate: Boolean,
+        val isAdditionalAggregateCandidate: Boolean,
+    )
+
+    /**
+     * Export-only representation of one already-sanitized unknown EA field.
+     *
+     * Canonical storage deliberately keeps the JSON representation as text to
+     * enforce capture limits. At this administrative boundary, complete values
+     * are parsed back into JSON so their native structure and type are retained.
+     * A truncated capture remains a JSON string preview and is explicitly marked.
+     */
+    data class UnknownFieldExport(
+        val scope: String,
+        val fieldName: String,
+        val jsonType: String,
+        val value: JsonNode,
+        val truncated: Boolean,
+        val originalSize: Int,
+        val isAdditionalAggregateCandidate: Boolean,
+    )
+
+    data class UnknownFieldsExport(
+        val status: String,
+        val count: Int,
+        val fields: List<UnknownFieldExport>,
     )
 
     /**
@@ -161,6 +191,59 @@ class AdvancedStatsExplorerService(
         return rows
     }
 
+    /**
+     * Flat CSV export for unknown-field analysis. Each captured field becomes a
+     * row; players without captured fields keep one status row so UNAVAILABLE and
+     * EMPTY remain distinguishable from PRESENT.
+     */
+    fun exportUnknownFieldsCsvData(clubId: ClubId, limit: Int = 20): List<Map<String, Any?>> {
+        val matches = matchRepository.findRecent(clubId, limit)
+        val rows = mutableListOf<Map<String, Any?>>()
+        for (canonical in matches) {
+            val perspectiveClubId = canonical.interpretation.perspectiveClubId.value
+            val our = canonical.footballMatch.participants
+                .firstOrNull { it.club.id.value == perspectiveClubId } ?: continue
+            val opponent = canonical.footballMatch.participants
+                .firstOrNull { it.club.id.value != perspectiveClubId }
+            for (player in our.players) {
+                val unknown = unknownFieldsForExport(player)
+                if (unknown.fields.isEmpty()) {
+                    rows.add(
+                        baseUnknownFieldCsvRow(
+                            clubId = clubId.value,
+                            canonical = canonical,
+                            player = player,
+                            opponentName = opponent?.club?.name?.value,
+                            status = unknown.status,
+                            scope = player.rawUnknownFields?.scope ?: "player",
+                        ),
+                    )
+                } else {
+                    unknown.fields.forEach { field ->
+                        rows.add(
+                            baseUnknownFieldCsvRow(
+                                clubId = clubId.value,
+                                canonical = canonical,
+                                player = player,
+                                opponentName = opponent?.club?.name?.value,
+                                status = unknown.status,
+                                scope = field.scope,
+                            ) + linkedMapOf(
+                                "fieldName" to field.fieldName,
+                                "jsonType" to field.jsonType,
+                                "value" to csvValue(field),
+                                "valueSize" to field.originalSize,
+                                "truncated" to field.truncated,
+                                "additionalAggregateCandidate" to field.isAdditionalAggregateCandidate,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+        return rows
+    }
+
     private fun buildPlayerData(
         player: PlayerMatchPerformance,
         canonical: CanonicalMatch,
@@ -207,13 +290,13 @@ class AdvancedStatsExplorerService(
             status = "PRESENT",
             fields = fields.map { f ->
                 UnknownFieldEntry(
+                    scope = raw.scope,
                     name = f.name,
                     jsonType = f.jsonType,
                     value = f.value,
                     truncated = f.truncated,
                     originalSize = f.originalSize,
-                    isAdditionalAggregate = f.name.startsWith("match_event_aggregate_") &&
-                        f.name != "match_event_aggregate_0" && f.name != "match_event_aggregate_1",
+                    isAdditionalAggregateCandidate = isAdditionalAggregateCandidate(f.name),
                 )
             },
         )
@@ -249,26 +332,102 @@ class AdvancedStatsExplorerService(
         canonical: CanonicalMatch,
         player: PlayerMatchPerformance,
         entry: AggregateEntry?,
-    ): Map<String, Any?> = mapOf(
+    ): Map<String, Any?> {
+        val unknownFields = unknownFieldsForExport(player)
+        return mapOf(
+            "clubId" to clubId,
+            "matchId" to canonical.matchId.value,
+            "timestamp" to canonical.footballMatch.playedAt.toString(),
+            "playerId" to player.player.id.value,
+            "playerName" to (player.player.platformName?.value ?: player.player.proName?.value),
+            "aggregate" to entry?.aggregate,
+            "code" to entry?.code,
+            "value" to entry?.value,
+            "confidence" to entry?.confidence,
+            "metricName" to entry?.metricName,
+            "rating" to player.rating?.value?.toPlainString(),
+            "goals" to player.attacking.goals,
+            "assists" to player.attacking.assists,
+            "shots" to player.attacking.shots,
+            "passesAttempted" to player.passing.attempted,
+            "passesCompleted" to player.passing.completed,
+            "tacklesAttempted" to player.defending.tacklesAttempted,
+            "tacklesCompleted" to player.defending.tacklesCompleted,
+            "unknownFieldsStatus" to unknownFields.status,
+            "unknownFieldCount" to unknownFields.count,
+            "unknownFields" to unknownFields.fields,
+        )
+    }
+
+    private fun unknownFieldsForExport(player: PlayerMatchPerformance): UnknownFieldsExport {
+        val raw = player.rawUnknownFields ?: return UnknownFieldsExport("UNAVAILABLE", 0, emptyList())
+        val fields = raw.fields ?: return UnknownFieldsExport("UNAVAILABLE", 0, emptyList())
+        if (fields.isEmpty()) return UnknownFieldsExport("EMPTY", 0, emptyList())
+        return UnknownFieldsExport(
+            status = "PRESENT",
+            count = fields.size,
+            fields = fields.map { field ->
+                UnknownFieldExport(
+                    scope = raw.scope,
+                    fieldName = field.name,
+                    jsonType = field.jsonType,
+                    value = jsonValue(field),
+                    truncated = field.truncated,
+                    originalSize = field.originalSize,
+                    isAdditionalAggregateCandidate = isAdditionalAggregateCandidate(field.name),
+                )
+            },
+        )
+    }
+
+    private fun jsonValue(field: RawUnknownField): JsonNode {
+        if (field.truncated) return TextNode.valueOf(field.value)
+        return runCatching { objectMapper.readTree(field.value) }
+            .getOrElse { TextNode.valueOf(field.value) }
+    }
+
+    private fun csvValue(field: UnknownFieldExport): String =
+        if (field.truncated) {
+            objectMapper.writeValueAsString(
+                linkedMapOf(
+                    "truncated" to true,
+                    "preview" to field.value.asText(),
+                    "originalSize" to field.originalSize,
+                ),
+            )
+        } else {
+            objectMapper.writeValueAsString(field.value)
+        }
+
+    private fun baseUnknownFieldCsvRow(
+        clubId: String,
+        canonical: CanonicalMatch,
+        player: PlayerMatchPerformance,
+        opponentName: String?,
+        status: String,
+        scope: String,
+    ): LinkedHashMap<String, Any?> = linkedMapOf(
         "clubId" to clubId,
         "matchId" to canonical.matchId.value,
         "timestamp" to canonical.footballMatch.playedAt.toString(),
         "playerId" to player.player.id.value,
         "playerName" to (player.player.platformName?.value ?: player.player.proName?.value),
-        "aggregate" to entry?.aggregate,
-        "code" to entry?.code,
-        "value" to entry?.value,
-        "confidence" to entry?.confidence,
-        "metricName" to entry?.metricName,
-        "rating" to player.rating?.value?.toPlainString(),
-        "goals" to player.attacking.goals,
-        "assists" to player.attacking.assists,
-        "shots" to player.attacking.shots,
-        "passesAttempted" to player.passing.attempted,
-        "passesCompleted" to player.passing.completed,
-        "tacklesAttempted" to player.defending.tacklesAttempted,
-        "tacklesCompleted" to player.defending.tacklesCompleted,
-        "unknownFieldsStatus" to (player.rawUnknownFields?.let { if (it.fields == null) "UNAVAILABLE" else if (it.fields.isEmpty()) "EMPTY" else "PRESENT" } ?: "UNAVAILABLE"),
-        "unknownFieldCount" to (player.rawUnknownFields?.fields?.size ?: 0),
+        "opponentName" to opponentName,
+        "unknownFieldsStatus" to status,
+        "scope" to scope,
+        "fieldName" to null,
+        "jsonType" to null,
+        "value" to null,
+        "valueSize" to null,
+        "truncated" to null,
+        "additionalAggregateCandidate" to false,
     )
+
+    private fun isAdditionalAggregateCandidate(name: String): Boolean =
+        Regex("^match_event_aggregate_(\\d+)$").matchEntire(name)
+            ?.groupValues
+            ?.get(1)
+            ?.toIntOrNull()
+            ?.let { it > 1 }
+            ?: false
 }

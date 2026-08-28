@@ -65,9 +65,9 @@ class AdvancedStatsExplorerController(
         @RequestParam(defaultValue = "json") format: String,
     ): ResponseEntity<Any> {
         if (limit < 1 || limit > 50) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be 1-50")
-        val rows = explorerService.exportData(ClubId(clubId), limit)
         return when (format.lowercase()) {
             "csv" -> {
+                val rows = explorerService.exportUnknownFieldsCsvData(ClubId(clubId), limit)
                 if (rows.isEmpty()) return ResponseEntity.ok("")
                 val headers = rows.first().keys.toList()
                 val csv = buildString {
@@ -86,7 +86,7 @@ class AdvancedStatsExplorerController(
                     .header("Content-Disposition", "attachment; filename=\"explorer-$clubId.csv\"")
                     .body(csv)
             }
-            else -> ResponseEntity.ok(rows)
+            else -> ResponseEntity.ok(explorerService.exportData(ClubId(clubId), limit))
         }
     }
 

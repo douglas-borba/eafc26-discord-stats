@@ -7,6 +7,9 @@ import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.*
 import com.eafc26.discordstats.domain.interpretation.MatchInterpretation
 import com.eafc26.discordstats.domain.interpretation.ResultDecision
+import com.eafc26.discordstats.ea.mapping.UnknownFieldCapture
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.JsonNodeFactory
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
@@ -22,6 +25,7 @@ class AdvancedStatsExplorerServiceTest {
     private fun buildCanonical(
         rawAgg0: String? = "6:4,112:8,115:2,152:9,174:18,42:7",
         rawAgg1: String? = "6:3,47:1",
+        rawUnknownFields: RawUnknownFields? = null,
     ): CanonicalMatch {
         val player = PlayerMatchPerformance(
             player = PlayerIdentity(PlayerId("player-1"), DisplayName("Neymar"), null),
@@ -37,6 +41,7 @@ class AdvancedStatsExplorerServiceTest {
             advanced = AdvancedPlayerStats(secondAssists = 2, throughPasses = 9, dribblesCompleted = 18, beats = 8, interceptions = 7),
             advancedCoverage = AdvancedStatsCoverage.FULL,
             rawEventAggregates = if (rawAgg0 != null || rawAgg1 != null) RawEventAggregates(rawAgg0, rawAgg1) else null,
+            rawUnknownFields = rawUnknownFields,
         )
 
         val footballMatch = FootballMatch(
@@ -184,5 +189,130 @@ class AdvancedStatsExplorerServiceTest {
 
         assertThat(results).hasSize(1)
         assertThat(results[0].matchId).isEqualTo("match-1")
+    }
+
+    @Test
+    fun `JSON export includes sanitized unknown fields with original JSON types and nested values`() {
+        val raw = RawUnknownFields.of(
+            "player",
+            listOf(
+                RawUnknownField("text", "string", "\"hello\""),
+                RawUnknownField("number", "number", "42"),
+                RawUnknownField("boolean", "boolean", "true"),
+                RawUnknownField("nullable", "null", "null"),
+                RawUnknownField("object", "object", "{\"nested\":{\"value\":1}}"),
+                RawUnknownField("array", "array", "[1,{\"enabled\":true}]"),
+            ),
+        )
+        val service = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawAgg0 = null, rawAgg1 = null, rawUnknownFields = raw)))
+
+        val row = service.exportData(clubId, 5).single()
+        val unknown = row["unknownFields"] as List<AdvancedStatsExplorerService.UnknownFieldExport>
+
+        assertThat(row["unknownFieldsStatus"]).isEqualTo("PRESENT")
+        assertThat(row["unknownFieldCount"]).isEqualTo(6)
+        val byName = unknown.associateBy { it.fieldName }
+        assertThat(byName.getValue("text").value.isTextual).isTrue()
+        assertThat(byName.getValue("text").value.asText()).isEqualTo("hello")
+        assertThat(byName.getValue("number").value.isInt).isTrue()
+        assertThat(byName.getValue("number").value.intValue()).isEqualTo(42)
+        assertThat(byName.getValue("boolean").value.isBoolean).isTrue()
+        assertThat(byName.getValue("boolean").value.booleanValue()).isTrue()
+        assertThat(byName.getValue("nullable").value.isNull).isTrue()
+        assertThat(byName.getValue("object").value.path("nested").path("value").intValue()).isEqualTo(1)
+        assertThat(byName.getValue("array").value[1].path("enabled").booleanValue()).isTrue()
+
+        val exportedJson = ObjectMapper().readTree(ObjectMapper().writeValueAsString(listOf(row)))
+        assertThat(exportedJson[0]["unknownFields"][0]["value"]).isNotNull
+    }
+
+    @Test
+    fun `JSON export distinguishes unavailable and empty unknown field capture`() {
+        val unavailable = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawAgg0 = null, rawAgg1 = null, rawUnknownFields = null)))
+            .exportData(clubId, 5).single()
+        val empty = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawAgg0 = null, rawAgg1 = null, rawUnknownFields = RawUnknownFields.empty("player"))))
+            .exportData(clubId, 5).single()
+
+        assertThat(unavailable["unknownFieldsStatus"]).isEqualTo("UNAVAILABLE")
+        assertThat(unavailable["unknownFields"]).isEqualTo(emptyList<Any>())
+        assertThat(empty["unknownFieldsStatus"]).isEqualTo("EMPTY")
+        assertThat(empty["unknownFields"]).isEqualTo(emptyList<Any>())
+    }
+
+    @Test
+    fun `CSV export emits one row per unknown field and keeps valid JSON in the value cell`() {
+        val raw = RawUnknownFields.of(
+            "player",
+            listOf(
+                RawUnknownField("object", "object", "{\"nested\":true}"),
+                RawUnknownField("array", "array", "[1,2,3]"),
+            ),
+        )
+        val rows = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawUnknownFields = raw)))
+            .exportUnknownFieldsCsvData(clubId, 5)
+
+        assertThat(rows).hasSize(2)
+        assertThat(rows.map { it["fieldName"] }).containsExactly("object", "array")
+        rows.forEach { row ->
+            assertThat(ObjectMapper().readTree(row["value"] as String)).isNotNull
+            assertThat(row["unknownFieldsStatus"]).isEqualTo("PRESENT")
+        }
+    }
+
+    @Test
+    fun `CSV export keeps a status row for historical capture unavailable`() {
+        val rows = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawUnknownFields = null)))
+            .exportUnknownFieldsCsvData(clubId, 5)
+
+        val row = rows.single()
+        assertThat(row["unknownFieldsStatus"]).isEqualTo("UNAVAILABLE")
+        assertThat(row["fieldName"]).isNull()
+    }
+
+    @Test
+    fun `additional aggregate fields are marked as candidates without a sporting mapping`() {
+        val raw = RawUnknownFields.of(
+            "player",
+            listOf(RawUnknownField("match_event_aggregate_2", "string", "\"1:4\"")),
+        )
+        val service = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawAgg0 = null, rawAgg1 = null, rawUnknownFields = raw)))
+
+        val detail = service.playerExplorerData(clubId, matchId, "player-1")!!
+        val exported = (service.exportData(clubId, 5).single()["unknownFields"] as List<AdvancedStatsExplorerService.UnknownFieldExport>).single()
+
+        assertThat(detail.unknownFields.fields).hasSize(1)
+        assertThat(detail.unknownFields.fields.single().isAdditionalAggregateCandidate).isTrue()
+        assertThat(exported.isAdditionalAggregateCandidate).isTrue()
+        assertThat(detail.aggregateEntries).noneMatch { it.aggregate == 2 }
+    }
+
+    @Test
+    fun `truncated unknown field remains explicit and does not pretend to be parsed JSON`() {
+        val raw = RawUnknownFields.of(
+            "player",
+            listOf(RawUnknownField("large", "object", "{partial", truncated = true, originalSize = 9000)),
+        )
+        val row = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawAgg0 = null, rawAgg1 = null, rawUnknownFields = raw))).exportData(clubId, 5).single()
+        val exported = (row["unknownFields"] as List<AdvancedStatsExplorerService.UnknownFieldExport>).single()
+
+        assertThat(exported.truncated).isTrue()
+        assertThat(exported.value.isTextual).isTrue()
+        assertThat(exported.value.asText()).isEqualTo("{partial")
+        assertThat(row["unknownFieldsStatus"]).isEqualTo("PRESENT")
+    }
+
+    @Test
+    fun `sensitive input remains excluded before it can reach Explorer export`() {
+        val captured = UnknownFieldCapture.capture(
+            "player",
+            linkedMapOf(
+                "safeField" to JsonNodeFactory.instance.numberNode(7),
+                "authToken" to JsonNodeFactory.instance.textNode("must-not-export"),
+            ),
+        )
+        val rows = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawAgg0 = null, rawAgg1 = null, rawUnknownFields = captured))).exportData(clubId, 5)
+        val fields = rows.single()["unknownFields"] as List<AdvancedStatsExplorerService.UnknownFieldExport>
+
+        assertThat(fields.map { it.fieldName }).containsExactly("safeField")
     }
 }
