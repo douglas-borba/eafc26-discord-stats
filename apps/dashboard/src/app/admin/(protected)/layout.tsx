@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, ChevronLeft, Activity } from "lucide-react";
+import { Building2, ChevronLeft, Activity, FlaskConical } from "lucide-react";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/supabase/auth-server";
 
@@ -24,6 +24,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               <Link href="/admin/trial-requests" className="text-text-soft hover:text-text-primary">Solicitações</Link>
               <Link href="/admin/system" className="flex items-center gap-1.5 text-text-soft hover:text-text-primary">
                 <Activity className="h-3.5 w-3.5" /> Sistema
+              </Link>
+              <Link href="/admin/explorer" className="flex items-center gap-1.5 text-text-soft hover:text-text-primary">
+                <FlaskConical className="h-3.5 w-3.5" /> Explorer
               </Link>
             </nav>
           </div>

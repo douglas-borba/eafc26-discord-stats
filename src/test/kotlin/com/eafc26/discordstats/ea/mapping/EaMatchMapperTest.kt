@@ -156,6 +156,40 @@ class EaMatchMapperTest {
     }
 
     @Test
+    fun `raw event aggregates are preserved for exploratory analysis`() {
+        val result = mapper.map(
+            match(players = mapOf(
+                "our-club" to mapOf(
+                    "player" to player(
+                        name = "Raw",
+                        aggregate0 = "6:4,112:8,115:2,152:9,174:18,42:7,88:3",
+                        aggregate1 = "6:3,47:1",
+                    ),
+                ),
+            )),
+        ).success()
+
+        val raw = result.match.participants.first().players.single().rawEventAggregates
+        assertThat(raw).isNotNull
+        assertThat(raw!!.aggregate0).isEqualTo("6:4,112:8,115:2,152:9,174:18,42:7,88:3")
+        assertThat(raw.aggregate1).isEqualTo("6:3,47:1")
+    }
+
+    @Test
+    fun `raw event aggregates are null when EA data is absent`() {
+        val result = mapper.map(
+            match(players = mapOf(
+                "our-club" to mapOf("player" to player(name = "NoAgg")),
+            )),
+        ).success()
+
+        val raw = result.match.participants.first().players.single().rawEventAggregates
+        assertThat(raw).isNotNull
+        assertThat(raw!!.aggregate0).isNull()
+        assertThat(raw.aggregate1).isNull()
+    }
+
+    @Test
     fun `optional absent fields remain absent without preventing a valid match`() {
         val source = match(
             matchType = null,

@@ -1,8 +1,11 @@
 package com.eafc26.discordstats.ea.model
 
 import com.fasterxml.jackson.annotation.JsonAlias
+import com.fasterxml.jackson.annotation.JsonAnySetter
+import com.fasterxml.jackson.annotation.JsonIgnore
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.databind.JsonNode
 import com.eafc26.discordstats.ea.normalizeEaText
 
 /**
@@ -32,7 +35,19 @@ data class MatchResponse(
 
     // Keyed by clubId, then by playerId
     @JsonProperty("players") val players: Map<String, Map<String, PlayerEntry>> = emptyMap(),
-)
+) {
+    /**
+     * Captures any JSON properties not declared in this DTO.
+     * Experimental — for exploratory analysis only, not a stable contract.
+     */
+    @JsonIgnore
+    val unknownFields: MutableMap<String, JsonNode> = mutableMapOf()
+
+    @JsonAnySetter
+    fun setUnknownField(key: String, value: JsonNode) {
+        unknownFields[key] = value
+    }
+}
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class ClubMatchEntry(
@@ -97,6 +112,18 @@ data class PlayerEntry(
     @JsonProperty("match_event_aggregate_0") val matchEventAggregate0: String? = null,
     @JsonProperty("match_event_aggregate_1") val matchEventAggregate1: String? = null,
 ) {
+    /**
+     * Captures any JSON properties not declared in this DTO.
+     * Experimental — for exploratory analysis only, not a stable contract.
+     */
+    @JsonIgnore
+    val unknownFields: MutableMap<String, JsonNode> = mutableMapOf()
+
+    @JsonAnySetter
+    fun setUnknownField(key: String, value: JsonNode) {
+        unknownFields[key] = value
+    }
+
     companion object {
         /**
          * EA FC position code for goalkeeper.

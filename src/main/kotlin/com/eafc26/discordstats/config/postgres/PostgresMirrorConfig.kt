@@ -33,6 +33,7 @@ import com.eafc26.discordstats.application.club.TrialRequestRepository
 import com.eafc26.discordstats.application.club.TrialService
 import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnostics
 import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
+import com.eafc26.discordstats.explorer.AdvancedStatsExplorerService
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.flywaydb.core.Flyway
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -143,6 +144,11 @@ class PostgresMirrorConfig {
         jsonMirror = jsonRepository,
         transactions = TransactionTemplate(transactionManager),
     )
+
+    @Bean
+    fun advancedStatsExplorerService(
+        canonicalMatchRepository: CanonicalMatchRepository,
+    ): AdvancedStatsExplorerService = AdvancedStatsExplorerService(canonicalMatchRepository)
 
     @Bean
     fun postgresSyncService(

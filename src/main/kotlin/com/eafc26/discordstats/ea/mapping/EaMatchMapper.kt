@@ -22,6 +22,8 @@ import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.match.PlayerIdentity
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
 import com.eafc26.discordstats.domain.match.PlayerRole
+import com.eafc26.discordstats.domain.match.RawEventAggregates
+import com.eafc26.discordstats.domain.match.RawUnknownFields
 import com.eafc26.discordstats.domain.match.ReportedMatchResult
 import com.eafc26.discordstats.domain.match.SaveBreakdown
 import com.eafc26.discordstats.domain.match.Score
@@ -325,6 +327,11 @@ class EaMatchMapper {
             ),
             advanced = advanced,
             advancedCoverage = EaAdvancedStatsDecoder.coverage(source),
+            rawEventAggregates = RawEventAggregates(
+                aggregate0 = source.matchEventAggregate0,
+                aggregate1 = source.matchEventAggregate1,
+            ),
+            rawUnknownFields = UnknownFieldCapture.capture("player", source.unknownFields),
         )
     }
 

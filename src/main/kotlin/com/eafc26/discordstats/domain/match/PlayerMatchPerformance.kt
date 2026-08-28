@@ -13,4 +13,6 @@ data class PlayerMatchPerformance(
     val eaRecognition: EaRecognition,
     val advanced: AdvancedPlayerStats = AdvancedPlayerStats(),
     val advancedCoverage: AdvancedStatsCoverage = AdvancedStatsCoverage.UNAVAILABLE,
+    val rawEventAggregates: RawEventAggregates? = null,
+    val rawUnknownFields: RawUnknownFields? = null,
 )
