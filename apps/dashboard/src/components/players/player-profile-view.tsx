@@ -50,22 +50,27 @@ export function PlayerProfileView({ profile }: { profile: PlayerProfile }) {
 }
 
 function XRayContent({ profile, xRay }: { profile: PlayerProfile; xRay: NonNullable<PlayerProfile["xRay"]> }) {
-  const analysisLines = [xRay.analysis.summary, ...xRay.analysis.strengths, xRay.analysis.currentForm].filter(Boolean) as string[];
   return <>
     <section>
-      <h3 style={sectionTitle}>ANÁLISE DO JOGADOR</h3>
-      <div style={surfaceStyle}>
-        {analysisLines.map((line) => <p key={line} style={analysisTextStyle}>{line}</p>)}
-        {xRay.analysis.opportunity && <div style={{ borderTop: "1px solid var(--color-border)", marginTop: 12, paddingTop: 12 }}>
-          <p style={{ ...sectionTitle, margin: "0 0 5px", color: "#d29922" }}>OPORTUNIDADE DE EVOLUÇÃO</p>
-          <p style={analysisTextStyle}>{xRay.analysis.opportunity.message}</p>
-        </div>}
-      </div>
+      <h3 style={sectionTitle}>MOMENTO ATUAL</h3>
+      <CurrentForm form={xRay.currentForm} trend={xRay.trend} />
     </section>
 
     <section>
-      <h3 style={sectionTitle}>MOMENTO ATUAL</h3>
-      <CurrentForm form={xRay.currentForm} />
+      <h3 style={sectionTitle}>ANÁLISE DO JOGADOR</h3>
+      <div style={surfaceStyle}>
+        <p style={analysisTextStyle}>{xRay.analysis.summary}</p>
+        {xRay.analysis.strengths.map((strength, index) => <div key={strength.category} style={{ borderTop: "1px solid var(--color-border)", marginTop: 12, paddingTop: 12 }}>
+          <p style={{ ...sectionTitle, margin: "0 0 5px", color: "#3fb950" }}>{index === 0 ? "PRINCIPAL FORÇA" : "OUTRA CARACTERÍSTICA RELEVANTE"}</p>
+          <strong style={{ color: "var(--color-text-primary)", fontSize: 14 }}>{strength.label}</strong>
+          <p style={{ ...analysisTextStyle, marginTop: 5 }}>{strength.message}</p>
+        </div>)}
+        <div style={{ borderTop: "1px solid var(--color-border)", marginTop: 12, paddingTop: 12 }}>
+          <p style={{ ...sectionTitle, margin: "0 0 5px", color: xRay.analysis.improvement.state === "FOUND" ? "#d29922" : "var(--color-text-muted)" }}>OPORTUNIDADE DE EVOLUÇÃO</p>
+          {xRay.analysis.improvement.opportunity && <strong style={{ color: "var(--color-text-primary)", fontSize: 14 }}>{xRay.analysis.improvement.opportunity.label}</strong>}
+          <p style={{ ...analysisTextStyle, marginTop: xRay.analysis.improvement.opportunity ? 5 : 0 }}>{xRay.analysis.improvement.message}</p>
+        </div>
+      </div>
     </section>
 
     <div className="xray-stat-grid">
@@ -95,10 +100,19 @@ function XRayContent({ profile, xRay }: { profile: PlayerProfile; xRay: NonNulla
     </section>}
 
     <section>
+      <h3 style={sectionTitle}>CONSISTÊNCIA</h3>
+      <Consistency consistency={xRay.consistency} />
+    </section>
+
+    <section>
       <h3 style={sectionTitle}>RECONHECIMENTOS</h3>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", ...surfaceStyle }}>
-        <Fact label="⭐ Craques" value={xRay.recognitions.craques} /><Fact label="📉 Menor Desempenho" value={xRay.recognitions.bagres} />
-        <Fact label="🛡️ Xerifes" value={xRay.recognitions.xerifes} /><Fact label="🟥 Cartões vermelhos" value={profile.redCardCount} />
+        {xRay.recognitions.craques > 0 && <Fact label="⭐ Craques" value={`${xRay.recognitions.craques} em ${xRay.recognitions.eligibleAppearances} (${percentOrDash(xRay.recognitions.craqueRate)})`} />}
+        {xRay.recognitions.bagres > 0 && <Fact label="📉 Menor Desempenho" value={`${xRay.recognitions.bagres} em ${xRay.recognitions.eligibleAppearances} (${percentOrDash(xRay.recognitions.bagreRate)})`} />}
+        {xRay.recognitions.xerifes > 0 && <Fact label="🛡️ Xerifes" value={`${xRay.recognitions.xerifes} em ${xRay.recognitions.eligibleAppearances} (${percentOrDash(xRay.recognitions.xerifeRate)})`} />}
+        {xRay.records.ratingTenMatches > 0 && <Fact label="🎯 Notas 10" value={`${xRay.records.ratingTenMatches} em ${xRay.consistency.ratedAppearances}`} />}
+        {profile.redCardCount > 0 && <Fact label="🟥 Cartões vermelhos" value={profile.redCardCount} />}
+        {xRay.recognitions.craques === 0 && xRay.recognitions.bagres === 0 && xRay.recognitions.xerifes === 0 && xRay.records.ratingTenMatches === 0 && profile.redCardCount === 0 && <p style={{ ...analysisTextStyle, color: "var(--color-text-muted)", margin: 0 }}>Nenhum reconhecimento ou cartão registrado nas partidas elegíveis.</p>}
       </div>
     </section>
 
@@ -117,15 +131,31 @@ function XRayContent({ profile, xRay }: { profile: PlayerProfile; xRay: NonNulla
   </>;
 }
 
-function CurrentForm({ form }: { form: NonNullable<PlayerProfile["xRay"]>["currentForm"] }) {
-  if (form.state === "FORMING") return <p style={{ ...analysisTextStyle, color: "var(--color-text-muted)" }}>Histórico em formação.</p>;
+function CurrentForm({ form, trend }: { form: NonNullable<PlayerProfile["xRay"]>["currentForm"]; trend: NonNullable<PlayerProfile["xRay"]>["trend"] }) {
+  const trendPresentation = trendLabel(trend.status);
+  if (form.state === "FORMING") return <div style={surfaceStyle}><p style={{ ...analysisTextStyle, margin: 0, color: "var(--color-text-muted)" }}>{trendPresentation.label}. São necessárias pelo menos cinco partidas elegíveis para apresentar o recorte recente.</p></div>;
   const rows: [string, keyof PlayerMetricPeriod][] = [["Nota média", "averageRating"], ["Gols / jogo", "goalsPerMatch"], ["Assistências / jogo", "assistsPerMatch"], ["Participações / jogo", "directContributionsPerMatch"]];
   return <div style={surfaceStyle}>
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+      <div><p style={{ ...sectionTitle, margin: "0 0 3px", color: trendPresentation.color }}>{trendPresentation.label}</p><strong style={{ color: "var(--color-text-primary)", fontSize: 17 }}>{trend.recentRating === null ? "—" : trend.recentRating.toFixed(2)}</strong><span style={{ color: "var(--color-text-muted)", fontSize: 12, marginLeft: 6 }}>média nas últimas 5</span></div>
+      {trend.ratingDelta !== null && <span style={{ color: trendPresentation.color, fontWeight: 700, fontVariantNumeric: "tabular-nums", fontSize: 13 }}>{signedDecimal(trend.ratingDelta)} vs histórico anterior</span>}
+    </div>
     <div style={{ display: "grid", gridTemplateColumns: form.previous ? "minmax(0,1.25fr) repeat(2,minmax(0,1fr))" : "minmax(0,1.25fr) minmax(0,1fr)", gap: 8, alignItems: "center" }}>
       <span /><HeaderMetric>Últimas 5</HeaderMetric>{form.previous && <HeaderMetric>Histórico anterior</HeaderMetric>}
       {rows.map(([label, key]) => <MetricComparison key={label} label={label} recent={form.recent?.[key] ?? null} previous={form.previous?.[key] ?? null} />)}
     </div>
     {form.state === "RECENT_ONLY" && <p style={{ ...analysisTextStyle, color: "var(--color-text-muted)", marginTop: 12 }}>Ainda não há histórico anterior suficiente para comparar tendências.</p>}
+  </div>;
+}
+
+function Consistency({ consistency }: { consistency: NonNullable<PlayerProfile["xRay"]>["consistency"] }) {
+  if (consistency.state === "INSUFFICIENT_SAMPLE") return <div style={surfaceStyle}><p style={{ ...analysisTextStyle, margin: 0, color: "var(--color-text-muted)" }}>{`A distribuição de notas ainda está em formação: ${consistency.ratedAppearances} atuação(ões) com nota registrada.`}</p></div>;
+  return <div style={{ display: "flex", gap: 18, flexWrap: "wrap", ...surfaceStyle }}>
+    <Fact label="Média de notas" value={consistency.averageRating === null ? "—" : consistency.averageRating.toFixed(2)} />
+    <Fact label="Desvio-padrão" value={consistency.ratingStandardDeviation === null ? "—" : consistency.ratingStandardDeviation.toFixed(2)} />
+    <Fact label="Notas 8+" value={`${consistency.ratingsAtLeastEight} de ${consistency.ratedAppearances} (${percentOrDash(consistency.ratingsAtLeastEightRate)})`} />
+    <Fact label="Notas 9+" value={`${consistency.ratingsAtLeastNine} de ${consistency.ratedAppearances} (${percentOrDash(consistency.ratingsAtLeastNineRate)})`} />
+    <Fact label="Notas 10" value={consistency.ratingTenMatches} />
   </div>;
 }
 
@@ -139,3 +169,10 @@ function RecordBadge({ color, value, suffix }: { color:string; value:number; suf
 function decimal(value:number):string { return value.toFixed(2); }
 function percentOrDash(value:number|null):string { return value === null ? "—" : `${value.toFixed(1)}%`; }
 function metricValue(value:number|null):string { return value === null ? "—" : value.toFixed(2); }
+function signedDecimal(value:number):string { return `${value > 0 ? "+" : ""}${value.toFixed(2)}`; }
+function trendLabel(status: NonNullable<PlayerProfile["xRay"]>["trend"]["status"]): { label:string; color:string } {
+  if (status === "RISING") return { label: "EM ALTA ↗", color: "#3fb950" };
+  if (status === "FALLING") return { label: "EM BAIXA ↘", color: "#d29922" };
+  if (status === "STABLE") return { label: "ESTÁVEL", color: "var(--color-text-muted)" };
+  return { label: "HISTÓRICO EM FORMAÇÃO", color: "var(--color-text-muted)" };
+}

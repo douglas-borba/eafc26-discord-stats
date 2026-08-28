@@ -329,6 +329,29 @@ class PlayerProfileServiceTest {
     }
 
     @Test
+    fun `covered advanced zero is preserved as factual zero and differs from unavailable coverage`() {
+        val playerId = PlayerId("advanced-zero-player")
+        val covered = canonical(
+            "covered", "2026-07-03T10:00:00Z", playerId, "Cobertura", MatchOutcome.WIN, "8", 0, 0, 0, emptySet(),
+            advancedCoverage = AdvancedStatsCoverage.FULL, dribblesCompleted = 0, beats = 0,
+        )
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(listOf(covered))
+
+        val coveredXRay = service.findById(OUR_CLUB, playerId)!!.xRay!!
+
+        assertThat(coveredXRay.advancedCoverage.coverage).isEqualTo(AdvancedStatsCoverage.FULL)
+        assertThat(coveredXRay.oneOnOne).isNotNull
+        assertThat(coveredXRay.oneOnOne!!.dribblesCompleted).isZero()
+        val unavailable = canonical("unavailable", "2026-07-02T10:00:00Z", playerId, "Cobertura", MatchOutcome.WIN, "8", 0, 0, 0, emptySet())
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(listOf(unavailable))
+
+        val unavailableXRay = service.findById(OUR_CLUB, playerId)!!.xRay!!
+
+        assertThat(unavailableXRay.advancedCoverage.coverage).isEqualTo(AdvancedStatsCoverage.UNAVAILABLE)
+        assertThat(unavailableXRay.oneOnOne).isNull()
+    }
+
+    @Test
     fun `historical appearances without explicit coverage stay unavailable rather than zero`() {
         val playerId = PlayerId("historical-player")
         val match = canonical("old", "2026-07-02T10:00:00Z", playerId, "Histórico", MatchOutcome.WIN, "8", 0, 0, 0, emptySet())
@@ -372,10 +395,15 @@ class PlayerProfileServiceTest {
         }
         whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
 
-        val opportunity = service.findById(OUR_CLUB, playerId)!!.xRay!!.analysis.opportunity
+        val improvement = service.findById(OUR_CLUB, playerId)!!.xRay!!.analysis.improvement
+        val opportunity = improvement.opportunity
 
         assertThat(opportunity!!.area.name).isEqualTo("PASSING")
-        assertThat(opportunity.message).contains("Eficiência de passe em atenção")
+        assertThat(opportunity.source.name).isEqualTo("RECENT_REGRESSION")
+        assertThat(opportunity.message).contains("acertou")
+        assertThat(opportunity.evidence.numerator).isEqualTo(75)
+        assertThat(opportunity.evidence.denominator).isEqualTo(150)
+        assertThat(improvement.state.name).isEqualTo("FOUND")
     }
 
     @Test
@@ -385,12 +413,232 @@ class PlayerProfileServiceTest {
             canonical(
                 "m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Amostra curta",
                 MatchOutcome.WIN, "7", 0, 0, 0, emptySet(),
-                passAttempts = 1, passesCompleted = if (day >= 6) 0 else 1,
+                passAttempts = 1, passesCompleted = if (day >= 6) 0 else 1, shots = 0,
             )
         }
         whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
 
-        assertThat(service.findById(OUR_CLUB, playerId)!!.xRay!!.analysis.opportunity).isNull()
+        val improvement = service.findById(OUR_CLUB, playerId)!!.xRay!!.analysis.improvement
+
+        assertThat(improvement.opportunity).isNull()
+        assertThat(improvement.state.name).isEqualTo("INSUFFICIENT_EVIDENCE")
+    }
+
+    @Test
+    fun `regression below the explicit threshold does not create an opportunity`() {
+        val playerId = PlayerId("small-decline-player")
+        val matches = (10 downTo 1).map { day ->
+            canonical(
+                "m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Variação pequena",
+                MatchOutcome.WIN, "8", 0, 0, 0, emptySet(),
+                passAttempts = 30, passesCompleted = if (day >= 6) 25 else 27, shots = 0,
+            )
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        val improvement = service.findById(OUR_CLUB, playerId)!!.xRay!!.analysis.improvement
+
+        assertThat(improvement.state.name).isEqualTo("INSUFFICIENT_EVIDENCE")
+        assertThat(improvement.opportunity).isNull()
+    }
+
+    @Test
+    fun `multiple regressions choose the highest priority when their materiality is equal`() {
+        val playerId = PlayerId("multiple-regressions-player")
+        val matches = (10 downTo 1).map { day ->
+            canonical(
+                "m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Critério estável",
+                MatchOutcome.WIN, "8", 0, 0, 0, emptySet(),
+                passAttempts = 30, passesCompleted = if (day >= 6) 24 else 27,
+                tackleAttempts = 20, tacklesCompleted = if (day >= 6) 15 else 18,
+            )
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        val opportunity = service.findById(OUR_CLUB, playerId)!!.xRay!!.analysis.improvement.opportunity
+
+        assertThat(opportunity!!.area).isEqualTo(com.eafc26.discordstats.profile.PlayerImprovementArea.PASSING)
+        assertThat(opportunity.evidence.delta).isEqualByComparingTo("-10.00")
+    }
+
+    @Test
+    fun `structural low efficiency is considered after recent regression candidates`() {
+        val playerId = PlayerId("structural-player")
+        val matches = (5 downTo 1).map { day ->
+            canonical(
+                "m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Base factual",
+                MatchOutcome.WIN, "8", 0, 0, 0, emptySet(),
+                passAttempts = 20, passesCompleted = 10,
+            )
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        val opportunity = service.findById(OUR_CLUB, playerId)!!.xRay!!.analysis.improvement.opportunity
+
+        assertThat(opportunity!!.source.name).isEqualTo("STRUCTURAL_LOW_EFFICIENCY")
+        assertThat(opportunity.area.name).isEqualTo("PASSING")
+        assertThat(opportunity.evidence.numerator).isEqualTo(50)
+        assertThat(opportunity.evidence.denominator).isEqualTo(100)
+    }
+
+    @Test
+    fun `strong overall production can still expose a factual structural opportunity`() {
+        val playerId = PlayerId("strong-with-opportunity")
+        val matches = (10 downTo 1).map { day ->
+            canonical(
+                "m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Destaque com recorte",
+                MatchOutcome.WIN, "9", 2, 1, 0, setOf(AwardType.CRAQUE),
+                passAttempts = 30, passesCompleted = 10, shots = 3,
+            )
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        val xRay = service.findById(OUR_CLUB, playerId)!!.xRay!!
+
+        assertThat(xRay.analysis.strengths.first().category.name).isEqualTo("OFFENSIVE_PRODUCTION")
+        assertThat(xRay.analysis.improvement.opportunity)
+            .extracting { it!!.source.name to it.area.name }
+            .isEqualTo("STRUCTURAL_LOW_EFFICIENCY" to "PASSING")
+    }
+
+    @Test
+    fun `strengths are ranked deterministically and limited to a principal and secondary`() {
+        val playerId = PlayerId("strength-player")
+        val matches = (10 downTo 1).map { day ->
+            canonical(
+                "m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Destaque",
+                MatchOutcome.WIN, "9", 2, 1, 0, emptySet(),
+                passAttempts = 30, passesCompleted = 27, shots = 3,
+            )
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        val strengths = service.findById(OUR_CLUB, playerId)!!.xRay!!.analysis.strengths
+
+        assertThat(strengths).hasSize(2)
+        assertThat(strengths.map { it.category.name }).containsExactly("OFFENSIVE_PRODUCTION", "FINISHING")
+        assertThat(strengths.first().evidence.numerator).isEqualTo(30)
+        assertThat(strengths.first().evidence.appearances).isEqualTo(10)
+    }
+
+    @Test
+    fun `a secondary strength remains optional when no other rule has enough evidence`() {
+        val playerId = PlayerId("one-strength-player")
+        val matches = (5 downTo 1).map { day ->
+            canonical(
+                "m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Uma força",
+                MatchOutcome.WIN, "8", 2, 0, 0, emptySet(),
+                passAttempts = 0, passesCompleted = 0, tackleAttempts = 0, tacklesCompleted = 0, shots = 0,
+            )
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        val strengths = service.findById(OUR_CLUB, playerId)!!.xRay!!.analysis.strengths
+
+        assertThat(strengths).singleElement().extracting { it.category.name }.isEqualTo("OFFENSIVE_PRODUCTION")
+    }
+
+    @Test
+    fun `trend is rising only after a material rating increase against prior history`() {
+        val playerId = PlayerId("rising-player")
+        val matches = (10 downTo 1).map { day ->
+            canonical("m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Em alta", MatchOutcome.WIN, if (day >= 6) "9" else "8", 0, 0, 0, emptySet())
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        val trend = service.findById(OUR_CLUB, playerId)!!.xRay!!.trend
+
+        assertThat(trend.status.name).isEqualTo("RISING")
+        assertThat(trend.ratingDelta).isEqualByComparingTo("1.00")
+        assertThat(trend.metrics.map { it.type.name }).contains("RATING", "DIRECT_CONTRIBUTIONS_PER_MATCH")
+    }
+
+    @Test
+    fun `trend is stable when the rating change is below its material threshold`() {
+        val playerId = PlayerId("stable-player")
+        val matches = (10 downTo 1).map { day ->
+            canonical("m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Estável", MatchOutcome.WIN, if (day >= 6) "8.1" else "8.0", 0, 0, 0, emptySet())
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        assertThat(service.findById(OUR_CLUB, playerId)!!.xRay!!.trend.status.name).isEqualTo("STABLE")
+    }
+
+    @Test
+    fun `trend is falling after a material rating decline`() {
+        val playerId = PlayerId("falling-player")
+        val matches = (10 downTo 1).map { day ->
+            canonical("m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Em baixa", MatchOutcome.WIN, if (day >= 6) "7" else "8", 0, 0, 0, emptySet())
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        assertThat(service.findById(OUR_CLUB, playerId)!!.xRay!!.trend.status.name).isEqualTo("FALLING")
+    }
+
+    @Test
+    fun `trend stays in formation below ten appearances including the five to nine range`() {
+        val playerId = PlayerId("forming-trend-player")
+        val matches = (7 downTo 1).map { day ->
+            canonical("m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Em formação", MatchOutcome.WIN, "8", 0, 0, 0, emptySet())
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        assertThat(service.findById(OUR_CLUB, playerId)!!.xRay!!.trend.status.name).isEqualTo("FORMING")
+    }
+
+    @Test
+    fun `trend stays in formation when the comparison has no sufficient rating evidence`() {
+        val playerId = PlayerId("unrated-trend-player")
+        val matches = (10 downTo 1).map { day ->
+            canonical("m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Sem nota", MatchOutcome.WIN, null, 1, 0, 0, emptySet())
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        val trend = service.findById(OUR_CLUB, playerId)!!.xRay!!.trend
+
+        assertThat(trend.status.name).isEqualTo("FORMING")
+        assertThat(trend.ratingDelta).isNull()
+    }
+
+    @Test
+    fun `consistency stays factual and requires five rated appearances for distribution`() {
+        val playerId = PlayerId("consistency-player")
+        val fourMatches = (4 downTo 1).map { day ->
+            canonical("m$day", "2026-07-${day.toString().padStart(2, '0')}T10:00:00Z", playerId, "Amostra", MatchOutcome.WIN, "8", 0, 0, 0, emptySet())
+        }
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(fourMatches)
+
+        val smallSample = service.findById(OUR_CLUB, playerId)!!.xRay!!.consistency
+
+        assertThat(smallSample.state.name).isEqualTo("INSUFFICIENT_SAMPLE")
+        assertThat(smallSample.ratingStandardDeviation).isNull()
+        val fiveMatches = fourMatches + canonical("m5", "2026-07-05T10:00:00Z", playerId, "Amostra", MatchOutcome.WIN, "10", 0, 0, 0, emptySet())
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(fiveMatches)
+
+        val sufficientSample = service.findById(OUR_CLUB, playerId)!!.xRay!!.consistency
+
+        assertThat(sufficientSample.state.name).isEqualTo("AVAILABLE")
+        assertThat(sufficientSample.ratingsAtLeastEight).isEqualTo(5)
+        assertThat(sufficientSample.ratingsAtLeastNine).isEqualTo(1)
+        assertThat(sufficientSample.ratingTenMatches).isEqualTo(1)
+        assertThat(sufficientSample.ratingsAtLeastEightRate).isEqualByComparingTo("100.00")
+    }
+
+    @Test
+    fun `recognitions expose rates over eligible appearances without inventing zeros`() {
+        val playerId = PlayerId("recognition-player")
+        val matches = listOf(
+            canonical("m3", "2026-07-03T10:00:00Z", playerId, "Reconhecido", MatchOutcome.WIN, "8", 0, 0, 0, setOf(AwardType.CRAQUE)),
+            canonical("m2", "2026-07-02T10:00:00Z", playerId, "Reconhecido", MatchOutcome.WIN, "8", 0, 0, 0, emptySet()),
+            canonical("m1", "2026-07-01T10:00:00Z", playerId, "Reconhecido", MatchOutcome.WIN, "8", 0, 0, 0, emptySet()),
+        )
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(matches)
+
+        val recognitions = service.findById(OUR_CLUB, playerId)!!.xRay!!.recognitions
+
+        assertThat(recognitions.eligibleAppearances).isEqualTo(3)
+        assertThat(recognitions.craqueRate).isEqualByComparingTo("33.33")
+        assertThat(recognitions.bagreRate).isEqualByComparingTo("0.00")
     }
 
     private fun canonical(
@@ -411,6 +659,7 @@ class PlayerProfileServiceTest {
         passesCompleted: Int = 18,
         tackleAttempts: Int = 4,
         tacklesCompleted: Int = 2,
+        shots: Int = 3,
         advancedCoverage: AdvancedStatsCoverage = AdvancedStatsCoverage.UNAVAILABLE,
         dribblesCompleted: Int = 0,
         beats: Int = 0,
@@ -420,7 +669,7 @@ class PlayerProfileServiceTest {
             role = PlayerRole.Outfield(null),
             participation = Participation(Duration.ofMinutes(90), ParticipationStatus.COMPLETED),
             rating = rating?.let { MatchRating(BigDecimal(it)) },
-            attacking = AttackingStats(goals, assists, 3),
+            attacking = AttackingStats(goals, assists, shots),
             passing = PassingStats(passAttempts, passesCompleted),
             defending = DefendingStats(tackleAttempts, tacklesCompleted),
             discipline = DisciplineStats(redCards),
