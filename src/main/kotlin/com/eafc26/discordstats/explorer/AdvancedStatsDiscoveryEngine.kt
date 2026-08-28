@@ -47,6 +47,7 @@ class AdvancedStatsDiscoveryEngine(
         val aggregateIndex: Int,
         val sparseValues: Map<Int, Int>,
         val knownMetrics: Map<String, Int?>,
+        val matchCompletion: String? = null,
     )
 
     /** Generated only after sparse coverage is known to be AVAILABLE. */
@@ -585,6 +586,493 @@ class AdvancedStatsDiscoveryEngine(
         val denominator = sqrt(x.sumOf { (it - meanX) * (it - meanX) } * y.sumOf { (it - meanY) * (it - meanY) })
         return if (denominator == 0.0) null else numerator / denominator
     }
+
+    // ===================================================================
+    // V2 — Anchor-based semantic investigation
+    // ===================================================================
+
+    data class AnchorRef(
+        val type: String,
+        val aggregateIndex: Int?,
+        val code: Int?,
+        val metricName: String?,
+    )
+
+    data class AnchorProfile(
+        val anchor: AnchorRef,
+        val registryStatus: String,
+        val knownLabel: String?,
+        val observations: Int,
+        val matches: Int,
+        val distinctPlayers: Int,
+        val nonZeroObservations: Int,
+        val prevalence: Double,
+        val min: Int,
+        val max: Int,
+        val mean: Double,
+        val median: Double,
+    )
+
+    data class ResidualDistribution(
+        val residualCounts: Map<Int, Int>,
+        val min: Int,
+        val max: Int,
+        val mean: Double,
+        val median: Double,
+        val zeroPercent: Double,
+    )
+
+    data class AnchorRelationshipScore(
+        val total: Double,
+        val informativeSampleComponent: Double,
+        val matchDiversityComponent: Double,
+        val nonZeroOverlapComponent: Double,
+        val conditionalSupportComponent: Double,
+        val equalityComponent: Double,
+        val subtypeConsistencyComponent: Double,
+        val correlationComponent: Double,
+        val counterexamplePenalty: Double,
+    )
+
+    data class AnchorEvidenceRow(
+        val matchId: String,
+        val timestamp: String,
+        val playerId: String,
+        val playerName: String?,
+        val anchorValue: Int,
+        val candidateValue: Int,
+        val difference: Int,
+        val ratio: Double?,
+        val goals: Int?,
+        val assists: Int?,
+        val shots: Int?,
+        val passesAttempted: Int?,
+        val passesCompleted: Int?,
+        val tacklesAttempted: Int?,
+        val tacklesCompleted: Int?,
+        val code112: Int?,
+        val code115: Int?,
+        val code152: Int?,
+        val code174: Int?,
+        val matchCompletion: String?,
+    )
+
+    data class ConditionalProfile(
+        val candidateCode: Int,
+        val candidateActiveWhenAnchorActive: Int,
+        val anchorActiveObservations: Int,
+        val candidateInactiveWhenAnchorActive: Int,
+        val anchorActiveWhenCandidateActive: Int,
+        val candidateActiveObservations: Int,
+        val pCandidateActiveGivenAnchorActive: Double,
+        val pAnchorActiveGivenCandidateActive: Double,
+    )
+
+    data class AnchorRelationship(
+        val candidateAggregateIndex: Int,
+        val candidateCode: Int,
+        val candidateRegistryStatus: String,
+        val candidateKnownLabel: String?,
+        val technicalClassification: String,
+        val exactEqualityRate: Double,
+        val informativeEqualityRate: Double,
+        val anchorGteCandidateRate: Double,
+        val candidateGteAnchorRate: Double,
+        val residualAMinusB: ResidualDistribution,
+        val residualBMinusA: ResidualDistribution,
+        val ratioBAMeanWhenAPositive: Double?,
+        val ratioABMeanWhenBPositive: Double?,
+        val pearson: Double?,
+        val spearman: Double?,
+        val bothNonZero: Int,
+        val eitherNonZero: Int,
+        val nonZeroOverlap: Double,
+        val pCandidateActiveGivenAnchorActive: Double,
+        val pAnchorActiveGivenCandidateActive: Double,
+        val pEqualGivenEitherActive: Double,
+        val observations: Int,
+        val informativeObservations: Int,
+        val matches: Int,
+        val distinctPlayers: Int,
+        val score: AnchorRelationshipScore,
+        val evidenceObservations: List<AnchorEvidenceRow>,
+        val differenceCases: List<AnchorEvidenceRow>,
+    )
+
+    data class FamilyMatrixCell(
+        val codeA: Int,
+        val codeB: Int,
+        val pearson: Double?,
+        val informativeEquality: Double,
+        val nonZeroOverlap: Double,
+    )
+
+    data class FamilyObservationRow(
+        val matchId: String,
+        val timestamp: String,
+        val playerId: String,
+        val playerName: String?,
+        val values: Map<Int, Int>,
+        val goals: Int?,
+        val assists: Int?,
+        val shots: Int?,
+        val passesAttempted: Int?,
+        val passesCompleted: Int?,
+        val tacklesAttempted: Int?,
+        val tacklesCompleted: Int?,
+        val matchCompletion: String?,
+    )
+
+    data class FamilyInvestigation(
+        val aggregateIndex: Int,
+        val codes: List<Int>,
+        val matrix: List<FamilyMatrixCell>,
+        val observations: List<FamilyObservationRow>,
+    )
+
+    data class DatasetMetadata(
+        val rawMatchesAnalyzed: Int,
+        val playerMatchObservations: Int,
+        val distinctPlayers: Int,
+        val distinctMatches: Int,
+    )
+
+    data class AnchorInvestigation(
+        val anchor: AnchorProfile,
+        val relationships: List<AnchorRelationship>,
+        val conditionalProfiles: List<ConditionalProfile>,
+        val dataset: DatasetMetadata,
+    )
+
+    fun investigateAnchor(
+        samples: List<AggregateSample>,
+        anchor: AnchorRef,
+    ): AnchorInvestigation {
+        val anchorValues = extractAnchorValues(samples, anchor)
+        if (anchorValues.isEmpty()) return emptyAnchorInvestigation(anchor, samples)
+
+        val profile = buildAnchorProfile(anchor, anchorValues)
+        val candidateCodes = findCandidateCodes(samples, anchor)
+        val relationships = candidateCodes.map { candidate ->
+            buildAnchorRelationship(anchorValues, candidate, samples)
+        }.sortedByDescending { it.score.total }
+        val conditionals = candidateCodes.map { candidate ->
+            buildConditionalProfile(anchorValues, candidate, samples)
+        }
+
+        return AnchorInvestigation(
+            anchor = profile,
+            relationships = relationships,
+            conditionalProfiles = conditionals,
+            dataset = DatasetMetadata(
+                rawMatchesAnalyzed = samples.map { it.matchId }.toSet().size,
+                playerMatchObservations = samples.map { "${it.matchId}:${it.playerId}" }.toSet().size,
+                distinctPlayers = samples.map { it.playerId }.toSet().size,
+                distinctMatches = samples.map { it.matchId }.toSet().size,
+            ),
+        )
+    }
+
+    fun investigateFamily(
+        samples: List<AggregateSample>,
+        aggregateIndex: Int,
+        codes: List<Int>,
+    ): FamilyInvestigation {
+        val relevantSamples = samples.filter { it.aggregateIndex == aggregateIndex }
+        val matrix = mutableListOf<FamilyMatrixCell>()
+        for (i in codes.indices) {
+            for (j in (i + 1) until codes.size) {
+                val pairs = relevantSamples.mapNotNull { sample ->
+                    val a = sample.sparseValues[codes[i]] ?: 0
+                    val b = sample.sparseValues[codes[j]] ?: 0
+                    Triple(a, b, sample)
+                }
+                val informative = pairs.filter { it.first != 0 || it.second != 0 }
+                val eitherNonZero = informative.size
+                val bothNonZero = informative.count { it.first != 0 && it.second != 0 }
+                val informativeEquality = if (eitherNonZero == 0) 0.0 else ratio(informative.count { it.first == it.second }, eitherNonZero)
+                val p = if (pairs.size >= 3) pearson(pairs.map { it.first.toDouble() }, pairs.map { it.second.toDouble() }) else null
+                matrix.add(FamilyMatrixCell(codes[i], codes[j], p, informativeEquality, ratio(bothNonZero, eitherNonZero)))
+            }
+        }
+        val observations = relevantSamples.map { sample ->
+            FamilyObservationRow(
+                matchId = sample.matchId, timestamp = sample.timestamp, playerId = sample.playerId,
+                playerName = sample.playerName,
+                values = codes.associateWith { code -> sample.sparseValues[code] ?: 0 },
+                goals = sample.knownMetrics["goals"], assists = sample.knownMetrics["assists"],
+                shots = sample.knownMetrics["shots"], passesAttempted = sample.knownMetrics["passesAttempted"],
+                passesCompleted = sample.knownMetrics["passesCompleted"], tacklesAttempted = sample.knownMetrics["tacklesAttempted"],
+                tacklesCompleted = sample.knownMetrics["tacklesCompleted"],
+                matchCompletion = sample.matchCompletion,
+            )
+        }.sortedWith(compareBy({ it.matchId }, { it.playerId }))
+        return FamilyInvestigation(aggregateIndex, codes.sorted(), matrix, observations)
+    }
+
+    private data class AnchorObservation(
+        val sampleKey: String,
+        val matchId: String,
+        val timestamp: String,
+        val playerId: String,
+        val playerName: String?,
+        val anchorValue: Int,
+        val knownMetrics: Map<String, Int?>,
+        val sparseValues: Map<Int, Int>,
+        val aggregateIndex: Int,
+        val matchCompletion: String?,
+    )
+
+    private fun extractAnchorValues(samples: List<AggregateSample>, anchor: AnchorRef): List<AnchorObservation> {
+        return when (anchor.type) {
+            "KNOWN_METRIC" -> {
+                val metric = anchor.metricName ?: return emptyList()
+                samples.mapNotNull { sample ->
+                    val value = sample.knownMetrics[metric] ?: return@mapNotNull null
+                    AnchorObservation("${sample.matchId}:${sample.playerId}", sample.matchId, sample.timestamp, sample.playerId,
+                        sample.playerName, value, sample.knownMetrics, sample.sparseValues, sample.aggregateIndex, sample.matchCompletion)
+                }.distinctBy { it.sampleKey }
+            }
+            else -> {
+                val aggIdx = anchor.aggregateIndex ?: return emptyList()
+                val code = anchor.code ?: return emptyList()
+                samples.filter { it.aggregateIndex == aggIdx }.map { sample ->
+                    AnchorObservation("${sample.matchId}:${sample.playerId}", sample.matchId, sample.timestamp, sample.playerId,
+                        sample.playerName, sample.sparseValues[code] ?: 0, sample.knownMetrics, sample.sparseValues, sample.aggregateIndex, sample.matchCompletion)
+                }
+            }
+        }
+    }
+
+    private fun findCandidateCodes(samples: List<AggregateSample>, anchor: AnchorRef): List<CodeRef> {
+        val targetAggregateIndex = anchor.aggregateIndex
+        return samples
+            .filter { targetAggregateIndex == null || it.aggregateIndex == targetAggregateIndex }
+            .flatMap { sample -> sample.sparseValues.keys.map { CodeRef(sample.aggregateIndex, it) } }
+            .toSet()
+            .filter { ref ->
+                if (anchor.type in setOf("AGGREGATE_CODE", "CONFIRMED_ADVANCED") && ref.aggregateIndex == anchor.aggregateIndex && ref.code == anchor.code) false
+                else true
+            }
+            .sortedWith(compareBy({ it.aggregateIndex }, { it.code }))
+    }
+
+    private fun buildAnchorProfile(anchor: AnchorRef, observations: List<AnchorObservation>): AnchorProfile {
+        val values = observations.map { it.anchorValue }.sorted()
+        val nonZero = values.count { it != 0 }
+        val registryStatus = if (anchor.type == "KNOWN_METRIC") "CONFIRMED"
+        else AdvancedStatsCodeRegistry.lookup(anchor.aggregateIndex ?: 0, anchor.code ?: 0).confidence.name
+        val knownLabel = if (anchor.type == "KNOWN_METRIC") anchor.metricName
+        else AdvancedStatsCodeRegistry.lookup(anchor.aggregateIndex ?: 0, anchor.code ?: 0).metricName
+        return AnchorProfile(
+            anchor = anchor, registryStatus = registryStatus, knownLabel = knownLabel,
+            observations = values.size, matches = observations.map { it.matchId }.toSet().size,
+            distinctPlayers = observations.map { it.playerId }.toSet().size,
+            nonZeroObservations = nonZero, prevalence = ratio(nonZero, values.size),
+            min = values.firstOrNull() ?: 0, max = values.lastOrNull() ?: 0,
+            mean = if (values.isEmpty()) 0.0 else values.average(), median = median(values),
+        )
+    }
+
+    private fun buildAnchorRelationship(
+        anchorObs: List<AnchorObservation>,
+        candidate: CodeRef,
+        samples: List<AggregateSample>,
+    ): AnchorRelationship {
+        val anchorByKey = anchorObs.associateBy { it.sampleKey }
+        val candidateSamples = samples.filter { it.aggregateIndex == candidate.aggregateIndex }
+            .associateBy { "${it.matchId}:${it.playerId}" }
+        val commonKeys = anchorByKey.keys.intersect(candidateSamples.keys).sorted()
+
+        data class Pair(val anchor: AnchorObservation, val candidateValue: Int, val sample: AggregateSample)
+        val pairs = commonKeys.map { key ->
+            val ao = anchorByKey.getValue(key)
+            val cs = candidateSamples.getValue(key)
+            Pair(ao, cs.sparseValues[candidate.code] ?: 0, cs)
+        }
+
+        val informative = pairs.filter { it.anchor.anchorValue != 0 || it.candidateValue != 0 }
+        val anchorActive = pairs.filter { it.anchor.anchorValue != 0 }
+        val candidateActive = pairs.filter { it.candidateValue != 0 }
+        val bothNonZero = pairs.count { it.anchor.anchorValue != 0 && it.candidateValue != 0 }
+        val eitherNonZero = informative.size
+
+        val exactEqual = pairs.count { it.anchor.anchorValue == it.candidateValue }
+        val informativeEqual = informative.count { it.anchor.anchorValue == it.candidateValue }
+        val anchorGte = informative.count { it.anchor.anchorValue >= it.candidateValue }
+        val candidateGte = informative.count { it.candidateValue >= it.anchor.anchorValue }
+
+        val residualsAB = pairs.map { it.anchor.anchorValue - it.candidateValue }
+        val residualsBA = pairs.map { it.candidateValue - it.anchor.anchorValue }
+
+        val aPositive = pairs.filter { it.anchor.anchorValue > 0 }
+        val bPositive = pairs.filter { it.candidateValue > 0 }
+        val ratioBA = if (aPositive.isEmpty()) null else aPositive.map { it.candidateValue.toDouble() / it.anchor.anchorValue }.average()
+        val ratioAB = if (bPositive.isEmpty()) null else bPositive.map { it.anchor.anchorValue.toDouble() / it.candidateValue }.average()
+
+        val p = if (pairs.size >= 3) pearson(pairs.map { it.anchor.anchorValue.toDouble() }, pairs.map { it.candidateValue.toDouble() }) else null
+        val sp = if (pairs.size >= 3) spearman(pairs.map { it.anchor.anchorValue.toDouble() }, pairs.map { it.candidateValue.toDouble() }) else null
+
+        val pCandActiveGivenAnchorActive = if (anchorActive.isEmpty()) 0.0 else ratio(anchorActive.count { it.candidateValue != 0 }, anchorActive.size)
+        val pAnchorActiveGivenCandActive = if (candidateActive.isEmpty()) 0.0 else ratio(candidateActive.count { it.anchor.anchorValue != 0 }, candidateActive.size)
+        val pEqualGivenEitherActive = if (eitherNonZero == 0) 0.0 else ratio(informativeEqual, eitherNonZero)
+
+        val classification = classify(anchorGte, candidateGte, informativeEqual, p, eitherNonZero, bothNonZero, pCandActiveGivenAnchorActive, pAnchorActiveGivenCandActive)
+
+        val distinctMatches = pairs.map { it.anchor.matchId }.toSet().size
+        val distinctPlayers = pairs.map { it.anchor.playerId }.toSet().size
+        val score = anchorScore(informative.size, distinctMatches, distinctPlayers, ratio(bothNonZero, eitherNonZero),
+            pCandActiveGivenAnchorActive, pEqualGivenEitherActive, classification, p, informativeEqual, eitherNonZero)
+
+        fun evidenceRow(pair: Pair): AnchorEvidenceRow {
+            val diff = pair.anchor.anchorValue - pair.candidateValue
+            val rat = if (pair.candidateValue != 0) pair.anchor.anchorValue.toDouble() / pair.candidateValue else null
+            return AnchorEvidenceRow(
+                matchId = pair.anchor.matchId, timestamp = pair.anchor.timestamp, playerId = pair.anchor.playerId,
+                playerName = pair.anchor.playerName, anchorValue = pair.anchor.anchorValue, candidateValue = pair.candidateValue,
+                difference = diff, ratio = rat,
+                goals = pair.anchor.knownMetrics["goals"], assists = pair.anchor.knownMetrics["assists"],
+                shots = pair.anchor.knownMetrics["shots"], passesAttempted = pair.anchor.knownMetrics["passesAttempted"],
+                passesCompleted = pair.anchor.knownMetrics["passesCompleted"], tacklesAttempted = pair.anchor.knownMetrics["tacklesAttempted"],
+                tacklesCompleted = pair.anchor.knownMetrics["tacklesCompleted"],
+                code112 = pair.sample.sparseValues[112], code115 = pair.sample.sparseValues[115],
+                code152 = pair.sample.sparseValues[152], code174 = pair.sample.sparseValues[174],
+                matchCompletion = pair.anchor.matchCompletion,
+            )
+        }
+
+        val differenceCases = pairs.filter { it.anchor.anchorValue != it.candidateValue }
+            .sortedByDescending { abs(it.anchor.anchorValue - it.candidateValue) }
+            .take(50).map(::evidenceRow)
+        val allEvidence = pairs
+            .sortedByDescending { abs(it.anchor.anchorValue - it.candidateValue) }
+            .take(50).map(::evidenceRow)
+
+        val mapping = AdvancedStatsCodeRegistry.lookup(candidate.aggregateIndex, candidate.code)
+        return AnchorRelationship(
+            candidateAggregateIndex = candidate.aggregateIndex, candidateCode = candidate.code,
+            candidateRegistryStatus = mapping.confidence.name, candidateKnownLabel = mapping.metricName,
+            technicalClassification = classification,
+            exactEqualityRate = ratio(exactEqual, pairs.size), informativeEqualityRate = if (eitherNonZero == 0) 0.0 else ratio(informativeEqual, eitherNonZero),
+            anchorGteCandidateRate = if (eitherNonZero == 0) 0.0 else ratio(anchorGte, eitherNonZero),
+            candidateGteAnchorRate = if (eitherNonZero == 0) 0.0 else ratio(candidateGte, eitherNonZero),
+            residualAMinusB = buildResidualDistribution(residualsAB),
+            residualBMinusA = buildResidualDistribution(residualsBA),
+            ratioBAMeanWhenAPositive = ratioBA, ratioABMeanWhenBPositive = ratioAB,
+            pearson = p, spearman = sp,
+            bothNonZero = bothNonZero, eitherNonZero = eitherNonZero,
+            nonZeroOverlap = ratio(bothNonZero, eitherNonZero),
+            pCandidateActiveGivenAnchorActive = pCandActiveGivenAnchorActive,
+            pAnchorActiveGivenCandidateActive = pAnchorActiveGivenCandActive,
+            pEqualGivenEitherActive = pEqualGivenEitherActive,
+            observations = pairs.size, informativeObservations = eitherNonZero,
+            matches = distinctMatches, distinctPlayers = distinctPlayers,
+            score = score, evidenceObservations = allEvidence, differenceCases = differenceCases,
+        )
+    }
+
+    private fun buildConditionalProfile(
+        anchorObs: List<AnchorObservation>,
+        candidate: CodeRef,
+        samples: List<AggregateSample>,
+    ): ConditionalProfile {
+        val anchorByKey = anchorObs.associateBy { it.sampleKey }
+        val candidateSamples = samples.filter { it.aggregateIndex == candidate.aggregateIndex }
+            .associateBy { "${it.matchId}:${it.playerId}" }
+        val commonKeys = anchorByKey.keys.intersect(candidateSamples.keys)
+
+        val anchorActive = commonKeys.filter { anchorByKey.getValue(it).anchorValue != 0 }
+        val candidateActive = commonKeys.filter { (candidateSamples.getValue(it).sparseValues[candidate.code] ?: 0) != 0 }
+        val candidateActiveWhenAnchorActive = anchorActive.count { key ->
+            (candidateSamples[key]?.sparseValues?.get(candidate.code) ?: 0) != 0
+        }
+        val anchorActiveWhenCandidateActive = candidateActive.count { key ->
+            anchorByKey[key]?.anchorValue != 0
+        }
+
+        return ConditionalProfile(
+            candidateCode = candidate.code,
+            candidateActiveWhenAnchorActive = candidateActiveWhenAnchorActive,
+            anchorActiveObservations = anchorActive.size,
+            candidateInactiveWhenAnchorActive = anchorActive.size - candidateActiveWhenAnchorActive,
+            anchorActiveWhenCandidateActive = anchorActiveWhenCandidateActive,
+            candidateActiveObservations = candidateActive.size,
+            pCandidateActiveGivenAnchorActive = ratio(candidateActiveWhenAnchorActive, anchorActive.size),
+            pAnchorActiveGivenCandidateActive = ratio(anchorActiveWhenCandidateActive, candidateActive.size),
+        )
+    }
+
+    private fun buildResidualDistribution(residuals: List<Int>): ResidualDistribution {
+        if (residuals.isEmpty()) return ResidualDistribution(emptyMap(), 0, 0, 0.0, 0.0, 0.0)
+        val counts = residuals.groupingBy { it }.eachCount().toSortedMap()
+        val sorted = residuals.sorted()
+        val zeroCount = counts[0] ?: 0
+        return ResidualDistribution(
+            residualCounts = counts, min = sorted.first(), max = sorted.last(),
+            mean = sorted.average(), median = median(sorted),
+            zeroPercent = ratio(zeroCount, sorted.size),
+        )
+    }
+
+    private fun classify(
+        anchorGte: Int, candidateGte: Int, informativeEqual: Int,
+        pearson: Double?, eitherNonZero: Int, bothNonZero: Int,
+        pCandGivenAnchor: Double, pAnchorGivenCand: Double,
+    ): String {
+        if (eitherNonZero < 3) return "INDEPENDENT"
+        val ieRate = ratio(informativeEqual, eitherNonZero)
+        val overlap = ratio(bothNonZero, eitherNonZero)
+        if (ieRate >= 0.90 && overlap >= 0.70) return "NEAR_DUPLICATE"
+        val aGteRate = ratio(anchorGte, eitherNonZero)
+        val cGteRate = ratio(candidateGte, eitherNonZero)
+        if (cGteRate <= 1.0 && aGteRate >= 0.85 && pCandGivenAnchor >= 0.80 && overlap >= 0.40) return "POSSIBLE_SUBTYPE"
+        if (aGteRate <= 1.0 && cGteRate >= 0.85 && pAnchorGivenCand >= 0.80 && overlap >= 0.40) return "POSSIBLE_SUPERSET"
+        if ((pearson != null && abs(pearson) >= 0.60) || overlap >= 0.50) return "RELATED"
+        return "INDEPENDENT"
+    }
+
+    private fun anchorScore(
+        informativeObs: Int, distinctMatches: Int, distinctPlayers: Int,
+        overlap: Double, conditionalSupport: Double, equalityRate: Double,
+        classification: String, pearson: Double?, informativeEqual: Int, eitherNonZero: Int,
+    ): AnchorRelationshipScore {
+        val sampleComp = (informativeObs.coerceAtMost(50).toDouble() / 50) * 15
+        val playerDiversityBonus = if (distinctPlayers >= 3) 1.0 else distinctPlayers.toDouble() / 3
+        val matchComp = (distinctMatches.coerceAtMost(10).toDouble() / 10) * 15 * playerDiversityBonus
+        val overlapComp = overlap * 15
+        val conditionalComp = conditionalSupport * 12
+        val equalityComp = equalityRate * 18
+        val subtypeComp = when (classification) { "NEAR_DUPLICATE" -> 15.0; "POSSIBLE_SUBTYPE", "POSSIBLE_SUPERSET" -> 10.0; "RELATED" -> 5.0; else -> 0.0 }
+        val corrComp = (pearson?.let { abs(it) } ?: 0.0) * 10
+        val counterPenalty = if (eitherNonZero > 0) (1.0 - ratio(informativeEqual, eitherNonZero)) * -10 else 0.0
+        val total = sampleComp + matchComp + overlapComp + conditionalComp + equalityComp + subtypeComp + corrComp + counterPenalty
+        return AnchorRelationshipScore(total, sampleComp, matchComp, overlapComp, conditionalComp, equalityComp, subtypeComp, corrComp, counterPenalty)
+    }
+
+    private fun spearman(x: List<Double>, y: List<Double>): Double? {
+        if (x.size < 3) return null
+        fun rank(values: List<Double>): List<Double> {
+            val sorted = values.withIndex().sortedBy { it.value }
+            val ranks = DoubleArray(values.size)
+            var i = 0
+            while (i < sorted.size) {
+                var j = i
+                while (j < sorted.size - 1 && sorted[j + 1].value == sorted[j].value) j++
+                val avgRank = (i + j) / 2.0 + 1.0
+                for (k in i..j) ranks[sorted[k].index] = avgRank
+                i = j + 1
+            }
+            return ranks.toList()
+        }
+        return pearson(rank(x), rank(y))
+    }
+
+    private fun emptyAnchorInvestigation(anchor: AnchorRef, samples: List<AggregateSample>) = AnchorInvestigation(
+        anchor = AnchorProfile(anchor, "UNKNOWN", null, 0, 0, 0, 0, 0.0, 0, 0, 0.0, 0.0),
+        relationships = emptyList(), conditionalProfiles = emptyList(),
+        dataset = DatasetMetadata(samples.map { it.matchId }.toSet().size, samples.map { "${it.matchId}:${it.playerId}" }.toSet().size,
+            samples.map { it.playerId }.toSet().size, samples.map { it.matchId }.toSet().size),
+    )
 
     private companion object {
         val inequalities = setOf("GREATER_OR_EQUAL", "LESS_OR_EQUAL")

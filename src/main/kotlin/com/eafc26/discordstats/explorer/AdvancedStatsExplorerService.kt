@@ -310,6 +310,35 @@ class AdvancedStatsExplorerService(
         )
     }
 
+    fun anchorInvestigation(
+        clubId: ClubId,
+        limit: Int = 10,
+        anchorType: String,
+        aggregateIndex: Int?,
+        code: Int?,
+        metricName: String?,
+    ): AdvancedStatsDiscoveryEngine.AnchorInvestigation {
+        val matches = matchRepository.findRecent(clubId, (limit * DISCOVERY_SCAN_MULTIPLIER).coerceAtMost(MAX_DISCOVERY_CANONICAL_MATCHES))
+            .filter(::hasRawAggregateCoverage)
+            .take(limit)
+        val samples = matches.flatMap { canonical -> discoverySamples(clubId, canonical) }
+        val anchor = AdvancedStatsDiscoveryEngine.AnchorRef(anchorType, aggregateIndex, code, metricName)
+        return AdvancedStatsDiscoveryEngine().investigateAnchor(samples, anchor)
+    }
+
+    fun familyInvestigation(
+        clubId: ClubId,
+        limit: Int = 10,
+        aggregateIndex: Int,
+        codes: List<Int>,
+    ): AdvancedStatsDiscoveryEngine.FamilyInvestigation {
+        val matches = matchRepository.findRecent(clubId, (limit * DISCOVERY_SCAN_MULTIPLIER).coerceAtMost(MAX_DISCOVERY_CANONICAL_MATCHES))
+            .filter(::hasRawAggregateCoverage)
+            .take(limit)
+        val samples = matches.flatMap { canonical -> discoverySamples(clubId, canonical) }
+        return AdvancedStatsDiscoveryEngine().investigateFamily(samples, aggregateIndex, codes)
+    }
+
     private fun buildPlayerData(
         player: PlayerMatchPerformance,
         canonical: CanonicalMatch,
@@ -398,6 +427,7 @@ class AdvancedStatsExplorerService(
             "tacklesAttempted" to player.defending.tacklesAttempted,
             "tacklesCompleted" to player.defending.tacklesCompleted,
         ),
+        matchCompletion = canonical.footballMatch.completion.status.name,
     )
 
     private fun additionalAggregateAlerts(

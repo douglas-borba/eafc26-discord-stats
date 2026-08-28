@@ -125,7 +125,49 @@ export type DiscoveryData = {
   newAggregateDataDetected: { fieldName: string; matchCount: number; playerCount: number }[];
 };
 
-type View = "matches" | "players" | "detail" | "compare" | "discovery";
+type AnchorRef = { type: string; aggregateIndex: number | null; code: number | null; metricName: string | null };
+type AnchorProfile = {
+  anchor: AnchorRef; registryStatus: string; knownLabel: string | null; observations: number; matches: number;
+  distinctPlayers: number; nonZeroObservations: number; prevalence: number; min: number; max: number; mean: number; median: number;
+};
+type ResidualDistribution = { residualCounts: Record<string, number>; min: number; max: number; mean: number; median: number; zeroPercent: number };
+type AnchorRelationshipScore = {
+  total: number; informativeSampleComponent: number; matchDiversityComponent: number; nonZeroOverlapComponent: number;
+  conditionalSupportComponent: number; equalityComponent: number; subtypeConsistencyComponent: number; correlationComponent: number; counterexamplePenalty: number;
+};
+type AnchorEvidenceRow = {
+  matchId: string; timestamp: string; playerId: string; playerName: string | null; anchorValue: number; candidateValue: number;
+  difference: number; ratio: number | null; goals: number | null; assists: number | null; shots: number | null;
+  passesAttempted: number | null; passesCompleted: number | null; tacklesAttempted: number | null; tacklesCompleted: number | null;
+  code112: number | null; code115: number | null; code152: number | null; code174: number | null; matchCompletion: string | null;
+};
+type ConditionalProfileEntry = {
+  candidateCode: number; candidateActiveWhenAnchorActive: number; anchorActiveObservations: number;
+  candidateInactiveWhenAnchorActive: number; anchorActiveWhenCandidateActive: number; candidateActiveObservations: number;
+  pCandidateActiveGivenAnchorActive: number; pAnchorActiveGivenCandidateActive: number;
+};
+type AnchorRelationship = {
+  candidateAggregateIndex: number; candidateCode: number; candidateRegistryStatus: string; candidateKnownLabel: string | null;
+  technicalClassification: string; exactEqualityRate: number; informativeEqualityRate: number;
+  anchorGteCandidateRate: number; candidateGteAnchorRate: number;
+  residualAMinusB: ResidualDistribution; residualBMinusA: ResidualDistribution;
+  ratioBAMeanWhenAPositive: number | null; ratioABMeanWhenBPositive: number | null;
+  pearson: number | null; spearman: number | null; bothNonZero: number; eitherNonZero: number; nonZeroOverlap: number;
+  pCandidateActiveGivenAnchorActive: number; pAnchorActiveGivenCandidateActive: number; pEqualGivenEitherActive: number;
+  observations: number; informativeObservations: number; matches: number; distinctPlayers: number;
+  score: AnchorRelationshipScore; evidenceObservations: AnchorEvidenceRow[]; differenceCases: AnchorEvidenceRow[];
+};
+type FamilyMatrixCell = { codeA: number; codeB: number; pearson: number | null; informativeEquality: number; nonZeroOverlap: number };
+type FamilyObservationRow = {
+  matchId: string; timestamp: string; playerId: string; playerName: string | null; values: Record<string, number>;
+  goals: number | null; assists: number | null; shots: number | null; passesAttempted: number | null;
+  passesCompleted: number | null; tacklesAttempted: number | null; tacklesCompleted: number | null; matchCompletion: string | null;
+};
+type FamilyInvestigation = { aggregateIndex: number; codes: number[]; matrix: FamilyMatrixCell[]; observations: FamilyObservationRow[] };
+type DatasetMetadata = { rawMatchesAnalyzed: number; playerMatchObservations: number; distinctPlayers: number; distinctMatches: number };
+type AnchorInvestigation = { anchor: AnchorProfile; relationships: AnchorRelationship[]; conditionalProfiles: ConditionalProfileEntry[]; dataset: DatasetMetadata };
+
+type View = "matches" | "players" | "detail" | "compare" | "discovery" | "anchor";
 
 export function AdvancedStatsExplorer() {
   const [clubId, setClubId] = useState("");
@@ -151,6 +193,16 @@ export function AdvancedStatsExplorer() {
   const [discoveryEvidence, setDiscoveryEvidence] = useState("ALL");
   const [selectedDiscoveryCode, setSelectedDiscoveryCode] = useState<CodeInventory | null>(null);
   const [selectedDiscoveryRelation, setSelectedDiscoveryRelation] = useState<DiscoveryRelation | null>(null);
+  const [anchorData, setAnchorData] = useState<AnchorInvestigation | null>(null);
+  const [anchorType, setAnchorType] = useState("AGGREGATE_CODE");
+  const [anchorAggregateIndex, setAnchorAggregateIndex] = useState("0");
+  const [anchorCode, setAnchorCode] = useState("");
+  const [anchorMetric, setAnchorMetric] = useState("goals");
+  const [selectedAnchorRelationship, setSelectedAnchorRelationship] = useState<AnchorRelationship | null>(null);
+  const [anchorShowDifferencesOnly, setAnchorShowDifferencesOnly] = useState(false);
+  const [anchorDnfFilter, setAnchorDnfFilter] = useState("ALL");
+  const [familyData, setFamilyData] = useState<FamilyInvestigation | null>(null);
+  const [familyCodes, setFamilyCodes] = useState("");
 
   const fetchJson = useCallback(async (url: string) => {
     const res = await fetch(url, { cache: "no-store" });
@@ -274,6 +326,46 @@ export function AdvancedStatsExplorer() {
     }
   }, [activeClubId, discoveryAggregate, fetchJson, hideKnownRelationships, minimumMatches, minimumObservations]);
 
+  const loadAnchor = useCallback(async () => {
+    if (!activeClubId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ limit: "10", anchorType });
+      if (anchorType === "AGGREGATE_CODE" || anchorType === "CONFIRMED_ADVANCED") {
+        params.set("aggregateIndex", anchorAggregateIndex);
+        params.set("code", anchorCode);
+      }
+      if (anchorType === "KNOWN_METRIC") {
+        params.set("metricName", anchorMetric);
+      }
+      const data = await fetchJson(`/api/admin/explorer/clubs/${activeClubId}/anchor?${params}`);
+      setAnchorData(data);
+      setSelectedAnchorRelationship(null);
+      setView("anchor");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Anchor investigation failed");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeClubId, anchorType, anchorAggregateIndex, anchorCode, anchorMetric, fetchJson]);
+
+  const loadFamily = useCallback(async () => {
+    if (!activeClubId || !familyCodes.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const codes = familyCodes.split(",").map((c) => c.trim()).filter(Boolean).join(",");
+      const params = new URLSearchParams({ limit: "10", aggregateIndex: anchorAggregateIndex, codes });
+      const data = await fetchJson(`/api/admin/explorer/clubs/${activeClubId}/family?${params}`);
+      setFamilyData(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Family investigation failed");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeClubId, familyCodes, anchorAggregateIndex, fetchJson]);
+
   return (
     <div style={{ fontFamily: "monospace", maxWidth: 1200 }}>
       <h1 style={{ fontSize: 20, marginBottom: 4 }}>Advanced Stats Explorer</h1>
@@ -297,6 +389,7 @@ export function AdvancedStatsExplorer() {
             <button onClick={() => exportData("json")} style={btnStyle}>Export JSON</button>
             <button onClick={() => exportData("csv")} style={btnStyle}>Export CSV</button>
             <button onClick={loadDiscovery} disabled={loading} style={btnStyle}>Discovery</button>
+            <button onClick={() => setView("anchor")} style={btnStyle}>Anchor</button>
           </>
         )}
       </div>
@@ -430,6 +523,33 @@ export function AdvancedStatsExplorer() {
           onSelectCode={setSelectedDiscoveryCode}
           onSelectRelation={setSelectedDiscoveryRelation}
           onBack={() => setView("matches")}
+        />
+      )}
+
+      {view === "anchor" && (
+        <AnchorView
+          data={anchorData}
+          anchorType={anchorType}
+          aggregateIndex={anchorAggregateIndex}
+          code={anchorCode}
+          metric={anchorMetric}
+          loading={loading}
+          selectedRelationship={selectedAnchorRelationship}
+          showDifferencesOnly={anchorShowDifferencesOnly}
+          dnfFilter={anchorDnfFilter}
+          familyData={familyData}
+          familyCodes={familyCodes}
+          onAnchorType={setAnchorType}
+          onAggregateIndex={setAnchorAggregateIndex}
+          onCode={setAnchorCode}
+          onMetric={setAnchorMetric}
+          onRun={loadAnchor}
+          onSelectRelationship={setSelectedAnchorRelationship}
+          onToggleDifferencesOnly={() => setAnchorShowDifferencesOnly(!anchorShowDifferencesOnly)}
+          onDnfFilter={setAnchorDnfFilter}
+          onFamilyCodes={setFamilyCodes}
+          onLoadFamily={loadFamily}
+          onBack={() => setView("discovery")}
         />
       )}
     </div>
@@ -733,6 +853,384 @@ export function DiscoveryView({
       {selectedRelation && <RelationDetail relation={selectedRelation} onClose={() => onSelectRelation(null)} />}
     </div>
   );
+}
+
+function AnchorView({
+  data, anchorType, aggregateIndex, code, metric, loading, selectedRelationship, showDifferencesOnly, dnfFilter,
+  familyData, familyCodes,
+  onAnchorType, onAggregateIndex, onCode, onMetric, onRun, onSelectRelationship, onToggleDifferencesOnly, onDnfFilter,
+  onFamilyCodes, onLoadFamily, onBack,
+}: {
+  data: AnchorInvestigation | null; anchorType: string; aggregateIndex: string; code: string; metric: string;
+  loading: boolean; selectedRelationship: AnchorRelationship | null; showDifferencesOnly: boolean; dnfFilter: string;
+  familyData: FamilyInvestigation | null; familyCodes: string;
+  onAnchorType: (v: string) => void; onAggregateIndex: (v: string) => void; onCode: (v: string) => void;
+  onMetric: (v: string) => void; onRun: () => void; onSelectRelationship: (v: AnchorRelationship | null) => void;
+  onToggleDifferencesOnly: () => void; onDnfFilter: (v: string) => void;
+  onFamilyCodes: (v: string) => void; onLoadFamily: () => void; onBack: () => void;
+}) {
+  const knownMetrics = ["goals", "assists", "shots", "passesAttempted", "passesCompleted", "tacklesAttempted", "tacklesCompleted"];
+  const confirmedCodes = [{ agg: 0, code: 112, name: "Beats" }, { agg: 0, code: 115, name: "Pre-assists" }, { agg: 0, code: 152, name: "Through passes" }, { agg: 0, code: 174, name: "Completed dribbles" }];
+
+  const anchorLabel = () => {
+    if (anchorType === "KNOWN_METRIC") return metric;
+    if (anchorType === "CONFIRMED_ADVANCED") {
+      const found = confirmedCodes.find((c) => c.agg === Number(aggregateIndex) && c.code === Number(code));
+      return found ? `${found.name} (agg${aggregateIndex}[${code}])` : `agg${aggregateIndex}[${code}]`;
+    }
+    return `agg${aggregateIndex}[${code}]`;
+  };
+
+  const filteredRelationships = data?.relationships.filter((r) => {
+    if (dnfFilter === "ALL") return true;
+    return r.evidenceObservations.some((e) => e.matchCompletion === dnfFilter);
+  }) ?? [];
+
+  const exportAnchor = () => {
+    if (!data) return;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `anchor-investigation-${Date.now()}.json`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div>
+      <button onClick={onBack} style={{ ...btnStyle, marginBottom: 12, fontSize: 12 }}>← Back</button>
+      <h2 style={h2Style}>Anchor Investigation</h2>
+      <p style={{ color: "#f0883e", fontSize: 12, marginBottom: 12 }}>
+        Mathematical structure analysis only. Subtype/superset/duplicate labels are technical classifications — not sporting meanings.
+      </p>
+
+      {/* Anchor selector */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 16 }}>
+        <label style={filterLabel}>Type
+          <select value={anchorType} onChange={(e) => onAnchorType(e.target.value)} style={selectStyle}>
+            <option value="AGGREGATE_CODE">Aggregate Code</option>
+            <option value="KNOWN_METRIC">Known Metric</option>
+            <option value="CONFIRMED_ADVANCED">Confirmed Advanced</option>
+          </select>
+        </label>
+        {anchorType === "KNOWN_METRIC" ? (
+          <label style={filterLabel}>Metric
+            <select value={metric} onChange={(e) => onMetric(e.target.value)} style={selectStyle}>
+              {knownMetrics.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </label>
+        ) : anchorType === "CONFIRMED_ADVANCED" ? (
+          <label style={filterLabel}>Code
+            <select value={`${aggregateIndex}-${code}`} onChange={(e) => { const [a, c] = e.target.value.split("-"); onAggregateIndex(a); onCode(c); }} style={selectStyle}>
+              {confirmedCodes.map((c) => <option key={`${c.agg}-${c.code}`} value={`${c.agg}-${c.code}`}>{c.name} ({c.code})</option>)}
+            </select>
+          </label>
+        ) : (
+          <>
+            <label style={filterLabel}>Agg <select value={aggregateIndex} onChange={(e) => onAggregateIndex(e.target.value)} style={selectStyle}><option value="0">0</option><option value="1">1</option></select></label>
+            <label style={filterLabel}>Code <input type="number" value={code} onChange={(e) => onCode(e.target.value)} style={numberInputStyle} /></label>
+          </>
+        )}
+        <button onClick={onRun} disabled={loading} style={btnStyle}>{loading ? "Analyzing..." : "Investigate"}</button>
+        {data && <button onClick={exportAnchor} style={btnStyle}>Export JSON</button>}
+      </div>
+
+      {!data ? <p style={{ color: "#8b949e", fontSize: 13 }}>Select an anchor and run investigation.</p> : <>
+        {/* Anchor profile */}
+        <h3 style={h3Style}>Anchor Profile — {anchorLabel()}</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 5, marginBottom: 16 }}>
+          <StatChip label="Status" value={data.anchor.registryStatus} />
+          {data.anchor.knownLabel && <StatChip label="Label" value={data.anchor.knownLabel} />}
+          <StatChip label="Observations" value={data.anchor.observations} />
+          <StatChip label="Matches" value={data.anchor.matches} />
+          <StatChip label="Distinct players" value={data.anchor.distinctPlayers} />
+          <StatChip label="Non-zero" value={data.anchor.nonZeroObservations} />
+          <StatChip label="Prevalence" value={percent(data.anchor.prevalence)} />
+          <StatChip label="Range" value={`${data.anchor.min}–${data.anchor.max}`} />
+          <StatChip label="Mean" value={data.anchor.mean.toFixed(2)} />
+          <StatChip label="Median" value={data.anchor.median.toFixed(1)} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 5, marginBottom: 16 }}>
+          <StatChip label="RAW matches" value={data.dataset.rawMatchesAnalyzed} />
+          <StatChip label="Observations" value={data.dataset.playerMatchObservations} />
+          <StatChip label="Players" value={data.dataset.distinctPlayers} />
+        </div>
+
+        {/* DNF filter */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+          <label style={filterLabel}>Match completion
+            <select value={dnfFilter} onChange={(e) => onDnfFilter(e.target.value)} style={selectStyle}>
+              <option value="ALL">ALL</option>
+              <option value="COMPLETED">COMPLETED</option>
+              <option value="DNF">DNF</option>
+              <option value="UNKNOWN">UNKNOWN</option>
+            </select>
+          </label>
+        </div>
+
+        {/* Top related codes */}
+        <h3 style={h3Style}>Top Related Codes ({filteredRelationships.length})</h3>
+        {filteredRelationships.length === 0 ? <p style={{ color: "#8b949e", fontSize: 12 }}>No candidates found in the bounded dataset.</p> : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead><tr>
+                <th style={thStyle}>Agg</th><th style={thStyle}>Code</th><th style={thStyle}>Status</th><th style={thStyle}>Label</th>
+                <th style={thStyle}>Classification</th><th style={thStyle}>Informative =</th><th style={thStyle}>Overlap</th>
+                <th style={thStyle}>P(B|A)</th><th style={thStyle}>P(A|B)</th><th style={thStyle}>Pearson</th>
+                <th style={thStyle}>Matches</th><th style={thStyle}>Players</th><th style={thStyle}>Score</th><th style={thStyle}></th>
+              </tr></thead>
+              <tbody>
+                {filteredRelationships.slice(0, 50).map((r) => (
+                  <tr key={`${r.candidateAggregateIndex}-${r.candidateCode}`} style={{ borderBottom: "1px solid #21262d", background: classificationBg(r.technicalClassification) }}>
+                    <td style={tdStyle}>{r.candidateAggregateIndex}</td>
+                    <td style={tdStyle}>{r.candidateCode}</td>
+                    <td style={tdStyle}><ConfidenceBadge confidence={r.candidateRegistryStatus} /></td>
+                    <td style={tdStyle}>{r.candidateKnownLabel ?? "—"}</td>
+                    <td style={tdStyle}><ClassificationBadge classification={r.technicalClassification} /></td>
+                    <td style={tdStyle}>{percent(r.informativeEqualityRate)}</td>
+                    <td style={tdStyle}>{percent(r.nonZeroOverlap)}</td>
+                    <td style={tdStyle}>{percent(r.pCandidateActiveGivenAnchorActive)}</td>
+                    <td style={tdStyle}>{percent(r.pAnchorActiveGivenCandidateActive)}</td>
+                    <td style={tdStyle}>{r.pearson?.toFixed(3) ?? "—"}</td>
+                    <td style={tdStyle}>{r.matches}</td>
+                    <td style={tdStyle}>{r.distinctPlayers}</td>
+                    <td style={tdStyle}>{r.score.total.toFixed(1)}</td>
+                    <td style={tdStyle}><button onClick={() => onSelectRelationship(r)} style={{ ...btnStyle, padding: "2px 8px", fontSize: 11 }}>Inspect</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Selected relationship detail */}
+        {selectedRelationship && (
+          <AnchorRelationshipDetail
+            relationship={selectedRelationship}
+            anchorLabel={anchorLabel()}
+            showDifferencesOnly={showDifferencesOnly}
+            dnfFilter={dnfFilter}
+            onToggleDifferencesOnly={onToggleDifferencesOnly}
+            onClose={() => onSelectRelationship(null)}
+          />
+        )}
+
+        {/* Conditional code profile */}
+        {data.conditionalProfiles.length > 0 && <>
+          <h3 style={{ ...h3Style, marginTop: 20 }}>Conditional Code Profile — When Anchor Is Active</h3>
+          <p style={{ color: "#8b949e", fontSize: 11 }}>Shows activation patterns relative to the anchor. Not a sporting interpretation.</p>
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead><tr>
+                <th style={thStyle}>Code</th><th style={thStyle}>B active | A active</th><th style={thStyle}>B inactive | A active</th>
+                <th style={thStyle}>A active | B active</th><th style={thStyle}>P(B|A)</th><th style={thStyle}>P(A|B)</th>
+              </tr></thead>
+              <tbody>
+                {data.conditionalProfiles.filter((c) => c.anchorActiveObservations > 0 || c.candidateActiveObservations > 0).slice(0, 30).map((c) => (
+                  <tr key={c.candidateCode} style={{ borderBottom: "1px solid #21262d" }}>
+                    <td style={tdStyle}>{c.candidateCode}</td>
+                    <td style={tdStyle}>{c.candidateActiveWhenAnchorActive}/{c.anchorActiveObservations}</td>
+                    <td style={tdStyle}>{c.candidateInactiveWhenAnchorActive}/{c.anchorActiveObservations}</td>
+                    <td style={tdStyle}>{c.anchorActiveWhenCandidateActive}/{c.candidateActiveObservations}</td>
+                    <td style={tdStyle}>{percent(c.pCandidateActiveGivenAnchorActive)}</td>
+                    <td style={tdStyle}>{percent(c.pAnchorActiveGivenCandidateActive)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>}
+
+        {/* Family inspector */}
+        <h3 style={{ ...h3Style, marginTop: 20 }}>Family Inspector</h3>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+          <label style={filterLabel}>Codes (comma-separated)
+            <input type="text" value={familyCodes} onChange={(e) => onFamilyCodes(e.target.value)} placeholder="e.g. 0,121,158,164" style={{ ...selectStyle, width: 200 }} />
+          </label>
+          <button onClick={onLoadFamily} disabled={loading || !familyCodes.trim()} style={btnStyle}>Inspect family</button>
+        </div>
+        {familyData && <FamilyInspector data={familyData} />}
+      </>}
+    </div>
+  );
+}
+
+function AnchorRelationshipDetail({
+  relationship, anchorLabel, showDifferencesOnly, dnfFilter, onToggleDifferencesOnly, onClose,
+}: {
+  relationship: AnchorRelationship; anchorLabel: string; showDifferencesOnly: boolean; dnfFilter: string;
+  onToggleDifferencesOnly: () => void; onClose: () => void;
+}) {
+  const r = relationship;
+  const rows = showDifferencesOnly ? r.differenceCases : r.evidenceObservations;
+  const filteredRows = dnfFilter === "ALL" ? rows : rows.filter((e) => e.matchCompletion === dnfFilter);
+
+  return (
+    <section style={detailStyle}>
+      <button onClick={onClose} style={{ ...btnStyle, fontSize: 11 }}>Close detail</button>
+      <h3 style={h3Style}>{anchorLabel} → code {r.candidateCode}</h3>
+      <p style={{ color: "#f0883e", fontSize: 12 }}>
+        Technical classification: <ClassificationBadge classification={r.technicalClassification} />. This is not a sporting mapping.
+      </p>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 5, marginBottom: 12 }}>
+        <StatChip label="Informative equality" value={percent(r.informativeEqualityRate)} />
+        <StatChip label="Exact equality" value={percent(r.exactEqualityRate)} />
+        <StatChip label="A >= B rate" value={percent(r.anchorGteCandidateRate)} />
+        <StatChip label="B >= A rate" value={percent(r.candidateGteAnchorRate)} />
+        <StatChip label="Overlap" value={percent(r.nonZeroOverlap)} />
+        <StatChip label="P(B>0|A>0)" value={percent(r.pCandidateActiveGivenAnchorActive)} />
+        <StatChip label="P(A>0|B>0)" value={percent(r.pAnchorActiveGivenCandidateActive)} />
+        <StatChip label="P(==|active)" value={percent(r.pEqualGivenEitherActive)} />
+        <StatChip label="Pearson" value={r.pearson?.toFixed(3) ?? "—"} />
+        <StatChip label="Spearman" value={r.spearman?.toFixed(3) ?? "—"} />
+        <StatChip label="Ratio B/A (A>0)" value={r.ratioBAMeanWhenAPositive?.toFixed(3) ?? "—"} />
+        <StatChip label="Ratio A/B (B>0)" value={r.ratioABMeanWhenBPositive?.toFixed(3) ?? "—"} />
+        <StatChip label="Both non-zero" value={r.bothNonZero} />
+        <StatChip label="Either non-zero" value={r.eitherNonZero} />
+        <StatChip label="Matches" value={r.matches} />
+        <StatChip label="Distinct players" value={r.distinctPlayers} />
+      </div>
+
+      {/* Residual distribution A-B */}
+      <h4 style={h3Style}>Residual Distribution (Anchor - Candidate)</h4>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 5, marginBottom: 8 }}>
+        <StatChip label="Min" value={r.residualAMinusB.min} />
+        <StatChip label="Max" value={r.residualAMinusB.max} />
+        <StatChip label="Mean" value={r.residualAMinusB.mean.toFixed(2)} />
+        <StatChip label="Median" value={r.residualAMinusB.median.toFixed(1)} />
+        <StatChip label="% zero" value={percent(r.residualAMinusB.zeroPercent)} />
+      </div>
+      <div style={{ fontSize: 11, color: "#8b949e", marginBottom: 12 }}>
+        {Object.entries(r.residualAMinusB.residualCounts).sort(([a], [b]) => Number(a) - Number(b)).map(([val, count]) => (
+          <span key={val} style={{ marginRight: 8 }}>residual={val}: {count}</span>
+        ))}
+      </div>
+
+      {/* Score components */}
+      <h4 style={h3Style}>Anchor Relationship Score</h4>
+      <pre style={{ background: "#161b22", padding: 8, borderRadius: 4, fontSize: 11, marginBottom: 12 }}>{JSON.stringify(r.score, null, 2)}</pre>
+
+      {/* Evidence table */}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 8 }}>
+        <h4 style={{ ...h3Style, marginBottom: 0 }}>{showDifferencesOnly ? "Difference Cases" : "Player-Match Evidence"}</h4>
+        <label style={{ fontSize: 12, color: "#8b949e", cursor: "pointer" }}>
+          <input type="checkbox" checked={showDifferencesOnly} onChange={onToggleDifferencesOnly} style={{ marginRight: 4 }} />
+          Show only differences
+        </label>
+      </div>
+      {filteredRows.length === 0 ? <p style={{ color: "#3fb950", fontSize: 12 }}>No difference cases — values are always equal on the retained sample.</p> : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={tableStyle}>
+            <thead><tr>
+              <th style={thStyle}>Match</th><th style={thStyle}>Player</th><th style={thStyle}>Anchor</th><th style={thStyle}>Candidate</th>
+              <th style={thStyle}>Diff</th><th style={thStyle}>Ratio</th>
+              <th style={thStyle}>Goals</th><th style={thStyle}>Assists</th><th style={thStyle}>Shots</th>
+              <th style={thStyle}>PassC</th><th style={thStyle}>TackC</th>
+              <th style={thStyle}>112</th><th style={thStyle}>115</th><th style={thStyle}>152</th><th style={thStyle}>174</th>
+              <th style={thStyle}>Completion</th>
+            </tr></thead>
+            <tbody>
+              {filteredRows.map((e, i) => (
+                <tr key={`${e.matchId}-${e.playerId}-${i}`} style={{ borderBottom: "1px solid #21262d", background: e.difference !== 0 ? "rgba(248, 81, 73, 0.08)" : undefined }}>
+                  <td style={{ ...tdStyle, fontSize: 11 }}>{e.matchId.slice(0, 12)}</td>
+                  <td style={tdStyle}>{e.playerName ?? e.playerId}</td>
+                  <td style={{ ...tdStyle, fontWeight: 600 }}>{e.anchorValue}</td>
+                  <td style={{ ...tdStyle, fontWeight: 600 }}>{e.candidateValue}</td>
+                  <td style={{ ...tdStyle, color: e.difference !== 0 ? "#f85149" : "#3fb950" }}>{e.difference}</td>
+                  <td style={tdStyle}>{e.ratio?.toFixed(2) ?? "—"}</td>
+                  <td style={tdStyle}>{e.goals ?? "—"}</td>
+                  <td style={tdStyle}>{e.assists ?? "—"}</td>
+                  <td style={tdStyle}>{e.shots ?? "—"}</td>
+                  <td style={tdStyle}>{e.passesCompleted ?? "—"}</td>
+                  <td style={tdStyle}>{e.tacklesCompleted ?? "—"}</td>
+                  <td style={tdStyle}>{e.code112 ?? "—"}</td>
+                  <td style={tdStyle}>{e.code115 ?? "—"}</td>
+                  <td style={tdStyle}>{e.code152 ?? "—"}</td>
+                  <td style={tdStyle}>{e.code174 ?? "—"}</td>
+                  <td style={{ ...tdStyle, fontSize: 10 }}>{e.matchCompletion ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function FamilyInspector({ data }: { data: FamilyInvestigation }) {
+  return (
+    <section style={detailStyle}>
+      <h3 style={h3Style}>Family · Aggregate {data.aggregateIndex} · Codes: {data.codes.join(", ")}</h3>
+      <p style={{ color: "#f0883e", fontSize: 12 }}>Pairwise relationships within the family. Mathematical structure only.</p>
+
+      {/* Matrix */}
+      <div style={{ overflowX: "auto", marginBottom: 16 }}>
+        <table style={tableStyle}>
+          <thead><tr>
+            <th style={thStyle}>A</th><th style={thStyle}>B</th><th style={thStyle}>Pearson</th>
+            <th style={thStyle}>Informative =</th><th style={thStyle}>Non-zero overlap</th>
+          </tr></thead>
+          <tbody>
+            {data.matrix.map((cell) => (
+              <tr key={`${cell.codeA}-${cell.codeB}`} style={{ borderBottom: "1px solid #21262d" }}>
+                <td style={tdStyle}>{cell.codeA}</td>
+                <td style={tdStyle}>{cell.codeB}</td>
+                <td style={tdStyle}>{cell.pearson?.toFixed(3) ?? "—"}</td>
+                <td style={tdStyle}>{percent(cell.informativeEquality)}</td>
+                <td style={tdStyle}>{percent(cell.nonZeroOverlap)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Side-by-side observations */}
+      <h4 style={h3Style}>Player-Match Observations ({data.observations.length})</h4>
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead><tr>
+            <th style={thStyle}>Match</th><th style={thStyle}>Player</th>
+            {data.codes.map((c) => <th key={c} style={thStyle}>Code {c}</th>)}
+            <th style={thStyle}>Goals</th><th style={thStyle}>Assists</th><th style={thStyle}>PassC</th><th style={thStyle}>TackC</th>
+            <th style={thStyle}>Completion</th>
+          </tr></thead>
+          <tbody>
+            {data.observations.map((obs, i) => (
+              <tr key={`${obs.matchId}-${obs.playerId}-${i}`} style={{ borderBottom: "1px solid #21262d" }}>
+                <td style={{ ...tdStyle, fontSize: 11 }}>{obs.matchId.slice(0, 12)}</td>
+                <td style={tdStyle}>{obs.playerName ?? obs.playerId}</td>
+                {data.codes.map((c) => <td key={c} style={{ ...tdStyle, fontWeight: 600 }}>{obs.values[String(c)] ?? 0}</td>)}
+                <td style={tdStyle}>{obs.goals ?? "—"}</td>
+                <td style={tdStyle}>{obs.assists ?? "—"}</td>
+                <td style={tdStyle}>{obs.passesCompleted ?? "—"}</td>
+                <td style={tdStyle}>{obs.tacklesCompleted ?? "—"}</td>
+                <td style={{ ...tdStyle, fontSize: 10 }}>{obs.matchCompletion ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ClassificationBadge({ classification }: { classification: string }) {
+  const colors: Record<string, { bg: string; text: string }> = {
+    NEAR_DUPLICATE: { bg: "#238636", text: "#fff" },
+    POSSIBLE_SUBTYPE: { bg: "#1f6feb", text: "#fff" },
+    POSSIBLE_SUPERSET: { bg: "#8957e5", text: "#fff" },
+    RELATED: { bg: "#9e6a03", text: "#fff" },
+    INDEPENDENT: { bg: "#30363d", text: "#8b949e" },
+  };
+  const c = colors[classification] ?? colors.INDEPENDENT;
+  return <span style={{ background: c.bg, color: c.text, padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 600 }}>{classification}</span>;
+}
+
+function classificationBg(classification: string): string | undefined {
+  if (classification === "NEAR_DUPLICATE") return "rgba(35, 134, 54, 0.08)";
+  if (classification === "POSSIBLE_SUBTYPE") return "rgba(31, 111, 235, 0.06)";
+  if (classification === "POSSIBLE_SUPERSET") return "rgba(137, 87, 229, 0.06)";
+  return undefined;
 }
 
 function DiscoveryRelationsTable({ relations, onSelect }: { relations: DiscoveryRelation[]; onSelect: (relation: DiscoveryRelation) => void }) {

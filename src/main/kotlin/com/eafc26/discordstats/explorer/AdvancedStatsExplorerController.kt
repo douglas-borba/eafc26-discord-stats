@@ -121,6 +121,47 @@ class AdvancedStatsExplorerController(
         )
     }
 
+    @GetMapping("/clubs/{clubId}/anchor")
+    fun anchorInvestigation(
+        @PathVariable clubId: String,
+        @RequestParam(defaultValue = "10") limit: Int,
+        @RequestParam anchorType: String,
+        @RequestParam(required = false) aggregateIndex: Int?,
+        @RequestParam(required = false) code: Int?,
+        @RequestParam(required = false) metricName: String?,
+    ): ResponseEntity<AdvancedStatsDiscoveryEngine.AnchorInvestigation> {
+        if (limit < 1 || limit > 20) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be 1-20")
+        if (anchorType !in setOf("AGGREGATE_CODE", "KNOWN_METRIC", "CONFIRMED_ADVANCED")) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "anchorType must be AGGREGATE_CODE, KNOWN_METRIC, or CONFIRMED_ADVANCED")
+        }
+        if (anchorType == "AGGREGATE_CODE" && (aggregateIndex == null || code == null)) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "aggregateIndex and code required for AGGREGATE_CODE")
+        }
+        if (anchorType == "KNOWN_METRIC" && metricName == null) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "metricName required for KNOWN_METRIC")
+        }
+        if (anchorType == "CONFIRMED_ADVANCED" && (aggregateIndex == null || code == null)) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "aggregateIndex and code required for CONFIRMED_ADVANCED")
+        }
+        return ResponseEntity.ok(
+            explorerService.anchorInvestigation(ClubId(clubId), limit, anchorType, aggregateIndex, code, metricName),
+        )
+    }
+
+    @GetMapping("/clubs/{clubId}/family")
+    fun familyInvestigation(
+        @PathVariable clubId: String,
+        @RequestParam(defaultValue = "10") limit: Int,
+        @RequestParam aggregateIndex: Int,
+        @RequestParam codes: List<Int>,
+    ): ResponseEntity<AdvancedStatsDiscoveryEngine.FamilyInvestigation> {
+        if (limit < 1 || limit > 20) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be 1-20")
+        if (codes.size < 2 || codes.size > 20) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "2-20 codes required")
+        return ResponseEntity.ok(
+            explorerService.familyInvestigation(ClubId(clubId), limit, aggregateIndex, codes),
+        )
+    }
+
     @GetMapping("/registry")
     fun registry(): ResponseEntity<List<CodeMapping>> {
         return ResponseEntity.ok(AdvancedStatsCodeRegistry.allMappings())
