@@ -339,6 +339,19 @@ class AdvancedStatsExplorerService(
         return AdvancedStatsDiscoveryEngine().investigateFamily(samples, aggregateIndex, codes)
     }
 
+    fun residualExplainer(
+        clubId: ClubId, limit: Int = 10,
+        anchorType: String, aggregateIndex: Int?, code: Int?, metricName: String?,
+        candidateAggregateIndex: Int, candidateCode: Int,
+    ): AdvancedStatsDiscoveryEngine.ResidualExplainerResult {
+        val matches = matchRepository.findRecent(clubId, (limit * DISCOVERY_SCAN_MULTIPLIER).coerceAtMost(MAX_DISCOVERY_CANONICAL_MATCHES))
+            .filter(::hasRawAggregateCoverage).take(limit)
+        val samples = matches.flatMap { canonical -> discoverySamples(clubId, canonical) }
+        val anchor = AdvancedStatsDiscoveryEngine.AnchorRef(anchorType, aggregateIndex, code, metricName)
+        val request = AdvancedStatsDiscoveryEngine.ResidualExplainerRequest(anchor, candidateAggregateIndex, candidateCode)
+        return AdvancedStatsDiscoveryEngine().explainResiduals(samples, request)
+    }
+
     private fun buildPlayerData(
         player: PlayerMatchPerformance,
         canonical: CanonicalMatch,

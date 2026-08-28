@@ -167,6 +167,46 @@ type FamilyInvestigation = { aggregateIndex: number; codes: number[]; matrix: Fa
 type DatasetMetadata = { rawMatchesAnalyzed: number; playerMatchObservations: number; distinctPlayers: number; distinctMatches: number };
 type AnchorInvestigation = { anchor: AnchorProfile; relationships: AnchorRelationship[]; conditionalProfiles: ConditionalProfileEntry[]; dataset: DatasetMetadata };
 
+// V3 — Residual Explainer types
+type ResidualGroup = { direction: string; count: number; matches: number; players: number };
+type ResidualCodeStats = { count: number; activeCount: number; activationRate: number | null; mean: number | null; median: number | null; min: number | null; max: number | null };
+type ResidualContrast = { activationRateDelta: number | null; meanDelta: number | null };
+type ResidualDiscriminatorScore = {
+  total: number; activationDeltaComponent: number; valueDeltaComponent: number; consistencyComponent: number;
+  sampleSizeComponent: number; matchDiversityComponent: number; playerDiversityComponent: number;
+  directionSpecificityComponent: number; singlePlayerPenalty: number; singleMatchPenalty: number; tinySamplePenalty: number;
+};
+type ResidualDiscriminator = {
+  aggregateIndex: number; code: number; registryStatus: string; registryLabel: string | null;
+  technicalClassification: string; totalObservations: number; activeObservations: number;
+  negative: ResidualCodeStats; zero: ResidualCodeStats; positive: ResidualCodeStats;
+  positiveVsZero: ResidualContrast; negativeVsZero: ResidualContrast; positiveVsNegative: ResidualContrast;
+  pActiveGivenPositive: number | null; pActiveGivenZero: number | null; pActiveGivenNegative: number | null;
+  score: ResidualDiscriminatorScore; warnings: string[]; distinctMatches: number; distinctPlayers: number;
+};
+type ResidualEvidenceRow = {
+  matchId: string; timestamp: string; playerId: string; playerName: string | null;
+  anchorValue: number; candidateValue: number; residual: number; residualDirection: string; investigatedCodeValue: number;
+  goals: number | null; assists: number | null; shots: number | null;
+  passesAttempted: number | null; passesCompleted: number | null;
+  tacklesAttempted: number | null; tacklesCompleted: number | null;
+  code112: number | null; code115: number | null; code152: number | null; code174: number | null;
+  matchCompletion: string | null;
+};
+type ResidualSignatureEntry = { aggregateIndex: number; code: number; value: number; registryStatus: string; registryLabel: string | null; isTopDiscriminator: boolean };
+type ResidualSignature = {
+  matchId: string; playerId: string; playerName: string | null;
+  anchorValue: number; candidateValue: number; residual: number; residualDirection: string;
+  matchCompletion: string | null; relevantCodes: ResidualSignatureEntry[];
+};
+type ResidualExplainerResult = {
+  anchor: AnchorRef; candidateAggregateIndex: number; candidateCode: number;
+  candidateRegistryStatus: string; candidateLabel: string | null;
+  groups: ResidualGroup[]; discriminators: ResidualDiscriminator[];
+  evidence: ResidualEvidenceRow[]; signatures: ResidualSignature[];
+  dataset: DatasetMetadata;
+};
+
 type View = "matches" | "players" | "detail" | "compare" | "discovery" | "anchor";
 
 export function AdvancedStatsExplorer() {
@@ -203,6 +243,9 @@ export function AdvancedStatsExplorer() {
   const [anchorDnfFilter, setAnchorDnfFilter] = useState("ALL");
   const [familyData, setFamilyData] = useState<FamilyInvestigation | null>(null);
   const [familyCodes, setFamilyCodes] = useState("");
+  const [residualData, setResidualData] = useState<ResidualExplainerResult | null>(null);
+  const [residualFilter, setResidualFilter] = useState("ALL");
+  const [selectedDiscriminator, setSelectedDiscriminator] = useState<ResidualDiscriminator | null>(null);
 
   const fetchJson = useCallback(async (url: string) => {
     const res = await fetch(url, { cache: "no-store" });
@@ -365,6 +408,32 @@ export function AdvancedStatsExplorer() {
       setLoading(false);
     }
   }, [activeClubId, familyCodes, anchorAggregateIndex, fetchJson]);
+
+  const loadResidualExplainer = useCallback(async (rel: AnchorRelationship) => {
+    if (!activeClubId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({
+        limit: "10", anchorType,
+        candidateAggregateIndex: String(rel.candidateAggregateIndex),
+        candidateCode: String(rel.candidateCode),
+      });
+      if (anchorType === "AGGREGATE_CODE" || anchorType === "CONFIRMED_ADVANCED") {
+        params.set("aggregateIndex", anchorAggregateIndex);
+        params.set("code", anchorCode);
+      }
+      if (anchorType === "KNOWN_METRIC") params.set("metricName", anchorMetric);
+      const data = await fetchJson(`/api/admin/explorer/clubs/${activeClubId}/residual-explainer?${params}`);
+      setResidualData(data);
+      setResidualFilter("ALL");
+      setSelectedDiscriminator(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Residual explainer failed");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeClubId, anchorType, anchorAggregateIndex, anchorCode, anchorMetric, fetchJson]);
 
   return (
     <div style={{ fontFamily: "monospace", maxWidth: 1200 }}>
@@ -1010,6 +1079,13 @@ function AnchorView({
             dnfFilter={dnfFilter}
             onToggleDifferencesOnly={onToggleDifferencesOnly}
             onClose={() => onSelectRelationship(null)}
+            onExplainResiduals={() => loadResidualExplainer(selectedRelationship)}
+            residualData={residualData}
+            residualFilter={residualFilter}
+            onResidualFilter={setResidualFilter}
+            selectedDiscriminator={selectedDiscriminator}
+            onSelectDiscriminator={setSelectedDiscriminator}
+            loading={loading}
           />
         )}
 
@@ -1055,9 +1131,14 @@ function AnchorView({
 
 function AnchorRelationshipDetail({
   relationship, anchorLabel, showDifferencesOnly, dnfFilter, onToggleDifferencesOnly, onClose,
+  onExplainResiduals, residualData, residualFilter, onResidualFilter, selectedDiscriminator, onSelectDiscriminator, loading,
 }: {
   relationship: AnchorRelationship; anchorLabel: string; showDifferencesOnly: boolean; dnfFilter: string;
   onToggleDifferencesOnly: () => void; onClose: () => void;
+  onExplainResiduals: () => void; residualData: ResidualExplainerResult | null;
+  residualFilter: string; onResidualFilter: (f: string) => void;
+  selectedDiscriminator: ResidualDiscriminator | null; onSelectDiscriminator: (d: ResidualDiscriminator | null) => void;
+  loading: boolean;
 }) {
   const r = relationship;
   const rows = showDifferencesOnly ? r.differenceCases : r.evidenceObservations;
@@ -1151,6 +1232,171 @@ function AnchorRelationshipDetail({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* V3 — Residual Explainer */}
+      {r.informativeEqualityRate < 1.0 && (
+        <div style={{ marginTop: 16 }}>
+          <button onClick={onExplainResiduals} disabled={loading} style={{ ...btnStyle, background: "#388bfd", color: "#fff", fontWeight: 600 }}>
+            {loading ? "Loading…" : residualData ? "Reload Residual Explainer" : "Explain differences"}
+          </button>
+        </div>
+      )}
+
+      {residualData && (
+        <div style={{ marginTop: 16 }}>
+          <h4 style={{ ...h3Style, fontSize: 14 }}>Residual Explainer — {residualData.candidateLabel ?? `agg${residualData.candidateAggregateIndex}[${residualData.candidateCode}]`}</h4>
+          <p style={{ color: "#8b949e", fontSize: 11, marginBottom: 8 }}>
+            Residual = anchorValue − candidateValue. Groups: NEGATIVE (candidate &gt; anchor), ZERO (equal), POSITIVE (anchor &gt; candidate).
+          </p>
+
+          {/* Groups summary */}
+          <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+            {residualData.groups.map((g) => (
+              <div key={g.direction} style={{ padding: "6px 12px", background: g.direction === "ZERO" ? "#1a3a1a" : g.direction === "POSITIVE" ? "#3a2a1a" : "#1a2a3a", borderRadius: 6, fontSize: 12 }}>
+                <strong style={{ color: g.direction === "ZERO" ? "#3fb950" : g.direction === "POSITIVE" ? "#f0883e" : "#58a6ff" }}>{g.direction}</strong>
+                <span style={{ color: "#8b949e", marginLeft: 8 }}>{g.count} obs · {g.matches} matches · {g.players} players</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Discriminators table */}
+          {residualData.discriminators.length > 0 && (
+            <div style={{ overflowX: "auto", marginBottom: 12 }}>
+              <h5 style={{ color: "#c9d1d9", fontSize: 12, marginBottom: 6 }}>Residual Discriminators (ranked by score)</h5>
+              <table style={tableStyle}>
+                <thead><tr>
+                  <th style={thStyle}>Agg</th><th style={thStyle}>Code</th><th style={thStyle}>Status</th>
+                  <th style={thStyle}>Classification</th>
+                  <th style={thStyle}>NEG act%</th><th style={thStyle}>ZERO act%</th><th style={thStyle}>POS act%</th>
+                  <th style={thStyle}>Δ pos-zero</th><th style={thStyle}>Δ neg-zero</th>
+                  <th style={thStyle}>Matches</th><th style={thStyle}>Players</th><th style={thStyle}>Score</th>
+                  <th style={thStyle}>Warnings</th><th style={thStyle}></th>
+                </tr></thead>
+                <tbody>
+                  {residualData.discriminators.map((d) => {
+                    const cls = d.technicalClassification;
+                    const clsColor = cls === "POSITIVE_RESIDUAL_ASSOCIATED" ? "#f0883e" : cls === "NEGATIVE_RESIDUAL_ASSOCIATED" ? "#58a6ff" : cls === "DIFFERENCE_ASSOCIATED" ? "#d2a8ff" : cls === "INSUFFICIENT_EVIDENCE" ? "#484f58" : "#8b949e";
+                    return (
+                      <tr key={`${d.aggregateIndex}-${d.code}`} style={{ borderBottom: "1px solid #21262d", cursor: "pointer", background: selectedDiscriminator?.code === d.code && selectedDiscriminator?.aggregateIndex === d.aggregateIndex ? "#1c2333" : undefined }} onClick={() => onSelectDiscriminator(selectedDiscriminator?.code === d.code && selectedDiscriminator?.aggregateIndex === d.aggregateIndex ? null : d)}>
+                        <td style={tdStyle}>{d.aggregateIndex}</td>
+                        <td style={tdStyle}>{d.code}</td>
+                        <td style={{ ...tdStyle, fontSize: 10 }}>{d.registryStatus}{d.registryLabel ? ` (${d.registryLabel})` : ""}</td>
+                        <td style={{ ...tdStyle, color: clsColor, fontSize: 10, fontWeight: 600 }}>{cls}</td>
+                        <td style={tdStyle}>{percent(d.negative.activationRate)}</td>
+                        <td style={tdStyle}>{percent(d.zero.activationRate)}</td>
+                        <td style={tdStyle}>{percent(d.positive.activationRate)}</td>
+                        <td style={tdStyle}>{d.positiveVsZero.activationRateDelta != null ? (d.positiveVsZero.activationRateDelta > 0 ? "+" : "") + (d.positiveVsZero.activationRateDelta * 100).toFixed(1) + "%" : "—"}</td>
+                        <td style={tdStyle}>{d.negativeVsZero.activationRateDelta != null ? (d.negativeVsZero.activationRateDelta > 0 ? "+" : "") + (d.negativeVsZero.activationRateDelta * 100).toFixed(1) + "%" : "—"}</td>
+                        <td style={tdStyle}>{d.distinctMatches}</td>
+                        <td style={tdStyle}>{d.distinctPlayers}</td>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>{d.score.total.toFixed(2)}</td>
+                        <td style={{ ...tdStyle, fontSize: 10, color: "#f85149" }}>{d.warnings.length > 0 ? d.warnings.join(", ") : ""}</td>
+                        <td style={tdStyle}><button style={{ ...btnStyle, fontSize: 10, padding: "2px 6px" }}>inspect</button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Selected discriminator detail */}
+          {selectedDiscriminator && (
+            <div style={{ padding: 10, background: "#161b22", borderRadius: 6, marginBottom: 12, fontSize: 11 }}>
+              <h5 style={{ color: "#c9d1d9", fontSize: 12, marginBottom: 6 }}>
+                Discriminator Detail — agg{selectedDiscriminator.aggregateIndex}[{selectedDiscriminator.code}]
+                {selectedDiscriminator.registryLabel ? ` (${selectedDiscriminator.registryLabel})` : ""}
+              </h5>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 8 }}>
+                {(["negative", "zero", "positive"] as const).map((dir) => {
+                  const s = selectedDiscriminator[dir];
+                  return (
+                    <div key={dir} style={{ padding: 8, background: "#0d1117", borderRadius: 4 }}>
+                      <strong style={{ color: dir === "zero" ? "#3fb950" : dir === "positive" ? "#f0883e" : "#58a6ff" }}>{dir.toUpperCase()}</strong>
+                      <div style={{ color: "#8b949e", marginTop: 4 }}>
+                        <div>Obs: {s.count} · Active: {s.activeCount} · Rate: {percent(s.activationRate)}</div>
+                        <div>Mean: {s.mean?.toFixed(2) ?? "—"} · Median: {s.median ?? "—"}</div>
+                        <div>Min: {s.min ?? "—"} · Max: {s.max ?? "—"}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 8, color: "#8b949e" }}>
+                <div>P(active|POS): {percent(selectedDiscriminator.pActiveGivenPositive)} · P(active|ZERO): {percent(selectedDiscriminator.pActiveGivenZero)} · P(active|NEG): {percent(selectedDiscriminator.pActiveGivenNegative)}</div>
+                <div style={{ marginTop: 4, fontSize: 10 }}>
+                  Score components: actDelta={selectedDiscriminator.score.activationDeltaComponent.toFixed(2)} valDelta={selectedDiscriminator.score.valueDeltaComponent.toFixed(2)} consistency={selectedDiscriminator.score.consistencyComponent.toFixed(2)} sample={selectedDiscriminator.score.sampleSizeComponent.toFixed(2)} matchDiv={selectedDiscriminator.score.matchDiversityComponent.toFixed(2)} playerDiv={selectedDiscriminator.score.playerDiversityComponent.toFixed(2)} dirSpec={selectedDiscriminator.score.directionSpecificityComponent.toFixed(2)} | penalties: player={selectedDiscriminator.score.singlePlayerPenalty.toFixed(2)} match={selectedDiscriminator.score.singleMatchPenalty.toFixed(2)} tiny={selectedDiscriminator.score.tinySamplePenalty.toFixed(2)}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Evidence table */}
+          <div style={{ marginBottom: 8 }}>
+            <span style={{ color: "#8b949e", fontSize: 11, marginRight: 8 }}>Evidence filter:</span>
+            {["ALL", "NEGATIVE", "POSITIVE"].map((f) => (
+              <button key={f} onClick={() => onResidualFilter(f)} style={{ ...btnStyle, fontSize: 10, padding: "2px 8px", marginRight: 4, background: residualFilter === f ? "#388bfd" : undefined, color: residualFilter === f ? "#fff" : undefined }}>{f}</button>
+            ))}
+          </div>
+          {(() => {
+            const ev = residualFilter === "ALL" ? residualData.evidence : residualData.evidence.filter((e) => e.residualDirection === residualFilter);
+            return ev.length > 0 ? (
+              <div style={{ overflowX: "auto", marginBottom: 12 }}>
+                <table style={tableStyle}>
+                  <thead><tr>
+                    <th style={thStyle}>Match</th><th style={thStyle}>Player</th>
+                    <th style={thStyle}>Anchor</th><th style={thStyle}>Candidate</th><th style={thStyle}>Residual</th><th style={thStyle}>Dir</th>
+                    <th style={thStyle}>Investigated</th>
+                    <th style={thStyle}>Goals</th><th style={thStyle}>Assists</th><th style={thStyle}>Passes</th>
+                    <th style={thStyle}>Completion</th>
+                  </tr></thead>
+                  <tbody>
+                    {ev.map((e, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #21262d" }}>
+                        <td style={{ ...tdStyle, fontSize: 10 }}>{e.matchId.slice(-6)}</td>
+                        <td style={{ ...tdStyle, fontSize: 10 }}>{e.playerName ?? e.playerId.slice(-6)}</td>
+                        <td style={tdStyle}>{e.anchorValue}</td>
+                        <td style={tdStyle}>{e.candidateValue}</td>
+                        <td style={{ ...tdStyle, color: e.residual > 0 ? "#f0883e" : e.residual < 0 ? "#58a6ff" : "#3fb950", fontWeight: 600 }}>{e.residual > 0 ? "+" : ""}{e.residual}</td>
+                        <td style={{ ...tdStyle, fontSize: 10 }}>{e.residualDirection}</td>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>{e.investigatedCodeValue}</td>
+                        <td style={tdStyle}>{e.goals ?? "—"}</td>
+                        <td style={tdStyle}>{e.assists ?? "—"}</td>
+                        <td style={tdStyle}>{e.passesCompleted ?? "—"}</td>
+                        <td style={{ ...tdStyle, fontSize: 10 }}>{e.matchCompletion ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p style={{ color: "#484f58", fontSize: 11 }}>No evidence rows for this filter.</p>;
+          })()}
+
+          {/* Residual Signatures */}
+          {residualData.signatures.length > 0 && (
+            <div>
+              <h5 style={{ color: "#c9d1d9", fontSize: 12, marginBottom: 6 }}>Residual Signatures — Non-zero residual observations</h5>
+              <p style={{ color: "#8b949e", fontSize: 10, marginBottom: 8 }}>Code activations for each observation where anchor ≠ candidate. Top discriminators highlighted.</p>
+              {residualData.signatures.map((sig, si) => (
+                <div key={si} style={{ padding: 8, background: "#0d1117", borderRadius: 4, marginBottom: 6, fontSize: 11 }}>
+                  <div style={{ color: "#c9d1d9", marginBottom: 4 }}>
+                    <strong style={{ color: sig.residual > 0 ? "#f0883e" : "#58a6ff" }}>{sig.residualDirection}</strong>
+                    <span style={{ color: "#8b949e", marginLeft: 8 }}>residual={sig.residual > 0 ? "+" : ""}{sig.residual} · anchor={sig.anchorValue} · candidate={sig.candidateValue}</span>
+                    <span style={{ color: "#484f58", marginLeft: 8 }}>{sig.playerName ?? sig.playerId.slice(-6)} · {sig.matchId.slice(-6)}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {sig.relevantCodes.map((rc, ri) => (
+                      <span key={ri} style={{ padding: "2px 6px", borderRadius: 3, fontSize: 10, background: rc.isTopDiscriminator ? "#1c2333" : "#161b22", border: rc.isTopDiscriminator ? "1px solid #388bfd" : "1px solid #21262d", color: rc.isTopDiscriminator ? "#58a6ff" : "#8b949e" }}>
+                        agg{rc.aggregateIndex}[{rc.code}]={rc.value}{rc.registryLabel ? ` (${rc.registryLabel})` : ""}{rc.registryStatus === "CONFIRMED" ? " ✓" : ""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -1264,7 +1510,10 @@ function relationPattern(relation: DiscoveryRelation): string {
   return `${a} == ${b}${c}`;
 }
 
-function percent(value: number): string { return `${(value * 100).toFixed(1)}%`; }
+function percent(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${(value * 100).toFixed(1)}%`;
+}
 
 function EvidenceBadge({ tier }: { tier: string }) {
   const color = tier === "STRONG_CANDIDATE" ? "#238636" : tier === "CANDIDATE" ? "#1f6feb" : "#30363d";

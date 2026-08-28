@@ -581,11 +581,18 @@ class AdvancedStatsDiscoveryEngine(
     private fun ratio(numerator: Int, denominator: Int): Double = if (denominator == 0) 0.0 else numerator.toDouble() / denominator
     private fun median(sorted: List<Int>): Double = when { sorted.isEmpty() -> 0.0; sorted.size % 2 == 1 -> sorted[sorted.size / 2].toDouble(); else -> (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]).toDouble() / 2 }
     private fun pearson(x: List<Double>, y: List<Double>): Double? {
+        if (x.isEmpty()) return null
         val meanX = x.average(); val meanY = y.average()
+        if (!meanX.isFinite() || !meanY.isFinite()) return null
         val numerator = x.indices.sumOf { (x[it] - meanX) * (y[it] - meanY) }
-        val denominator = sqrt(x.sumOf { (it - meanX) * (it - meanX) } * y.sumOf { (it - meanY) * (it - meanY) })
-        return if (denominator == 0.0) null else numerator / denominator
+        val product = x.sumOf { (it - meanX) * (it - meanX) } * y.sumOf { (it - meanY) * (it - meanY) }
+        if (product <= 0.0) return null
+        val result = numerator / sqrt(product)
+        return if (result.isFinite()) result else null
     }
+    private fun safeRatio(numerator: Int, denominator: Int): Double? =
+        if (denominator == 0) null else (numerator.toDouble() / denominator).let { if (it.isFinite()) it else null }
+    private fun Double.finiteOrNull(): Double? = if (isFinite()) this else null
 
     // ===================================================================
     // V2 — Anchor-based semantic investigation
@@ -1065,6 +1072,218 @@ class AdvancedStatsDiscoveryEngine(
             return ranks.toList()
         }
         return pearson(rank(x), rank(y))
+    }
+
+    // ===================================================================
+    // V3 — Residual Explainer
+    // ===================================================================
+
+    data class ResidualExplainerRequest(
+        val anchorRef: AnchorRef,
+        val candidateAggregateIndex: Int,
+        val candidateCode: Int,
+    )
+
+    data class ResidualGroup(val direction: String, val count: Int, val matches: Int, val players: Int)
+
+    data class ResidualCodeStats(
+        val count: Int, val activeCount: Int, val activationRate: Double?,
+        val mean: Double?, val median: Double?, val min: Int?, val max: Int?,
+    )
+
+    data class ResidualContrast(val activationRateDelta: Double?, val meanDelta: Double?)
+
+    data class ResidualDiscriminatorScore(
+        val total: Double,
+        val activationDeltaComponent: Double, val valueDeltaComponent: Double,
+        val consistencyComponent: Double, val sampleSizeComponent: Double,
+        val matchDiversityComponent: Double, val playerDiversityComponent: Double,
+        val directionSpecificityComponent: Double,
+        val singlePlayerPenalty: Double, val singleMatchPenalty: Double, val tinySamplePenalty: Double,
+    )
+
+    data class ResidualDiscriminator(
+        val aggregateIndex: Int, val code: Int,
+        val registryStatus: String, val registryLabel: String?,
+        val technicalClassification: String,
+        val totalObservations: Int, val activeObservations: Int,
+        val negative: ResidualCodeStats, val zero: ResidualCodeStats, val positive: ResidualCodeStats,
+        val positiveVsZero: ResidualContrast, val negativeVsZero: ResidualContrast, val positiveVsNegative: ResidualContrast,
+        val pActiveGivenPositive: Double?, val pActiveGivenZero: Double?, val pActiveGivenNegative: Double?,
+        val score: ResidualDiscriminatorScore, val warnings: List<String>,
+        val distinctMatches: Int, val distinctPlayers: Int,
+    )
+
+    data class ResidualEvidenceRow(
+        val matchId: String, val timestamp: String, val playerId: String, val playerName: String?,
+        val anchorValue: Int, val candidateValue: Int, val residual: Int, val residualDirection: String,
+        val investigatedCodeValue: Int,
+        val goals: Int?, val assists: Int?, val shots: Int?,
+        val passesAttempted: Int?, val passesCompleted: Int?,
+        val tacklesAttempted: Int?, val tacklesCompleted: Int?,
+        val code112: Int?, val code115: Int?, val code152: Int?, val code174: Int?,
+        val matchCompletion: String?,
+    )
+
+    data class ResidualSignatureEntry(
+        val aggregateIndex: Int, val code: Int, val value: Int,
+        val registryStatus: String, val registryLabel: String?, val isTopDiscriminator: Boolean,
+    )
+
+    data class ResidualSignature(
+        val matchId: String, val playerId: String, val playerName: String?,
+        val anchorValue: Int, val candidateValue: Int, val residual: Int, val residualDirection: String,
+        val matchCompletion: String?, val relevantCodes: List<ResidualSignatureEntry>,
+    )
+
+    data class ResidualExplainerResult(
+        val anchor: AnchorRef, val candidateAggregateIndex: Int, val candidateCode: Int,
+        val candidateRegistryStatus: String, val candidateLabel: String?,
+        val groups: List<ResidualGroup>, val discriminators: List<ResidualDiscriminator>,
+        val evidence: List<ResidualEvidenceRow>, val signatures: List<ResidualSignature>,
+        val dataset: DatasetMetadata,
+    )
+
+    private data class ResidualObs(
+        val anchor: AnchorObservation, val candidateValue: Int, val residual: Int,
+        val direction: String, val sample: AggregateSample,
+    )
+
+    fun explainResiduals(samples: List<AggregateSample>, request: ResidualExplainerRequest): ResidualExplainerResult {
+        val anchorValues = extractAnchorValues(samples, request.anchorRef)
+        val anchorByKey = anchorValues.associateBy { it.sampleKey }
+        val candidateSamples = samples.filter { it.aggregateIndex == request.candidateAggregateIndex }
+            .associateBy { "${it.matchId}:${it.playerId}" }
+
+        val observations = anchorByKey.keys.intersect(candidateSamples.keys).sorted().map { key ->
+            val ao = anchorByKey.getValue(key)
+            val cs = candidateSamples.getValue(key)
+            val cv = cs.sparseValues[request.candidateCode] ?: 0
+            val r = ao.anchorValue - cv
+            ResidualObs(ao, cv, r, if (r < 0) "NEGATIVE" else if (r > 0) "POSITIVE" else "ZERO", cs)
+        }
+
+        val neg = observations.filter { it.direction == "NEGATIVE" }
+        val zero = observations.filter { it.direction == "ZERO" }
+        val pos = observations.filter { it.direction == "POSITIVE" }
+
+        fun group(dir: String, obs: List<ResidualObs>) = ResidualGroup(dir, obs.size,
+            obs.map { it.anchor.matchId }.toSet().size, obs.map { it.anchor.playerId }.toSet().size)
+        val groups = listOf(group("NEGATIVE", neg), group("ZERO", zero), group("POSITIVE", pos))
+
+        val allCodes = samples.flatMap { s -> s.sparseValues.keys.map { CodeRef(s.aggregateIndex, it) } }.toSet()
+            .filter { !(it.aggregateIndex == request.candidateAggregateIndex && it.code == request.candidateCode) }
+            .sortedWith(compareBy({ it.aggregateIndex }, { it.code }))
+
+        val discriminators = allCodes.map { cr -> residualDiscriminator(cr, observations, neg, zero, pos) }
+            .filter { it.totalObservations > 0 }
+            .sortedByDescending { it.score.total }
+
+        val topCodes = discriminators.take(20).map { CodeRef(it.aggregateIndex, it.code) }.toSet()
+
+        val diffObs = observations.filter { it.direction != "ZERO" }
+            .sortedWith(compareBy<ResidualObs> { it.direction }.thenByDescending { abs(it.residual) })
+
+        val evidence = diffObs.take(100).map { obs ->
+            ResidualEvidenceRow(obs.anchor.matchId, obs.anchor.timestamp, obs.anchor.playerId, obs.anchor.playerName,
+                obs.anchor.anchorValue, obs.candidateValue, obs.residual, obs.direction, 0,
+                obs.anchor.knownMetrics["goals"], obs.anchor.knownMetrics["assists"], obs.anchor.knownMetrics["shots"],
+                obs.anchor.knownMetrics["passesAttempted"], obs.anchor.knownMetrics["passesCompleted"],
+                obs.anchor.knownMetrics["tacklesAttempted"], obs.anchor.knownMetrics["tacklesCompleted"],
+                obs.sample.sparseValues[112], obs.sample.sparseValues[115], obs.sample.sparseValues[152], obs.sample.sparseValues[174],
+                obs.anchor.matchCompletion)
+        }
+
+        val signatures = diffObs.take(50).map { obs ->
+            val relevant = allCodes
+                .filter { cr -> cr.aggregateIndex == obs.sample.aggregateIndex || cr.aggregateIndex == obs.anchor.aggregateIndex }
+                .mapNotNull { cr ->
+                    val v = if (cr.aggregateIndex == obs.sample.aggregateIndex) obs.sample.sparseValues[cr.code] ?: 0
+                            else obs.anchor.sparseValues[cr.code] ?: 0
+                    if (v == 0 && cr !in topCodes) return@mapNotNull null
+                    val m = AdvancedStatsCodeRegistry.lookup(cr.aggregateIndex, cr.code)
+                    ResidualSignatureEntry(cr.aggregateIndex, cr.code, v, m.confidence.name, m.metricName, cr in topCodes)
+                }
+                .sortedWith(compareByDescending<ResidualSignatureEntry> { it.isTopDiscriminator }.thenBy { it.aggregateIndex }.thenBy { it.code })
+                .take(25)
+            ResidualSignature(obs.anchor.matchId, obs.anchor.playerId, obs.anchor.playerName,
+                obs.anchor.anchorValue, obs.candidateValue, obs.residual, obs.direction, obs.anchor.matchCompletion, relevant)
+        }
+
+        val cm = AdvancedStatsCodeRegistry.lookup(request.candidateAggregateIndex, request.candidateCode)
+        return ResidualExplainerResult(request.anchorRef, request.candidateAggregateIndex, request.candidateCode,
+            cm.confidence.name, cm.metricName, groups, discriminators, evidence, signatures,
+            DatasetMetadata(samples.map { it.matchId }.toSet().size, samples.map { "${it.matchId}:${it.playerId}" }.toSet().size,
+                samples.map { it.playerId }.toSet().size, samples.map { it.matchId }.toSet().size))
+    }
+
+    private fun residualDiscriminator(
+        cr: CodeRef, all: List<ResidualObs>, neg: List<ResidualObs>, zero: List<ResidualObs>, pos: List<ResidualObs>,
+    ): ResidualDiscriminator {
+        fun codeValue(obs: ResidualObs): Int =
+            if (cr.aggregateIndex == obs.sample.aggregateIndex) obs.sample.sparseValues[cr.code] ?: 0
+            else obs.anchor.sparseValues[cr.code] ?: 0
+
+        fun stats(group: List<ResidualObs>): ResidualCodeStats {
+            if (group.isEmpty()) return ResidualCodeStats(0, 0, null, null, null, null, null)
+            val vals = group.map { codeValue(it) }
+            val active = vals.count { it != 0 }
+            val sorted = vals.sorted()
+            return ResidualCodeStats(group.size, active, safeRatio(active, group.size),
+                vals.average().finiteOrNull(), median(sorted).finiteOrNull(), sorted.first(), sorted.last())
+        }
+
+        val negS = stats(neg); val zeroS = stats(zero); val posS = stats(pos)
+        val allVals = all.map { codeValue(it) }
+        val totalActive = allVals.count { it != 0 }
+
+        fun contrast(a: ResidualCodeStats, b: ResidualCodeStats) = ResidualContrast(
+            if (a.activationRate != null && b.activationRate != null) (a.activationRate - b.activationRate).finiteOrNull() else null,
+            if (a.mean != null && b.mean != null) (a.mean - b.mean).finiteOrNull() else null)
+
+        val diff = neg + pos
+        val dMatches = diff.map { it.anchor.matchId }.toSet().size
+        val dPlayers = diff.map { it.anchor.playerId }.toSet().size
+
+        val warnings = mutableListOf<String>()
+        if (diff.size < 5) warnings.add("SMALL_SAMPLE")
+        if (dPlayers == 1 && diff.isNotEmpty()) warnings.add("SINGLE_PLAYER_DOMINATED")
+        if (dMatches == 1 && diff.isNotEmpty()) warnings.add("SINGLE_MATCH_DOMINATED")
+
+        val posVsZero = contrast(posS, zeroS); val negVsZero = contrast(negS, zeroS); val posVsNeg = contrast(posS, negS)
+        val maxADelta = maxOf(abs(posVsZero.activationRateDelta ?: 0.0), abs(negVsZero.activationRateDelta ?: 0.0))
+        val maxMDelta = maxOf(abs(posVsZero.meanDelta ?: 0.0), abs(negVsZero.meanDelta ?: 0.0))
+        val dirSpec = abs((posS.activationRate ?: 0.0) - (negS.activationRate ?: 0.0))
+
+        val actComp = maxADelta * 25
+        val valComp = (maxMDelta.coerceAtMost(20.0) / 20) * 15
+        val consComp = if (zeroS.count > 0 && (zeroS.activationRate ?: 0.0) < 0.1 && maxADelta > 0.5) 10.0
+                       else if (maxADelta > 0.3) 5.0 else 0.0
+        val sampComp = (diff.size.coerceAtMost(20).toDouble() / 20) * 12
+        val matchComp = (dMatches.coerceAtMost(5).toDouble() / 5) * 10
+        val playerComp = (dPlayers.coerceAtMost(4).toDouble() / 4) * 8
+        val dirComp = dirSpec * 10
+        val spPen = if (dPlayers == 1 && diff.isNotEmpty()) -15.0 else if (dPlayers == 2) -5.0 else 0.0
+        val smPen = if (dMatches == 1 && diff.isNotEmpty()) -12.0 else if (dMatches == 2) -4.0 else 0.0
+        val tinyPen = if (diff.size < 3) -20.0 else if (diff.size < 5) -8.0 else 0.0
+
+        val total = actComp + valComp + consComp + sampComp + matchComp + playerComp + dirComp + spPen + smPen + tinyPen
+
+        val zar = zeroS.activationRate ?: 0.0
+        val classification = when {
+            diff.size < 3 -> "INSUFFICIENT_EVIDENCE"
+            (posS.activationRate ?: 0.0) > zar + 0.3 && (negS.activationRate ?: 0.0) <= zar + 0.1 -> "POSITIVE_RESIDUAL_ASSOCIATED"
+            (negS.activationRate ?: 0.0) > zar + 0.3 && (posS.activationRate ?: 0.0) <= zar + 0.1 -> "NEGATIVE_RESIDUAL_ASSOCIATED"
+            maxADelta > 0.2 -> "DIFFERENCE_ASSOCIATED"
+            else -> "NON_DISCRIMINATING"
+        }
+
+        val m = AdvancedStatsCodeRegistry.lookup(cr.aggregateIndex, cr.code)
+        return ResidualDiscriminator(cr.aggregateIndex, cr.code, m.confidence.name, m.metricName, classification,
+            all.size, totalActive, negS, zeroS, posS, posVsZero, negVsZero, posVsNeg,
+            safeRatio(posS.activeCount, pos.size), safeRatio(zeroS.activeCount, zero.size), safeRatio(negS.activeCount, neg.size),
+            ResidualDiscriminatorScore(total, actComp, valComp, consComp, sampComp, matchComp, playerComp, dirComp, spPen, smPen, tinyPen),
+            warnings, dMatches, dPlayers)
     }
 
     private fun emptyAnchorInvestigation(anchor: AnchorRef, samples: List<AggregateSample>) = AnchorInvestigation(

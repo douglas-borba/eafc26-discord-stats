@@ -162,6 +162,25 @@ class AdvancedStatsExplorerController(
         )
     }
 
+    @GetMapping("/clubs/{clubId}/residual-explainer")
+    fun residualExplainer(
+        @PathVariable clubId: String,
+        @RequestParam(defaultValue = "10") limit: Int,
+        @RequestParam anchorType: String,
+        @RequestParam(required = false) aggregateIndex: Int?,
+        @RequestParam(required = false) code: Int?,
+        @RequestParam(required = false) metricName: String?,
+        @RequestParam candidateAggregateIndex: Int,
+        @RequestParam candidateCode: Int,
+    ): ResponseEntity<AdvancedStatsDiscoveryEngine.ResidualExplainerResult> {
+        if (limit < 1 || limit > 20) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be 1-20")
+        if (anchorType !in setOf("AGGREGATE_CODE", "KNOWN_METRIC", "CONFIRMED_ADVANCED")) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid anchorType")
+        }
+        return ResponseEntity.ok(explorerService.residualExplainer(
+            ClubId(clubId), limit, anchorType, aggregateIndex, code, metricName, candidateAggregateIndex, candidateCode))
+    }
+
     @GetMapping("/registry")
     fun registry(): ResponseEntity<List<CodeMapping>> {
         return ResponseEntity.ok(AdvancedStatsCodeRegistry.allMappings())
