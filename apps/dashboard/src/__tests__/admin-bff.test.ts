@@ -15,11 +15,13 @@ import { POST as poll } from "@/app/api/admin/clubs/[clubId]/poll/route";
 import { POST as testEa } from "@/app/api/admin/clubs/[clubId]/ea/test/route";
 import { POST as testDiscord } from "@/app/api/admin/clubs/[clubId]/discord/test/route";
 import { POST as approveTrialRequest } from "@/app/api/admin/trial-requests/[requestId]/approve/route";
+import { GET as discovery } from "@/app/api/admin/explorer/clubs/[clubId]/discovery/route";
 
 const originalBackendUrl = process.env.BACKEND_URL;
 const clubContext = { params: Promise.resolve({ clubId: "8874106" }) };
 const publicationContext = { params: Promise.resolve({ clubId: "8874106", matchId: "960520613970171" }) };
 const trialRequestContext = { params: Promise.resolve({ requestId: "42" }) };
+const explorerContext = { params: Promise.resolve({ clubId: "8874106" }) };
 
 beforeEach(() => { process.env.BACKEND_URL = "https://spring.example.test/"; process.env.ADMIN_INTERNAL_TOKEN = "test-admin-token"; });
 afterEach(() => {
@@ -115,6 +117,23 @@ describe("administrative BFF", () => {
     expect((await getClub(new Request("https://dashboard.test"), clubContext)).status).toBe(200);
     expect((await getStatus(new Request("https://dashboard.test"), clubContext)).status).toBe(200);
     expect(fetchMock.mock.calls[1][0]).toContain("/8874106/status");
+  });
+
+  it("keeps Discovery behind the authenticated administrative BFF and forwards only bounded filters", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json({ analysis: { rawMatchesAnalyzed: 0 }, newAggregateDataDetected: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await discovery(
+      new Request("https://dashboard.test/api/admin/explorer/clubs/8874106/discovery?limit=10&aggregate=0&minimumMatches=2&minimumObservations=5"),
+      explorerContext,
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "https://spring.example.test/api/admin/explorer/clubs/8874106/discovery?limit=10&aggregate=0&minimumMatches=2&minimumObservations=5&hideKnownRelationships=true",
+    );
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer test-admin-token");
   });
 
   it("proxies club deletion and returns 204", async () => {

@@ -315,4 +315,55 @@ class AdvancedStatsExplorerServiceTest {
 
         assertThat(fields.map { it.fieldName }).containsExactly("safeField")
     }
+
+    @Test
+    fun `discovery reads only the bounded recent window and never findAll`() {
+        val canonical = buildCanonical()
+        var requestedLimit = -1
+        val repository = object : CanonicalMatchRepository by fakeRepo(canonical) {
+            override fun findAll(clubId: ClubId): List<CanonicalMatch> = error("Discovery must not read full history")
+            override fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> {
+                requestedLimit = limit
+                return listOf(canonical)
+            }
+        }
+
+        val result = AdvancedStatsExplorerService(repository).discoveryData(clubId, limit = 10)
+
+        assertThat(requestedLimit).isEqualTo(20)
+        assertThat(result.analysis.rawMatchesAnalyzed).isEqualTo(1)
+    }
+
+    @Test
+    fun `non empty aggregate two capture creates an alert without a mapping`() {
+        val raw = RawUnknownFields.of(
+            "player",
+            listOf(RawUnknownField("match_event_aggregate_2", "string", "\"8:2\"")),
+        )
+        val result = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawUnknownFields = raw)))
+            .discoveryData(clubId, limit = 10)
+
+        val alert = result.newAggregateDataDetected.single()
+        assertThat(alert.fieldName).isEqualTo("match_event_aggregate_2")
+        assertThat(alert.matchCount).isEqualTo(1)
+        assertThat(alert.playerCount).isEqualTo(1)
+        assertThat(result.analysis.inventory).noneMatch { it.aggregateIndex == 2 }
+    }
+
+    @Test
+    fun `historical match without RAW coverage is excluded rather than interpreted as zeros`() {
+        val historical = buildCanonical(rawAgg0 = null, rawAgg1 = null)
+        val withRaw = buildCanonical(rawAgg0 = "91:3", rawAgg1 = null)
+        val repository = object : CanonicalMatchRepository by fakeRepo(withRaw) {
+            override fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> = listOf(historical, withRaw)
+            override fun findAll(clubId: ClubId): List<CanonicalMatch> = error("Discovery must not read full history")
+        }
+
+        val result = AdvancedStatsExplorerService(repository).discoveryData(clubId, limit = 10)
+
+        val code = result.analysis.inventory.single { it.aggregateIndex == 0 && it.code == 91 }
+        assertThat(result.analysis.rawMatchesAnalyzed).isEqualTo(1)
+        assertThat(code.rawObservationCount).isEqualTo(1)
+        assertThat(code.zeroCount).isZero()
+    }
 }

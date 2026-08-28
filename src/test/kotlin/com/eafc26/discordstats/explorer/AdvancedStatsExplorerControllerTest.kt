@@ -46,4 +46,23 @@ class AdvancedStatsExplorerControllerTest {
         assertThat(body).contains("fieldName,jsonType,value,valueSize")
         assertThat(body).contains("\"{\"\"nested\"\":true}\"")
     }
+
+    @Test
+    fun `discovery endpoint keeps the analysis bounded and passes filters`() {
+        val result = AdvancedStatsExplorerService.DiscoveryData(
+            analysis = AdvancedStatsDiscoveryEngine.DiscoveryResult(
+                rawMatchesAnalyzed = 0, playerMatchObservations = 0, aggregate0CodeCount = 0, aggregate1CodeCount = 0,
+                unknownCodeCount = 0, knownCodeCount = 0, hypothesisCodeCount = 0,
+                inventory = emptyList(), topCandidates = emptyList(), relations = emptyList(), correlations = emptyList(), calibration = emptyList(),
+            ),
+            newAggregateDataDetected = emptyList(),
+        )
+        whenever(explorerService.discoveryData(ClubId("club-1"), 10, 0, 2, 5, true)).thenReturn(result)
+
+        client.get().uri("/api/admin/explorer/clubs/club-1/discovery?limit=10&aggregate=0&minimumMatches=2&minimumObservations=5&hideKnownRelationships=true")
+            .exchange()
+            .expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.analysis.rawMatchesAnalyzed").isEqualTo(0)
+    }
 }

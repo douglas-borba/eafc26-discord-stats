@@ -90,6 +90,37 @@ class AdvancedStatsExplorerController(
         }
     }
 
+    @GetMapping("/clubs/{clubId}/discovery")
+    fun discovery(
+        @PathVariable clubId: String,
+        @RequestParam(defaultValue = "10") limit: Int,
+        @RequestParam(defaultValue = "all") aggregate: String,
+        @RequestParam(defaultValue = "0") minimumMatches: Int,
+        @RequestParam(defaultValue = "0") minimumObservations: Int,
+        @RequestParam(defaultValue = "true") hideKnownRelationships: Boolean,
+    ): ResponseEntity<AdvancedStatsExplorerService.DiscoveryData> {
+        if (limit < 1 || limit > 20) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be 1-20")
+        if (minimumMatches < 0 || minimumObservations < 0) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Minimums must be non-negative")
+        }
+        val aggregateIndex = when (aggregate.lowercase()) {
+            "all" -> null
+            "0" -> 0
+            "1" -> 1
+            else -> throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Aggregate must be all, 0 or 1")
+        }
+        return ResponseEntity.ok(
+            explorerService.discoveryData(
+                clubId = ClubId(clubId),
+                limit = limit,
+                aggregate = aggregateIndex,
+                minimumMatches = minimumMatches,
+                minimumObservations = minimumObservations,
+                hideKnownRelationships = hideKnownRelationships,
+            ),
+        )
+    }
+
     @GetMapping("/registry")
     fun registry(): ResponseEntity<List<CodeMapping>> {
         return ResponseEntity.ok(AdvancedStatsCodeRegistry.allMappings())

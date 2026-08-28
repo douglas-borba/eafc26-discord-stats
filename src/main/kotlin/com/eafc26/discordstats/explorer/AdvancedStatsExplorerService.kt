@@ -92,6 +92,17 @@ class AdvancedStatsExplorerService(
         val fields: List<UnknownFieldExport>,
     )
 
+    data class AdditionalAggregateDataAlert(
+        val fieldName: String,
+        val matchCount: Int,
+        val playerCount: Int,
+    )
+
+    data class DiscoveryData(
+        val analysis: AdvancedStatsDiscoveryEngine.DiscoveryResult,
+        val newAggregateDataDetected: List<AdditionalAggregateDataAlert>,
+    )
+
     /**
      * Unknown fields capture status:
      * - null: capture was not active (historical data)
@@ -244,6 +255,53 @@ class AdvancedStatsExplorerService(
         return rows
     }
 
+    /**
+     * Bounded Discovery Engine entry point. The repository supplies only the
+     * requested recent window; all statistical work happens in memory.
+     */
+    fun discoveryData(
+        clubId: ClubId,
+        limit: Int = 10,
+        aggregate: Int? = null,
+        minimumMatches: Int = 0,
+        minimumObservations: Int = 0,
+        hideKnownRelationships: Boolean = true,
+    ): DiscoveryData {
+        // Scan at most twice the requested RAW window. Historical records with
+        // no RAW transport data are excluded, but never treated as zeroes.
+        val matches = matchRepository.findRecent(clubId, (limit * DISCOVERY_SCAN_MULTIPLIER).coerceAtMost(MAX_DISCOVERY_CANONICAL_MATCHES))
+            .filter(::hasRawAggregateCoverage)
+            .take(limit)
+        val samples = matches.flatMap { canonical -> discoverySamples(clubId, canonical) }
+        val result = AdvancedStatsDiscoveryEngine().analyze(samples, hideKnownRelationships)
+        val filteredInventory = result.inventory.filter {
+            (aggregate == null || it.aggregateIndex == aggregate) &&
+                it.matchCount >= minimumMatches &&
+                it.rawObservationCount >= minimumObservations
+        }
+        val visibleRefs = filteredInventory.map { AdvancedStatsDiscoveryEngine.CodeRef(it.aggregateIndex, it.code) }.toSet()
+        fun visible(relation: AdvancedStatsDiscoveryEngine.DiscoveryRelation): Boolean =
+            AdvancedStatsDiscoveryEngine.CodeRef(relation.aggregateIndex, relation.codeA) in visibleRefs &&
+                AdvancedStatsDiscoveryEngine.CodeRef(relation.aggregateIndex, relation.codeB) in visibleRefs &&
+                (relation.codeC == null || AdvancedStatsDiscoveryEngine.CodeRef(relation.aggregateIndex, relation.codeC) in visibleRefs)
+        val filteredRelations = result.relations.filter(::visible)
+        return DiscoveryData(
+            analysis = result.copy(
+                inventory = filteredInventory,
+                relations = filteredRelations,
+                topCandidates = filteredRelations.filter { it.evidenceTier != "COINCIDENCE" }.take(20),
+                correlations = result.correlations.filter {
+                    AdvancedStatsDiscoveryEngine.CodeRef(it.aggregateIndex, it.codeA) in visibleRefs &&
+                        AdvancedStatsDiscoveryEngine.CodeRef(it.aggregateIndex, it.codeB) in visibleRefs
+                },
+                calibration = result.calibration.filter {
+                    AdvancedStatsDiscoveryEngine.CodeRef(it.aggregateIndex, it.code) in visibleRefs
+                },
+            ),
+            newAggregateDataDetected = additionalAggregateAlerts(matches, clubId),
+        )
+    }
+
     private fun buildPlayerData(
         player: PlayerMatchPerformance,
         canonical: CanonicalMatch,
@@ -278,6 +336,99 @@ class AdvancedStatsExplorerService(
             rawAggregate1 = player.rawEventAggregates?.aggregate1,
             unknownFields = buildUnknownFieldsData(player),
         )
+    }
+
+    private fun discoverySamples(
+        clubId: ClubId,
+        canonical: CanonicalMatch,
+    ): List<AdvancedStatsDiscoveryEngine.AggregateSample> {
+        val perspectiveClubId = canonical.interpretation.perspectiveClubId.value
+        val players = canonical.footballMatch.participants
+            .firstOrNull { it.club.id.value == perspectiveClubId }
+            ?.players
+            .orEmpty()
+        return players.flatMap { player ->
+            val raw = player.rawEventAggregates ?: return@flatMap emptyList()
+            listOfNotNull(
+                raw.aggregate0?.let { aggregate -> discoverySample(clubId, canonical, player, 0, aggregate) },
+                raw.aggregate1?.let { aggregate -> discoverySample(clubId, canonical, player, 1, aggregate) },
+            )
+        }
+    }
+
+    private fun hasRawAggregateCoverage(canonical: CanonicalMatch): Boolean {
+        val perspectiveClubId = canonical.interpretation.perspectiveClubId.value
+        return canonical.footballMatch.participants
+            .firstOrNull { it.club.id.value == perspectiveClubId }
+            ?.players
+            ?.any { player ->
+                player.rawEventAggregates?.let { it.aggregate0 != null || it.aggregate1 != null } == true
+            }
+            ?: false
+    }
+
+    private fun discoverySample(
+        clubId: ClubId,
+        canonical: CanonicalMatch,
+        player: PlayerMatchPerformance,
+        aggregateIndex: Int,
+        rawAggregate: String,
+    ): AdvancedStatsDiscoveryEngine.AggregateSample = AdvancedStatsDiscoveryEngine.AggregateSample(
+        clubId = clubId.value,
+        matchId = canonical.matchId.value,
+        timestamp = canonical.footballMatch.playedAt.toString(),
+        playerId = player.player.id.value,
+        playerName = player.player.platformName?.value ?: player.player.proName?.value,
+        aggregateIndex = aggregateIndex,
+        sparseValues = parseHistogram(rawAggregate).orEmpty(),
+        knownMetrics = linkedMapOf(
+            "goals" to player.attacking.goals,
+            "assists" to player.attacking.assists,
+            "shots" to player.attacking.shots,
+            "passesAttempted" to player.passing.attempted,
+            "passesCompleted" to player.passing.completed,
+            "tacklesAttempted" to player.defending.tacklesAttempted,
+            "tacklesCompleted" to player.defending.tacklesCompleted,
+        ),
+    )
+
+    private fun additionalAggregateAlerts(
+        matches: List<CanonicalMatch>,
+        clubId: ClubId,
+    ): List<AdditionalAggregateDataAlert> {
+        val sightings = mutableMapOf<String, MutableList<Pair<String, String>>>()
+        matches.forEach { canonical ->
+            if (canonical.interpretation.perspectiveClubId != clubId) return@forEach
+            canonical.footballMatch.participants
+                .firstOrNull { it.club.id == clubId }
+                ?.players
+                ?.forEach { player ->
+                    player.rawUnknownFields?.fields
+                        ?.filter { isAdditionalAggregateCandidate(it.name) && hasNonEmptyValue(it) }
+                        ?.forEach { field ->
+                            sightings.getOrPut(field.name) { mutableListOf() }
+                                .add(canonical.matchId.value to player.player.id.value)
+                        }
+                }
+        }
+        return sightings.map { (fieldName, values) ->
+            AdditionalAggregateDataAlert(
+                fieldName = fieldName,
+                matchCount = values.map { it.first }.toSet().size,
+                playerCount = values.map { it.second }.toSet().size,
+            )
+        }.sortedBy { it.fieldName }
+    }
+
+    private fun hasNonEmptyValue(field: RawUnknownField): Boolean {
+        if (field.truncated) return field.value.isNotBlank()
+        val node = runCatching { objectMapper.readTree(field.value) }.getOrNull() ?: return field.value.isNotBlank()
+        return when {
+            node.isNull -> false
+            node.isTextual -> node.asText().isNotBlank()
+            node.isArray || node.isObject -> node.size() > 0
+            else -> true
+        }
     }
 
     private fun buildUnknownFieldsData(player: PlayerMatchPerformance): UnknownFieldsData {
@@ -430,4 +581,9 @@ class AdvancedStatsExplorerService(
             ?.toIntOrNull()
             ?.let { it > 1 }
             ?: false
+
+    private companion object {
+        const val DISCOVERY_SCAN_MULTIPLIER = 2
+        const val MAX_DISCOVERY_CANONICAL_MATCHES = 20
+    }
 }

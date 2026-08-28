@@ -73,7 +73,32 @@ type PlayerExplorerData = {
   unknownFields: UnknownFieldsData;
 };
 
-type View = "matches" | "players" | "detail" | "compare";
+type ObservedCodeValue = { matchId: string; timestamp: string; playerId: string; playerName: string | null; value: number };
+type CodeInventory = {
+  aggregateIndex: number; code: number; confidence: string; rawObservationCount: number; matchCount: number;
+  playerCount: number; nonZeroCount: number; zeroCount: number; prevalence: number; min: number; max: number;
+  mean: number; median: number; sum: number; distinctValueCount: number; technicalClassification: string;
+  observedValues: ObservedCodeValue[];
+};
+type RelationExample = { matchId: string; timestamp: string; playerId: string; playerName: string | null; a: number; b: number; c: number | null; expected: number; difference: number };
+type DiscoveryRelation = {
+  id: string; aggregateIndex: number; relationType: string; codeA: number; codeB: number; codeC: number | null;
+  observationsTested: number; matchesTested: number; exactMatches: number; violations: number; supportRate: number;
+  evidenceTier: string; explainedByKnownMetric: boolean; score: { total: number; observationComponent: number; matchComponent: number; variationComponent: number; relationComponent: number; counterexampleComponent: number; knownMetricPenalty: number };
+  examples: RelationExample[]; counterexamples: RelationExample[];
+};
+type DiscoveryData = {
+  analysis: {
+    rawMatchesAnalyzed: number; playerMatchObservations: number; aggregate0CodeCount: number; aggregate1CodeCount: number;
+    unknownCodeCount: number; knownCodeCount: number; hypothesisCodeCount: number; inventory: CodeInventory[];
+    topCandidates: DiscoveryRelation[]; relations: DiscoveryRelation[];
+    correlations: { aggregateIndex: number; codeA: number; codeB: number; observationsTested: number; matchesTested: number; pearson: number; exactEqualityRate: number }[];
+    calibration: { aggregateIndex: number; code: number; metric: string; observationsTested: number; matchesTested: number; exactMatches: number; supportRate: number; redundantWithKnownMetric: boolean }[];
+  };
+  newAggregateDataDetected: { fieldName: string; matchCount: number; playerCount: number }[];
+};
+
+type View = "matches" | "players" | "detail" | "compare" | "discovery";
 
 export function AdvancedStatsExplorer() {
   const [clubId, setClubId] = useState("");
@@ -90,6 +115,15 @@ export function AdvancedStatsExplorer() {
   const [error, setError] = useState<string | null>(null);
   const [showZeros, setShowZeros] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
+  const [discovery, setDiscovery] = useState<DiscoveryData | null>(null);
+  const [discoveryAggregate, setDiscoveryAggregate] = useState("all");
+  const [minimumMatches, setMinimumMatches] = useState("0");
+  const [minimumObservations, setMinimumObservations] = useState("0");
+  const [hideKnownRelationships, setHideKnownRelationships] = useState(true);
+  const [discoveryConfidence, setDiscoveryConfidence] = useState("ALL");
+  const [discoveryEvidence, setDiscoveryEvidence] = useState("ALL");
+  const [selectedDiscoveryCode, setSelectedDiscoveryCode] = useState<CodeInventory | null>(null);
+  const [selectedDiscoveryRelation, setSelectedDiscoveryRelation] = useState<DiscoveryRelation | null>(null);
 
   const fetchJson = useCallback(async (url: string) => {
     const res = await fetch(url, { cache: "no-store" });
@@ -110,6 +144,7 @@ export function AdvancedStatsExplorer() {
       setPlayerData(null);
       setCompareData([]);
       setCompareMatchIds(new Set());
+      setDiscovery(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro desconhecido");
     } finally {
@@ -188,6 +223,30 @@ export function AdvancedStatsExplorer() {
     }
   }, [activeClubId]);
 
+  const loadDiscovery = useCallback(async () => {
+    if (!activeClubId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({
+        limit: "10",
+        aggregate: discoveryAggregate,
+        minimumMatches,
+        minimumObservations,
+        hideKnownRelationships: String(hideKnownRelationships),
+      });
+      const data = await fetchJson(`/api/admin/explorer/clubs/${activeClubId}/discovery?${params}`);
+      setDiscovery(data);
+      setSelectedDiscoveryCode(null);
+      setSelectedDiscoveryRelation(null);
+      setView("discovery");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Discovery failed");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeClubId, discoveryAggregate, fetchJson, hideKnownRelationships, minimumMatches, minimumObservations]);
+
   return (
     <div style={{ fontFamily: "monospace", maxWidth: 1200 }}>
       <h1 style={{ fontSize: 20, marginBottom: 4 }}>Advanced Stats Explorer</h1>
@@ -210,6 +269,7 @@ export function AdvancedStatsExplorer() {
           <>
             <button onClick={() => exportData("json")} style={btnStyle}>Export JSON</button>
             <button onClick={() => exportData("csv")} style={btnStyle}>Export CSV</button>
+            <button onClick={loadDiscovery} disabled={loading} style={btnStyle}>Discovery</button>
           </>
         )}
       </div>
@@ -319,6 +379,31 @@ export function AdvancedStatsExplorer() {
       {/* Multi-match comparison */}
       {view === "compare" && compareData.length > 0 && (
         <CompareView data={compareData} showZeros={showZeros} onToggleZeros={() => setShowZeros(!showZeros)} onBack={() => setView("matches")} />
+      )}
+
+      {view === "discovery" && (
+        <DiscoveryView
+          data={discovery}
+          aggregate={discoveryAggregate}
+          minimumMatches={minimumMatches}
+          minimumObservations={minimumObservations}
+          hideKnownRelationships={hideKnownRelationships}
+          confidence={discoveryConfidence}
+          evidence={discoveryEvidence}
+          loading={loading}
+          selectedCode={selectedDiscoveryCode}
+          selectedRelation={selectedDiscoveryRelation}
+          onAggregate={setDiscoveryAggregate}
+          onMinimumMatches={setMinimumMatches}
+          onMinimumObservations={setMinimumObservations}
+          onHideKnownRelationships={setHideKnownRelationships}
+          onConfidence={setDiscoveryConfidence}
+          onEvidence={setDiscoveryEvidence}
+          onRun={loadDiscovery}
+          onSelectCode={setSelectedDiscoveryCode}
+          onSelectRelation={setSelectedDiscoveryRelation}
+          onBack={() => setView("matches")}
+        />
       )}
     </div>
   );
@@ -552,6 +637,105 @@ function CompareView({
   );
 }
 
+function DiscoveryView({
+  data, aggregate, minimumMatches, minimumObservations, hideKnownRelationships, confidence, evidence, loading, selectedCode, selectedRelation,
+  onAggregate, onMinimumMatches, onMinimumObservations, onHideKnownRelationships, onConfidence, onEvidence, onRun, onSelectCode, onSelectRelation, onBack,
+}: {
+  data: DiscoveryData | null; aggregate: string; minimumMatches: string; minimumObservations: string; hideKnownRelationships: boolean;
+  confidence: string; evidence: string;
+  loading: boolean; selectedCode: CodeInventory | null; selectedRelation: DiscoveryRelation | null;
+  onAggregate: (value: string) => void; onMinimumMatches: (value: string) => void; onMinimumObservations: (value: string) => void;
+  onHideKnownRelationships: (value: boolean) => void; onConfidence: (value: string) => void; onEvidence: (value: string) => void; onRun: () => void; onSelectCode: (value: CodeInventory | null) => void;
+  onSelectRelation: (value: DiscoveryRelation | null) => void; onBack: () => void;
+}) {
+  const analysis = data?.analysis;
+  const visibleCodes = analysis?.inventory.filter((code) =>
+    confidence === "ALL" || (confidence === "KNOWN" ? ["CONFIRMED", "HIGH_CONFIDENCE"].includes(code.confidence) : code.confidence === confidence),
+  ) ?? [];
+  const visibleRefs = new Set(visibleCodes.map((code) => `${code.aggregateIndex}-${code.code}`));
+  const visibleRelation = (relation: DiscoveryRelation) =>
+    (evidence === "ALL" || relation.evidenceTier === evidence) &&
+    [relation.codeA, relation.codeB, relation.codeC]
+      .filter((code): code is number => code !== null)
+      .every((code) => visibleRefs.has(`${relation.aggregateIndex}-${code}`));
+  const visibleCandidates = analysis?.topCandidates.filter(visibleRelation) ?? [];
+  const visibleCorrelations = analysis?.correlations.filter((correlation) =>
+    visibleRefs.has(`${correlation.aggregateIndex}-${correlation.codeA}`) && visibleRefs.has(`${correlation.aggregateIndex}-${correlation.codeB}`),
+  ) ?? [];
+  return (
+    <div>
+      <button onClick={onBack} style={{ ...btnStyle, marginBottom: 12, fontSize: 12 }}>← Back to matches</button>
+      <h2 style={h2Style}>Discovery</h2>
+      <p style={{ color: "#f0883e", fontSize: 12, marginBottom: 12 }}>
+        Mathematical observations only. Correlation and repeated patterns are not sporting mappings.
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 16 }}>
+        <label style={filterLabel}>Aggregate <select value={aggregate} onChange={(e) => onAggregate(e.target.value)} style={selectStyle}><option value="all">ALL</option><option value="0">0</option><option value="1">1</option></select></label>
+        <label style={filterLabel}>Minimum matches <input type="number" min="0" value={minimumMatches} onChange={(e) => onMinimumMatches(e.target.value)} style={numberInputStyle} /></label>
+        <label style={filterLabel}>Minimum observations <input type="number" min="0" value={minimumObservations} onChange={(e) => onMinimumObservations(e.target.value)} style={numberInputStyle} /></label>
+        <label style={filterLabel}>Confidence <select value={confidence} onChange={(e) => onConfidence(e.target.value)} style={selectStyle}><option value="ALL">ALL</option><option value="UNKNOWN">UNKNOWN</option><option value="HYPOTHESIS">HYPOTHESIS</option><option value="KNOWN">KNOWN</option></select></label>
+        <label style={filterLabel}>Evidence <select value={evidence} onChange={(e) => onEvidence(e.target.value)} style={selectStyle}><option value="ALL">ALL</option><option value="CANDIDATE">CANDIDATE</option><option value="STRONG_CANDIDATE">STRONG_CANDIDATE</option></select></label>
+        <label style={filterLabel}><input type="checkbox" checked={hideKnownRelationships} onChange={(e) => onHideKnownRelationships(e.target.checked)} /> Hide relationships explained by known metrics</label>
+        <button onClick={onRun} disabled={loading} style={btnStyle}>{loading ? "Analyzing..." : "Run discovery"}</button>
+      </div>
+      {!analysis ? <p style={{ color: "#8b949e", fontSize: 13 }}>Run a bounded analysis of the latest RAW matches.</p> : <>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 6, marginBottom: 16 }}>
+          <StatChip label="RAW matches analyzed" value={analysis.rawMatchesAnalyzed} />
+          <StatChip label="Player-match observations" value={analysis.playerMatchObservations} />
+          <StatChip label="Aggregate 0 codes" value={analysis.aggregate0CodeCount} />
+          <StatChip label="Aggregate 1 codes" value={analysis.aggregate1CodeCount} />
+          <StatChip label="Unknown codes" value={analysis.unknownCodeCount} />
+          <StatChip label="Known codes" value={analysis.knownCodeCount} />
+          <StatChip label="Hypothesis codes" value={analysis.hypothesisCodeCount} warn />
+        </div>
+        {data.newAggregateDataDetected.length > 0 && <div style={{ background: "#3d2e00", border: "1px solid #d29922", padding: 10, borderRadius: 6, marginBottom: 16, color: "#f0c674", fontSize: 12 }}>
+          <strong>NEW AGGREGATE DATA DETECTED</strong>{" — "}{data.newAggregateDataDetected.map((a) => `${a.fieldName}: ${a.playerCount} players / ${a.matchCount} matches`).join("; ")}. No automatic parsing or mapping was applied.
+        </div>}
+            <h3 style={h3Style}>Top Discovery Candidates</h3>
+            {visibleCandidates.length === 0 ? <p style={{ color: "#8b949e", fontSize: 12 }}>No candidate meets the current evidence and confidence filters.</p> : <DiscoveryRelationsTable relations={visibleCandidates} onSelect={onSelectRelation} />}
+        <h3 style={{ ...h3Style, marginTop: 20 }}>Code Inventory</h3>
+        {visibleCodes.length === 0 ? <p style={{ color: "#8b949e", fontSize: 12 }}>No RAW aggregate coverage matches the current filters.</p> :
+          <div style={{ overflowX: "auto" }}><table style={tableStyle}><thead><tr><th style={thStyle}>Aggregate</th><th style={thStyle}>Code</th><th style={thStyle}>Status</th><th style={thStyle}>Technical class</th><th style={thStyle}>Obs</th><th style={thStyle}>Matches</th><th style={thStyle}>Non-zero</th><th style={thStyle}>Prevalence</th><th style={thStyle}>Range</th><th style={thStyle}></th></tr></thead><tbody>
+            {visibleCodes.map((code) => <tr key={`${code.aggregateIndex}-${code.code}`} style={{ borderBottom: "1px solid #21262d", background: confidenceBg(code.confidence) }}><td style={tdStyle}>{code.aggregateIndex}</td><td style={tdStyle}>{code.code}</td><td style={tdStyle}><ConfidenceBadge confidence={code.confidence} /></td><td style={tdStyle}>{code.technicalClassification}</td><td style={tdStyle}>{code.rawObservationCount}</td><td style={tdStyle}>{code.matchCount}</td><td style={tdStyle}>{code.nonZeroCount}</td><td style={tdStyle}>{percent(code.prevalence)}</td><td style={tdStyle}>{code.min}–{code.max}</td><td style={tdStyle}><button onClick={() => onSelectCode(code)} style={{ ...btnStyle, padding: "2px 8px", fontSize: 11 }}>Inspect</button></td></tr>)}
+          </tbody></table></div>}
+        {visibleCorrelations.length > 0 && <><h3 style={{ ...h3Style, marginTop: 20 }}>Moves together</h3><p style={{ color: "#8b949e", fontSize: 11 }}>Pearson correlations exclude constant and zero-dominated pairs; they never assign meaning.</p><div style={{ overflowX: "auto" }}><table style={tableStyle}><thead><tr><th style={thStyle}>Aggregate</th><th style={thStyle}>Codes</th><th style={thStyle}>Observations</th><th style={thStyle}>Matches</th><th style={thStyle}>Pearson</th><th style={thStyle}>Equality</th></tr></thead><tbody>{visibleCorrelations.slice(0, 30).map((c) => <tr key={`${c.aggregateIndex}-${c.codeA}-${c.codeB}`} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{c.aggregateIndex}</td><td style={tdStyle}>{c.codeA} / {c.codeB}</td><td style={tdStyle}>{c.observationsTested}</td><td style={tdStyle}>{c.matchesTested}</td><td style={tdStyle}>{c.pearson.toFixed(3)}</td><td style={tdStyle}>{percent(c.exactEqualityRate)}</td></tr>)}</tbody></table></div></>}
+        {analysis.calibration.length > 0 && <><h3 style={{ ...h3Style, marginTop: 20 }}>Calibration / Known-Metric Relationships</h3><p style={{ color: "#8b949e", fontSize: 11 }}>Controls for validating the method. They are deliberately separate from novel discovery.</p><div style={{ overflowX: "auto" }}><table style={tableStyle}><thead><tr><th style={thStyle}>Aggregate</th><th style={thStyle}>Code</th><th style={thStyle}>Known metric</th><th style={thStyle}>Support</th><th style={thStyle}>Matches</th><th style={thStyle}>Result</th></tr></thead><tbody>{analysis.calibration.map((c) => <tr key={`${c.aggregateIndex}-${c.code}-${c.metric}`} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{c.aggregateIndex}</td><td style={tdStyle}>{c.code}</td><td style={tdStyle}>{c.metric}</td><td style={tdStyle}>{percent(c.supportRate)}</td><td style={tdStyle}>{c.matchesTested}</td><td style={tdStyle}>{c.redundantWithKnownMetric ? "REDUNDANT WITH KNOWN METRIC" : "Calibration only"}</td></tr>)}</tbody></table></div></>}
+      </>}
+      {selectedCode && <CodeDetail code={selectedCode} relations={analysis?.relations ?? []} onClose={() => onSelectCode(null)} />}
+      {selectedRelation && <RelationDetail relation={selectedRelation} onClose={() => onSelectRelation(null)} />}
+    </div>
+  );
+}
+
+function DiscoveryRelationsTable({ relations, onSelect }: { relations: DiscoveryRelation[]; onSelect: (relation: DiscoveryRelation) => void }) {
+  return <div style={{ overflowX: "auto" }}><table style={tableStyle}><thead><tr><th style={thStyle}>Aggregate</th><th style={thStyle}>Pattern</th><th style={thStyle}>Evidence</th><th style={thStyle}>Matches</th><th style={thStyle}>Observations</th><th style={thStyle}>Counterexamples</th><th style={thStyle}>Tier</th><th style={thStyle}></th></tr></thead><tbody>{relations.map((relation) => <tr key={relation.id} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{relation.aggregateIndex}</td><td style={tdStyle}>{relationPattern(relation)}</td><td style={tdStyle}>{relation.exactMatches}/{relation.observationsTested} ({percent(relation.supportRate)})</td><td style={tdStyle}>{relation.matchesTested}</td><td style={tdStyle}>{relation.observationsTested}</td><td style={{ ...tdStyle, color: relation.violations > 0 ? "#f0883e" : undefined }}>{relation.violations}</td><td style={tdStyle}><EvidenceBadge tier={relation.evidenceTier} /></td><td style={tdStyle}><button onClick={() => onSelect(relation)} style={{ ...btnStyle, padding: "2px 8px", fontSize: 11 }}>Inspect</button></td></tr>)}</tbody></table></div>;
+}
+
+function CodeDetail({ code, relations, onClose }: { code: CodeInventory; relations: DiscoveryRelation[]; onClose: () => void }) {
+  const involved = relations.filter((r) => r.aggregateIndex === code.aggregateIndex && [r.codeA, r.codeB, r.codeC].includes(code.code));
+  return <section style={detailStyle}><button onClick={onClose} style={{ ...btnStyle, fontSize: 11 }}>Close code detail</button><h3 style={h3Style}>Aggregate {code.aggregateIndex}[{code.code}]</h3><p style={{ color: "#f0883e", fontSize: 12 }}>Observed transport code. No sporting interpretation is assigned.</p><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 5 }}><StatChip label="Observations" value={code.rawObservationCount} /><StatChip label="Matches" value={code.matchCount} /><StatChip label="Non-zero" value={code.nonZeroCount} /><StatChip label="Prevalence" value={percent(code.prevalence)} /><StatChip label="Min / Max" value={`${code.min} / ${code.max}`} /><StatChip label="Mean / Median" value={`${code.mean.toFixed(2)} / ${code.median}`} /><StatChip label="Distinct values" value={code.distinctValueCount} /></div><h4 style={h3Style}>Observed values</h4><table style={tableStyle}><thead><tr><th style={thStyle}>Match</th><th style={thStyle}>Player</th><th style={thStyle}>Value</th></tr></thead><tbody>{code.observedValues.map((v) => <tr key={`${v.matchId}-${v.playerId}`} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{v.matchId}</td><td style={tdStyle}>{v.playerName ?? v.playerId}</td><td style={tdStyle}>{v.value}</td></tr>)}</tbody></table><h4 style={h3Style}>Relationships</h4>{involved.length ? <DiscoveryRelationsTable relations={involved.slice(0, 20)} onSelect={() => {}} /> : <p style={{ color: "#8b949e", fontSize: 12 }}>No relationship passed the bounded discovery filters.</p>}</section>;
+}
+
+function RelationDetail({ relation, onClose }: { relation: DiscoveryRelation; onClose: () => void }) {
+  const rows = (entries: RelationExample[], title: string, color: string) => <><h4 style={{ ...h3Style, color }}>{title} ({entries.length})</h4>{entries.length === 0 ? <p style={{ color: "#8b949e", fontSize: 12 }}>None in the retained sample.</p> : <table style={tableStyle}><thead><tr><th style={thStyle}>Match</th><th style={thStyle}>Player</th><th style={thStyle}>A</th><th style={thStyle}>B</th>{relation.codeC !== null && <th style={thStyle}>C</th>}<th style={thStyle}>Expected</th><th style={thStyle}>Difference</th></tr></thead><tbody>{entries.map((e) => <tr key={`${e.matchId}-${e.playerId}`} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{e.matchId}</td><td style={tdStyle}>{e.playerName ?? e.playerId}</td><td style={tdStyle}>{e.a}</td><td style={tdStyle}>{e.b}</td>{relation.codeC !== null && <td style={tdStyle}>{e.c}</td>}<td style={tdStyle}>{e.expected}</td><td style={tdStyle}>{e.difference}</td></tr>)}</tbody></table>}</>;
+  return <section style={detailStyle}><button onClick={onClose} style={{ ...btnStyle, fontSize: 11 }}>Close relation detail</button><h3 style={h3Style}>Aggregate {relation.aggregateIndex}: {relationPattern(relation)}</h3><p style={{ color: "#f0883e", fontSize: 12 }}>{relation.exactMatches}/{relation.observationsTested} observations · {relation.matchesTested} matches · {percent(relation.supportRate)} support. This is not a sporting interpretation.</p>{rows(relation.counterexamples, "Counterexamples", "#f85149")}{rows(relation.examples, "Examples supporting the relation", "#3fb950")}<h4 style={h3Style}>Discovery score components</h4><pre style={{ background: "#161b22", padding: 8, borderRadius: 4, fontSize: 11 }}>{JSON.stringify(relation.score, null, 2)}</pre></section>;
+}
+
+function relationPattern(relation: DiscoveryRelation): string {
+  const a = `${relation.codeA}`; const b = `${relation.codeB}`; const c = relation.codeC === null ? "" : ` ${relation.relationType === "SUM" ? "+" : "-"} ${relation.codeC}`;
+  if (relation.relationType === "EQUAL") return `${a} == ${b}`;
+  if (relation.relationType === "GREATER_OR_EQUAL") return `${a} >= ${b}`;
+  if (relation.relationType === "LESS_OR_EQUAL") return `${a} <= ${b}`;
+  return `${a} == ${b}${c}`;
+}
+
+function percent(value: number): string { return `${(value * 100).toFixed(1)}%`; }
+
+function EvidenceBadge({ tier }: { tier: string }) {
+  const color = tier === "STRONG_CANDIDATE" ? "#238636" : tier === "CANDIDATE" ? "#1f6feb" : "#30363d";
+  return <span style={{ background: color, color: "#fff", padding: "1px 6px", borderRadius: 4, fontSize: 10 }}>{tier}</span>;
+}
+
 function UnknownFieldValue({ value, jsonType, truncated }: { value: string; jsonType: string; truncated: boolean }) {
   const shouldExpand = jsonType === "object" || jsonType === "array" || truncated || value.length > 240;
   if (!shouldExpand) {
@@ -620,6 +804,11 @@ const btnStyle: React.CSSProperties = {
   cursor: "pointer",
   fontSize: 13,
 };
+
+const filterLabel: React.CSSProperties = { display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#8b949e" };
+const selectStyle: React.CSSProperties = { background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 4, padding: "3px 5px" };
+const numberInputStyle: React.CSSProperties = { ...selectStyle, width: 52 };
+const detailStyle: React.CSSProperties = { marginTop: 20, padding: 12, border: "1px solid #30363d", borderRadius: 6, background: "#0d1117" };
 
 const tableStyle: React.CSSProperties = {
   width: "100%",
