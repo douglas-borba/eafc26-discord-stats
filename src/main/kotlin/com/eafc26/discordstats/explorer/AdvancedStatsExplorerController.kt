@@ -181,6 +181,30 @@ class AdvancedStatsExplorerController(
             ClubId(clubId), limit, anchorType, aggregateIndex, code, metricName, candidateAggregateIndex, candidateCode))
     }
 
+    @GetMapping("/clubs/{clubId}/novel-metrics")
+    fun novelMetrics(
+        @PathVariable clubId: String,
+        @RequestParam(defaultValue = "10") limit: Int,
+        @RequestParam(required = false) aggregateIndex: Int?,
+        @RequestParam(required = false) code: Int?,
+    ): ResponseEntity<Any> {
+        if (limit < 1 || limit > 20) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be 1-20")
+        if ((aggregateIndex == null) != (code == null)) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "aggregateIndex and code must be supplied together")
+        val result = if (aggregateIndex == null) explorerService.novelMetricDiscovery(ClubId(clubId), limit)
+        else explorerService.novelMetricDetail(ClubId(clubId), limit, aggregateIndex, code!!)
+        return ResponseEntity.ok(result ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown aggregate code not found in bounded sample"))
+    }
+
+    @GetMapping("/clubs/{clubId}/players/{playerId}/position-observations")
+    fun positionObservations(
+        @PathVariable clubId: String,
+        @PathVariable playerId: String,
+        @RequestParam(defaultValue = "20") limit: Int,
+    ): ResponseEntity<AdvancedStatsExplorerService.PositionObservationsData> {
+        if (limit < 1 || limit > 50) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be 1-50")
+        return ResponseEntity.ok(explorerService.positionObservations(ClubId(clubId), playerId, limit))
+    }
+
     @GetMapping("/registry")
     fun registry(): ResponseEntity<List<CodeMapping>> {
         return ResponseEntity.ok(AdvancedStatsCodeRegistry.allMappings())

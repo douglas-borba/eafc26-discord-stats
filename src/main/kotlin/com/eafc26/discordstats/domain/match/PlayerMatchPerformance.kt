@@ -15,4 +15,10 @@ data class PlayerMatchPerformance(
     val advancedCoverage: AdvancedStatsCoverage = AdvancedStatsCoverage.UNAVAILABLE,
     val rawEventAggregates: RawEventAggregates? = null,
     val rawUnknownFields: RawUnknownFields? = null,
+    /**
+     * Raw `players[*][*].pos` value received from EA for this player-match.
+     * It is deliberately not called a played position: its sporting semantics
+     * are still under investigation in the internal Explorer.
+     */
+    val eaPositionCode: String? = null,
 )

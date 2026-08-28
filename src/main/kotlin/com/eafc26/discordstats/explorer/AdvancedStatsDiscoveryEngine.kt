@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.explorer
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -671,8 +672,10 @@ class AdvancedStatsDiscoveryEngine(
         val candidateInactiveWhenAnchorActive: Int,
         val anchorActiveWhenCandidateActive: Int,
         val candidateActiveObservations: Int,
-        val pCandidateActiveGivenAnchorActive: Double,
-        val pAnchorActiveGivenCandidateActive: Double,
+        @get:JsonProperty("pCandidateActiveGivenAnchorActive")
+        val pCandidateActiveGivenAnchorActive: Double?,
+        @get:JsonProperty("pAnchorActiveGivenCandidateActive")
+        val pAnchorActiveGivenCandidateActive: Double?,
     )
 
     data class AnchorRelationship(
@@ -694,9 +697,12 @@ class AdvancedStatsDiscoveryEngine(
         val bothNonZero: Int,
         val eitherNonZero: Int,
         val nonZeroOverlap: Double,
-        val pCandidateActiveGivenAnchorActive: Double,
-        val pAnchorActiveGivenCandidateActive: Double,
-        val pEqualGivenEitherActive: Double,
+        @get:JsonProperty("pCandidateActiveGivenAnchorActive")
+        val pCandidateActiveGivenAnchorActive: Double?,
+        @get:JsonProperty("pAnchorActiveGivenCandidateActive")
+        val pAnchorActiveGivenCandidateActive: Double?,
+        @get:JsonProperty("pEqualGivenEitherActive")
+        val pEqualGivenEitherActive: Double?,
         val observations: Int,
         val informativeObservations: Int,
         val matches: Int,
@@ -920,16 +926,16 @@ class AdvancedStatsDiscoveryEngine(
         val p = if (pairs.size >= 3) pearson(pairs.map { it.anchor.anchorValue.toDouble() }, pairs.map { it.candidateValue.toDouble() }) else null
         val sp = if (pairs.size >= 3) spearman(pairs.map { it.anchor.anchorValue.toDouble() }, pairs.map { it.candidateValue.toDouble() }) else null
 
-        val pCandActiveGivenAnchorActive = if (anchorActive.isEmpty()) 0.0 else ratio(anchorActive.count { it.candidateValue != 0 }, anchorActive.size)
-        val pAnchorActiveGivenCandActive = if (candidateActive.isEmpty()) 0.0 else ratio(candidateActive.count { it.anchor.anchorValue != 0 }, candidateActive.size)
-        val pEqualGivenEitherActive = if (eitherNonZero == 0) 0.0 else ratio(informativeEqual, eitherNonZero)
+        val pCandActiveGivenAnchorActive = safeRatio(anchorActive.count { it.candidateValue != 0 }, anchorActive.size)
+        val pAnchorActiveGivenCandActive = safeRatio(candidateActive.count { it.anchor.anchorValue != 0 }, candidateActive.size)
+        val pEqualGivenEitherActive = safeRatio(informativeEqual, eitherNonZero)
 
-        val classification = classify(anchorGte, candidateGte, informativeEqual, p, eitherNonZero, bothNonZero, pCandActiveGivenAnchorActive, pAnchorActiveGivenCandActive)
+        val classification = classify(anchorGte, candidateGte, informativeEqual, p, eitherNonZero, bothNonZero, pCandActiveGivenAnchorActive ?: 0.0, pAnchorActiveGivenCandActive ?: 0.0)
 
         val distinctMatches = pairs.map { it.anchor.matchId }.toSet().size
         val distinctPlayers = pairs.map { it.anchor.playerId }.toSet().size
         val score = anchorScore(informative.size, distinctMatches, distinctPlayers, ratio(bothNonZero, eitherNonZero),
-            pCandActiveGivenAnchorActive, pEqualGivenEitherActive, classification, p, informativeEqual, eitherNonZero)
+            pCandActiveGivenAnchorActive ?: 0.0, pEqualGivenEitherActive ?: 0.0, classification, p, informativeEqual, eitherNonZero)
 
         fun evidenceRow(pair: Pair): AnchorEvidenceRow {
             val diff = pair.anchor.anchorValue - pair.candidateValue
@@ -1004,8 +1010,8 @@ class AdvancedStatsDiscoveryEngine(
             candidateInactiveWhenAnchorActive = anchorActive.size - candidateActiveWhenAnchorActive,
             anchorActiveWhenCandidateActive = anchorActiveWhenCandidateActive,
             candidateActiveObservations = candidateActive.size,
-            pCandidateActiveGivenAnchorActive = ratio(candidateActiveWhenAnchorActive, anchorActive.size),
-            pAnchorActiveGivenCandidateActive = ratio(anchorActiveWhenCandidateActive, candidateActive.size),
+            pCandidateActiveGivenAnchorActive = safeRatio(candidateActiveWhenAnchorActive, anchorActive.size),
+            pAnchorActiveGivenCandidateActive = safeRatio(anchorActiveWhenCandidateActive, candidateActive.size),
         )
     }
 

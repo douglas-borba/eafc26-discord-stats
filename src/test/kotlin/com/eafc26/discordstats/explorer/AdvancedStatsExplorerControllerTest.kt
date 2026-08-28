@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.explorer
 
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.ea.mapping.EaPositionCodeDecoder
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
@@ -64,5 +65,29 @@ class AdvancedStatsExplorerControllerTest {
             .expectStatus().isOk
             .expectBody()
             .jsonPath("$.analysis.rawMatchesAnalyzed").isEqualTo(0)
+    }
+
+    @Test
+    fun `novel metrics and position observation endpoints remain bounded explorer APIs`() {
+        val novel = NovelMetricDiscoveryEngine().analyze(emptyList())
+        val positions = AdvancedStatsExplorerService.PositionObservationsData(
+            coverage = "FULL",
+            observations = emptyList(),
+            distribution = listOf(
+                AdvancedStatsExplorerService.PositionDistributionEntry(
+                    "0", EaPositionCodeDecoder.decode("0"), 1,
+                ),
+            ),
+            distinctCodes = 1,
+        )
+        whenever(explorerService.novelMetricDiscovery(ClubId("club-1"), 10)).thenReturn(novel)
+        whenever(explorerService.positionObservations(ClubId("club-1"), "player-1", 20)).thenReturn(positions)
+
+        client.get().uri("/api/admin/explorer/clubs/club-1/novel-metrics?limit=10")
+            .exchange().expectStatus().isOk
+            .expectBody().jsonPath("$.rawMatchesAnalyzed").isEqualTo(0)
+        client.get().uri("/api/admin/explorer/clubs/club-1/players/player-1/position-observations?limit=20")
+            .exchange().expectStatus().isOk
+            .expectBody().jsonPath("$.coverage").isEqualTo("FULL")
     }
 }

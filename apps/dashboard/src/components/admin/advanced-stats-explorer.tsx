@@ -71,6 +71,8 @@ type PlayerExplorerData = {
   rawAggregate0: string | null;
   rawAggregate1: string | null;
   unknownFields: UnknownFieldsData;
+  eaPositionCode: string | null;
+  eaPositionCandidate: { rawCode: string | null; candidateLabel: string | null; classification: string; semanticStatus: string };
 };
 
 type ObservedCodeValue = { matchId: string; timestamp: string; playerId: string; playerName: string | null; value: number };
@@ -144,7 +146,7 @@ type AnchorEvidenceRow = {
 type ConditionalProfileEntry = {
   candidateCode: number; candidateActiveWhenAnchorActive: number; anchorActiveObservations: number;
   candidateInactiveWhenAnchorActive: number; anchorActiveWhenCandidateActive: number; candidateActiveObservations: number;
-  pCandidateActiveGivenAnchorActive: number; pAnchorActiveGivenCandidateActive: number;
+  pCandidateActiveGivenAnchorActive: number | null; pAnchorActiveGivenCandidateActive: number | null;
 };
 type AnchorRelationship = {
   candidateAggregateIndex: number; candidateCode: number; candidateRegistryStatus: string; candidateKnownLabel: string | null;
@@ -153,7 +155,7 @@ type AnchorRelationship = {
   residualAMinusB: ResidualDistribution; residualBMinusA: ResidualDistribution;
   ratioBAMeanWhenAPositive: number | null; ratioABMeanWhenBPositive: number | null;
   pearson: number | null; spearman: number | null; bothNonZero: number; eitherNonZero: number; nonZeroOverlap: number;
-  pCandidateActiveGivenAnchorActive: number; pAnchorActiveGivenCandidateActive: number; pEqualGivenEitherActive: number;
+  pCandidateActiveGivenAnchorActive: number | null; pAnchorActiveGivenCandidateActive: number | null; pEqualGivenEitherActive: number | null;
   observations: number; informativeObservations: number; matches: number; distinctPlayers: number;
   score: AnchorRelationshipScore; evidenceObservations: AnchorEvidenceRow[]; differenceCases: AnchorEvidenceRow[];
 };
@@ -207,7 +209,16 @@ type ResidualExplainerResult = {
   dataset: DatasetMetadata;
 };
 
-type View = "matches" | "players" | "detail" | "compare" | "discovery" | "anchor";
+export type NovelKnownRelation = { name: string; observations: number; exactEqualityRate: number | null; pearson: number | null; spearman: number | null; nonZeroOverlap: number | null; pCandidateActiveGivenKnownActive: number | null; pKnownActiveGivenCandidateActive: number | null; stableRatio: boolean | null; classification: string };
+export type NovelCandidate = { aggregateIndex: number; code: number; registryStatus: string; observations: number; activeObservations: number; activeRate: number | null; matches: number; players: number; min: number; max: number; mean: number | null; median: number | null; distinctValues: number; noveltyScore: number; priority: string; classification: string; closestKnownRelation: NovelKnownRelation | null; warnings: string[]; familyId: string | null; familyRepresentative: boolean };
+export type NovelFamily = { id: string; aggregateIndex: number; representativeCode: number; relatedCodes: number[]; relationship: string };
+export type NovelResult = { rawMatchesAnalyzed: number; playerMatchObservations: number; candidates: NovelCandidate[]; families: NovelFamily[] };
+export type NovelEvidence = { matchId: string; timestamp: string; playerId: string; playerName: string | null; completion: string | null; value: number; knownMetrics: Record<string, number | null> };
+export type NovelDetail = { candidate: NovelCandidate; knownRelations: NovelKnownRelation[]; relatedFamily: NovelFamily | null; highValues: NovelEvidence[]; lowNonZeroValues: NovelEvidence[]; zeroValues: NovelEvidence[] };
+export type PositionObservation = { matchId: string; playedAt: string; opponentName: string | null; playerId: string; playerName: string | null; eaPositionCode: string | null; candidate: { rawCode: string | null; candidateLabel: string | null; classification: string; semanticStatus: string }; completion: string; rating: string | null };
+export type PositionObservationsData = { coverage: string; observations: PositionObservation[]; distribution: { eaPositionCode: string | null; candidate: PositionObservation["candidate"]; observations: number }[]; distinctCodes: number };
+
+type View = "matches" | "players" | "detail" | "compare" | "discovery" | "anchor" | "novel" | "position";
 
 export function AdvancedStatsExplorer() {
   const [clubId, setClubId] = useState("");
@@ -246,6 +257,9 @@ export function AdvancedStatsExplorer() {
   const [residualData, setResidualData] = useState<ResidualExplainerResult | null>(null);
   const [residualFilter, setResidualFilter] = useState("ALL");
   const [selectedDiscriminator, setSelectedDiscriminator] = useState<ResidualDiscriminator | null>(null);
+  const [novel, setNovel] = useState<NovelResult | null>(null);
+  const [novelDetail, setNovelDetail] = useState<NovelDetail | null>(null);
+  const [positionObservations, setPositionObservations] = useState<PositionObservationsData | null>(null);
 
   const fetchJson = useCallback(async (url: string) => {
     const res = await fetch(url, { cache: "no-store" });
@@ -435,6 +449,30 @@ export function AdvancedStatsExplorer() {
     }
   }, [activeClubId, anchorType, anchorAggregateIndex, anchorCode, anchorMetric, fetchJson]);
 
+  const loadNovel = useCallback(async () => {
+    if (!activeClubId) return;
+    setLoading(true); setError(null);
+    try { setNovel(await fetchJson(`/api/admin/explorer/clubs/${activeClubId}/novel-metrics?limit=10`)); setNovelDetail(null); setView("novel"); }
+    catch (e) { setError(e instanceof Error ? e.message : "Novel discovery failed"); }
+    finally { setLoading(false); }
+  }, [activeClubId, fetchJson]);
+
+  const loadNovelDetail = useCallback(async (candidate: NovelCandidate) => {
+    if (!activeClubId) return;
+    setLoading(true); setError(null);
+    try { setNovelDetail(await fetchJson(`/api/admin/explorer/clubs/${activeClubId}/novel-metrics?limit=10&aggregateIndex=${candidate.aggregateIndex}&code=${candidate.code}`)); }
+    catch (e) { setError(e instanceof Error ? e.message : "Novel detail failed"); }
+    finally { setLoading(false); }
+  }, [activeClubId, fetchJson]);
+
+  const loadPositionObservations = useCallback(async () => {
+    if (!activeClubId || !playerData) return;
+    setLoading(true); setError(null);
+    try { setPositionObservations(await fetchJson(`/api/admin/explorer/clubs/${activeClubId}/players/${playerData.playerId}/position-observations?limit=20`)); setView("position"); }
+    catch (e) { setError(e instanceof Error ? e.message : "Position observations failed"); }
+    finally { setLoading(false); }
+  }, [activeClubId, playerData, fetchJson]);
+
   return (
     <div style={{ fontFamily: "monospace", maxWidth: 1200 }}>
       <h1 style={{ fontSize: 20, marginBottom: 4 }}>Advanced Stats Explorer</h1>
@@ -458,6 +496,7 @@ export function AdvancedStatsExplorer() {
             <button onClick={() => exportData("json")} style={btnStyle}>Export JSON</button>
             <button onClick={() => exportData("csv")} style={btnStyle}>Export CSV</button>
             <button onClick={loadDiscovery} disabled={loading} style={btnStyle}>Discovery</button>
+            <button onClick={loadNovel} disabled={loading} style={btnStyle}>Novel Metrics</button>
             <button onClick={() => setView("anchor")} style={btnStyle}>Anchor</button>
           </>
         )}
@@ -561,6 +600,7 @@ export function AdvancedStatsExplorer() {
           showRaw={showRaw}
           onToggleZeros={() => setShowZeros(!showZeros)}
           onToggleRaw={() => setShowRaw(!showRaw)}
+          onPositionObservations={loadPositionObservations}
           onBack={() => setView("players")}
         />
       )}
@@ -618,9 +658,18 @@ export function AdvancedStatsExplorer() {
           onDnfFilter={setAnchorDnfFilter}
           onFamilyCodes={setFamilyCodes}
           onLoadFamily={loadFamily}
+          onExplainResiduals={loadResidualExplainer}
+          residualData={residualData}
+          residualFilter={residualFilter}
+          onResidualFilter={setResidualFilter}
+          selectedDiscriminator={selectedDiscriminator}
+          onSelectDiscriminator={setSelectedDiscriminator}
           onBack={() => setView("discovery")}
         />
       )}
+
+      {view === "novel" && <NovelMetricsView data={novel} detail={novelDetail} loading={loading} onRun={loadNovel} onInspect={loadNovelDetail} onCloseDetail={() => setNovelDetail(null)} onBack={() => setView("matches")} />}
+      {view === "position" && <PositionObservationsView data={positionObservations} onBack={() => setView("detail")} />}
     </div>
   );
 }
@@ -631,6 +680,7 @@ function PlayerDetailView({
   showRaw,
   onToggleZeros,
   onToggleRaw,
+  onPositionObservations,
   onBack,
 }: {
   data: PlayerExplorerData;
@@ -638,6 +688,7 @@ function PlayerDetailView({
   showRaw: boolean;
   onToggleZeros: () => void;
   onToggleRaw: () => void;
+  onPositionObservations: () => void;
   onBack: () => void;
 }) {
   const entries = showZeros ? data.aggregateEntries : data.aggregateEntries.filter((e) => e.value !== 0);
@@ -650,6 +701,11 @@ function PlayerDetailView({
       <p style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
         Match: {data.matchId} | vs {data.opponentName ?? "?"} | {new Date(data.playedAt).toLocaleDateString("pt-BR")} | Coverage: {data.knownStats.advancedCoverage}
       </p>
+      <section style={{ marginBottom: 16 }}>
+        <h3 style={h3Style}>Position Observation</h3>
+        <p style={{ color: "#8b949e", fontSize: 11 }}>Raw EA code: <strong>{data.eaPositionCode ?? "—"}</strong> · External candidate: <strong>{data.eaPositionCandidate.candidateLabel ?? "—"}</strong> · {data.eaPositionCandidate.classification} · {data.eaPositionCandidate.semanticStatus}. This is not an actual-position claim.</p>
+        <button onClick={onPositionObservations} style={{ ...btnStyle, fontSize: 12 }}>Inspect this player across matches</button>
+      </section>
 
       {/* Known stats */}
       <h3 style={h3Style}>Known Stats (ground truth)</h3>
@@ -928,7 +984,7 @@ function AnchorView({
   data, anchorType, aggregateIndex, code, metric, loading, selectedRelationship, showDifferencesOnly, dnfFilter,
   familyData, familyCodes,
   onAnchorType, onAggregateIndex, onCode, onMetric, onRun, onSelectRelationship, onToggleDifferencesOnly, onDnfFilter,
-  onFamilyCodes, onLoadFamily, onBack,
+  onFamilyCodes, onLoadFamily, onExplainResiduals, residualData, residualFilter, onResidualFilter, selectedDiscriminator, onSelectDiscriminator, onBack,
 }: {
   data: AnchorInvestigation | null; anchorType: string; aggregateIndex: string; code: string; metric: string;
   loading: boolean; selectedRelationship: AnchorRelationship | null; showDifferencesOnly: boolean; dnfFilter: string;
@@ -937,6 +993,9 @@ function AnchorView({
   onMetric: (v: string) => void; onRun: () => void; onSelectRelationship: (v: AnchorRelationship | null) => void;
   onToggleDifferencesOnly: () => void; onDnfFilter: (v: string) => void;
   onFamilyCodes: (v: string) => void; onLoadFamily: () => void; onBack: () => void;
+  onExplainResiduals: (relationship: AnchorRelationship) => void; residualData: ResidualExplainerResult | null;
+  residualFilter: string; onResidualFilter: (value: string) => void; selectedDiscriminator: ResidualDiscriminator | null;
+  onSelectDiscriminator: (value: ResidualDiscriminator | null) => void;
 }) {
   const knownMetrics = ["goals", "assists", "shots", "passesAttempted", "passesCompleted", "tacklesAttempted", "tacklesCompleted"];
   const confirmedCodes = [{ agg: 0, code: 112, name: "Beats" }, { agg: 0, code: 115, name: "Pre-assists" }, { agg: 0, code: 152, name: "Through passes" }, { agg: 0, code: 174, name: "Completed dribbles" }];
@@ -1079,12 +1138,12 @@ function AnchorView({
             dnfFilter={dnfFilter}
             onToggleDifferencesOnly={onToggleDifferencesOnly}
             onClose={() => onSelectRelationship(null)}
-            onExplainResiduals={() => loadResidualExplainer(selectedRelationship)}
+            onExplainResiduals={() => onExplainResiduals(selectedRelationship)}
             residualData={residualData}
             residualFilter={residualFilter}
-            onResidualFilter={setResidualFilter}
+            onResidualFilter={onResidualFilter}
             selectedDiscriminator={selectedDiscriminator}
-            onSelectDiscriminator={setSelectedDiscriminator}
+            onSelectDiscriminator={onSelectDiscriminator}
             loading={loading}
           />
         )}
@@ -1577,6 +1636,33 @@ function confidenceBg(confidence: string): string | undefined {
   if (confidence === "CONFIRMED") return "rgba(35, 134, 54, 0.08)";
   if (confidence === "HYPOTHESIS") return "rgba(158, 106, 3, 0.08)";
   return undefined;
+}
+
+export function NovelMetricsView({ data, detail, loading, onRun, onInspect, onCloseDetail, onBack }: {
+  data: NovelResult | null; detail: NovelDetail | null; loading: boolean;
+  onRun: () => void; onInspect: (candidate: NovelCandidate) => void; onCloseDetail: () => void; onBack: () => void;
+}) {
+  return <div>
+    <button onClick={onBack} style={{ ...btnStyle, marginBottom: 12, fontSize: 12 }}>← Back to matches</button>
+    <h2 style={h2Style}>Novel Metric Discovery</h2>
+    <p style={{ color: "#f0883e", fontSize: 12 }}>UNKNOWN codes are ranked only by investigation value. No sporting meaning is assigned.</p>
+    <button onClick={onRun} disabled={loading} style={{ ...btnStyle, marginBottom: 14 }}>{loading ? "Analyzing…" : "Run bounded analysis"}</button>
+    {!data ? <p style={{ color: "#8b949e" }}>Run the bounded analysis to inspect UNKNOWN aggregate codes.</p> : <>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}><StatChip label="RAW matches" value={data.rawMatchesAnalyzed} /><StatChip label="Player-match rows" value={data.playerMatchObservations} /><StatChip label="UNKNOWN candidates" value={data.candidates.length} /></div>
+      <div style={{ overflowX: "auto" }}><table style={tableStyle}><thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Aggregate</th><th style={thStyle}>Obs</th><th style={thStyle}>Active</th><th style={thStyle}>Matches</th><th style={thStyle}>Players</th><th style={thStyle}>Range</th><th style={thStyle}>Novelty</th><th style={thStyle}>Closest known relation</th><th style={thStyle}>Classification</th><th style={thStyle}>Warnings</th><th style={thStyle}></th></tr></thead><tbody>{data.candidates.map((c) => <tr key={`${c.aggregateIndex}-${c.code}`} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>agg{c.aggregateIndex}[{c.code}]</td><td style={tdStyle}>{c.aggregateIndex}</td><td style={tdStyle}>{c.observations}</td><td style={tdStyle}>{percent(c.activeRate)}</td><td style={tdStyle}>{c.matches}</td><td style={tdStyle}>{c.players}</td><td style={tdStyle}>{c.min}–{c.max}</td><td style={tdStyle}>{c.priority} · {c.noveltyScore.toFixed(1)}</td><td style={tdStyle}>{c.closestKnownRelation ? `${c.closestKnownRelation.name} (${c.closestKnownRelation.classification})` : "—"}</td><td style={tdStyle}>{c.classification}</td><td style={{ ...tdStyle, fontSize: 10 }}>{c.warnings.join(", ") || "—"}</td><td style={tdStyle}><button onClick={() => onInspect(c)} style={{ ...btnStyle, fontSize: 11, padding: "2px 8px" }}>Inspect</button></td></tr>)}</tbody></table></div>
+      {data.families.length > 0 && <p style={{ color: "#8b949e", fontSize: 11, marginTop: 12 }}>Unknown families: {data.families.map((f) => `agg${f.aggregateIndex}[${f.relatedCodes.join(", ")}] → representative ${f.representativeCode}`).join("; ")}</p>}
+      {detail && <NovelDetailView data={detail} onClose={onCloseDetail} />}
+    </>}
+  </div>;
+}
+
+function NovelDetailView({ data, onClose }: { data: NovelDetail; onClose: () => void }) {
+  const rows = (title: string, values: NovelEvidence[]) => <section style={{ marginTop: 16 }}><h3 style={h3Style}>{title}</h3><table style={tableStyle}><thead><tr><th style={thStyle}>Match</th><th style={thStyle}>Player</th><th style={thStyle}>Completion</th><th style={thStyle}>Value</th></tr></thead><tbody>{values.map((e) => <tr key={`${title}-${e.matchId}-${e.playerId}`} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{e.matchId}</td><td style={tdStyle}>{e.playerName ?? e.playerId}</td><td style={tdStyle}>{e.completion ?? "—"}</td><td style={tdStyle}>{e.value}</td></tr>)}</tbody></table></section>;
+  return <section style={detailStyle}><button onClick={onClose} style={{ ...btnStyle, fontSize: 11 }}>Close detail</button><h3 style={h3Style}>agg{data.candidate.aggregateIndex}[{data.candidate.code}]</h3><p style={{ color: "#f0883e", fontSize: 11 }}>Registry status: UNKNOWN. Statistical investigation only.</p><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><StatChip label="Classification" value={data.candidate.classification} /><StatChip label="Family" value={data.relatedFamily?.relatedCodes.join(", ") ?? "—"} /></div><h3 style={{ ...h3Style, marginTop: 16 }}>Closest known relations</h3><table style={tableStyle}><thead><tr><th style={thStyle}>Metric</th><th style={thStyle}>Class</th><th style={thStyle}>Pearson</th><th style={thStyle}>Spearman</th><th style={thStyle}>Equality</th></tr></thead><tbody>{data.knownRelations.map((r) => <tr key={r.name} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{r.name}</td><td style={tdStyle}>{r.classification}</td><td style={tdStyle}>{r.pearson?.toFixed(3) ?? "—"}</td><td style={tdStyle}>{r.spearman?.toFixed(3) ?? "—"}</td><td style={tdStyle}>{percent(r.exactEqualityRate)}</td></tr>)}</tbody></table>{rows("High values", data.highValues)}{rows("Low non-zero values", data.lowNonZeroValues)}{rows("Zero observations", data.zeroValues)}</section>;
+}
+
+export function PositionObservationsView({ data, onBack }: { data: PositionObservationsData | null; onBack: () => void }) {
+  return <div><button onClick={onBack} style={{ ...btnStyle, marginBottom: 12, fontSize: 12 }}>← Back to player</button><h2 style={h2Style}>Position Observations</h2><p style={{ color: "#f0883e", fontSize: 12 }}>Raw EA data plus externally mapped candidates. This does not claim actual played position.</p>{!data ? <p style={{ color: "#8b949e" }}>No observations loaded.</p> : <><div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}><StatChip label="Coverage" value={data.coverage} /><StatChip label="Distinct codes" value={data.distinctCodes} /></div><p style={{ color: "#8b949e", fontSize: 12 }}>Distribution: {data.distribution.map((d) => `${d.eaPositionCode ?? "—"}/${d.candidate.candidateLabel ?? "—"}: ${d.observations}`).join(" · ") || "—"}</p><table style={tableStyle}><thead><tr><th style={thStyle}>Match</th><th style={thStyle}>Opponent</th><th style={thStyle}>EA code</th><th style={thStyle}>Candidate</th><th style={thStyle}>Classification</th><th style={thStyle}>Semantic status</th><th style={thStyle}>Rating</th></tr></thead><tbody>{data.observations.map((o) => <tr key={o.matchId} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{o.matchId}</td><td style={tdStyle}>{o.opponentName ?? "—"}</td><td style={tdStyle}>{o.eaPositionCode ?? "—"}</td><td style={tdStyle}>{o.candidate.candidateLabel ?? "—"}</td><td style={tdStyle}>{o.candidate.classification}</td><td style={tdStyle}>{o.candidate.semanticStatus}</td><td style={tdStyle}>{o.rating ?? "—"}</td></tr>)}</tbody></table></>}</div>;
 }
 
 const btnStyle: React.CSSProperties = {

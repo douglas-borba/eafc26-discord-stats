@@ -1,5 +1,6 @@
 package com.eafc26.discordstats.explorer
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -45,6 +46,35 @@ class AdvancedStatsDiscoveryEngineTest {
             "tacklesCompleted" to 0,
         ),
     )
+
+    @Test
+    fun `conditional probabilities are null for zero denominators and finite otherwise`() {
+        val zero = engine.investigateAnchor(
+            listOf(sample(1, mapOf(10 to 0, 11 to 2)), sample(2, mapOf(10 to 0, 11 to 3))),
+            AdvancedStatsDiscoveryEngine.AnchorRef("AGGREGATE_CODE", 0, 10, null),
+        ).conditionalProfiles.single { it.candidateCode == 11 }
+        assertThat(zero.pCandidateActiveGivenAnchorActive).isNull()
+        assertThat(zero.pAnchorActiveGivenCandidateActive).isEqualTo(0.0)
+
+        val valid = engine.investigateAnchor(
+            listOf(sample(1, mapOf(10 to 1, 11 to 2)), sample(2, mapOf(10 to 1, 11 to 0))),
+            AdvancedStatsDiscoveryEngine.AnchorRef("AGGREGATE_CODE", 0, 10, null),
+        ).conditionalProfiles.single { it.candidateCode == 11 }
+        assertThat(valid.pCandidateActiveGivenAnchorActive).isEqualTo(0.5)
+    }
+
+    @Test
+    fun `anchor payload serializes undefined conditional probabilities as null never NaN or Infinity`() {
+        val result = engine.investigateAnchor(
+            listOf(sample(1, mapOf(10 to 0, 11 to 2)), sample(2, mapOf(10 to 0, 11 to 3))),
+            AdvancedStatsDiscoveryEngine.AnchorRef("AGGREGATE_CODE", 0, 10, null),
+        )
+        val json = jacksonObjectMapper().findAndRegisterModules().writeValueAsString(result)
+
+        assertThat(json).contains("\"pCandidateActiveGivenAnchorActive\":null")
+        assertThat(json).doesNotContain("\"pcandidateActiveGivenAnchorActive\"")
+        assertThat(json).doesNotContain("NaN", "Infinity", "-Infinity")
+    }
 
     @Test
     fun `sparse missing values become zero only inside available aggregate observations`() {

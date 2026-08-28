@@ -16,12 +16,15 @@ import { POST as testEa } from "@/app/api/admin/clubs/[clubId]/ea/test/route";
 import { POST as testDiscord } from "@/app/api/admin/clubs/[clubId]/discord/test/route";
 import { POST as approveTrialRequest } from "@/app/api/admin/trial-requests/[requestId]/approve/route";
 import { GET as discovery } from "@/app/api/admin/explorer/clubs/[clubId]/discovery/route";
+import { GET as novelMetrics } from "@/app/api/admin/explorer/clubs/[clubId]/novel-metrics/route";
+import { GET as positionObservations } from "@/app/api/admin/explorer/clubs/[clubId]/players/[playerId]/position-observations/route";
 
 const originalBackendUrl = process.env.BACKEND_URL;
 const clubContext = { params: Promise.resolve({ clubId: "8874106" }) };
 const publicationContext = { params: Promise.resolve({ clubId: "8874106", matchId: "960520613970171" }) };
 const trialRequestContext = { params: Promise.resolve({ requestId: "42" }) };
 const explorerContext = { params: Promise.resolve({ clubId: "8874106" }) };
+const playerExplorerContext = { params: Promise.resolve({ clubId: "8874106", playerId: "player-1" }) };
 
 beforeEach(() => { process.env.BACKEND_URL = "https://spring.example.test/"; process.env.ADMIN_INTERNAL_TOKEN = "test-admin-token"; });
 afterEach(() => {
@@ -134,6 +137,19 @@ describe("administrative BFF", () => {
     );
     const headers = fetchMock.mock.calls[0][1].headers as Headers;
     expect(headers.get("Authorization")).toBe("Bearer test-admin-token");
+  });
+
+  it("keeps Novel Metric Discovery and Position Observations behind the bounded administrative BFF", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ candidates: [] }))
+      .mockResolvedValueOnce(json({ coverage: "FULL", observations: [], distribution: [], distinctCodes: 0 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect((await novelMetrics(new Request("https://dashboard.test/api/admin/explorer/clubs/8874106/novel-metrics?limit=10&aggregateIndex=0&code=999"), explorerContext)).status).toBe(200);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://spring.example.test/api/admin/explorer/clubs/8874106/novel-metrics?limit=10&aggregateIndex=0&code=999");
+    expect((await positionObservations(new Request("https://dashboard.test/api/admin/explorer/clubs/8874106/players/player-1/position-observations?limit=20"), playerExplorerContext)).status).toBe(200);
+    expect(fetchMock.mock.calls[1][0]).toBe("https://spring.example.test/api/admin/explorer/clubs/8874106/players/player-1/position-observations?limit=20");
+    expect((fetchMock.mock.calls[1][1].headers as Headers).get("Authorization")).toBe("Bearer test-admin-token");
   });
 
   it("proxies club deletion and returns 204", async () => {

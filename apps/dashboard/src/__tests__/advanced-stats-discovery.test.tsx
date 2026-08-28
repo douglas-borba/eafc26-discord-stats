@@ -2,7 +2,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { DiscoveryView, type DiscoveryData } from "@/components/admin/advanced-stats-explorer";
+import { DiscoveryView, NovelMetricsView, PositionObservationsView, type DiscoveryData, type NovelResult, type PositionObservationsData } from "@/components/admin/advanced-stats-explorer";
 
 const base: DiscoveryData = {
   analysis: {
@@ -102,5 +102,39 @@ describe("Advanced Stats Discovery V2", () => {
     expect(html).toContain("Related Code Families");
     expect(html).toContain("Non-zero overlap");
     expect(html).not.toContain("passing family");
+  });
+});
+
+describe("Advanced Stats Explorer investigation surfaces", () => {
+  it("renders an UNKNOWN novel candidate as investigation evidence without a sporting label", () => {
+    const data: NovelResult = {
+      rawMatchesAnalyzed: 5,
+      playerMatchObservations: 8,
+      families: [],
+      candidates: [{
+        aggregateIndex: 0, code: 999, registryStatus: "UNKNOWN", observations: 8, activeObservations: 5, activeRate: 0.625,
+        matches: 5, players: 4, min: 0, max: 7, mean: 2.5, median: 2, distinctValues: 5, noveltyScore: 71,
+        priority: "HIGH", classification: "NOVEL_CANDIDATE", closestKnownRelation: null, warnings: [], familyId: null, familyRepresentative: true,
+      }],
+    };
+    const html = renderToStaticMarkup(<NovelMetricsView data={data} detail={null} loading={false} onRun={() => {}} onInspect={() => {}} onCloseDetail={() => {}} onBack={() => {}} />);
+
+    expect(html).toContain("agg0[999]");
+    expect(html).toContain("NOVEL_CANDIDATE");
+    expect(html).toContain("No sporting meaning is assigned.");
+  });
+
+  it("renders raw position code zero as covered but explicitly unverified", () => {
+    const data: PositionObservationsData = {
+      coverage: "FULL", distinctCodes: 1,
+      distribution: [{ eaPositionCode: "0", candidate: { rawCode: "0", candidateLabel: "GK", classification: "KNOWN_EXTERNAL_CANDIDATE", semanticStatus: "UNVERIFIED_EXTERNAL_MAPPING" }, observations: 1 }],
+      observations: [{ matchId: "m-1", playedAt: "2026-08-28T00:00:00Z", opponentName: "Opponent", playerId: "p-1", playerName: "Player", eaPositionCode: "0", candidate: { rawCode: "0", candidateLabel: "GK", classification: "KNOWN_EXTERNAL_CANDIDATE", semanticStatus: "UNVERIFIED_EXTERNAL_MAPPING" }, completion: "COMPLETED", rating: "7.0" }],
+    };
+    const html = renderToStaticMarkup(<PositionObservationsView data={data} onBack={() => {}} />);
+
+    expect(html).toContain("Coverage");
+    expect(html).toContain("FULL");
+    expect(html).toContain("UNVERIFIED_EXTERNAL_MAPPING");
+    expect(html).toContain("does not claim actual played position");
   });
 });

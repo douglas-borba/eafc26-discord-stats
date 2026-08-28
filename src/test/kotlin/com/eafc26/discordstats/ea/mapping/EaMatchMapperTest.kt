@@ -97,7 +97,9 @@ class EaMatchMapperTest {
         assertThat(outfield.participation.duration).isEqualTo(Duration.ofSeconds(5400))
         assertThat(outfield.eaRecognition.manOfTheMatch).isTrue()
         assertThat(outfield.role).isInstanceOf(PlayerRole.Outfield::class.java)
+        assertThat(outfield.eaPositionCode).isEqualTo("14")
         assertThat(goalkeeper.role).isEqualTo(PlayerRole.Goalkeeper)
+        assertThat(goalkeeper.eaPositionCode).isEqualTo("0")
         assertThat(goalkeeper.goalkeeping!!.saveBreakdown.reflex).isEqualTo(4)
         assertThat(result.warnings).isEmpty()
     }

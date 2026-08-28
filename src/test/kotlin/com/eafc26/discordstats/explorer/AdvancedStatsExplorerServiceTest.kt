@@ -8,8 +8,11 @@ import com.eafc26.discordstats.domain.match.*
 import com.eafc26.discordstats.domain.interpretation.MatchInterpretation
 import com.eafc26.discordstats.domain.interpretation.ResultDecision
 import com.eafc26.discordstats.ea.mapping.UnknownFieldCapture
+import com.eafc26.discordstats.store.CanonicalObjectMapperFactory
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.JsonNodeFactory
+import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
@@ -26,9 +29,13 @@ class AdvancedStatsExplorerServiceTest {
         rawAgg0: String? = "6:4,112:8,115:2,152:9,174:18,42:7",
         rawAgg1: String? = "6:3,47:1",
         rawUnknownFields: RawUnknownFields? = null,
+        eaPositionCode: String? = "25",
+        id: String = "match-1",
+        playerId: String = "player-1",
+        advancedCoverage: AdvancedStatsCoverage = AdvancedStatsCoverage.FULL,
     ): CanonicalMatch {
         val player = PlayerMatchPerformance(
-            player = PlayerIdentity(PlayerId("player-1"), DisplayName("Neymar"), null),
+            player = PlayerIdentity(PlayerId(playerId), DisplayName("Neymar"), null),
             role = PlayerRole.Outfield(null),
             participation = Participation(Duration.ofSeconds(5400), ParticipationStatus.COMPLETED),
             rating = MatchRating(java.math.BigDecimal("8.5")),
@@ -39,13 +46,14 @@ class AdvancedStatsExplorerServiceTest {
             goalkeeping = null,
             eaRecognition = EaRecognition(manOfTheMatch = true),
             advanced = AdvancedPlayerStats(secondAssists = 2, throughPasses = 9, dribblesCompleted = 18, beats = 8, interceptions = 7),
-            advancedCoverage = AdvancedStatsCoverage.FULL,
+            advancedCoverage = advancedCoverage,
             rawEventAggregates = if (rawAgg0 != null || rawAgg1 != null) RawEventAggregates(rawAgg0, rawAgg1) else null,
             rawUnknownFields = rawUnknownFields,
+            eaPositionCode = eaPositionCode,
         )
 
         val footballMatch = FootballMatch(
-            id = matchId,
+            id = MatchId(id),
             playedAt = Instant.ofEpochSecond(1718500000L),
             competition = CompetitionType.LEAGUE,
             participants = listOf(
@@ -75,7 +83,7 @@ class AdvancedStatsExplorerServiceTest {
         whenever(interpretation.result).thenReturn(resultDecision)
 
         val canonical = mock<CanonicalMatch>()
-        whenever(canonical.matchId).thenReturn(matchId)
+        whenever(canonical.matchId).thenReturn(MatchId(id))
         whenever(canonical.footballMatch).thenReturn(footballMatch)
         whenever(canonical.interpretation).thenReturn(interpretation)
 
@@ -95,6 +103,20 @@ class AdvancedStatsExplorerServiceTest {
         override fun findHistorySummaries(clubId: ClubId): List<CanonicalMatchOverview> = emptyList()
         override fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> = listOf(canonical)
         override fun metadata(clubId: ClubId): CanonicalRepositoryMetadata = CanonicalRepositoryMetadata(1, null, null, null, emptySet(), emptySet())
+    }
+
+    private fun fakeRepo(matches: List<CanonicalMatch>) = object : CanonicalMatchRepository {
+        override fun save(match: CanonicalMatch) {}
+        override fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch? = matches.firstOrNull { it.matchId == matchId }
+        override fun findMatchIds(clubId: ClubId): Set<MatchId> = matches.map { it.matchId }.toSet()
+        override fun findLatestMatchId(clubId: ClubId): MatchId? = matches.firstOrNull()?.matchId
+        override fun findExistingMatchIds(clubId: ClubId, candidateMatchIds: Collection<MatchId>): Set<MatchId> = emptySet()
+        override fun findRecentMatchIds(clubId: ClubId, limit: Int): List<MatchId> = matches.take(limit).map { it.matchId }
+        override fun findRecentOverview(clubId: ClubId, limit: Int): List<CanonicalMatchOverview> = emptyList()
+        override fun findAll(clubId: ClubId): List<CanonicalMatch> = error("Explorer position observations must not read full history")
+        override fun findHistorySummaries(clubId: ClubId): List<CanonicalMatchOverview> = emptyList()
+        override fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> = matches.take(limit)
+        override fun metadata(clubId: ClubId): CanonicalRepositoryMetadata = CanonicalRepositoryMetadata(matches.size, null, null, null, emptySet(), emptySet())
     }
 
     @Test
@@ -365,5 +387,69 @@ class AdvancedStatsExplorerServiceTest {
         assertThat(result.analysis.rawMatchesAnalyzed).isEqualTo(1)
         assertThat(code.rawObservationCount).isEqualTo(1)
         assertThat(code.zeroCount).isZero()
+    }
+
+    @Test
+    fun `position observations preserve raw code, candidate status, coverage and bounded reads`() {
+        val historical = buildCanonical(rawAgg0 = null, rawAgg1 = null, eaPositionCode = null, id = "historical")
+        val goalkeeper = buildCanonical(rawAgg0 = null, rawAgg1 = null, eaPositionCode = "0", id = "goalkeeper")
+        val striker = buildCanonical(rawAgg0 = null, rawAgg1 = null, eaPositionCode = "25", id = "striker")
+
+        val result = AdvancedStatsExplorerService(fakeRepo(listOf(historical, goalkeeper, striker)))
+            .positionObservations(clubId, "player-1", limit = 20)
+
+        assertThat(result.coverage).isEqualTo("PARTIAL")
+        assertThat(result.observations.map { it.eaPositionCode }).containsExactly(null, "0", "25")
+        assertThat(result.observations[1].candidate.candidateLabel).isEqualTo("GK")
+        assertThat(result.observations[1].candidate.classification).isEqualTo("KNOWN_EXTERNAL_CANDIDATE")
+        assertThat(result.observations[1].candidate.semanticStatus).isEqualTo("UNVERIFIED_EXTERNAL_MAPPING")
+        assertThat(result.distribution.associate { it.eaPositionCode to it.observations })
+            .containsEntry(null, 1).containsEntry("0", 1).containsEntry("25", 1)
+        assertThat(result.distinctCodes).isEqualTo(2)
+    }
+
+    @Test
+    fun `position coverage treats raw zero as present and does not infer historical role`() {
+        val onlyZero = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawAgg0 = null, rawAgg1 = null, eaPositionCode = "0")))
+            .positionObservations(clubId, "player-1")
+        val absent = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawAgg0 = null, rawAgg1 = null, eaPositionCode = null)))
+            .positionObservations(clubId, "player-1")
+
+        assertThat(onlyZero.coverage).isEqualTo("FULL")
+        assertThat(onlyZero.observations.single().eaPositionCode).isEqualTo("0")
+        assertThat(absent.coverage).isEqualTo("UNAVAILABLE")
+        assertThat(absent.observations.single().candidate.classification).isEqualTo("MISSING")
+    }
+
+    @Test
+    fun `historical canonical player JSON without raw EA position remains compatible`() {
+        val original = buildCanonical().footballMatch.participants.first().players.single()
+        val mapper = CanonicalObjectMapperFactory.create(jacksonObjectMapper().findAndRegisterModules())
+        val historicalPayload = mapper.valueToTree<ObjectNode>(original).also { it.remove("eaPositionCode") }
+
+        val restored = mapper.treeToValue(historicalPayload, PlayerMatchPerformance::class.java)
+
+        assertThat(restored.eaPositionCode).isNull()
+        assertThat(restored.role).isEqualTo(PlayerRole.Outfield(null))
+    }
+
+    @Test
+    fun `novel discovery has one bounded read and never treats unavailable advanced coverage as zero`() {
+        val matches = (0 until 5).map { index ->
+            buildCanonical(rawAgg0 = null, rawAgg1 = "900:${index + 1}", id = "raw-$index", advancedCoverage = AdvancedStatsCoverage.UNAVAILABLE)
+        }
+        var requestedLimit = -1
+        val repository = object : CanonicalMatchRepository by fakeRepo(matches) {
+            override fun findRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> {
+                requestedLimit = limit
+                return matches
+            }
+            override fun findAll(clubId: ClubId): List<CanonicalMatch> = error("Novel discovery must not read full history")
+        }
+
+        val detail = AdvancedStatsExplorerService(repository).novelMetricDetail(clubId, 10, 1, 900)!!
+
+        assertThat(requestedLimit).isEqualTo(20)
+        assertThat(detail.knownRelations).noneMatch { it.name.startsWith("agg0[") }
     }
 }
