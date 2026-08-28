@@ -290,12 +290,20 @@ class AdvancedStatsExplorerService(
                 inventory = filteredInventory,
                 relations = filteredRelations,
                 topCandidates = filteredRelations.filter { it.evidenceTier != "COINCIDENCE" }.take(20),
+                topDiscoverySignals = result.topDiscoverySignals.filter { signal ->
+                    aggregate == null || signal.aggregateIndex == aggregate
+                },
                 correlations = result.correlations.filter {
                     AdvancedStatsDiscoveryEngine.CodeRef(it.aggregateIndex, it.codeA) in visibleRefs &&
                         AdvancedStatsDiscoveryEngine.CodeRef(it.aggregateIndex, it.codeB) in visibleRefs
                 },
                 calibration = result.calibration.filter {
                     AdvancedStatsDiscoveryEngine.CodeRef(it.aggregateIndex, it.code) in visibleRefs
+                },
+                relatedCodeFamilies = result.relatedCodeFamilies.filter { family ->
+                    family.codes.all { code ->
+                        AdvancedStatsDiscoveryEngine.CodeRef(family.aggregateIndex, code) in visibleRefs
+                    }
                 },
             ),
             newAggregateDataDetected = additionalAggregateAlerts(matches, clubId),
