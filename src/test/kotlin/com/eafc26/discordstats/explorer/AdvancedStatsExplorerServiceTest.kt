@@ -189,6 +189,23 @@ class AdvancedStatsExplorerServiceTest {
 
         assertThat(data.rawAggregate0).isEqualTo("6:4,112:8,115:2,152:9,174:18,42:7")
         assertThat(data.rawAggregate1).isEqualTo("6:3,47:1")
+        assertThat(data.rawAggregate2).isNull()
+        assertThat(data.rawAggregate3).isNull()
+    }
+
+    @Test
+    fun `selected evidence exposes preserved RAW context without assigning semantics`() {
+        val context = RawUnknownFields.of("player", listOf(
+            RawUnknownField("gameTime", "string", "\"5400\""),
+            RawUnknownField("realtimegame", "string", "\"5123\""),
+            RawUnknownField("realtimeidle", "string", "\"277\""),
+            RawUnknownField("archetypeid", "string", "\"12\""),
+        ))
+        val data = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawUnknownFields = context)))
+            .playerExplorerData(clubId, matchId, "player-1")!!
+
+        assertThat(data.rawContextFields.map { it.name }).containsExactly("archetypeid", "gameTime", "realtimegame", "realtimeidle")
+        assertThat(data.rawContextFields.map { it.value }).contains("\"12\"")
     }
 
     @Test
@@ -295,7 +312,7 @@ class AdvancedStatsExplorerServiceTest {
     fun `additional aggregate fields are marked as candidates without a sporting mapping`() {
         val raw = RawUnknownFields.of(
             "player",
-            listOf(RawUnknownField("match_event_aggregate_2", "string", "\"1:4\"")),
+            listOf(RawUnknownField("match_event_aggregate_4", "string", "\"1:4\"")),
         )
         val service = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawAgg0 = null, rawAgg1 = null, rawUnknownFields = raw)))
 
@@ -360,13 +377,13 @@ class AdvancedStatsExplorerServiceTest {
     fun `non empty aggregate two capture creates an alert without a mapping`() {
         val raw = RawUnknownFields.of(
             "player",
-            listOf(RawUnknownField("match_event_aggregate_2", "string", "\"8:2\"")),
+            listOf(RawUnknownField("match_event_aggregate_4", "string", "\"8:2\"")),
         )
         val result = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawUnknownFields = raw)))
             .discoveryData(clubId, limit = 10)
 
         val alert = result.newAggregateDataDetected.single()
-        assertThat(alert.fieldName).isEqualTo("match_event_aggregate_2")
+        assertThat(alert.fieldName).isEqualTo("match_event_aggregate_4")
         assertThat(alert.matchCount).isEqualTo(1)
         assertThat(alert.playerCount).isEqualTo(1)
         assertThat(result.analysis.inventory).noneMatch { it.aggregateIndex == 2 }
@@ -401,11 +418,21 @@ class AdvancedStatsExplorerServiceTest {
         assertThat(result.coverage).isEqualTo("PARTIAL")
         assertThat(result.observations.map { it.eaPositionCode }).containsExactly(null, "0", "25")
         assertThat(result.observations[1].candidate.candidateLabel).isEqualTo("GK")
-        assertThat(result.observations[1].candidate.classification).isEqualTo("KNOWN_EXTERNAL_CANDIDATE")
+        assertThat(result.observations[1].candidate.classification).isEqualTo("NUMERIC_EXTERNAL_CANDIDATE")
         assertThat(result.observations[1].candidate.semanticStatus).isEqualTo("UNVERIFIED_EXTERNAL_MAPPING")
         assertThat(result.distribution.associate { it.eaPositionCode to it.observations })
             .containsEntry(null, 1).containsEntry("0", 1).containsEntry("25", 1)
         assertThat(result.distinctCodes).isEqualTo(2)
+    }
+
+    @Test
+    fun `literal forward remains a RAW EA role label without an actual position claim`() {
+        val result = AdvancedStatsExplorerService(fakeRepo(buildCanonical(rawAgg0 = null, rawAgg1 = null, eaPositionCode = "forward")))
+            .positionObservations(clubId, "player-1")
+
+        assertThat(result.observations.single().eaPositionCode).isEqualTo("forward")
+        assertThat(result.observations.single().candidate.classification).isEqualTo("EA_ROLE_LABEL")
+        assertThat(result.observations.single().candidate.candidateLabel).isNull()
     }
 
     @Test
@@ -422,6 +449,50 @@ class AdvancedStatsExplorerServiceTest {
     }
 
     @Test
+    fun `observation comparison keeps indexes separate and excludes unavailable RAW instead of zeroing it`() {
+        val observations = InMemoryExplorerObservationRepository()
+        observations.save(ExplorerObservation(clubId, MatchId("one"), "player-1", "Bom passe", 5))
+        observations.save(ExplorerObservation(clubId, MatchId("two"), "player-1", "Bom passe", 1))
+        observations.save(ExplorerObservation(clubId, MatchId("three"), "player-1", "Bom passe", 1))
+        val service = AdvancedStatsExplorerService(
+            fakeRepo(listOf(
+                buildCanonical(rawAgg0 = "182:1,24:6", rawAgg1 = "24:3", id = "one"),
+                buildCanonical(rawAgg0 = "182:7,24:2", rawAgg1 = "24:1", id = "two"),
+                buildCanonical(rawAgg0 = null, rawAgg1 = null, id = "three"),
+            )),
+            observationRepository = observations,
+        )
+
+        val result = service.compareObservations(clubId, "player-1", "Bom passe")
+
+        assertThat(result.candidates.first { it.aggregateIndex == 0 && it.code == 182 }.classification)
+            .isEqualTo("DIRECT_COUNTER_INCOMPATIBLE")
+        assertThat(result.candidates.map { it.aggregateIndex to it.code }).contains(0 to 24, 1 to 24)
+        assertThat(result.excludedRawUnavailable).isGreaterThan(0)
+    }
+
+    @Test
+    fun `observation comparison treats an absent code in an available sparse aggregate as zero`() {
+        val observations = InMemoryExplorerObservationRepository()
+        observations.save(ExplorerObservation(clubId, MatchId("one"), "player-1", "Ação observada", 1))
+        observations.save(ExplorerObservation(clubId, MatchId("two"), "player-1", "Ação observada", 0))
+        val service = AdvancedStatsExplorerService(
+            fakeRepo(listOf(
+                buildCanonical(rawAgg0 = "182:1", rawAgg1 = "", id = "one"),
+                buildCanonical(rawAgg0 = "24:2", rawAgg1 = "", id = "two"),
+            )),
+            observationRepository = observations,
+        )
+
+        val result = service.compareObservations(clubId, "player-1", "Ação observada")
+
+        val candidate = result.candidates.first { it.aggregateIndex == 0 && it.code == 182 }
+        assertThat(candidate.comparableObservations).isEqualTo(2)
+        assertThat(result.rows.filter { it.aggregateIndex == 0 && it.code == 182 }.map { it.aggregateValue })
+            .containsExactlyInAnyOrder(1, 0)
+    }
+
+    @Test
     fun `historical canonical player JSON without raw EA position remains compatible`() {
         val original = buildCanonical().footballMatch.participants.first().players.single()
         val mapper = CanonicalObjectMapperFactory.create(jacksonObjectMapper().findAndRegisterModules())
@@ -431,6 +502,17 @@ class AdvancedStatsExplorerServiceTest {
 
         assertThat(restored.eaPositionCode).isNull()
         assertThat(restored.role).isEqualTo(PlayerRole.Outfield(null))
+    }
+
+    @Test
+    fun `canonical player JSON preserves aggregate slot identity including absent empty and populated slots`() {
+        val original = buildCanonical().footballMatch.participants.first().players.single().copy(
+            rawEventAggregates = RawEventAggregates("24:18", "24:11", "", "214:1"),
+        )
+        val mapper = CanonicalObjectMapperFactory.create(jacksonObjectMapper().findAndRegisterModules())
+        val restored = mapper.readValue(mapper.writeValueAsString(original), PlayerMatchPerformance::class.java)
+
+        assertThat(restored.rawEventAggregates).isEqualTo(RawEventAggregates("24:18", "24:11", "", "214:1"))
     }
 
     @Test

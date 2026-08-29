@@ -70,6 +70,9 @@ type PlayerExplorerData = {
   knownStats: KnownStats;
   rawAggregate0: string | null;
   rawAggregate1: string | null;
+  rawAggregate2: string | null;
+  rawAggregate3: string | null;
+  rawContextFields: { name: string; jsonType: string; value: string; truncated: boolean }[];
   unknownFields: UnknownFieldsData;
   eaPositionCode: string | null;
   eaPositionCandidate: { rawCode: string | null; candidateLabel: string | null; classification: string; semanticStatus: string };
@@ -596,6 +599,7 @@ export function AdvancedStatsExplorer() {
       {view === "detail" && playerData && (
         <PlayerDetailView
           data={playerData}
+          clubId={activeClubId}
           showZeros={showZeros}
           showRaw={showRaw}
           onToggleZeros={() => setShowZeros(!showZeros)}
@@ -676,6 +680,7 @@ export function AdvancedStatsExplorer() {
 
 function PlayerDetailView({
   data,
+  clubId,
   showZeros,
   showRaw,
   onToggleZeros,
@@ -684,6 +689,7 @@ function PlayerDetailView({
   onBack,
 }: {
   data: PlayerExplorerData;
+  clubId: string;
   showZeros: boolean;
   showRaw: boolean;
   onToggleZeros: () => void;
@@ -706,6 +712,8 @@ function PlayerDetailView({
         <p style={{ color: "#8b949e", fontSize: 11 }}>Raw EA code: <strong>{data.eaPositionCode ?? "—"}</strong> · External candidate: <strong>{data.eaPositionCandidate.candidateLabel ?? "—"}</strong> · {data.eaPositionCandidate.classification} · {data.eaPositionCandidate.semanticStatus}. This is not an actual-position claim.</p>
         <button onClick={onPositionObservations} style={{ ...btnStyle, fontSize: 12 }}>Inspect this player across matches</button>
       </section>
+
+      <ObservationPanel clubId={clubId} data={data} />
 
       {/* Known stats */}
       <h3 style={h3Style}>Known Stats (ground truth)</h3>
@@ -819,12 +827,84 @@ function PlayerDetailView({
         <div style={{ marginTop: 16 }}>
           <h3 style={h3Style}>Raw Aggregates</h3>
           <pre style={{ background: "#161b22", padding: 12, borderRadius: 6, fontSize: 12, overflow: "auto", color: "#c9d1d9" }}>
-            {JSON.stringify({ aggregate_0: data.rawAggregate0, aggregate_1: data.rawAggregate1 }, null, 2)}
+            {JSON.stringify({ aggregate_0: data.rawAggregate0, aggregate_1: data.rawAggregate1, aggregate_2: data.rawAggregate2, aggregate_3: data.rawAggregate3 }, null, 2)}
           </pre>
         </div>
       )}
+
+      {data.rawContextFields.length > 0 && (
+        <section style={{ marginTop: 16 }}>
+          <h3 style={h3Style}>RAW context</h3>
+          <p style={{ color: "#8b949e", fontSize: 11 }}>Transport context only; no sporting semantics are assigned.</p>
+          <pre style={{ background: "#161b22", padding: 12, borderRadius: 6, fontSize: 12, overflow: "auto", color: "#c9d1d9" }}>{JSON.stringify(data.rawContextFields, null, 2)}</pre>
+        </section>
+      )}
     </div>
   );
+}
+
+type ExplorerObservation = { phrase: string; observedCount: number; completeness: "AT_LEAST" | "EXACT"; note: string | null; observedPositionContext: string | null };
+type ObservationComparison = {
+  phrase: string; annotatedMatches: number; annotatedObservations: number; excludedRawUnavailable: number;
+  candidates: { aggregateIndex: number; code: number; annotatedMatches: number; comparableObservations: number; totalObservedOccurrences: number; aggregateLessThanObserved: number; aggregateEqualObserved: number; aggregateGreaterThanObserved: number; exactSupportingEvidence: number; classification: string }[];
+};
+
+function ObservationPanel({ clubId, data }: { clubId: string; data: PlayerExplorerData }) {
+  const [phrase, setPhrase] = useState("");
+  const [count, setCount] = useState("0");
+  const [completeness, setCompleteness] = useState<"AT_LEAST" | "EXACT">("AT_LEAST");
+  const [note, setNote] = useState("");
+  const [positionContext, setPositionContext] = useState("");
+  const [items, setItems] = useState<ExplorerObservation[]>([]);
+  const [comparison, setComparison] = useState<ObservationComparison | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const base = `/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/matches/${encodeURIComponent(data.matchId)}/players/${encodeURIComponent(data.playerId)}/observations`;
+  const load = async () => {
+    setLoading(true); setError(null);
+    try { const response = await fetch(base, { cache: "no-store" }); if (!response.ok) throw new Error(`HTTP ${response.status}`); setItems(await response.json()); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load observations"); }
+    finally { setLoading(false); }
+  };
+  const save = async () => {
+    const observedCount = Number(count);
+    if (!phrase || !Number.isInteger(observedCount) || observedCount < 0) { setError("Phrase and a non-negative whole count are required."); return; }
+    setLoading(true); setError(null);
+    try {
+      const response = await fetch(base, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phrase, observedCount, completeness, note: note || null, observedPositionContext: positionContext || null }) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const saved = await response.json() as ExplorerObservation;
+      setItems((previous) => [...previous.filter((item) => item.phrase !== saved.phrase), saved].sort((a, b) => a.phrase.localeCompare(b.phrase)));
+      setPhrase(""); setCount("0"); setNote(""); setPositionContext(""); setComparison(null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to save observation"); }
+    finally { setLoading(false); }
+  };
+  const compare = async (selectedPhrase: string) => {
+    setLoading(true); setError(null);
+    try {
+      const url = `/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/players/${encodeURIComponent(data.playerId)}/observation-comparison?phrase=${encodeURIComponent(selectedPhrase)}&limit=20`;
+      const response = await fetch(url, { cache: "no-store" }); if (!response.ok) throw new Error(`HTTP ${response.status}`); setComparison(await response.json());
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to compare observations"); }
+    finally { setLoading(false); }
+  };
+
+  return <section style={{ marginBottom: 16, padding: 12, border: "1px solid #30363d", borderRadius: 6 }}>
+    <h3 style={h3Style}>Human observational evidence</h3>
+    <p style={{ color: "#f0883e", fontSize: 11 }}>Observations are separate from EA facts. AT_LEAST is the default because messages can be missed while playing.</p>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+      <input aria-label="Observation phrase" value={phrase} onChange={(event) => setPhrase(event.target.value)} placeholder="Exact EA feedback phrase" style={inputStyle} />
+      <input aria-label="Observed count" value={count} onChange={(event) => setCount(event.target.value)} type="number" min="0" style={{ ...inputStyle, width: 90 }} />
+      <select aria-label="Observation completeness" value={completeness} onChange={(event) => setCompleteness(event.target.value as "AT_LEAST" | "EXACT")} style={selectStyle}><option value="AT_LEAST">AT_LEAST</option><option value="EXACT">EXACT</option></select>
+      <input aria-label="Observed position context" value={positionContext} onChange={(event) => setPositionContext(event.target.value)} placeholder="Observed position/context (optional)" style={inputStyle} />
+      <input aria-label="Observation note" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note (optional)" style={inputStyle} />
+      <button onClick={save} disabled={loading} style={btnStyle}>{loading ? "Saving…" : "Save observation"}</button>
+      <button onClick={load} disabled={loading} style={btnStyle}>Load observations</button>
+    </div>
+    {error && <p style={{ color: "#f85149", fontSize: 11 }}>{error}</p>}
+    {items.length > 0 && <table style={tableStyle}><thead><tr><th style={thStyle}>Phrase</th><th style={thStyle}>Observed</th><th style={thStyle}>Completeness</th><th style={thStyle}>Position context</th><th style={thStyle}></th></tr></thead><tbody>{items.map((item) => <tr key={item.phrase} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{item.phrase}</td><td style={tdStyle}>{item.observedCount}</td><td style={tdStyle}>{item.completeness}</td><td style={tdStyle}>{item.observedPositionContext ?? "—"}</td><td style={tdStyle}><button onClick={() => compare(item.phrase)} disabled={loading} style={{ ...btnStyle, fontSize: 11 }}>Compare</button></td></tr>)}</tbody></table>}
+    {comparison && <div style={{ marginTop: 10 }}><strong style={{ fontSize: 12 }}>Direct-counter comparison: {comparison.phrase}</strong><p style={{ color: "#8b949e", fontSize: 11 }}>{comparison.annotatedObservations} annotations · {comparison.excludedRawUnavailable} RAW aggregate slots excluded.</p>{comparison.candidates.length === 0 ? <p style={{ color: "#8b949e", fontSize: 11 }}>No UNKNOWN aggregate candidates have comparable RAW evidence.</p> : <table style={tableStyle}><thead><tr><th style={thStyle}>Candidate</th><th style={thStyle}>Result</th><th style={thStyle}>A&lt;O</th><th style={thStyle}>A=O</th><th style={thStyle}>A&gt;O</th></tr></thead><tbody>{comparison.candidates.map((candidate) => <tr key={`${candidate.aggregateIndex}-${candidate.code}`} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>agg{candidate.aggregateIndex}[{candidate.code}]</td><td style={tdStyle}>{candidate.classification}</td><td style={tdStyle}>{candidate.aggregateLessThanObserved}</td><td style={tdStyle}>{candidate.aggregateEqualObserved}</td><td style={tdStyle}>{candidate.aggregateGreaterThanObserved}</td></tr>)}</tbody></table>}</div>}
+  </section>;
 }
 
 function CompareView({
@@ -1677,6 +1757,7 @@ const btnStyle: React.CSSProperties = {
 
 const filterLabel: React.CSSProperties = { display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#8b949e" };
 const selectStyle: React.CSSProperties = { background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 4, padding: "3px 5px" };
+const inputStyle: React.CSSProperties = { ...selectStyle, minWidth: 150 };
 const numberInputStyle: React.CSSProperties = { ...selectStyle, width: 52 };
 const detailStyle: React.CSSProperties = { marginTop: 20, padding: 12, border: "1px solid #30363d", borderRadius: 6, background: "#0d1117" };
 

@@ -111,6 +111,13 @@ data class PlayerEntry(
      */
     @JsonProperty("match_event_aggregate_0") val matchEventAggregate0: String? = null,
     @JsonProperty("match_event_aggregate_1") val matchEventAggregate1: String? = null,
+    /**
+     * These transport fields are preserved independently even though Explorer
+     * semantics currently cover only aggregate 0 and 1. A null means the EA
+     * field was absent; an empty string means it was explicitly present empty.
+     */
+    @JsonProperty("match_event_aggregate_2") val matchEventAggregate2: String? = null,
+    @JsonProperty("match_event_aggregate_3") val matchEventAggregate3: String? = null,
 ) {
     /**
      * Captures any JSON properties not declared in this DTO.
@@ -125,19 +132,16 @@ data class PlayerEntry(
     }
 
     companion object {
-        /**
-         * EA FC position code for goalkeeper.
-         * The API returns position as a numeric string.
-         */
+        /** Numeric position value observed in older fixtures. */
         const val POSITION_GOALKEEPER = "0"
     }
 
     /**
      * Returns true if this player is a goalkeeper.
      * 
-     * Handles both:
-     * - EA API numeric position code "0"
-     * - Test helper string "goalkeeper" (for backwards compatibility)
+     * Handles the numeric value and role label historically used by the
+     * application. The raw EA `pos` field is intentionally opaque: newer
+     * production payloads can contain role labels such as `forward`.
      */
     fun isGoalkeeper(): Boolean =
         position == POSITION_GOALKEEPER || position?.lowercase() == "goalkeeper"

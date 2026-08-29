@@ -21,6 +21,15 @@ interface CanonicalMatchRepository {
     fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch?
 
     /**
+     * Loads a deliberately small identified set in one repository operation.
+     * Production PostgreSQL implementations must avoid one lookup per match.
+     */
+    fun findByIds(clubId: ClubId, matchIds: Collection<MatchId>): List<CanonicalMatch> {
+        if (matchIds.isEmpty()) return emptyList()
+        return matchIds.distinct().mapNotNull { findById(clubId, it) }
+    }
+
+    /**
      * Returns canonical identifiers without loading or deserializing full match payloads.
      *
      * This remains available for consumers that explicitly need the complete

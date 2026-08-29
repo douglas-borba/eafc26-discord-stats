@@ -146,6 +146,24 @@ class PostgresCanonicalMatchRepository(
         return results.firstOrNull()?.match
     }
 
+    override fun findByIds(clubId: ClubId, matchIds: Collection<MatchId>): List<CanonicalMatch> {
+        val ids = matchIds.map { it.value }.distinct()
+        if (ids.isEmpty()) return emptyList()
+        val placeholders = ids.joinToString(", ") { "?" }
+        val results = jdbcTemplate.query(
+            "SELECT payload FROM canonical_matches WHERE club_id = ? AND match_id IN ($placeholders)",
+            { rs, _ -> readPayload(rs) },
+            *arrayOf(clubId.value, *ids.toTypedArray()),
+        )
+        readDiagnostics.record(
+            CanonicalReadOperation.FIND_BY_ID,
+            readOriginContext.current(),
+            results.size,
+            results.sumOf { it.payloadBytes },
+        )
+        return results.map(PayloadRead::match)
+    }
+
     override fun findMatchIds(clubId: ClubId): Set<MatchId> {
         val results = jdbcTemplate.query(
             "SELECT match_id FROM canonical_matches WHERE club_id = ? ORDER BY played_at DESC, match_id ASC",

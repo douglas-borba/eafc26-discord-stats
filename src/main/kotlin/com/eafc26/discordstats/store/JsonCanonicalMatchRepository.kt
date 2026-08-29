@@ -83,6 +83,16 @@ class JsonCanonicalMatchRepository(
     }
 
     @Synchronized
+    override fun findByIds(clubId: ClubId, matchIds: Collection<MatchId>): List<CanonicalMatch> {
+        migrateLegacyFilesIfNeeded(clubId)
+        val root = rootFor(clubId)
+        if (!root.exists() || matchIds.isEmpty()) return emptyList()
+        return matchIds.distinct().mapNotNull { matchId ->
+            pathFor(root, matchId).takeIf { it.exists() }?.let(::read)
+        }
+    }
+
+    @Synchronized
     override fun findMatchIds(clubId: ClubId): Set<MatchId> {
         migrateLegacyFilesIfNeeded(clubId)
         val root = rootFor(clubId)

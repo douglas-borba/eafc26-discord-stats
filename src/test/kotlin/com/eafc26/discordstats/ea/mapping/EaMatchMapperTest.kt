@@ -178,6 +178,23 @@ class EaMatchMapperTest {
     }
 
     @Test
+    fun `preserves literal EA role values and aggregate slots two and three without semantic decoding`() {
+        val sourcePlayer = player(name = "Forward", aggregate0 = "24:18", aggregate1 = "24:11").copy(
+            position = "forward",
+            matchEventAggregate2 = "",
+            matchEventAggregate3 = "214:1",
+        )
+        val mapped = mapper.map(match(players = mapOf("our-club" to mapOf("p" to sourcePlayer)))).success()
+            .match.participants.first().players.single()
+
+        assertThat(mapped.eaPositionCode).isEqualTo("forward")
+        assertThat(mapped.rawEventAggregates!!.aggregate0).isEqualTo("24:18")
+        assertThat(mapped.rawEventAggregates!!.aggregate1).isEqualTo("24:11")
+        assertThat(mapped.rawEventAggregates!!.aggregate2).isEqualTo("")
+        assertThat(mapped.rawEventAggregates!!.aggregate3).isEqualTo("214:1")
+    }
+
+    @Test
     fun `raw event aggregates are null when EA data is absent`() {
         val result = mapper.map(
             match(players = mapOf(

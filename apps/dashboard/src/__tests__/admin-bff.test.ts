@@ -18,6 +18,8 @@ import { POST as approveTrialRequest } from "@/app/api/admin/trial-requests/[req
 import { GET as discovery } from "@/app/api/admin/explorer/clubs/[clubId]/discovery/route";
 import { GET as novelMetrics } from "@/app/api/admin/explorer/clubs/[clubId]/novel-metrics/route";
 import { GET as positionObservations } from "@/app/api/admin/explorer/clubs/[clubId]/players/[playerId]/position-observations/route";
+import { GET as getExplorerObservations, POST as saveExplorerObservation } from "@/app/api/admin/explorer/clubs/[clubId]/matches/[matchId]/players/[playerId]/observations/route";
+import { GET as compareExplorerObservations } from "@/app/api/admin/explorer/clubs/[clubId]/players/[playerId]/observation-comparison/route";
 
 const originalBackendUrl = process.env.BACKEND_URL;
 const clubContext = { params: Promise.resolve({ clubId: "8874106" }) };
@@ -25,6 +27,7 @@ const publicationContext = { params: Promise.resolve({ clubId: "8874106", matchI
 const trialRequestContext = { params: Promise.resolve({ requestId: "42" }) };
 const explorerContext = { params: Promise.resolve({ clubId: "8874106" }) };
 const playerExplorerContext = { params: Promise.resolve({ clubId: "8874106", playerId: "player-1" }) };
+const matchPlayerExplorerContext = { params: Promise.resolve({ clubId: "8874106", matchId: "match-1", playerId: "player-1" }) };
 
 beforeEach(() => { process.env.BACKEND_URL = "https://spring.example.test/"; process.env.ADMIN_INTERNAL_TOKEN = "test-admin-token"; });
 afterEach(() => {
@@ -150,6 +153,23 @@ describe("administrative BFF", () => {
     expect((await positionObservations(new Request("https://dashboard.test/api/admin/explorer/clubs/8874106/players/player-1/position-observations?limit=20"), playerExplorerContext)).status).toBe(200);
     expect(fetchMock.mock.calls[1][0]).toBe("https://spring.example.test/api/admin/explorer/clubs/8874106/players/player-1/position-observations?limit=20");
     expect((fetchMock.mock.calls[1][1].headers as Headers).get("Authorization")).toBe("Bearer test-admin-token");
+  });
+
+  it("keeps human observations internal, authenticated and scoped to club match and player", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json([]))
+      .mockResolvedValueOnce(csrf()).mockResolvedValueOnce(json({ phrase: "Bom passe", observedCount: 4, completeness: "AT_LEAST" }))
+      .mockResolvedValueOnce(json({ phrase: "Bom passe", candidates: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect((await getExplorerObservations(new Request("https://dashboard.test"), matchPlayerExplorerContext)).status).toBe(200);
+    expect((await saveExplorerObservation(new Request("https://dashboard.test", { method: "POST", body: JSON.stringify({ phrase: "Bom passe", observedCount: 4 }) }), matchPlayerExplorerContext)).status).toBe(200);
+    expect((await compareExplorerObservations(new Request("https://dashboard.test?phrase=Bom%20passe&limit=20"), playerExplorerContext)).status).toBe(200);
+
+    expect(fetchMock.mock.calls[0][0]).toContain("/api/admin/explorer/clubs/8874106/matches/match-1/players/player-1/observations");
+    expect(fetchMock.mock.calls[2][0]).toContain("/api/admin/explorer/clubs/8874106/matches/match-1/players/player-1/observations");
+    expect(fetchMock.mock.calls[3][0]).toContain("/observation-comparison?phrase=Bom%20passe&limit=20");
+    expect((fetchMock.mock.calls[2][1].headers as Headers).get("Authorization")).toBe("Bearer test-admin-token");
   });
 
   it("proxies club deletion and returns 204", async () => {

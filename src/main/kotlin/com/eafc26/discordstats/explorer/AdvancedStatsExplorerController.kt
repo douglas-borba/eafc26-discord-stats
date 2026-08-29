@@ -6,6 +6,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -16,6 +18,14 @@ import org.springframework.web.server.ResponseStatusException
 class AdvancedStatsExplorerController(
     private val explorerService: AdvancedStatsExplorerService,
 ) {
+
+    data class ObservationRequest(
+        val phrase: String,
+        val observedCount: Int,
+        val completeness: ObservationCompleteness = ObservationCompleteness.AT_LEAST,
+        val note: String? = null,
+        val observedPositionContext: String? = null,
+    )
 
     @GetMapping("/clubs/{clubId}/matches")
     fun matches(
@@ -43,6 +53,50 @@ class AdvancedStatsExplorerController(
         val data = explorerService.playerExplorerData(ClubId(clubId), MatchId(matchId), playerId)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Player not found in match")
         return ResponseEntity.ok(data)
+    }
+
+    @GetMapping("/clubs/{clubId}/matches/{matchId}/players/{playerId}/observations")
+    fun observations(
+        @PathVariable clubId: String,
+        @PathVariable matchId: String,
+        @PathVariable playerId: String,
+    ): ResponseEntity<List<ExplorerObservation>> = ResponseEntity.ok(
+        explorerService.observationsForPlayerMatch(ClubId(clubId), MatchId(matchId), playerId),
+    )
+
+    @PostMapping("/clubs/{clubId}/matches/{matchId}/players/{playerId}/observations")
+    fun saveObservation(
+        @PathVariable clubId: String,
+        @PathVariable matchId: String,
+        @PathVariable playerId: String,
+        @RequestBody request: ObservationRequest,
+    ): ResponseEntity<ExplorerObservation> = try {
+        ResponseEntity.ok(explorerService.saveObservation(
+            ExplorerObservation(
+                clubId = ClubId(clubId),
+                matchId = MatchId(matchId),
+                playerId = playerId,
+                phrase = request.phrase,
+                observedCount = request.observedCount,
+                completeness = request.completeness,
+                note = request.note,
+                observedPositionContext = request.observedPositionContext,
+            ),
+        ))
+    } catch (exception: IllegalArgumentException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message)
+    }
+
+    @GetMapping("/clubs/{clubId}/players/{playerId}/observation-comparison")
+    fun observationComparison(
+        @PathVariable clubId: String,
+        @PathVariable playerId: String,
+        @RequestParam phrase: String,
+        @RequestParam(defaultValue = "20") limit: Int,
+    ): ResponseEntity<AdvancedStatsExplorerService.ObservationComparisonData> {
+        if (phrase.isBlank()) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "phrase must not be blank")
+        if (limit !in 1..50) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be 1-50")
+        return ResponseEntity.ok(explorerService.compareObservations(ClubId(clubId), playerId, phrase, limit))
     }
 
     @GetMapping("/clubs/{clubId}/players/{playerId}/compare")

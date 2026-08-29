@@ -330,6 +330,8 @@ class EaMatchMapper {
             rawEventAggregates = RawEventAggregates(
                 aggregate0 = source.matchEventAggregate0,
                 aggregate1 = source.matchEventAggregate1,
+                aggregate2 = source.matchEventAggregate2,
+                aggregate3 = source.matchEventAggregate3,
             ),
             rawUnknownFields = UnknownFieldCapture.capture("player", source.unknownFields),
             eaPositionCode = source.position,

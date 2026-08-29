@@ -15,6 +15,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 class AdvancedStatsExplorerService(
     private val matchRepository: CanonicalMatchRepository,
     private val objectMapper: ObjectMapper = jacksonObjectMapper(),
+    private val observationRepository: ExplorerObservationRepository = InMemoryExplorerObservationRepository(),
 ) {
 
     data class MatchSummary(
@@ -126,9 +127,43 @@ class AdvancedStatsExplorerService(
         val knownStats: KnownStats,
         val rawAggregate0: String?,
         val rawAggregate1: String?,
+        val rawAggregate2: String?,
+        val rawAggregate3: String?,
+        val rawContextFields: List<RawContextEntry>,
         val unknownFields: UnknownFieldsData,
         val eaPositionCode: String?,
         val eaPositionCandidate: EaPositionCodeDecoder.DecodedPosition,
+    )
+
+    data class RawContextEntry(
+        val name: String,
+        val jsonType: String,
+        val value: String,
+        val truncated: Boolean,
+    )
+
+    data class ObservationComparisonRow(
+        val matchId: String,
+        val observedCount: Int,
+        val completeness: String,
+        val observedPositionContext: String?,
+        val aggregateIndex: Int,
+        val code: Int,
+        val aggregateValue: Int,
+    )
+
+    data class ObservationComparisonData(
+        val phrase: String,
+        val annotatedMatches: Int,
+        val annotatedObservations: Int,
+        val excludedRawUnavailable: Int,
+        val candidates: List<ObservationalEvidenceEngine.Candidate>,
+        val rows: List<ObservationComparisonRow>,
+    )
+
+    private data class AvailableObservationAggregates(
+        val observation: ExplorerObservation,
+        val aggregates: Map<Int, Map<Int, Int>>,
     )
 
     data class PositionObservation(
@@ -374,6 +409,95 @@ class AdvancedStatsExplorerService(
         return PositionObservationsData(coverage, rows, distribution, rows.mapNotNull { it.eaPositionCode }.toSet().size)
     }
 
+    fun observationsForPlayerMatch(clubId: ClubId, matchId: MatchId, playerId: String): List<ExplorerObservation> =
+        observationRepository.findForPlayerMatch(clubId, matchId, playerId)
+
+    fun saveObservation(observation: ExplorerObservation): ExplorerObservation = observationRepository.save(observation)
+
+    /**
+     * Fetches only the small annotated set and evaluates unknown codes in each
+     * aggregate namespace independently. A missing RAW aggregate is excluded,
+     * never converted to a zero.
+     */
+    fun compareObservations(clubId: ClubId, playerId: String, phrase: String, limit: Int = 20): ObservationComparisonData {
+        val observations = observationRepository.findForPlayerPhrase(clubId, playerId, phrase, limit)
+        val matchesById = matchRepository.findByIds(clubId, observations.map { it.matchId }).associateBy { it.matchId }
+        val evidence = mutableListOf<ObservationalEvidenceEngine.Sample>()
+        val rows = mutableListOf<ObservationComparisonRow>()
+        val availableObservations = mutableListOf<AvailableObservationAggregates>()
+        var rawUnavailable = 0
+
+        observations.forEach { observation ->
+            val player = matchesById[observation.matchId]
+                ?.let { canonical ->
+                    canonical.footballMatch.participants
+                        .firstOrNull { it.club.id == canonical.interpretation.perspectiveClubId }
+                        ?.players
+                        ?.firstOrNull { it.player.id.value == playerId }
+                }
+            val raw = player?.rawEventAggregates
+            if (raw == null) {
+                rawUnavailable++
+                return@forEach
+            }
+            val aggregates = linkedMapOf<Int, Map<Int, Int>>()
+            listOf(0 to raw.aggregate0, 1 to raw.aggregate1).forEach aggregateLoop@ { (aggregateIndex, rawValue) ->
+                if (rawValue == null) {
+                    rawUnavailable++
+                    return@aggregateLoop
+                }
+                aggregates[aggregateIndex] = parseHistogram(rawValue).orEmpty()
+                    .filterKeys { AdvancedStatsCodeRegistry.lookup(aggregateIndex, it).confidence == CodeConfidence.UNKNOWN }
+            }
+            if (aggregates.isNotEmpty()) {
+                availableObservations += AvailableObservationAggregates(observation, aggregates)
+            }
+        }
+
+        // EA's aggregates are sparse histograms: an absent code in an otherwise
+        // available RAW aggregate is an observed zero. That is materially
+        // different from an aggregate slot that was unavailable altogether.
+        val candidateCodesByAggregate = availableObservations
+            .flatMap { available -> available.aggregates.entries }
+            .groupBy({ it.key }, { it.value.keys })
+            .mapValues { (_, codeSets) -> codeSets.flatten().toSortedSet() }
+
+        availableObservations.forEach { available ->
+            available.aggregates.forEach { (aggregateIndex, unknownCodes) ->
+                candidateCodesByAggregate[aggregateIndex].orEmpty().forEach { code ->
+                    val value = unknownCodes[code] ?: 0
+                    val observation = available.observation
+                    val sample = ObservationalEvidenceEngine.Sample(
+                        observation.matchId.value,
+                        aggregateIndex,
+                        code,
+                        value,
+                        observation.observedCount,
+                        observation.completeness,
+                    )
+                    evidence += sample
+                    rows += ObservationComparisonRow(
+                        observation.matchId.value,
+                        observation.observedCount,
+                        observation.completeness.name,
+                        observation.observedPositionContext,
+                        aggregateIndex,
+                        code,
+                        value,
+                    )
+                }
+            }
+        }
+        return ObservationComparisonData(
+            phrase = phrase,
+            annotatedMatches = observations.map { it.matchId }.toSet().size,
+            annotatedObservations = observations.size,
+            excludedRawUnavailable = rawUnavailable,
+            candidates = ObservationalEvidenceEngine().analyze(evidence),
+            rows = rows.sortedWith(compareBy<ObservationComparisonRow> { it.aggregateIndex }.thenBy { it.code }.thenBy { it.matchId }),
+        )
+    }
+
     fun anchorInvestigation(
         clubId: ClubId,
         limit: Int = 10,
@@ -440,6 +564,9 @@ class AdvancedStatsExplorerService(
             ),
             rawAggregate0 = player.rawEventAggregates?.aggregate0,
             rawAggregate1 = player.rawEventAggregates?.aggregate1,
+            rawAggregate2 = player.rawEventAggregates?.aggregate2,
+            rawAggregate3 = player.rawEventAggregates?.aggregate3,
+            rawContextFields = rawContextFields(player),
             unknownFields = buildUnknownFieldsData(player),
             eaPositionCode = player.eaPositionCode,
             eaPositionCandidate = EaPositionCodeDecoder.decode(player.eaPositionCode),
@@ -717,11 +844,19 @@ class AdvancedStatsExplorerService(
             ?.groupValues
             ?.get(1)
             ?.toIntOrNull()
-            ?.let { it > 1 }
+            ?.let { it > 3 }
             ?: false
+
+    private fun rawContextFields(player: PlayerMatchPerformance): List<RawContextEntry> =
+        player.rawUnknownFields?.fields
+            ?.filter { it.name in RAW_CONTEXT_FIELD_NAMES }
+            ?.map { RawContextEntry(it.name, it.jsonType, it.value, it.truncated) }
+            ?.sortedBy { it.name }
+            .orEmpty()
 
     private companion object {
         const val DISCOVERY_SCAN_MULTIPLIER = 2
         const val MAX_DISCOVERY_CANONICAL_MATCHES = 20
+        val RAW_CONTEXT_FIELD_NAMES = setOf("gameTime", "realtimegame", "realtimeidle", "archetypeid")
     }
 }

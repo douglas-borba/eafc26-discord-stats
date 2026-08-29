@@ -1,7 +1,7 @@
 package com.eafc26.discordstats.ea.mapping
 
 /**
- * Displays a public reverse-engineering candidate for EA's raw `pos` code.
+ * Displays an internal reverse-engineering candidate for EA's raw `pos` value.
  * This is Explorer-only evidence, not a statement about a player's actual
  * position during a match and not a domain mapping.
  */
@@ -23,11 +23,21 @@ object EaPositionCodeDecoder {
         25 to "ST", 26 to "LS", 27 to "LW",
     )
 
+    /**
+     * `pos` is preserved as an opaque EA transport value. Numeric values have
+     * an external, unverified candidate table; literal role labels are valid
+     * EA values, not malformed numeric codes.
+     */
     fun decode(rawCode: String?): DecodedPosition {
         if (rawCode == null) return DecodedPosition(null, null, "MISSING", "NO_CANDIDATE")
-        val numeric = rawCode.toIntOrNull() ?: return DecodedPosition(rawCode, null, "MALFORMED", "NO_CANDIDATE")
+        val normalized = rawCode.trim()
+        if (normalized.isEmpty()) return DecodedPosition(rawCode, null, "UNKNOWN_VALUE", "NO_CANDIDATE")
+        if (normalized == "forward") {
+            return DecodedPosition(rawCode, null, "EA_ROLE_LABEL", "UNVERIFIED_EA_ROLE_LABEL")
+        }
+        val numeric = normalized.toIntOrNull() ?: return DecodedPosition(rawCode, null, "UNKNOWN_VALUE", "NO_CANDIDATE")
         val label = externalCandidates[numeric]
         return if (label == null) DecodedPosition(rawCode, null, "UNKNOWN_CODE", "NO_CANDIDATE")
-        else DecodedPosition(rawCode, label, "KNOWN_EXTERNAL_CANDIDATE", "UNVERIFIED_EXTERNAL_MAPPING")
+        else DecodedPosition(rawCode, label, "NUMERIC_EXTERNAL_CANDIDATE", "UNVERIFIED_EXTERNAL_MAPPING")
     }
 }

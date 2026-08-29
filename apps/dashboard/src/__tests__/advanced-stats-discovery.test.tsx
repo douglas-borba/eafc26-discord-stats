@@ -127,8 +127,8 @@ describe("Advanced Stats Explorer investigation surfaces", () => {
   it("renders raw position code zero as covered but explicitly unverified", () => {
     const data: PositionObservationsData = {
       coverage: "FULL", distinctCodes: 1,
-      distribution: [{ eaPositionCode: "0", candidate: { rawCode: "0", candidateLabel: "GK", classification: "KNOWN_EXTERNAL_CANDIDATE", semanticStatus: "UNVERIFIED_EXTERNAL_MAPPING" }, observations: 1 }],
-      observations: [{ matchId: "m-1", playedAt: "2026-08-28T00:00:00Z", opponentName: "Opponent", playerId: "p-1", playerName: "Player", eaPositionCode: "0", candidate: { rawCode: "0", candidateLabel: "GK", classification: "KNOWN_EXTERNAL_CANDIDATE", semanticStatus: "UNVERIFIED_EXTERNAL_MAPPING" }, completion: "COMPLETED", rating: "7.0" }],
+      distribution: [{ eaPositionCode: "0", candidate: { rawCode: "0", candidateLabel: "GK", classification: "NUMERIC_EXTERNAL_CANDIDATE", semanticStatus: "UNVERIFIED_EXTERNAL_MAPPING" }, observations: 1 }],
+      observations: [{ matchId: "m-1", playedAt: "2026-08-28T00:00:00Z", opponentName: "Opponent", playerId: "p-1", playerName: "Player", eaPositionCode: "0", candidate: { rawCode: "0", candidateLabel: "GK", classification: "NUMERIC_EXTERNAL_CANDIDATE", semanticStatus: "UNVERIFIED_EXTERNAL_MAPPING" }, completion: "COMPLETED", rating: "7.0" }],
     };
     const html = renderToStaticMarkup(<PositionObservationsView data={data} onBack={() => {}} />);
 

@@ -11,4 +11,6 @@ package com.eafc26.discordstats.domain.match
 data class RawEventAggregates(
     val aggregate0: String? = null,
     val aggregate1: String? = null,
+    val aggregate2: String? = null,
+    val aggregate3: String? = null,
 )
