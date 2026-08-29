@@ -123,8 +123,10 @@ describe("multi-club administration UI", () => {
     expect(detail).toContain('label="Última entrega incerta"');
     expect(detail).toContain('label="Motivo da atenção"');
     expect(detail).toContain("formatUncertainDelivery(status.lastDiscordUncertain)");
+    expect(detail).toContain("formatDiscordFailure(status.lastDiscordFailure)");
     expect(detail).toContain("Não é possível confirmar se o Discord recebeu esta partida. Reenviar pode gerar duplicação.");
     expect(types).toContain("lastDiscordUncertain: DiscordUncertainDelivery | null");
+    expect(types).toContain("lastDiscordFailure: DiscordPublicationFailure | null");
     expect(types).toContain("healthReason: string | null");
   });
 

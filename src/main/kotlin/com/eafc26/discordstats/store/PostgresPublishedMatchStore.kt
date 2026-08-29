@@ -26,6 +26,8 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
             lastError = rs.getString("last_error"),
             lastHttpStatus = rs.getObject("last_http_status") as? Int,
             baselineReason = rs.getString("baseline_reason")?.let { BaselineReason.valueOf(it) },
+            nextAutomaticAttemptAt = rs.getTimestamp("next_automatic_attempt_at")?.toInstant()?.epochSecond,
+            recoveryAttemptCount = rs.getInt("recovery_attempt_count"),
         )
     }
 
@@ -52,8 +54,9 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
         jdbcTemplate.update(
             """
             INSERT INTO discord_publication_state
-                (club_id, match_id, state, attempt_count, last_attempt_at, last_error, last_http_status, baseline_reason, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, now())
+                (club_id, match_id, state, attempt_count, last_attempt_at, last_error, last_http_status, baseline_reason,
+                 next_automatic_attempt_at, recovery_attempt_count, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
             ON CONFLICT (club_id, match_id) DO UPDATE SET
                 state = EXCLUDED.state,
                 attempt_count = EXCLUDED.attempt_count,
@@ -61,6 +64,8 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
                 last_error = EXCLUDED.last_error,
                 last_http_status = EXCLUDED.last_http_status,
                 baseline_reason = EXCLUDED.baseline_reason,
+                next_automatic_attempt_at = EXCLUDED.next_automatic_attempt_at,
+                recovery_attempt_count = EXCLUDED.recovery_attempt_count,
                 updated_at = now()
             """.trimIndent(),
             clubId.value,
@@ -71,6 +76,8 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
             record.lastError,
             record.lastHttpStatus,
             record.baselineReason?.name,
+            record.nextAutomaticAttemptAt?.let { Timestamp.from(Instant.ofEpochSecond(it)) },
+            record.recoveryAttemptCount,
         )
         log.debug("Saved publication record (postgres): clubId={}, matchId={}, state={}", clubId.value, record.matchId, record.state)
     }
@@ -79,8 +86,9 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
         val inserted = jdbcTemplate.update(
             """
             INSERT INTO discord_publication_state
-                (club_id, match_id, state, attempt_count, last_attempt_at, last_error, last_http_status, baseline_reason, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, now())
+                (club_id, match_id, state, attempt_count, last_attempt_at, last_error, last_http_status, baseline_reason,
+                 next_automatic_attempt_at, recovery_attempt_count, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
             ON CONFLICT (club_id, match_id) DO NOTHING
             """.trimIndent(),
             clubId.value,
@@ -91,6 +99,8 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
             record.lastError,
             record.lastHttpStatus,
             record.baselineReason?.name,
+            record.nextAutomaticAttemptAt?.let { Timestamp.from(Instant.ofEpochSecond(it)) },
+            record.recoveryAttemptCount,
         ) > 0
         if (inserted) {
             log.debug("Created publication record (postgres): clubId={}, matchId={}, state={}", clubId.value, record.matchId, record.state)
@@ -112,23 +122,30 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
             SET state = ?,
                 attempt_count = attempt_count + 1,
                 last_attempt_at = ?,
+                next_automatic_attempt_at = NULL,
+                recovery_attempt_count = recovery_attempt_count + CASE WHEN state = ? THEN 1 ELSE 0 END,
                 updated_at = now()
             WHERE club_id = ?
               AND match_id = ?
               AND state = ?
               AND attempt_count = ?
               AND baseline_reason IS NOT DISTINCT FROM ?
+              AND next_automatic_attempt_at IS NOT DISTINCT FROM ?
+              AND recovery_attempt_count = ?
             RETURNING match_id, state, updated_at, attempt_count, last_attempt_at,
-                      last_error, last_http_status, baseline_reason
+                      last_error, last_http_status, baseline_reason, next_automatic_attempt_at, recovery_attempt_count
             """.trimIndent(),
             rowMapper,
             PublicationState.DELIVERING.name,
             Timestamp.from(attemptedAt),
+            PublicationState.RETRY_EXHAUSTED.name,
             clubId.value,
             expected.matchId,
             expected.state.name,
             expected.attemptCount,
             expected.baselineReason?.name,
+            expected.nextAutomaticAttemptAt?.let { Timestamp.from(Instant.ofEpochSecond(it)) },
+            expected.recoveryAttemptCount,
         ).firstOrNull()
         if (claimed != null) {
             log.debug("Claimed publication record (postgres): clubId={}, matchId={}, state={}", clubId.value, claimed.matchId, expected.state)
@@ -145,28 +162,18 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
         limit: Int,
     ): List<PublicationWorkCandidate> {
         require(limit > 0) { "limit must be positive" }
-        val retryAfterOneMinute = Timestamp.from(now.minus(requireNotNull(PublicationRetryPolicy.delayAfter(1))))
-        val retryAfterTwoMinutes = Timestamp.from(now.minus(requireNotNull(PublicationRetryPolicy.delayAfter(2))))
-        val retryAfterFiveMinutes = Timestamp.from(now.minus(requireNotNull(PublicationRetryPolicy.delayAfter(3))))
-        val retryAfterFifteenMinutes = Timestamp.from(now.minus(requireNotNull(PublicationRetryPolicy.delayAfter(4))))
         return jdbcTemplate.query(
             """
             SELECT ps.club_id, ps.match_id, ps.state, ps.updated_at, ps.attempt_count,
                    ps.last_attempt_at, ps.last_error, ps.last_http_status, ps.baseline_reason,
+                   ps.next_automatic_attempt_at, ps.recovery_attempt_count,
                    cm.played_at
             FROM discord_publication_state ps
             JOIN canonical_matches cm
               ON cm.club_id = ps.club_id AND cm.match_id = ps.match_id
             WHERE ps.state = ?
-               OR (
-                    ps.state = ? AND (
-                        ps.attempt_count = 0 OR
-                        (ps.attempt_count = 1 AND ps.last_attempt_at <= ?) OR
-                        (ps.attempt_count = 2 AND ps.last_attempt_at <= ?) OR
-                        (ps.attempt_count = 3 AND ps.last_attempt_at <= ?) OR
-                        (ps.attempt_count = 4 AND ps.last_attempt_at <= ?)
-                    )
-               )
+               OR (ps.state = ? AND ps.next_automatic_attempt_at <= ?)
+               OR (ps.state = ? AND ps.next_automatic_attempt_at <= ?)
                OR (ps.state = ? AND ps.baseline_reason = ?)
             ORDER BY cm.played_at ASC, ps.match_id ASC
             LIMIT ?
@@ -180,10 +187,9 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
             },
             PublicationState.PENDING.name,
             PublicationState.FAILED_TRANSIENT.name,
-            retryAfterOneMinute,
-            retryAfterTwoMinutes,
-            retryAfterFiveMinutes,
-            retryAfterFifteenMinutes,
+            Timestamp.from(now),
+            PublicationState.RETRY_EXHAUSTED.name,
+            Timestamp.from(now),
             PublicationState.BASELINED.name,
             BaselineReason.NO_DESTINATION.name,
             limit,
@@ -311,4 +317,5 @@ data class PublicationWorkCandidate(
 private fun PublicationRecord.isAutomaticClaimable(): Boolean =
     state == PublicationState.PENDING ||
         state == PublicationState.FAILED_TRANSIENT ||
+        state == PublicationState.RETRY_EXHAUSTED ||
         state == PublicationState.BASELINED && baselineReason == BaselineReason.NO_DESTINATION

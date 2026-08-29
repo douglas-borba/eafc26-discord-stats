@@ -72,6 +72,8 @@ class PublishedMatchStore(private val objectMapper: ObjectMapper) : PublicationS
             actual.state != expected.state ||
             actual.attemptCount != expected.attemptCount ||
             actual.baselineReason != expected.baselineReason ||
+            actual.nextAutomaticAttemptAt != expected.nextAutomaticAttemptAt ||
+            actual.recoveryAttemptCount != expected.recoveryAttemptCount ||
             !actual.isAutomaticClaimable()
         ) return@withLock null
 
@@ -79,6 +81,8 @@ class PublishedMatchStore(private val objectMapper: ObjectMapper) : PublicationS
             state = PublicationState.DELIVERING,
             attemptCount = actual.attemptCount + 1,
             lastAttemptAt = attemptedAt.epochSecond,
+            nextAutomaticAttemptAt = null,
+            recoveryAttemptCount = actual.recoveryAttemptCount + if (actual.state == PublicationState.RETRY_EXHAUSTED) 1 else 0,
             updatedAt = attemptedAt.epochSecond,
         )
         current[claimed.matchId] = claimed
@@ -251,6 +255,7 @@ class PublishedMatchStore(private val objectMapper: ObjectMapper) : PublicationS
 private fun PublicationRecord.isAutomaticClaimable(): Boolean =
     state == PublicationState.PENDING ||
         state == PublicationState.FAILED_TRANSIENT ||
+        state == PublicationState.RETRY_EXHAUSTED ||
         state == PublicationState.BASELINED && baselineReason == BaselineReason.NO_DESTINATION
 
 data class PublicationStoreMetadata(

@@ -23,6 +23,7 @@ import com.eafc26.discordstats.store.OperationalEventRepository
 import com.eafc26.discordstats.store.PublicationRecord
 import com.eafc26.discordstats.store.PublicationState
 import com.eafc26.discordstats.store.PublicationStateStore
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.never
@@ -321,7 +322,68 @@ class ClubAdministrationControllerTest {
             .jsonPath("$.healthIndicator").isEqualTo("warning")
             .jsonPath("$.healthReason").isEqualTo("Falha permanente no Discord")
             .jsonPath("$.lastDiscordError").isEqualTo("Origem: aquisição automática; HTTP 403")
+            .jsonPath("$.lastDiscordFailure.matchId").isEqualTo("match-confirmed-failure")
+            .jsonPath("$.lastDiscordFailure.category").isEqualTo("PERMANENT")
+            .jsonPath("$.lastDiscordFailure.reason").isEqualTo("HTTP 403: Forbidden")
             .jsonPath("$.lastDiscordUncertain").doesNotExist()
+    }
+
+    @Test
+    fun `status preserves parked retry evidence when operational events no longer contain the original failure`() {
+        whenever(acquisitionState.current(association.clubId)).thenReturn(com.eafc26.discordstats.service.AcquisitionState.idle())
+        whenever(pollingStatus.current(association.clubId)).thenReturn(
+            com.eafc26.discordstats.scheduler.PollingStatus(lastCheck = Instant.parse("2026-08-21T03:02:00Z")),
+        )
+        whenever(latestMatch.presentation(association.clubId)).thenReturn(null)
+        whenever(eventRepository.findByClub(association.clubId, 50)).thenReturn(emptyList())
+        whenever(eventRepository.findLatestByClubAndType(association.clubId, "POLLING")).thenReturn(null)
+        whenever(publicationStore.loadRecords(association.clubId)).thenReturn(mapOf(
+            "parked-match" to PublicationRecord(
+                matchId = "parked-match",
+                state = PublicationState.RETRY_EXHAUSTED,
+                updatedAt = 1_724_207_320,
+                attemptCount = 5,
+                lastAttemptAt = 1_724_207_300,
+                lastError = "HTTP 503: Service Unavailable",
+                lastHttpStatus = 503,
+                nextAutomaticAttemptAt = 1_724_209_120,
+            ),
+        ))
+
+        client.get().uri("/api/admin/clubs/1104972/status").exchange().expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.healthIndicator").isEqualTo("warning")
+            .jsonPath("$.healthReason").isEqualTo("Publicação Discord aguardando recuperação automática")
+            .jsonPath("$.lastDiscordError").isEqualTo("HTTP 503: Service Unavailable")
+            .jsonPath("$.lastDiscordFailure.matchId").isEqualTo("parked-match")
+            .jsonPath("$.lastDiscordFailure.category").isEqualTo("RETRYABLE")
+            .jsonPath("$.lastDiscordFailure.attemptCount").isEqualTo(5)
+            .jsonPath("$.lastDiscordFailure.httpStatus").isEqualTo(503)
+            .jsonPath("$.lastDiscordFailure.nextAutomaticAttemptAt").exists()
+    }
+
+    @Test
+    fun `status redacts legacy webhook material from persisted publication diagnostics`() {
+        whenever(acquisitionState.current(association.clubId)).thenReturn(com.eafc26.discordstats.service.AcquisitionState.idle())
+        whenever(pollingStatus.current(association.clubId)).thenReturn(
+            com.eafc26.discordstats.scheduler.PollingStatus(lastCheck = Instant.parse("2026-08-21T03:02:00Z")),
+        )
+        whenever(latestMatch.presentation(association.clubId)).thenReturn(null)
+        whenever(eventRepository.findByClub(association.clubId, 50)).thenReturn(emptyList())
+        whenever(eventRepository.findLatestByClubAndType(association.clubId, "POLLING")).thenReturn(null)
+        whenever(publicationStore.loadRecords(association.clubId)).thenReturn(mapOf(
+            "redacted" to PublicationRecord(
+                matchId = "redacted",
+                state = PublicationState.RETRY_EXHAUSTED,
+                lastError = "POST https://discord.com/api/webhooks/123/secret-token failed",
+                nextAutomaticAttemptAt = 1_724_209_120,
+            ),
+        ))
+
+        val body = client.get().uri("/api/admin/clubs/1104972/status").exchange().expectStatus().isOk
+            .expectBody(String::class.java).returnResult().responseBody.orEmpty()
+
+        assertThat(body).contains("[Discord webhook]").doesNotContain("secret-token")
     }
 
     @Test

@@ -57,7 +57,7 @@ class DiscordPublicationReconciliationSchedulerTest {
     fun `does not load canonical payload when the atomic claim is not acquired`() {
         val candidate = candidate("pending", PublicationState.PENDING)
         whenever(publicationStore.findAutomaticPublicationCandidates(now, 20)).thenReturn(listOf(candidate))
-        whenever(publicationService.claimForReconciliation(clubId, candidate.record)).thenReturn(null)
+        whenever(publicationService.claimForReconciliation(clubId, candidate.record, now)).thenReturn(null)
 
         scheduler.reconcile()
 
@@ -75,7 +75,7 @@ class DiscordPublicationReconciliationSchedulerTest {
         val claim = claimFor(candidate.record)
         val canonical = canonical("pending")
         whenever(publicationStore.findAutomaticPublicationCandidates(now, 20)).thenReturn(listOf(candidate))
-        whenever(publicationService.claimForReconciliation(clubId, candidate.record)).thenReturn(claim)
+        whenever(publicationService.claimForReconciliation(clubId, candidate.record, now)).thenReturn(claim)
         whenever(canonicalMatches.findById(clubId, MatchId("pending"))).thenReturn(canonical)
         whenever(publicationService.deliverReconciliationClaim(canonical, claim))
             .thenReturn(DiscordPublicationResult(PublicationOutcome.PUBLISHED, "pending"))
@@ -100,8 +100,8 @@ class DiscordPublicationReconciliationSchedulerTest {
         val firstCanonical = canonical("older")
         val secondCanonical = canonical("newer")
         whenever(publicationStore.findAutomaticPublicationCandidates(now, 20)).thenReturn(listOf(first, second))
-        whenever(publicationService.claimForReconciliation(clubId, first.record)).thenReturn(firstClaim)
-        whenever(publicationService.claimForReconciliation(clubId, second.record)).thenReturn(secondClaim)
+        whenever(publicationService.claimForReconciliation(clubId, first.record, now)).thenReturn(firstClaim)
+        whenever(publicationService.claimForReconciliation(clubId, second.record, now)).thenReturn(secondClaim)
         whenever(canonicalMatches.findById(clubId, MatchId("older"))).thenReturn(firstCanonical)
         whenever(canonicalMatches.findById(clubId, MatchId("newer"))).thenReturn(secondCanonical)
         whenever(publicationService.deliverReconciliationClaim(firstCanonical, firstClaim))

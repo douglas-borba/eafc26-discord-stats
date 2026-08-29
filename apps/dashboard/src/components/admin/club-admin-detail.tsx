@@ -270,6 +270,13 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
                 tone="warning"
               />
             )}
+            {status?.lastDiscordFailure && (
+              <Status
+                label="Falha de publicação"
+                value={formatDiscordFailure(status.lastDiscordFailure)}
+                tone={status.lastDiscordFailure.category === "PERMANENT" ? "error" : "warning"}
+              />
+            )}
           </dl>
           <form onSubmit={saveWebhook} className="mt-4 space-y-3">
             <label className="block"><span className="mb-1.5 block text-sm text-text-soft">Nova URL de webhook</span><input type="url" value={webhookUrl} onChange={(event) => setWebhookUrl(event.target.value)} placeholder="https://discord.com/api/webhooks/…" className="min-h-10 w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-text-primary outline-none focus:border-accent" /></label>
@@ -404,6 +411,16 @@ function formatUncertainDelivery(delivery: NonNullable<ClubOperationalStatus["la
     `partida ${delivery.matchId}`,
     delivery.reason ?? "Motivo não disponível",
   ];
+  return detail.join(" · ");
+}
+
+function formatDiscordFailure(failure: NonNullable<ClubOperationalStatus["lastDiscordFailure"]>) {
+  const detail = [
+    `partida ${failure.matchId}`,
+    `${failure.attemptCount} tentativa${failure.attemptCount === 1 ? "" : "s"}`,
+    failure.reason ?? "Motivo não disponível",
+  ];
+  if (failure.nextAutomaticAttemptAt) detail.push(`nova tentativa ${formatDate(failure.nextAutomaticAttemptAt)}`);
   return detail.join(" · ");
 }
 

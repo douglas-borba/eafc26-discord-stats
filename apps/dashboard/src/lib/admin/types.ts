@@ -66,6 +66,7 @@ export interface ClubOperationalStatus {
   lastDiscordSuccess: string | null;
   lastDiscordError: string | null;
   lastDiscordUncertain: DiscordUncertainDelivery | null;
+  lastDiscordFailure: DiscordPublicationFailure | null;
   healthReason: string | null;
   healthIndicator: "healthy" | "warning" | "error" | "idle";
 }
@@ -76,6 +77,16 @@ export interface DiscordUncertainDelivery {
   reason: string | null;
   attemptCount: number;
   httpStatus: number | null;
+}
+
+export interface DiscordPublicationFailure {
+  matchId: string;
+  occurredAt: string;
+  category: "RETRYABLE" | "PERMANENT" | "UNKNOWN";
+  reason: string | null;
+  attemptCount: number;
+  httpStatus: number | null;
+  nextAutomaticAttemptAt: string | null;
 }
 
 export interface SystemHealth {

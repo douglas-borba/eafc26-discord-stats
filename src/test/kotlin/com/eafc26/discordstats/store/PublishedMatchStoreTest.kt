@@ -59,6 +59,25 @@ class PublishedMatchStoreTest {
     }
 
     @Test
+    fun `parked recovery metadata survives a file store restart`() {
+        store.saveRecord(PublicationRecord(
+            "recovery", PublicationState.RETRY_EXHAUSTED,
+            attemptCount = 5,
+            nextAutomaticAttemptAt = 1_724_207_600,
+            recoveryAttemptCount = 2,
+            lastError = "HTTP 503: Service Unavailable",
+            lastHttpStatus = 503,
+        ))
+
+        val restored = makeStore().find(PublishedMatchStore.LEGACY_ASSOCIATION_BF, "recovery")
+
+        assertThat(restored?.state).isEqualTo(PublicationState.RETRY_EXHAUSTED)
+        assertThat(restored?.nextAutomaticAttemptAt).isEqualTo(1_724_207_600)
+        assertThat(restored?.recoveryAttemptCount).isEqualTo(2)
+        assertThat(restored?.lastError).isEqualTo("HTTP 503: Service Unavailable")
+    }
+
+    @Test
     fun `loadIds throws IllegalStateException for malformed JSON`() {
         scopedStorePath.parent.toFile().mkdirs()
         scopedStorePath.writeText("{not valid json}")

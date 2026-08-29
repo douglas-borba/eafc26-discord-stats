@@ -41,8 +41,8 @@ describe("publicationStatus", () => {
       tone: "neutral",
     });
     expect(publicationStatus(record("RETRY_EXHAUSTED"))).toMatchObject({
-      label: "Tentativas automáticas esgotadas",
-      description: "Requer uma decisão administrativa",
+      label: "Recuperação automática agendada",
+      description: "O sistema retomará a entrega em intervalo reduzido",
       actionLabel: "Reenviar",
       tone: "warning",
     });

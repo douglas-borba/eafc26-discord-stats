@@ -220,11 +220,14 @@ class ClubAdministrationController(
                     it.state == PublicationState.RETRY_EXHAUSTED
             }
             .maxByOrNull(PublicationRecord::updatedAt)
+        if (lastDiscordError == null) {
+            lastDiscordError = latestConfirmedDiscordFailure?.lastError?.let(::sanitizeDiscordDiagnostic)
+        }
         val discordHealthReason = when {
             latestUncertainDelivery != null -> "Entrega Discord incerta"
-            latestConfirmedDiscordFailure?.state == PublicationState.FAILED_TRANSIENT -> "Falha transitória no Discord"
+            latestConfirmedDiscordFailure?.state == PublicationState.FAILED_TRANSIENT -> "Publicação Discord em nova tentativa"
             latestConfirmedDiscordFailure?.state == PublicationState.FAILED_PERMANENT -> "Falha permanente no Discord"
-            latestConfirmedDiscordFailure?.state == PublicationState.RETRY_EXHAUSTED -> "Tentativas automáticas do Discord esgotadas"
+            latestConfirmedDiscordFailure?.state == PublicationState.RETRY_EXHAUSTED -> "Publicação Discord aguardando recuperação automática"
             else -> null
         }
 
@@ -253,6 +256,7 @@ class ClubAdministrationController(
             lastDiscordSuccess = lastDiscordSuccess,
             lastDiscordError = lastDiscordError,
             lastDiscordUncertain = latestUncertainDelivery?.asDiscordUncertainDeliveryResponse(),
+            lastDiscordFailure = latestConfirmedDiscordFailure?.asDiscordPublicationFailureResponse(),
             healthReason = discordHealthReason,
             healthIndicator = healthIndicator,
         )
@@ -290,7 +294,7 @@ class ClubAdministrationController(
     private fun PublicationRecord.asDiscordUncertainDeliveryResponse() = DiscordUncertainDeliveryResponse(
         matchId = matchId,
         occurredAt = java.time.Instant.ofEpochSecond(updatedAt).toString(),
-        reason = lastError,
+        reason = lastError?.let(::sanitizeDiscordDiagnostic),
         attemptCount = attemptCount,
         httpStatus = lastHttpStatus,
     )
@@ -343,6 +347,7 @@ data class ClubOperationalStatusResponse(
     val lastDiscordSuccess: String? = null,
     val lastDiscordError: String? = null,
     val lastDiscordUncertain: DiscordUncertainDeliveryResponse? = null,
+    val lastDiscordFailure: DiscordPublicationFailureResponse? = null,
     val healthReason: String? = null,
     val healthIndicator: String = "idle",
 )
@@ -354,3 +359,32 @@ data class DiscordUncertainDeliveryResponse(
     val attemptCount: Int,
     val httpStatus: Int?,
 )
+
+data class DiscordPublicationFailureResponse(
+    val matchId: String,
+    val occurredAt: String,
+    val category: String,
+    val reason: String?,
+    val attemptCount: Int,
+    val httpStatus: Int?,
+    val nextAutomaticAttemptAt: String?,
+)
+
+private fun PublicationRecord.asDiscordPublicationFailureResponse() = DiscordPublicationFailureResponse(
+    matchId = matchId,
+    occurredAt = java.time.Instant.ofEpochSecond(updatedAt).toString(),
+    category = when (state) {
+        PublicationState.FAILED_PERMANENT -> "PERMANENT"
+        PublicationState.FAILED_TRANSIENT, PublicationState.RETRY_EXHAUSTED -> "RETRYABLE"
+        else -> "UNKNOWN"
+    },
+    reason = lastError?.let(::sanitizeDiscordDiagnostic),
+    attemptCount = attemptCount,
+    httpStatus = lastHttpStatus,
+    nextAutomaticAttemptAt = nextAutomaticAttemptAt?.let(java.time.Instant::ofEpochSecond)?.toString(),
+)
+
+private val DISCORD_WEBHOOK_URL = Regex("""https?://[^\s]+/api/webhooks/[^\s]+""")
+
+private fun sanitizeDiscordDiagnostic(value: String): String =
+    value.replace(DISCORD_WEBHOOK_URL, "[Discord webhook]").take(500)

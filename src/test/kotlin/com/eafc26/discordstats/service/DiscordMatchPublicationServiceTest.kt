@@ -269,6 +269,21 @@ class DiscordMatchPublicationServiceTest {
         }
 
         @Test
+        fun `HTTP 429 honors explicit Retry-After without shortening the bounded retry delay`() {
+            val headers = HttpHeaders().apply { set(HttpHeaders.RETRY_AFTER, "120") }
+            val httpError = WebClientResponseException.create(429, "Too Many Requests", headers, ByteArray(0), null)
+            doThrow(DiscordDeliveryException("rate limited", httpError)).whenever(webhookClient).send(any(), any())
+            val before = java.time.Instant.now()
+
+            service.publishIfNeeded(canonical("rate-limit-delay"))
+
+            val record = requireNotNull(store.find(CLUB_ID, "rate-limit-delay"))
+            assertThat(record.state).isEqualTo(PublicationState.FAILED_TRANSIENT)
+            assertThat(java.time.Instant.ofEpochSecond(requireNotNull(record.nextAutomaticAttemptAt)))
+                .isAfterOrEqualTo(before.truncatedTo(java.time.temporal.ChronoUnit.SECONDS).plusSeconds(120))
+        }
+
+        @Test
         fun `DELIVERING upgraded to DELIVERY_UNCERTAIN when network error is ambiguous`() {
             val networkError = DiscordDeliveryException("connection reset", java.io.IOException("Connection reset by peer"))
             doThrow(networkError).whenever(webhookClient).send(any(), any())
@@ -732,6 +747,56 @@ class DiscordMatchPublicationServiceTest {
         }
 
         @Test
+        fun `manual resend failure preserves the slow recovery schedule of a parked publication`() {
+            val now = java.time.Instant.now()
+            val httpError = WebClientResponseException.create(503, "Service Unavailable", HttpHeaders.EMPTY, ByteArray(0), null)
+            doThrow(DiscordDeliveryException("down", httpError)).whenever(webhookClient).send(any(), any())
+            store.saveRecord(PublicationRecord(
+                "parked-manual", PublicationState.RETRY_EXHAUSTED,
+                attemptCount = PublicationRetryPolicy.MAX_AUTOMATIC_ATTEMPTS,
+                recoveryAttemptCount = 2,
+                nextAutomaticAttemptAt = now.plusSeconds(3_600).epochSecond,
+            ))
+
+            val result = service.forcePublish(canonical("parked-manual"))
+            val record = requireNotNull(store.find(CLUB_ID, "parked-manual"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
+            assertThat(record.state).isEqualTo(PublicationState.RETRY_EXHAUSTED)
+            assertThat(record.recoveryAttemptCount).isEqualTo(2)
+            assertThat(record.nextAutomaticAttemptAt).isNotNull()
+        }
+
+        @Test
+        fun `manual resend does not double-send a publication already claimed by reconciliation`() {
+            val now = java.time.Instant.now()
+            store.saveRecord(
+                PublicationRecord(
+                    matchId = "manual-versus-recovery",
+                    state = PublicationState.RETRY_EXHAUSTED,
+                    attemptCount = PublicationRetryPolicy.MAX_AUTOMATIC_ATTEMPTS,
+                    nextAutomaticAttemptAt = now.minusSeconds(1).epochSecond,
+                ),
+            )
+            val claim = requireNotNull(
+                service.claimForReconciliation(
+                    CLUB_ID,
+                    requireNotNull(store.find(CLUB_ID, "manual-versus-recovery")),
+                    now,
+                ),
+            )
+
+            val manual = service.forcePublish(canonical("manual-versus-recovery"))
+            val recovered = service.deliverReconciliationClaim(canonical("manual-versus-recovery"), claim)
+
+            assertThat(manual.outcome).isEqualTo(PublicationOutcome.SKIPPED_DELIVERY_UNCERTAIN)
+            assertThat(manual.errorMessage).contains("já está em andamento")
+            assertThat(recovered.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            verify(webhookClient, times(1)).send(any(), any())
+            assertThat(store.find(CLUB_ID, "manual-versus-recovery")?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
         fun `scheduler does not re-publish after forcePublish`() {
             service.forcePublish(canonical("m1"))
 
@@ -837,6 +902,21 @@ class DiscordMatchPublicationServiceTest {
         }
 
         @Test
+        fun `explicit Discord 401 403 and 404 responses are permanent and never scheduled for recovery`() {
+            listOf(401, 403, 404).forEach { status ->
+                org.mockito.Mockito.reset(webhookClient)
+                val response = WebClientResponseException.create(status, "Rejected", HttpHeaders.EMPTY, ByteArray(0), null)
+                doThrow(DiscordDeliveryException("Discord rejected", response)).whenever(webhookClient).send(any(), any())
+
+                service.publishIfNeeded(canonical("permanent-$status"))
+
+                val record = requireNotNull(store.find(CLUB_ID, "permanent-$status"))
+                assertThat(record.state).isEqualTo(PublicationState.FAILED_PERMANENT)
+                assertThat(record.nextAutomaticAttemptAt).isNull()
+            }
+        }
+
+        @Test
         fun `HTTP 500 from Discord → FAILED_TRANSIENT`() {
             val http500 = WebClientResponseException.create(500, "Internal Server Error", HttpHeaders.EMPTY, ByteArray(0), null)
             doThrow(DiscordDeliveryException("Server Error", http500)).whenever(webhookClient).send(any(), any())
@@ -886,6 +966,7 @@ class DiscordMatchPublicationServiceTest {
             val failed = service.publishIfNeeded(canonical("fail"))
             assertThat(failed.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
             assertThat(failed.httpStatusCode).isEqualTo(422)
+            assertThat(store.loadRecords()["fail"]?.state).isEqualTo(PublicationState.FAILED_PERMANENT)
         }
     }
 
@@ -1184,7 +1265,10 @@ class DiscordMatchPublicationServiceTest {
                 val failed = requireNotNull(store.find(CLUB_ID, matchId))
                 store.saveRecord(
                     CLUB_ID,
-                    failed.copy(lastAttemptAt = java.time.Instant.now().minusSeconds(61).epochSecond),
+                    failed.copy(
+                        lastAttemptAt = java.time.Instant.now().minusSeconds(61).epochSecond,
+                        nextAutomaticAttemptAt = null,
+                    ),
                 )
             }
             org.mockito.Mockito.reset(webhookClient)
@@ -1222,7 +1306,7 @@ class DiscordMatchPublicationServiceTest {
         }
 
         @Test
-        fun `fifth safe automatic failure becomes RETRY_EXHAUSTED and is never automatically resent`() {
+        fun `fifth safe automatic failure is parked for slow recovery and not resent by acquisition`() {
             val error = WebClientResponseException.create(
                 503, "Service Unavailable", HttpHeaders.EMPTY, ByteArray(0), null,
             )
@@ -1243,17 +1327,95 @@ class DiscordMatchPublicationServiceTest {
                                 .minus(requireNotNull(PublicationRetryPolicy.delayAfter(attempt)))
                                 .minusSeconds(1)
                                 .epochSecond,
+                            nextAutomaticAttemptAt = null,
                         ),
                     )
                 } else {
                     assertThat(record.state).isEqualTo(PublicationState.RETRY_EXHAUSTED)
                     assertThat(record.attemptCount).isEqualTo(PublicationRetryPolicy.MAX_AUTOMATIC_ATTEMPTS)
+                    assertThat(record.nextAutomaticAttemptAt).isNotNull()
+                    assertThat(record.lastError).contains("HTTP 503")
+                    assertThat(record.lastHttpStatus).isEqualTo(503)
                 }
             }
 
             val blocked = service.publishIfNeeded(canonical("retry-exhausted"))
             assertThat(blocked.outcome).isEqualTo(PublicationOutcome.SKIPPED_RETRY_EXHAUSTED)
             verify(webhookClient, times(PublicationRetryPolicy.MAX_AUTOMATIC_ATTEMPTS)).send(any(), any())
+        }
+
+        @Test
+        fun `parked retryable publication is recovered by reconciliation and success clears recovery metadata`() {
+            val now = java.time.Instant.now()
+            store.saveRecord(
+                PublicationRecord(
+                    matchId = "parked-recovery",
+                    state = PublicationState.RETRY_EXHAUSTED,
+                    attemptCount = PublicationRetryPolicy.MAX_AUTOMATIC_ATTEMPTS,
+                    lastAttemptAt = now.minusSeconds(1_800).epochSecond,
+                    lastError = "HTTP 503: Service Unavailable",
+                    lastHttpStatus = 503,
+                    nextAutomaticAttemptAt = now.minusSeconds(1).epochSecond,
+                ),
+            )
+            val expected = requireNotNull(store.find(CLUB_ID, "parked-recovery"))
+
+            val claim = requireNotNull(service.claimForReconciliation(CLUB_ID, expected, now))
+            val result = service.deliverReconciliationClaim(canonical("parked-recovery"), claim)
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            val delivered = requireNotNull(store.find(CLUB_ID, "parked-recovery"))
+            assertThat(delivered.state).isEqualTo(PublicationState.DELIVERED)
+            assertThat(delivered.attemptCount).isEqualTo(PublicationRetryPolicy.MAX_AUTOMATIC_ATTEMPTS + 1)
+            assertThat(delivered.lastError).isNull()
+            assertThat(delivered.nextAutomaticAttemptAt).isNull()
+            assertThat(delivered.recoveryAttemptCount).isZero()
+        }
+
+        @Test
+        fun `failed slow recovery remains parked with a longer durable delay`() {
+            val now = java.time.Instant.now()
+            val error = WebClientResponseException.create(503, "Service Unavailable", HttpHeaders.EMPTY, ByteArray(0), null)
+            doThrow(DiscordDeliveryException("Discord 503", error)).whenever(webhookClient).send(any(), any())
+            store.saveRecord(
+                PublicationRecord(
+                    matchId = "parked-again",
+                    state = PublicationState.RETRY_EXHAUSTED,
+                    attemptCount = PublicationRetryPolicy.MAX_AUTOMATIC_ATTEMPTS,
+                    lastAttemptAt = now.minusSeconds(1_800).epochSecond,
+                    nextAutomaticAttemptAt = now.minusSeconds(1).epochSecond,
+                ),
+            )
+
+            val claim = requireNotNull(service.claimForReconciliation(CLUB_ID, requireNotNull(store.find(CLUB_ID, "parked-again")), now))
+            val result = service.deliverReconciliationClaim(canonical("parked-again"), claim)
+            val parked = requireNotNull(store.find(CLUB_ID, "parked-again"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.FAILED_HTTP)
+            assertThat(parked.state).isEqualTo(PublicationState.RETRY_EXHAUSTED)
+            assertThat(parked.recoveryAttemptCount).isEqualTo(1)
+            assertThat(parked.nextAutomaticAttemptAt).isNotNull()
+            assertThat(java.time.Instant.ofEpochSecond(requireNotNull(parked.nextAutomaticAttemptAt)))
+                .isAfterOrEqualTo(now.truncatedTo(java.time.temporal.ChronoUnit.SECONDS).plus(java.time.Duration.ofHours(1)))
+        }
+
+        @Test
+        fun `an exhausted match does not block a later match from automatic publication`() {
+            store.saveRecord(
+                PublicationRecord(
+                    matchId = "older-exhausted",
+                    state = PublicationState.RETRY_EXHAUSTED,
+                    attemptCount = PublicationRetryPolicy.MAX_AUTOMATIC_ATTEMPTS,
+                    nextAutomaticAttemptAt = java.time.Instant.now().plusSeconds(1_800).epochSecond,
+                ),
+            )
+
+            val result = service.publishIfNeeded(canonical("later-match"))
+
+            assertThat(result.outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            assertThat(store.find(CLUB_ID, "older-exhausted")?.state).isEqualTo(PublicationState.RETRY_EXHAUSTED)
+            assertThat(store.find(CLUB_ID, "later-match")?.state).isEqualTo(PublicationState.DELIVERED)
+            verify(webhookClient).send(any(), any())
         }
 
         @Test

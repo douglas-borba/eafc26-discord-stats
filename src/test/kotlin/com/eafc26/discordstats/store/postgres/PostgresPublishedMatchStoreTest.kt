@@ -283,7 +283,39 @@ class PostgresPublishedMatchStoreTest {
     }
 
     @Test
-    fun `automatic candidates are chronological bounded and exclude unsafe states without reading canonical payload`() {
+    fun `two reconcilers cannot concurrently claim the same parked recovery`() {
+        val now = Instant.parse("2026-08-21T12:00:00Z")
+        store.saveRecord(CLUB_A, PublicationRecord(
+            "recovery-race", PublicationState.RETRY_EXHAUSTED,
+            attemptCount = 5,
+            nextAutomaticAttemptAt = now.minusSeconds(1).epochSecond,
+        ))
+        val expected = requireNotNull(store.find(CLUB_A, "recovery-race"))
+        val secondStore = PostgresPublishedMatchStore(jdbcTemplate)
+        val start = CountDownLatch(1)
+        val complete = CountDownLatch(2)
+        val executor = Executors.newFixedThreadPool(2)
+        val results = java.util.concurrent.CopyOnWriteArrayList<PublicationRecord?>()
+
+        listOf(store, secondStore).forEach { contender ->
+            executor.submit {
+                start.await(5, TimeUnit.SECONDS)
+                results += contender.claimForAutomaticDelivery(CLUB_A, expected, now)
+                complete.countDown()
+            }
+        }
+        start.countDown()
+        assertThat(complete.await(10, TimeUnit.SECONDS)).isTrue()
+        executor.shutdownNow()
+
+        val winner = results.filterNotNull().single()
+        assertThat(winner.state).isEqualTo(PublicationState.DELIVERING)
+        assertThat(winner.recoveryAttemptCount).isEqualTo(1)
+        assertThat(store.find(CLUB_A, "recovery-race")?.attemptCount).isEqualTo(6)
+    }
+
+    @Test
+    fun `automatic candidates are chronological bounded and include only due durable recovery work`() {
         val now = Instant.parse("2026-08-21T12:00:00Z")
         listOf(
             "pending" to now.minusSeconds(30),
@@ -299,6 +331,7 @@ class PostgresPublishedMatchStoreTest {
         store.saveRecord(CLUB_A, PublicationRecord(
             "retry-one", PublicationState.FAILED_TRANSIENT,
             attemptCount = 1, lastAttemptAt = now.minusSeconds(61).epochSecond,
+            nextAutomaticAttemptAt = now.minusSeconds(1).epochSecond,
         ))
         store.saveRecord(CLUB_A, PublicationRecord(
             "no-destination", PublicationState.BASELINED,
@@ -309,17 +342,21 @@ class PostgresPublishedMatchStoreTest {
             baselineReason = BaselineReason.FIRST_RUN,
         ))
         store.saveRecord(CLUB_A, PublicationRecord("uncertain", PublicationState.DELIVERY_UNCERTAIN))
-        store.saveRecord(CLUB_A, PublicationRecord("exhausted", PublicationState.RETRY_EXHAUSTED, attemptCount = 5))
+        store.saveRecord(CLUB_A, PublicationRecord(
+            "exhausted", PublicationState.RETRY_EXHAUSTED,
+            attemptCount = 5, nextAutomaticAttemptAt = now.minusSeconds(1).epochSecond,
+        ))
         store.saveRecord(CLUB_A, PublicationRecord("delivering", PublicationState.DELIVERING, attemptCount = 1))
         store.saveRecord(CLUB_A, PublicationRecord("permanent", PublicationState.FAILED_PERMANENT, attemptCount = 1))
 
         val candidates = store.findAutomaticPublicationCandidates(now, limit = 10)
 
-        assertThat(candidates.map { it.record.matchId }).containsExactly("pending", "retry-one", "no-destination")
+        assertThat(candidates.map { it.record.matchId }).containsExactly("pending", "retry-one", "no-destination", "exhausted")
         assertThat(candidates.map { it.record.state }).containsExactly(
             PublicationState.PENDING,
             PublicationState.FAILED_TRANSIENT,
             PublicationState.BASELINED,
+            PublicationState.RETRY_EXHAUSTED,
         )
         assertThat(store.findAutomaticPublicationCandidates(now, limit = 2).map { it.record.matchId })
             .containsExactly("pending", "retry-one")
@@ -329,16 +366,55 @@ class PostgresPublishedMatchStoreTest {
     fun `automatic candidate retry backoff uses persisted attempt count`() {
         val now = Instant.parse("2026-08-21T12:00:00Z")
         (0..5).forEach { attempt -> saveCanonicalMetadata(CLUB_A, "retry-$attempt", now.plusSeconds(attempt.toLong())) }
-        store.saveRecord(CLUB_A, PublicationRecord("retry-0", PublicationState.FAILED_TRANSIENT, attemptCount = 0))
-        store.saveRecord(CLUB_A, PublicationRecord("retry-1", PublicationState.FAILED_TRANSIENT, attemptCount = 1, lastAttemptAt = now.minusSeconds(60).epochSecond))
-        store.saveRecord(CLUB_A, PublicationRecord("retry-2", PublicationState.FAILED_TRANSIENT, attemptCount = 2, lastAttemptAt = now.minusSeconds(120).epochSecond))
-        store.saveRecord(CLUB_A, PublicationRecord("retry-3", PublicationState.FAILED_TRANSIENT, attemptCount = 3, lastAttemptAt = now.minusSeconds(300).epochSecond))
-        store.saveRecord(CLUB_A, PublicationRecord("retry-4", PublicationState.FAILED_TRANSIENT, attemptCount = 4, lastAttemptAt = now.minusSeconds(900).epochSecond))
-        store.saveRecord(CLUB_A, PublicationRecord("retry-5", PublicationState.FAILED_TRANSIENT, attemptCount = 5, lastAttemptAt = now.minusSeconds(3600).epochSecond))
+        store.saveRecord(CLUB_A, PublicationRecord("retry-0", PublicationState.FAILED_TRANSIENT, attemptCount = 0, nextAutomaticAttemptAt = now.epochSecond))
+        store.saveRecord(CLUB_A, PublicationRecord("retry-1", PublicationState.FAILED_TRANSIENT, attemptCount = 1, lastAttemptAt = now.minusSeconds(60).epochSecond, nextAutomaticAttemptAt = now.epochSecond))
+        store.saveRecord(CLUB_A, PublicationRecord("retry-2", PublicationState.FAILED_TRANSIENT, attemptCount = 2, lastAttemptAt = now.minusSeconds(120).epochSecond, nextAutomaticAttemptAt = now.epochSecond))
+        store.saveRecord(CLUB_A, PublicationRecord("retry-3", PublicationState.FAILED_TRANSIENT, attemptCount = 3, lastAttemptAt = now.minusSeconds(300).epochSecond, nextAutomaticAttemptAt = now.epochSecond))
+        store.saveRecord(CLUB_A, PublicationRecord("retry-4", PublicationState.FAILED_TRANSIENT, attemptCount = 4, lastAttemptAt = now.minusSeconds(900).epochSecond, nextAutomaticAttemptAt = now.epochSecond))
+        store.saveRecord(CLUB_A, PublicationRecord("retry-5", PublicationState.RETRY_EXHAUSTED, attemptCount = 5, lastAttemptAt = now.minusSeconds(3600).epochSecond))
 
         val candidates = store.findAutomaticPublicationCandidates(now, limit = 10)
 
         assertThat(candidates.map { it.record.matchId }).containsExactly("retry-0", "retry-1", "retry-2", "retry-3", "retry-4")
+    }
+
+    @Test
+    fun `pre rollout exhausted records without a recovery schedule are not mass resent`() {
+        val now = Instant.parse("2026-08-21T12:00:00Z")
+        saveCanonicalMetadata(CLUB_A, "historic-exhausted", now.minusSeconds(86_400 * 90))
+        saveCanonicalMetadata(CLUB_A, "due-recovery", now)
+        store.saveRecord(CLUB_A, PublicationRecord(
+            "historic-exhausted", PublicationState.RETRY_EXHAUSTED,
+            attemptCount = 5,
+            lastAttemptAt = now.minusSeconds(86_400 * 90).epochSecond,
+        ))
+        store.saveRecord(CLUB_A, PublicationRecord(
+            "due-recovery", PublicationState.RETRY_EXHAUSTED,
+            attemptCount = 5,
+            nextAutomaticAttemptAt = now.minusSeconds(1).epochSecond,
+        ))
+
+        val candidates = store.findAutomaticPublicationCandidates(now, limit = 10)
+
+        assertThat(candidates.map { it.record.matchId }).containsExactly("due-recovery")
+    }
+
+    @Test
+    fun `recovery claim is atomic and increments only the recovery counter`() {
+        val now = Instant.parse("2026-08-21T12:00:00Z")
+        store.saveRecord(CLUB_A, PublicationRecord(
+            "recovery-race", PublicationState.RETRY_EXHAUSTED,
+            attemptCount = 5,
+            nextAutomaticAttemptAt = now.minusSeconds(1).epochSecond,
+        ))
+        val expected = requireNotNull(store.find(CLUB_A, "recovery-race"))
+
+        val claimed = requireNotNull(store.claimForAutomaticDelivery(CLUB_A, expected, now))
+
+        assertThat(claimed.state).isEqualTo(PublicationState.DELIVERING)
+        assertThat(claimed.attemptCount).isEqualTo(6)
+        assertThat(claimed.recoveryAttemptCount).isEqualTo(1)
+        assertThat(claimed.nextAutomaticAttemptAt).isNull()
     }
 
     @Test

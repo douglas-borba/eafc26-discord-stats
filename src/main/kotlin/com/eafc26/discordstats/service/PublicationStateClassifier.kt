@@ -36,7 +36,7 @@ object PublicationStateClassifier {
             null -> false
             PublicationState.PENDING -> true // Durable safe automatic intent
             PublicationState.FAILED_TRANSIENT -> true // Transient failure - retry allowed
-            PublicationState.RETRY_EXHAUSTED -> false // Automatic retry budget exhausted
+            PublicationState.RETRY_EXHAUSTED -> false // Reconciler owns its low-frequency recovery cadence
             PublicationState.DELIVERED -> false // Already delivered
             PublicationState.DELIVERING -> false // Ambiguous (should be upgraded to UNCERTAIN)
             PublicationState.DELIVERY_UNCERTAIN -> false // Requires manual resolution
@@ -101,11 +101,11 @@ object PublicationStateClassifier {
                 requiresAction = false,
             )
             PublicationState.RETRY_EXHAUSTED -> PublicationStateDisplay(
-                icon = "⛔",
-                label = "Tentativas automáticas esgotadas",
-                cssClass = "retry-exhausted",
+                icon = "⏲️",
+                label = "Recuperação automática agendada",
+                cssClass = "recovery-parked",
                 color = "#f0883e",
-                requiresAction = true,
+                requiresAction = false,
             )
             PublicationState.BASELINED -> PublicationStateDisplay(
                 icon = "📚",
@@ -123,8 +123,8 @@ object PublicationStateClassifier {
     fun requiresAdministrativeAction(state: PublicationState?): Boolean {
         return when (state) {
             PublicationState.DELIVERY_UNCERTAIN,
-            PublicationState.FAILED_PERMANENT,
-            PublicationState.RETRY_EXHAUSTED -> true
+            PublicationState.FAILED_PERMANENT -> true
+            PublicationState.RETRY_EXHAUSTED -> false
             else -> false
         }
     }

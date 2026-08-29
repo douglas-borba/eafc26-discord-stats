@@ -91,17 +91,25 @@ class OperationalEventRecorderTest {
         recorder.discordPendingCreated(club, "pending-match")
         recorder.discordClaimed(club, "pending-match", DiscordPublicationOrigin.AUTOMATIC_RECONCILIATION)
         recorder.discordRetryScheduled(club, "pending-match", Instant.parse("2026-08-21T12:01:00Z"))
-        recorder.discordRetryExhausted(club, "pending-match", 5, DiscordPublicationOrigin.AUTOMATIC_RECONCILIATION)
+        recorder.discordRetryExhausted(
+            club,
+            "pending-match",
+            5,
+            DiscordPublicationOrigin.AUTOMATIC_RECONCILIATION,
+            Instant.parse("2026-08-21T12:30:00Z"),
+        )
+        recorder.discordRecoveryAttempt(club, "pending-match", 1, 503)
         recorder.discordNoDestinationRecovered(club, "pending-match")
 
         val events = argumentCaptor<OperationalEvent>()
-        verify(repository, org.mockito.Mockito.times(5)).save(events.capture())
+        verify(repository, org.mockito.Mockito.times(6)).save(events.capture())
 
         assertThat(events.allValues.map { it.phase }).containsExactly(
             "PENDING_CREATED",
             "CLAIMED",
             "RETRY_SCHEDULED",
             "RETRY_EXHAUSTED",
+            "RECOVERY_ATTEMPT",
             "NO_DESTINATION_RECOVERED",
         )
         assertThat(events.allValues).allMatch { it.clubId == club && !it.message.orEmpty().contains("webhooks/") }

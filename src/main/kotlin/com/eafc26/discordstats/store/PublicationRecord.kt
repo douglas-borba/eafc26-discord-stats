@@ -14,6 +14,8 @@ package com.eafc26.discordstats.store
  *       ├── HTTP 2xx ──► DELIVERED
  *       ├── HTTP 404/410/4xx permanent ──► FAILED_PERMANENT
  *       ├── HTTP 429/5xx transient ──► FAILED_TRANSIENT ──► RETRY_EXHAUSTED (after attempt 5)
+ *       │                                             │
+ *       │                                             └──► delayed reconciliation retry
  *       └── network error (ambiguous) ──► DELIVERY_UNCERTAIN
  * ```
  *
@@ -34,8 +36,9 @@ package com.eafc26.discordstats.store
  *   definitive error (404, 401, 403, 400, 413). The message was NOT delivered.
  * - [PublicationState.FAILED_TRANSIENT]: Discord explicitly proved non-delivery, so the
  *   bounded automatic retry policy may schedule another attempt.
- * - [PublicationState.RETRY_EXHAUSTED]: The bounded automatic retry budget ended without a
- *   confirmed delivery. It requires a deliberate administrative resend.
+ * - [PublicationState.RETRY_EXHAUSTED]: The bounded *immediate* retry budget ended without a
+ *   confirmed delivery. The record is parked until its persisted, low-frequency automatic
+ *   recovery time. It remains eligible only for explicit, proven non-delivery failures.
  */
 data class PublicationRecord(
     val matchId: String,
@@ -52,6 +55,10 @@ data class PublicationRecord(
     val lastHttpStatus: Int? = null,
     /** Why this match was baselined (only meaningful when state == BASELINED). */
     val baselineReason: BaselineReason? = null,
+    /** Epoch-seconds after which an automatic reconciliation may claim this record again. */
+    val nextAutomaticAttemptAt: Long? = null,
+    /** Number of low-frequency recovery attempts made after the immediate retry budget. */
+    val recoveryAttemptCount: Int = 0,
 )
 
 /**
@@ -127,8 +134,9 @@ enum class PublicationState {
 
     /**
      * The configured budget for safe automatic attempts was exhausted. This is neither
-     * an ambiguous delivery nor an explicit permanent Discord rejection; it requires a
-     * deliberate administrative decision.
+     * an ambiguous delivery nor an explicit permanent Discord rejection. It is parked for a
+     * persisted, low-frequency automatic reconciliation attempt; manual resend remains an
+     * explicit operator override.
      */
     RETRY_EXHAUSTED,
 
@@ -151,7 +159,8 @@ enum class PublicationState {
  * Retry policy for failures for which Discord explicitly proved that delivery did not
  * happen. [PublicationRecord.attemptCount] is incremented immediately before every
  * HTTP attempt; after attempts 1–4 fail, the corresponding delay applies before the
- * next attempt. A fifth failed automatic attempt moves the record to RETRY_EXHAUSTED.
+ * next attempt. A fifth failed automatic attempt moves the record to RETRY_EXHAUSTED, which
+ * is then retried by the reconciler with a deliberately slower persisted cadence.
  */
 object PublicationRetryPolicy {
     const val MAX_AUTOMATIC_ATTEMPTS = 5
@@ -166,9 +175,45 @@ object PublicationRetryPolicy {
 
     fun nextRetryAt(record: PublicationRecord): java.time.Instant? {
         if (record.state != PublicationState.FAILED_TRANSIENT) return null
+        record.nextAutomaticAttemptAt?.let { return java.time.Instant.ofEpochSecond(it) }
         val lastAttemptAt = record.lastAttemptAt ?: return null
         val delay = delayAfter(record.attemptCount) ?: return null
         return java.time.Instant.ofEpochSecond(lastAttemptAt).plus(delay)
+    }
+
+    /**
+     * Recovery starts well after the four short retries (1, 2, 5 and 15 minutes), then slows
+     * down to a maximum of one attempt per twelve hours. This prevents a Discord incident from
+     * becoming a permanent tight loop while still recovering without operator intervention.
+     */
+    fun recoveryDelayAfter(recoveryAttemptCount: Int): java.time.Duration = when (recoveryAttemptCount) {
+        0 -> java.time.Duration.ofMinutes(30)
+        1 -> java.time.Duration.ofHours(1)
+        2 -> java.time.Duration.ofHours(3)
+        3 -> java.time.Duration.ofHours(6)
+        else -> java.time.Duration.ofHours(12)
+    }
+
+    fun nextRecoveryAt(record: PublicationRecord): java.time.Instant? {
+        if (record.state != PublicationState.RETRY_EXHAUSTED) return null
+        record.nextAutomaticAttemptAt?.let { return java.time.Instant.ofEpochSecond(it) }
+        return null // Pre-V19 exhausted records are intentionally not re-armed in memory.
+    }
+
+    fun nextAutomaticAttemptAt(
+        state: PublicationState,
+        lastAttemptAt: Long,
+        attemptCount: Int,
+        recoveryAttemptCount: Int,
+        retryAfter: java.time.Duration? = null,
+    ): java.time.Instant? {
+        val policyDelay = when (state) {
+            PublicationState.FAILED_TRANSIENT -> delayAfter(attemptCount)
+            PublicationState.RETRY_EXHAUSTED -> recoveryDelayAfter(recoveryAttemptCount)
+            else -> null
+        } ?: return null
+        val effectiveDelay = listOfNotNull(policyDelay, retryAfter).maxOrNull() ?: policyDelay
+        return java.time.Instant.ofEpochSecond(lastAttemptAt).plus(effectiveDelay)
     }
 
     fun isRetryExhausted(attemptCount: Int): Boolean = attemptCount >= MAX_AUTOMATIC_ATTEMPTS

@@ -96,24 +96,55 @@ class OperationalEventRecorder(private val repository: OperationalEventRepositor
             message = "Origem: ${origin.label()}",
         ))
 
-    fun discordRetryScheduled(clubId: ClubId, matchId: String, nextRetryAt: java.time.Instant) =
+    fun discordRetryScheduled(
+        clubId: ClubId,
+        matchId: String,
+        nextRetryAt: java.time.Instant,
+        origin: DiscordPublicationOrigin = DiscordPublicationOrigin.AUTOMATIC_RECONCILIATION,
+        httpStatus: Int? = null,
+    ) =
         record(OperationalEvent(
             clubId = clubId,
             matchId = matchId,
             eventType = "DISCORD",
             phase = "RETRY_SCHEDULED",
             status = EventStatus.WARNING,
-            message = "Próxima tentativa: $nextRetryAt",
+            errorCode = httpStatus?.toString(),
+            message = "Origem: ${origin.label()}; próxima tentativa: $nextRetryAt",
         ))
 
-    fun discordRetryExhausted(clubId: ClubId, matchId: String, attempts: Int, origin: DiscordPublicationOrigin) =
+    fun discordRetryExhausted(
+        clubId: ClubId,
+        matchId: String,
+        attempts: Int,
+        origin: DiscordPublicationOrigin,
+        nextRecoveryAt: java.time.Instant? = null,
+        httpStatus: Int? = null,
+        reason: String? = null,
+    ) =
         record(OperationalEvent(
             clubId = clubId,
             matchId = matchId,
             eventType = "DISCORD",
             phase = "RETRY_EXHAUSTED",
             status = EventStatus.WARNING,
-            message = "Origem: ${origin.label()}; tentativas automáticas: $attempts",
+            errorCode = httpStatus?.toString(),
+            message = buildString {
+                append("Origem: ${origin.label()}; tentativas automáticas: $attempts")
+                nextRecoveryAt?.let { append("; recuperação automática: $it") }
+                reason?.takeIf { it.isNotBlank() }?.let { append("; motivo: ${sanitizeDiscordDiagnostic(it)}") }
+            },
+        ))
+
+    fun discordRecoveryAttempt(clubId: ClubId, matchId: String, recoveryAttempt: Int, httpStatus: Int?) =
+        record(OperationalEvent(
+            clubId = clubId,
+            matchId = matchId,
+            eventType = "DISCORD",
+            phase = "RECOVERY_ATTEMPT",
+            status = EventStatus.INFO,
+            errorCode = httpStatus?.toString(),
+            message = "Origem: ${DiscordPublicationOrigin.AUTOMATIC_RECONCILIATION.label()}; tentativa lenta: $recoveryAttempt",
         ))
 
     fun discordNoDestinationRecovered(clubId: ClubId, matchId: String) =

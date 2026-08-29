@@ -29,7 +29,7 @@ export function publicationStatus(record?: PublicationHistoryRecord): Publicatio
     case "FAILED_TRANSIENT":
       return { label: "Falha temporária", description: "A entrega não foi concluída", tone: "warning", actionLabel: "Tentar novamente", disabled: false };
     case "RETRY_EXHAUSTED":
-      return { label: "Tentativas automáticas esgotadas", description: "Requer uma decisão administrativa", tone: "warning", actionLabel: "Reenviar", disabled: false };
+      return { label: "Recuperação automática agendada", description: "O sistema retomará a entrega em intervalo reduzido", tone: "warning", actionLabel: "Reenviar", disabled: false };
     case "FAILED_PERMANENT":
       return { label: "Falha permanente", description: "O Discord recusou a entrega", tone: "danger", actionLabel: "Forçar envio", disabled: false };
     case "DELIVERY_UNCERTAIN":

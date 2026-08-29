@@ -36,7 +36,7 @@ class DiscordPublicationReconciliationScheduler(
         try {
             val candidates = publicationStore.findAutomaticPublicationCandidates(startedAt, BATCH_SIZE)
             for (candidate in candidates) {
-                val claim = publicationService.claimForReconciliation(candidate.clubId, candidate.record) ?: continue
+                val claim = publicationService.claimForReconciliation(candidate.clubId, candidate.record, startedAt) ?: continue
                 claimed += 1
                 try {
                     val canonical = canonicalMatches.findById(candidate.clubId, MatchId(candidate.record.matchId))
