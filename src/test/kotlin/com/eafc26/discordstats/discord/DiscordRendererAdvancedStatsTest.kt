@@ -51,6 +51,28 @@ class DiscordRendererAdvancedStatsTest {
     }
 
     @Test
+    fun `omits Bagre section without leaving an empty Discord separator when nobody qualifies`() {
+        val payload = render(match(players = linkedMapOf(
+            "best" to player("Best", rating = "10.0"),
+            "excellent" to player(
+                "Excellent",
+                rating = "9.4",
+                tacklesMade = "1",
+                tackleAttempts = "9",
+            ),
+        )))
+        val names = payload.embeds.flatMap { it.fields }.map { it.name }
+
+        assertThat(names).doesNotContain("🍍 BAGRE DA PARTIDA")
+        names.forEachIndexed { index, name ->
+            if (name == "​") {
+                assertThat(index).isLessThan(names.lastIndex)
+                assertThat(names[index + 1]).isNotEqualTo("​")
+            }
+        }
+    }
+
+    @Test
     fun `renders an interceptions-only Xerife when the domain makes the player eligible`() {
         val payload = render(match(players = linkedMapOf(
             "interceptor" to player("Interceptor", rating = "8.0", aggregate0 = "6:4"),

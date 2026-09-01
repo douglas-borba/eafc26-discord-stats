@@ -20,16 +20,16 @@ import java.time.ZoneOffset
 class CanonicalInterpretationParityTest {
 
     @Test
-    fun `shadow mode proves complete structural parity for rich Dashboard output`() {
+    fun `shadow mode isolates intentional Bagre semantic divergence in rich Dashboard output`() {
         val phrases = PhraseBank(jacksonObjectMapper())
         val result = DashboardShadowMode(
             LegacyMatchSummaryBuilder(phrases),
             MatchSummaryBuilder(phrases),
         ).compare(richMatch(), OUR_CLUB, ZoneOffset.UTC)
 
-        assertThat(result.divergentSections).isEmpty()
-        assertThat(result.canonical).isEqualTo(result.legacy)
-        assertThat(result.hasParity).isTrue()
+        assertThat(result.divergentSections).containsExactly("bagre")
+        assertThat(result.canonical.copy(bagre = result.legacy.bagre)).isEqualTo(result.legacy)
+        assertThat(result.hasParity).isFalse()
     }
 
     @Test
@@ -46,7 +46,7 @@ class CanonicalInterpretationParityTest {
     }
 
     @Test
-    fun `shadow mode preserves Virtual Pro display names without changing phrase seeds`() {
+    fun `shadow mode preserves Virtual Pro display names outside intentional Bagre divergence`() {
         val phrases = PhraseBank(jacksonObjectMapper())
         val result = DashboardShadowMode(
             LegacyMatchSummaryBuilder(phrases),
@@ -62,8 +62,8 @@ class CanonicalInterpretationParityTest {
             ),
         )
 
-        assertThat(result.divergentSections).isEmpty()
-        assertThat(result.canonical).isEqualTo(result.legacy)
+        assertThat(result.divergentSections).containsExactly("bagre")
+        assertThat(result.canonical.copy(bagre = result.legacy.bagre)).isEqualTo(result.legacy)
     }
 
     @Test

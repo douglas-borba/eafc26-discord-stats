@@ -55,8 +55,8 @@ class MatchInterpreterTest {
         assertThat(interpretation.eligibility.eligiblePlayerIds).containsExactly(fullMatch.player.id)
         assertThat(interpretation.teamMetrics.averageRating).isEqualByComparingTo("8.000000")
         assertThat(interpretation.teamMetrics.totalGoals).isEqualTo(1)
-        assertThat(interpretation.awards.bagre.winnerId).isEqualTo(fullMatch.player.id)
-        assertThat(interpretation.awards.craque.winnerId).isNull()
+        assertThat(interpretation.awards.bagre.awarded).isFalse()
+        assertThat(interpretation.awards.craque.winnerId).isEqualTo(fullMatch.player.id)
     }
 
     @Test
@@ -102,9 +102,10 @@ class MatchInterpreterTest {
         val bagre = awardPlayer(
             "bagre",
             rating = "5.0",
-            tacklesCompleted = 8,
+            passesCompleted = 1,
+            passesAttempted = 15,
+            tacklesCompleted = 0,
             tacklesAttempted = 8,
-            eaMvp = true,
         ).withDuration(1_000)
         val other = awardPlayer(
             "other",

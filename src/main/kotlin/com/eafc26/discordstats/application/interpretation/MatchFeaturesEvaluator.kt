@@ -1,9 +1,9 @@
 package com.eafc26.discordstats.application.interpretation
 
 import com.eafc26.discordstats.domain.interpretation.ContributionDecision
-import com.eafc26.discordstats.domain.interpretation.AccuracySummary
-import com.eafc26.discordstats.domain.interpretation.BagreCriticism
 import com.eafc26.discordstats.domain.interpretation.BagrePerformanceDecision
+import com.eafc26.discordstats.domain.interpretation.AwardDecision
+import com.eafc26.discordstats.domain.interpretation.AwardMetrics
 import com.eafc26.discordstats.domain.interpretation.BehindThePlayDecision
 import com.eafc26.discordstats.domain.interpretation.DecisionEvidence
 import com.eafc26.discordstats.domain.interpretation.EligibilityInterpretation
@@ -52,7 +52,7 @@ class MatchFeaturesEvaluator {
 
         val contributions = contributions(eligible)
         val highlights = highlights(positiveOutfield, eligible, teamMetrics, bagreId)
-        val bagrePerformance = bagrePerformance(outfield, bagreId)
+        val bagrePerformance = bagrePerformance(awards.bagre)
         val offensive = offensive(positiveOutfield, result, bagreId)
         val behindThePlay = behindThePlay(positiveOutfield)
         val oneOnOne = oneOnOne(positiveOutfield)
@@ -91,7 +91,7 @@ class MatchFeaturesEvaluator {
                 FeatureEvaluation(
                     MatchFeatureType.BAGRE_PERFORMANCE,
                     bagrePerformance != null,
-                    BAGRE_PERFORMANCE_RULE,
+                    bagrePerformance?.rule ?: BAGRE_PERFORMANCE_RULE,
                     bagrePerformance?.evidence ?: population,
                 ),
                 FeatureEvaluation(
@@ -229,70 +229,18 @@ class MatchFeaturesEvaluator {
         )
     }
 
-    private fun bagrePerformance(
-        players: List<PlayerMatchPerformance>,
-        bagreId: com.eafc26.discordstats.domain.match.PlayerId?,
-    ): BagrePerformanceDecision? {
-        val player = players.firstOrNull { it.player.id == bagreId } ?: return null
-        val rating = player.rating?.value ?: return null
-        val tackles = accuracySummary(
-            player.defending.tacklesCompleted,
-            player.defending.tacklesAttempted,
-            maximumPercent = 60,
-            exclusive = false,
-        )
-        val passing = accuracySummary(
-            player.passing.completed,
-            player.passing.attempted,
-            maximumPercent = 75,
-            exclusive = true,
-        )
-        val tackleAccuracy = rawAccuracy(
-            player.defending.tacklesCompleted,
-            player.defending.tacklesAttempted,
-        )
-        val passAccuracy = rawAccuracy(player.passing.completed, player.passing.attempted)
-        val criticism = when {
-            tackleAccuracy != null && tackleAccuracy <= 40 -> BagreCriticism.TACKLING
-            passAccuracy != null && passAccuracy < 60 -> BagreCriticism.PASSING
-            else -> BagreCriticism.RATING
-        }
+    private fun bagrePerformance(decision: AwardDecision): BagrePerformanceDecision? {
+        val playerId = decision.winnerId ?: return null
+        val metrics = decision.metrics as? AwardMetrics.Bagre ?: return null
         return BagrePerformanceDecision(
-            player.player.id,
-            rating,
-            criticism,
-            tackles,
-            passing,
-            BAGRE_PERFORMANCE_RULE,
-            listOf(
-                DecisionEvidence.Rating(player.player.id, rating, BagreEvaluator.MINIMUM_RATING),
-                DecisionEvidence.DefensivePerformance(
-                    player.player.id,
-                    player.defending.tacklesCompleted,
-                    player.defending.tacklesAttempted,
-                    null,
-                ),
-                passingEvidence(player),
-            ),
+            playerId,
+            metrics.rating,
+            metrics.criticism,
+            metrics.tackleSummary,
+            metrics.passingSummary,
+            decision.rule,
+            decision.evidence,
         )
-    }
-
-    private fun accuracySummary(
-        completed: Int?,
-        attempted: Int?,
-        maximumPercent: Int,
-        exclusive: Boolean,
-    ): AccuracySummary? {
-        val attempts = attempted?.takeIf { it > 0 } ?: return null
-        val made = completed ?: 0
-        val percent = made * 100 / attempts
-        val accepted = if (exclusive) percent < maximumPercent else percent <= maximumPercent
-        return if (accepted) AccuracySummary(made, attempts, percent) else null
-    }
-
-    private fun rawAccuracy(completed: Int?, attempted: Int?): Int? {
-        val attempts = attempted?.takeIf { it > 0 } ?: return null
-        return (completed ?: 0) * 100 / attempts
     }
 
     private fun offensive(

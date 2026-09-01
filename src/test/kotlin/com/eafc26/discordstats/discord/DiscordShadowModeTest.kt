@@ -44,7 +44,7 @@ class DiscordShadowModeTest {
             ZoneOffset.UTC,
         )
 
-        assertLegacySectionsPreserved(result)
+        assertNonBagreSectionsPreserved(result)
     }
 
     @Test
@@ -70,7 +70,7 @@ class DiscordShadowModeTest {
             mapOf("platform-line" to "Pro Line", "platform-gk" to "Pro Keeper"),
         )
 
-        assertLegacySectionsPreserved(result)
+        assertNonBagreSectionsPreserved(result)
     }
 
     @Test
@@ -86,7 +86,9 @@ class DiscordShadowModeTest {
             ZoneOffset.UTC,
         )
 
-        assertLegacySectionsPreserved(result)
+        assertNonBagreSectionsPreserved(result)
+        assertThat(result.canonicalMatch.embeds.single().fields.map { it.name })
+            .doesNotContain("🍍 BAGRE DA PARTIDA")
         assertThat(result.canonicalMatch.embeds.single().fields.single {
             it.name == "🥇 DESTAQUES"
         }.value).contains("Bagre")
@@ -107,7 +109,7 @@ class DiscordShadowModeTest {
             ZoneOffset.UTC,
         )
 
-        assertLegacySectionsPreserved(result)
+        assertNonBagreSectionsPreserved(result)
         assertThat(result.canonicalMatch.embeds.single().fields.map { it.name })
             .contains("⚡ DECISIVO", "😬 FICOU NO QUASE")
             .doesNotContain("🎯 PODERIA TER DECIDIDO", "😵 FALTOU CAPRICHO")
@@ -188,12 +190,12 @@ class DiscordShadowModeTest {
         secondsPlayed = "5400",
     )
 
-    private fun assertLegacySectionsPreserved(result: DiscordShadowResult) {
+    private fun assertNonBagreSectionsPreserved(result: DiscordShadowResult) {
         assertThat(semanticFields(result.canonicalMatch)).isEqualTo(semanticFields(result.legacyMatch))
     }
 
     private fun semanticFields(payload: DiscordPayload): Map<String, String> = payload.embeds
         .flatMap { it.fields }
-        .filterNot { it.name == "​" }
+        .filterNot { it.name == "​" || it.name == "🍍 BAGRE DA PARTIDA" }
         .associate { it.name to it.value }
 }

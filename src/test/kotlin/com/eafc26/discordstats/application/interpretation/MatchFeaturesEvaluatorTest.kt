@@ -2,7 +2,9 @@ package com.eafc26.discordstats.application.interpretation
 
 import com.eafc26.discordstats.domain.interpretation.AwardDecision
 import com.eafc26.discordstats.domain.interpretation.AwardDecisionReason
+import com.eafc26.discordstats.domain.interpretation.AwardMetrics
 import com.eafc26.discordstats.domain.interpretation.AwardType
+import com.eafc26.discordstats.domain.interpretation.AccuracySummary
 import com.eafc26.discordstats.domain.interpretation.GoalkeeperArchetype
 import com.eafc26.discordstats.domain.interpretation.GoalkeeperNarrativeVariant
 import com.eafc26.discordstats.domain.interpretation.BagreCriticism
@@ -147,12 +149,22 @@ class MatchFeaturesEvaluatorTest {
             passesAttempted = 10,
         )
 
-        val decision = evaluate(listOf(bagre), bagre.player.id).bagrePerformance
+        val decision = evaluate(
+            listOf(bagre),
+            bagre.player.id,
+            AwardMetrics.Bagre(
+                rating = java.math.BigDecimal("5.0"),
+                severity = 5,
+                criticism = BagreCriticism.TACKLING,
+                tackleSummary = AccuracySummary(1, 5, 20),
+                passingSummary = AccuracySummary(3, 10, 30),
+            ),
+        ).bagrePerformance
 
         assertThat(decision!!.criticism).isEqualTo(BagreCriticism.TACKLING)
         assertThat(decision.tackleSummary!!.accuracyPercent).isEqualTo(20)
         assertThat(decision.passingSummary!!.accuracyPercent).isEqualTo(30)
-        assertThat(decision.rule).isEqualTo(MatchFeaturesEvaluator.BAGRE_PERFORMANCE_RULE)
+        assertThat(decision.rule).isEqualTo(RuleReference(RuleId("test.bagre"), 1))
     }
 
     @Test
@@ -231,6 +243,7 @@ class MatchFeaturesEvaluatorTest {
     private fun evaluate(
         players: List<PlayerMatchPerformance>,
         bagreId: PlayerId? = null,
+        bagreMetrics: AwardMetrics.Bagre? = null,
         ourScore: Int = 1,
         opponentScore: Int = 0,
     ) = evaluator.evaluate(
@@ -251,10 +264,10 @@ class MatchFeaturesEvaluatorTest {
             listOf(com.eafc26.discordstats.domain.interpretation.DecisionEvidence.Scoreboard(ourScore, opponentScore)),
         ),
         teamMetrics = TeamMetricsCalculator().calculate(players),
-        awards = awards(bagreId),
+        awards = awards(bagreId, bagreMetrics),
     )
 
-    private fun awards(bagreId: PlayerId?): MatchAwards {
+    private fun awards(bagreId: PlayerId?, bagreMetrics: AwardMetrics.Bagre? = null): MatchAwards {
         fun decision(type: AwardType, winner: PlayerId?) = AwardDecision(
             type,
             winner,
@@ -265,6 +278,7 @@ class MatchFeaturesEvaluatorTest {
             },
             RuleReference(RuleId("test.${type.name.lowercase()}"), 1),
             listOf(com.eafc26.discordstats.domain.interpretation.DecisionEvidence.Scoreboard(1, 0)),
+            if (type == AwardType.BAGRE) bagreMetrics else null,
         )
         return MatchAwards(
             decision(AwardType.CRAQUE, null),

@@ -50,6 +50,7 @@ internal abstract class PlayerRoleMixin
 @JsonSubTypes(
     JsonSubTypes.Type(AwardMetrics.Craque::class, name = "craque"),
     JsonSubTypes.Type(AwardMetrics.Xerife::class, name = "xerife"),
+    JsonSubTypes.Type(AwardMetrics.Bagre::class, name = "bagre"),
 )
 internal abstract class AwardMetricsMixin
 

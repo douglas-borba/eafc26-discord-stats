@@ -126,7 +126,7 @@ class MatchStoryExtractorTest {
         assertThat(keys).containsExactly(
             "match.outcome.win",
             "award.craque.highest_rating",
-            "award.bagre.lowest_eligible_rating",
+            "award.bagre.qualified_negative_performance",
         )
     }
 

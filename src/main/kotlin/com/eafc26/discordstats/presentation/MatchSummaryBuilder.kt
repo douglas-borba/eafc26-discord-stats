@@ -205,11 +205,17 @@ class MatchSummaryBuilder(
         return BagreSection(
             playerName,
             fmtRating(content.rating),
-            "Menor nota entre os jogadores elegíveis.",
+            bagreReason(content.criticism),
             tackle,
             passing,
             phrase(category, matchId, bagreSeed(seedName(player), content.criticism), random),
         )
+    }
+
+    private fun bagreReason(criticism: BagreCriticism): String = when (criticism) {
+        BagreCriticism.TACKLING -> "Baixo aproveitamento em desarmes com volume relevante."
+        BagreCriticism.PASSING -> "Baixo aproveitamento em passes com volume relevante."
+        BagreCriticism.RATING -> "Nota abaixo do nível esperado na partida."
     }
 
     private fun redCard(

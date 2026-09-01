@@ -376,6 +376,11 @@ object HistoricalMatchPresenter {
             HistoricalFact("Interceptações", interceptions.toString()),
             HistoricalFact("Impacto defensivo", defensiveImpactScore.plain()),
         )
+        is AwardMetrics.Bagre -> buildList {
+            add(HistoricalFact("Nota", rating.plain()))
+            tackleSummary?.let { add(HistoricalFact("Desarmes", "${it.completed}/${it.attempted} (${it.accuracyPercent}%)")) }
+            passingSummary?.let { add(HistoricalFact("Passes", "${it.completed}/${it.attempted} (${it.accuracyPercent}%)")) }
+        }
     }
 
     private fun BigDecimal.plain(): String = stripTrailingZeros().toPlainString()
@@ -425,8 +430,10 @@ object HistoricalMatchPresenter {
         AwardDecisionReason.EA_MAN_OF_THE_MATCH -> "Eleito melhor em campo pela EA"
         AwardDecisionReason.HIGHEST_RATING -> "Maior nota elegível"
         AwardDecisionReason.LOWEST_ELIGIBLE_RATING -> "Menor nota elegível"
+        AwardDecisionReason.QUALIFIED_NEGATIVE_PERFORMANCE -> "Desempenho negativo qualificado"
         AwardDecisionReason.HIGHEST_DEFENSIVE_IMPACT -> "Maior impacto defensivo"
         AwardDecisionReason.NO_ELIGIBLE_CANDIDATE -> "Sem candidato elegível"
+        AwardDecisionReason.NO_QUALIFIED_CANDIDATE -> "Sem desempenho negativo qualificado"
     }
 
     private fun BagreCriticism.label() = when (this) {

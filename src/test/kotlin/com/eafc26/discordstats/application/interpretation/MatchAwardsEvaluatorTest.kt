@@ -12,9 +12,10 @@ class MatchAwardsEvaluatorTest {
         val bagreAndBestDefender = awardPlayer(
             "bagre",
             rating = "5.0",
-            tacklesCompleted = 10,
-            tacklesAttempted = 10,
-            eaMvp = true,
+            passesCompleted = 1,
+            passesAttempted = 15,
+            tacklesCompleted = 0,
+            tacklesAttempted = 8,
         )
         val positiveWinner = awardPlayer(
             "positive",
