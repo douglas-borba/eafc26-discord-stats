@@ -159,12 +159,17 @@ describe("administrative BFF", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(json([]))
       .mockResolvedValueOnce(csrf()).mockResolvedValueOnce(json({ phrase: "Bom passe", observedCount: 4, completeness: "AT_LEAST" }))
-      .mockResolvedValueOnce(json({ phrase: "Bom passe", candidates: [] }));
+      .mockResolvedValueOnce(json({
+        phrase: "Bom passe", candidates: [{ aggregateIndex: 0, code: 112, candidateKind: "KNOWN_CONTROL", metricName: "Beats" }],
+        contradictedCandidates: 0, observationCollisions: [], nextBestExperiments: [],
+      }));
     vi.stubGlobal("fetch", fetchMock);
 
     expect((await getExplorerObservations(new Request("https://dashboard.test"), matchPlayerExplorerContext)).status).toBe(200);
     expect((await saveExplorerObservation(new Request("https://dashboard.test", { method: "POST", body: JSON.stringify({ phrase: "Bom passe", observedCount: 4 }) }), matchPlayerExplorerContext)).status).toBe(200);
-    expect((await compareExplorerObservations(new Request("https://dashboard.test?phrase=Bom%20passe&limit=20"), playerExplorerContext)).status).toBe(200);
+    const comparison = await compareExplorerObservations(new Request("https://dashboard.test?phrase=Bom%20passe&limit=20"), playerExplorerContext);
+    expect(comparison.status).toBe(200);
+    await expect(comparison.json()).resolves.toMatchObject({ candidates: [{ candidateKind: "KNOWN_CONTROL", metricName: "Beats" }] });
 
     expect(fetchMock.mock.calls[0][0]).toContain("/api/admin/explorer/clubs/8874106/matches/match-1/players/player-1/observations");
     expect(fetchMock.mock.calls[2][0]).toContain("/api/admin/explorer/clubs/8874106/matches/match-1/players/player-1/observations");

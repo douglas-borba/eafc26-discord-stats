@@ -63,6 +63,21 @@ class PostgresExplorerObservationRepository(
         )
     }
 
+    override fun findForPlayer(clubId: ClubId, playerId: String, limit: Int): List<ExplorerObservation> {
+        require(limit in 1..50) { "limit must be 1-50" }
+        return jdbcTemplate.query(
+            """
+            SELECT club_id, match_id, player_id, phrase, observed_count, completeness, note, observed_position_context, created_at, updated_at
+            FROM explorer_observations
+            WHERE club_id = ? AND player_id = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT ?
+            """.trimIndent(),
+            { rs, _ -> read(rs) },
+            clubId.value, playerId, limit,
+        )
+    }
+
     private fun read(rs: ResultSet) = ExplorerObservation(
         clubId = ClubId(rs.getString("club_id")),
         matchId = MatchId(rs.getString("match_id")),

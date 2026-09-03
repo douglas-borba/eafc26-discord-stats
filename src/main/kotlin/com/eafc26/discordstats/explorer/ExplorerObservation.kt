@@ -44,6 +44,13 @@ interface ExplorerObservationRepository {
 
     /** A bounded annotated investigation set, never a full canonical scan. */
     fun findForPlayerPhrase(clubId: ClubId, playerId: String, phrase: String, limit: Int): List<ExplorerObservation>
+
+    /**
+     * Bounded cross-phrase evidence for one player. This supports mechanical
+     * collision analysis without scanning canonical history or querying one
+     * phrase at a time.
+     */
+    fun findForPlayer(clubId: ClubId, playerId: String, limit: Int): List<ExplorerObservation>
 }
 
 /** Test/local fallback only. Production wires the PostgreSQL implementation. */
@@ -69,4 +76,11 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
         observations.values.filter { it.clubId == clubId && it.playerId == playerId && it.phrase == phrase }
             .sortedByDescending { it.updatedAt }
             .take(limit)
+
+    override fun findForPlayer(clubId: ClubId, playerId: String, limit: Int): List<ExplorerObservation> {
+        require(limit in 1..50) { "limit must be 1-50" }
+        return observations.values.filter { it.clubId == clubId && it.playerId == playerId }
+            .sortedWith(compareByDescending<ExplorerObservation> { it.updatedAt }.thenByDescending { it.createdAt })
+            .take(limit)
+    }
 }

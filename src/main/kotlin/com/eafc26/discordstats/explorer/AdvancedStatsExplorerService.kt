@@ -4,6 +4,7 @@ import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
+import com.eafc26.discordstats.domain.match.RawEventAggregates
 import com.eafc26.discordstats.domain.match.RawUnknownField
 import com.eafc26.discordstats.ea.mapping.EaPositionCodeDecoder
 import com.eafc26.discordstats.canonical.CanonicalMatch
@@ -141,28 +142,15 @@ class AdvancedStatsExplorerService(
         val truncated: Boolean,
     )
 
-    data class ObservationComparisonRow(
-        val matchId: String,
-        val observedCount: Int,
-        val completeness: String,
-        val observedPositionContext: String?,
-        val aggregateIndex: Int,
-        val code: Int,
-        val aggregateValue: Int,
-    )
-
     data class ObservationComparisonData(
         val phrase: String,
         val annotatedMatches: Int,
         val annotatedObservations: Int,
         val excludedRawUnavailable: Int,
-        val candidates: List<ObservationalEvidenceEngine.Candidate>,
-        val rows: List<ObservationComparisonRow>,
-    )
-
-    private data class AvailableObservationAggregates(
-        val observation: ExplorerObservation,
-        val aggregates: Map<Int, Map<Int, Int>>,
+        val contradictedCandidates: Int,
+        val candidates: List<ObservationCandidateAnalyzer.CandidateAnalysis>,
+        val observationCollisions: List<ObservationCandidateAnalyzer.ObservationCollision>,
+        val nextBestExperiments: List<String>,
     )
 
     data class PositionObservation(
@@ -414,86 +402,66 @@ class AdvancedStatsExplorerService(
     fun saveObservation(observation: ExplorerObservation): ExplorerObservation = observationRepository.save(observation)
 
     /**
-     * Fetches only the small annotated set and evaluates unknown codes in each
-     * aggregate namespace independently. A missing RAW aggregate is excluded,
-     * never converted to a zero.
+     * Bounded, evidence-only comparison. Every available RAW namespace joins
+     * the comparison; an absent code in an available sparse namespace is zero,
+     * while an absent namespace remains unavailable and is excluded.
      */
     fun compareObservations(clubId: ClubId, playerId: String, phrase: String, limit: Int = 20): ObservationComparisonData {
         val observations = observationRepository.findForPlayerPhrase(clubId, playerId, phrase, limit)
         val matchesById = matchRepository.findByIds(clubId, observations.map { it.matchId }).associateBy { it.matchId }
-        val evidence = mutableListOf<ObservationalEvidenceEngine.Sample>()
-        val rows = mutableListOf<ObservationComparisonRow>()
-        val availableObservations = mutableListOf<AvailableObservationAggregates>()
+        val allPlayerObservations = (observationRepository.findForPlayer(clubId, playerId, limit) + observations)
+            .distinctBy { listOf(it.matchId.value, it.phrase, it.observedCount.toString(), it.completeness.name) }
+        val inputs = mutableListOf<ObservationCandidateAnalyzer.ObservationInput>()
         var rawUnavailable = 0
 
         observations.forEach { observation ->
-            val player = matchesById[observation.matchId]
-                ?.let { canonical ->
-                    canonical.footballMatch.participants
-                        .firstOrNull { it.club.id == canonical.interpretation.perspectiveClubId }
-                        ?.players
-                        ?.firstOrNull { it.player.id.value == playerId }
-                }
+            val canonical = matchesById[observation.matchId]
+            val player = canonical?.let { match -> perspectivePlayer(match, playerId) }
             val raw = player?.rawEventAggregates
             if (raw == null) {
                 rawUnavailable++
                 return@forEach
             }
             val aggregates = linkedMapOf<Int, Map<Int, Int>>()
-            listOf(0 to raw.aggregate0, 1 to raw.aggregate1).forEach aggregateLoop@ { (aggregateIndex, rawValue) ->
-                if (rawValue == null) {
+            aggregateSlots(raw).forEach { (aggregateIndex, rawValue) ->
+                val histogram = parseHistogram(rawValue)
+                if (histogram == null) {
                     rawUnavailable++
-                    return@aggregateLoop
+                } else {
+                    aggregates[aggregateIndex] = histogram
                 }
-                aggregates[aggregateIndex] = parseHistogram(rawValue).orEmpty()
-                    .filterKeys { AdvancedStatsCodeRegistry.lookup(aggregateIndex, it).confidence == CodeConfidence.UNKNOWN }
             }
             if (aggregates.isNotEmpty()) {
-                availableObservations += AvailableObservationAggregates(observation, aggregates)
+                inputs += ObservationCandidateAnalyzer.ObservationInput(
+                    matchId = observation.matchId.value,
+                    opponentName = canonical.let(::opponentName),
+                    observedCount = observation.observedCount,
+                    completeness = observation.completeness,
+                    aggregates = aggregates,
+                )
             }
         }
-
-        // EA's aggregates are sparse histograms: an absent code in an otherwise
-        // available RAW aggregate is an observed zero. That is materially
-        // different from an aggregate slot that was unavailable altogether.
-        val candidateCodesByAggregate = availableObservations
-            .flatMap { available -> available.aggregates.entries }
-            .groupBy({ it.key }, { it.value.keys })
-            .mapValues { (_, codeSets) -> codeSets.flatten().toSortedSet() }
-
-        availableObservations.forEach { available ->
-            available.aggregates.forEach { (aggregateIndex, unknownCodes) ->
-                candidateCodesByAggregate[aggregateIndex].orEmpty().forEach { code ->
-                    val value = unknownCodes[code] ?: 0
-                    val observation = available.observation
-                    val sample = ObservationalEvidenceEngine.Sample(
-                        observation.matchId.value,
-                        aggregateIndex,
-                        code,
-                        value,
-                        observation.observedCount,
-                        observation.completeness,
-                    )
-                    evidence += sample
-                    rows += ObservationComparisonRow(
-                        observation.matchId.value,
-                        observation.observedCount,
-                        observation.completeness.name,
-                        observation.observedPositionContext,
-                        aggregateIndex,
-                        code,
-                        value,
-                    )
-                }
-            }
-        }
-        return ObservationComparisonData(
+        val analysis = ObservationCandidateAnalyzer().analyze(
             phrase = phrase,
+            observations = inputs,
+            allPlayerObservations = allPlayerObservations.map {
+                ObservationCandidateAnalyzer.RecordedObservation(
+                    matchId = it.matchId.value,
+                    phrase = it.phrase,
+                    observedCount = it.observedCount,
+                    completeness = it.completeness,
+                )
+            },
+        )
+        return ObservationComparisonData(
+            phrase = analysis.phrase,
             annotatedMatches = observations.map { it.matchId }.toSet().size,
             annotatedObservations = observations.size,
             excludedRawUnavailable = rawUnavailable,
-            candidates = ObservationalEvidenceEngine().analyze(evidence),
-            rows = rows.sortedWith(compareBy<ObservationComparisonRow> { it.aggregateIndex }.thenBy { it.code }.thenBy { it.matchId }),
+            contradictedCandidates = analysis.contradictedCandidates,
+            candidates = analysis.candidates,
+            observationCollisions = analysis.observationCollisions,
+            nextBestExperiments = analysis.nextBestExperiments,
         )
     }
 
@@ -718,20 +686,19 @@ class AdvancedStatsExplorerService(
     private fun parseAggregateEntries(player: PlayerMatchPerformance): List<AggregateEntry> {
         val raw = player.rawEventAggregates ?: return emptyList()
         val entries = mutableListOf<AggregateEntry>()
-        parseHistogram(raw.aggregate0)?.forEach { (code, value) ->
-            val mapping = AdvancedStatsCodeRegistry.lookup(0, code)
-            entries.add(AggregateEntry(0, code, value, mapping.confidence.name, mapping.metricName, mapping.evidence))
-        }
-        parseHistogram(raw.aggregate1)?.forEach { (code, value) ->
-            val mapping = AdvancedStatsCodeRegistry.lookup(1, code)
-            entries.add(AggregateEntry(1, code, value, mapping.confidence.name, mapping.metricName, mapping.evidence))
+        aggregateSlots(raw).forEach { (aggregateIndex, aggregate) ->
+            parseHistogram(aggregate)?.forEach { (code, value) ->
+                val mapping = AdvancedStatsCodeRegistry.lookup(aggregateIndex, code)
+                entries.add(AggregateEntry(aggregateIndex, code, value, mapping.confidence.name, mapping.metricName, mapping.evidence))
+            }
         }
         entries.sortWith(compareBy({ it.aggregate }, { it.code }))
         return entries
     }
 
     private fun parseHistogram(raw: String?): Map<Int, Int>? {
-        if (raw.isNullOrBlank()) return null
+        if (raw == null) return null
+        if (raw.isBlank()) return emptyMap()
         return raw.split(',').mapNotNull { entry ->
             val parts = entry.split(':', limit = 2).takeIf { it.size == 2 } ?: return@mapNotNull null
             val code = parts[0].toIntOrNull() ?: return@mapNotNull null
@@ -739,6 +706,25 @@ class AdvancedStatsExplorerService(
             code to value
         }.toMap()
     }
+
+    private fun aggregateSlots(raw: RawEventAggregates): List<Pair<Int, String?>> = listOf(
+        0 to raw.aggregate0,
+        1 to raw.aggregate1,
+        2 to raw.aggregate2,
+        3 to raw.aggregate3,
+    )
+
+    private fun perspectivePlayer(canonical: CanonicalMatch, playerId: String): PlayerMatchPerformance? =
+        canonical.footballMatch.participants
+            .firstOrNull { it.club.id == canonical.interpretation.perspectiveClubId }
+            ?.players
+            ?.firstOrNull { it.player.id.value == playerId }
+
+    private fun opponentName(canonical: CanonicalMatch): String? = canonical.footballMatch.participants
+        .firstOrNull { it.club.id != canonical.interpretation.perspectiveClubId }
+        ?.club
+        ?.name
+        ?.value
 
     private fun buildExportRow(
         clubId: String,

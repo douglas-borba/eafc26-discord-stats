@@ -49,4 +49,16 @@ class PostgresExplorerObservationRepositoryTest {
         assertThat(updated.completeness).isEqualTo(ObservationCompleteness.EXACT)
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM explorer_observations", Int::class.java)).isEqualTo(1)
     }
+
+    @Test fun `loads a bounded cross phrase evidence set for one player`() {
+        repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-a"), "player-a", "Frase A", 1))
+        repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-b"), "player-a", "Frase B", 2))
+        repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-c"), "player-b", "Frase C", 3))
+
+        val observations = repository.findForPlayer(ClubId("club-a"), "player-a", 1)
+
+        assertThat(observations).hasSize(1)
+        assertThat(observations.single().playerId).isEqualTo("player-a")
+        assertThat(observations.single().clubId).isEqualTo(ClubId("club-a"))
+    }
 }

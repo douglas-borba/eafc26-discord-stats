@@ -842,9 +842,23 @@ function PlayerDetailView({
 }
 
 type ExplorerObservation = { phrase: string; observedCount: number; completeness: "AT_LEAST" | "EXACT"; note: string | null; observedPositionContext: string | null };
-type ObservationComparison = {
+export type ObservationEvidence = {
+  matchId: string; opponentName: string | null; observedCount: number; completeness: string; aggregateValue: number; comparison: string;
+};
+export type ObservationCandidate = {
+  aggregateIndex: number; code: number; candidateKind: "UNKNOWN_CANDIDATE" | "KNOWN_CONTROL"; registryConfidence: string;
+  metricName: string | null; registryEvidence: string | null; annotatedMatches: number; comparableObservations: number;
+  totalObservedOccurrences: number; aggregateLessThanObserved: number; aggregateEqualObserved: number;
+  aggregateGreaterThanObserved: number; exactSupportingEvidence: number; contradictions: number; totalExcess: number;
+  atLeastCompatibleCases: number; classification: string; investigationStatus: "CONTRADICTED" | "INSUFFICIENT_EVIDENCE" | "SURVIVES" | "HIGH_PRIORITY";
+  investigationRank: number | null; evidence: ObservationEvidence[];
+  candidateCollisions: { aggregateIndex: number; code: number; candidateKind: string; registryConfidence: string; metricName: string | null }[];
+};
+export type ObservationComparison = {
   phrase: string; annotatedMatches: number; annotatedObservations: number; excludedRawUnavailable: number;
-  candidates: { aggregateIndex: number; code: number; annotatedMatches: number; comparableObservations: number; totalObservedOccurrences: number; aggregateLessThanObserved: number; aggregateEqualObserved: number; aggregateGreaterThanObserved: number; exactSupportingEvidence: number; classification: string }[];
+  contradictedCandidates: number; candidates: ObservationCandidate[];
+  observationCollisions: { phrase: string; sharedObservedMatches: number }[];
+  nextBestExperiments: string[];
 };
 
 function ObservationPanel({ clubId, data }: { clubId: string; data: PlayerExplorerData }) {
@@ -901,8 +915,52 @@ function ObservationPanel({ clubId, data }: { clubId: string; data: PlayerExplor
     </div>
     {error && <p style={{ color: "#f85149", fontSize: 11 }}>{error}</p>}
     {items.length > 0 && <table style={tableStyle}><thead><tr><th style={thStyle}>Phrase</th><th style={thStyle}>Observed</th><th style={thStyle}>Completeness</th><th style={thStyle}>Position context</th><th style={thStyle}></th></tr></thead><tbody>{items.map((item) => <tr key={item.phrase} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{item.phrase}</td><td style={tdStyle}>{item.observedCount}</td><td style={tdStyle}>{item.completeness}</td><td style={tdStyle}>{item.observedPositionContext ?? "—"}</td><td style={tdStyle}><button onClick={() => compare(item.phrase)} disabled={loading} style={{ ...btnStyle, fontSize: 11 }}>Compare</button></td></tr>)}</tbody></table>}
-    {comparison && <div style={{ marginTop: 10 }}><strong style={{ fontSize: 12 }}>Direct-counter comparison: {comparison.phrase}</strong><p style={{ color: "#8b949e", fontSize: 11 }}>{comparison.annotatedObservations} annotations · {comparison.excludedRawUnavailable} RAW aggregate slots excluded.</p>{comparison.candidates.length === 0 ? <p style={{ color: "#8b949e", fontSize: 11 }}>No UNKNOWN aggregate candidates have comparable RAW evidence.</p> : <table style={tableStyle}><thead><tr><th style={thStyle}>Candidate</th><th style={thStyle}>Result</th><th style={thStyle}>A&lt;O</th><th style={thStyle}>A=O</th><th style={thStyle}>A&gt;O</th></tr></thead><tbody>{comparison.candidates.map((candidate) => <tr key={`${candidate.aggregateIndex}-${candidate.code}`} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>agg{candidate.aggregateIndex}[{candidate.code}]</td><td style={tdStyle}>{candidate.classification}</td><td style={tdStyle}>{candidate.aggregateLessThanObserved}</td><td style={tdStyle}>{candidate.aggregateEqualObserved}</td><td style={tdStyle}>{candidate.aggregateGreaterThanObserved}</td></tr>)}</tbody></table>}</div>}
+    {comparison && <ObservationComparisonView comparison={comparison} />}
   </section>;
+}
+
+export function ObservationComparisonView({ comparison }: { comparison: ObservationComparison }) {
+  const [showContradicted, setShowContradicted] = useState(false);
+  const [expandedEvidence, setExpandedEvidence] = useState<string | null>(null);
+  const keyFor = (candidate: ObservationCandidate) => `${candidate.aggregateIndex}-${candidate.code}`;
+  const unknown = comparison.candidates.filter((candidate) => candidate.candidateKind === "UNKNOWN_CANDIDATE");
+  const discoveries = unknown.filter((candidate) => candidate.investigationStatus === "HIGH_PRIORITY" || candidate.investigationStatus === "SURVIVES").slice(0, 12);
+  const controls = comparison.candidates.filter((candidate) => candidate.candidateKind === "KNOWN_CONTROL" && candidate.investigationStatus !== "CONTRADICTED");
+  const contradicted = comparison.candidates.filter((candidate) => candidate.investigationStatus === "CONTRADICTED");
+  const renderCandidate = (candidate: ObservationCandidate) => {
+    const key = keyFor(candidate);
+    const expanded = expandedEvidence === key;
+    return <div key={key} style={{ borderTop: "1px solid #30363d", padding: "10px 0" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <strong style={{ fontSize: 12 }}>agg{candidate.aggregateIndex}[{candidate.code}]</strong>
+        <span style={{ fontSize: 10, color: candidate.candidateKind === "KNOWN_CONTROL" ? "#79c0ff" : "#f0c674" }}>{candidate.candidateKind}</span>
+        <span style={{ fontSize: 10, color: "#8b949e" }}>{candidate.investigationStatus}</span>
+        {candidate.metricName && <span style={{ fontSize: 10, color: "#8b949e" }}>{candidate.metricName}</span>}
+      </div>
+      <p style={{ color: "#8b949e", fontSize: 11, margin: "5px 0" }}>
+        Exatas: {candidate.aggregateEqualObserved} · Compatíveis: {candidate.atLeastCompatibleCases} · Contradições: {candidate.contradictions} · Excesso: +{candidate.totalExcess}
+      </p>
+      {candidate.candidateCollisions.length > 0 && <p style={{ color: "#f0883e", fontSize: 11, margin: "5px 0" }}>
+        Candidate collision: {candidate.candidateCollisions.map((collision) => `agg${collision.aggregateIndex}[${collision.code}]${collision.metricName ? ` (${collision.metricName})` : ""}`).join(", ")}
+      </p>}
+      <button onClick={() => setExpandedEvidence(expanded ? null : key)} style={{ ...btnStyle, fontSize: 11, padding: "2px 8px" }}>{expanded ? "Hide evidence" : "View evidence"}</button>
+      {expanded && <div style={{ overflowX: "auto", marginTop: 8 }}><table style={tableStyle}><thead><tr><th style={thStyle}>Match</th><th style={thStyle}>Observed</th><th style={thStyle}>Aggregate</th><th style={thStyle}>Result</th></tr></thead><tbody>{candidate.evidence.map((evidence) => <tr key={evidence.matchId} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{evidence.opponentName ?? evidence.matchId}</td><td style={tdStyle}>{evidence.completeness === "AT_LEAST" ? "≥ " : ""}{evidence.observedCount}</td><td style={tdStyle}>{evidence.aggregateValue}</td><td style={tdStyle}>{evidence.comparison}</td></tr>)}</tbody></table></div>}
+    </div>;
+  };
+
+  return <div style={{ marginTop: 10 }}>
+    <strong style={{ fontSize: 12 }}>Observational candidate analysis: {comparison.phrase}</strong>
+    <p style={{ color: "#f0883e", fontSize: 11 }}>Observational compatibility does not confirm the sporting meaning of a code.</p>
+    <p style={{ color: "#8b949e", fontSize: 11 }}>{comparison.annotatedMatches} observed matches · {comparison.excludedRawUnavailable} RAW aggregate slots unavailable · {comparison.contradictedCandidates} contradicted</p>
+    {comparison.observationCollisions.length > 0 && <p style={{ color: "#f0883e", fontSize: 11 }}>Observation collision: {comparison.observationCollisions.map((collision) => collision.phrase).join(", ")}</p>}
+    {comparison.nextBestExperiments.length > 0 && <ul style={{ color: "#8b949e", fontSize: 11, margin: "8px 0", paddingLeft: 18 }}>{comparison.nextBestExperiments.map((recommendation) => <li key={recommendation}>{recommendation}</li>)}</ul>}
+    <div style={{ marginTop: 8 }}>
+      <strong style={{ fontSize: 11 }}>Discovery candidates</strong>
+      {discoveries.length === 0 ? <p style={{ color: "#8b949e", fontSize: 11 }}>No UNKNOWN candidate survives with enough evidence yet.</p> : discoveries.map(renderCandidate)}
+    </div>
+    {controls.length > 0 && <div style={{ marginTop: 10 }}><strong style={{ fontSize: 11 }}>Known controls</strong>{controls.map(renderCandidate)}</div>}
+    {contradicted.length > 0 && <div style={{ marginTop: 10 }}><button onClick={() => setShowContradicted(!showContradicted)} style={{ ...btnStyle, fontSize: 11 }}>{showContradicted ? "Hide contradicted" : `Show ${contradicted.length} contradicted`}</button>{showContradicted && contradicted.map(renderCandidate)}</div>}
+  </div>;
 }
 
 function CompareView({

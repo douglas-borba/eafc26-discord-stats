@@ -29,6 +29,8 @@ class AdvancedStatsExplorerServiceTest {
     private fun buildCanonical(
         rawAgg0: String? = "6:4,112:8,115:2,152:9,174:18,42:7",
         rawAgg1: String? = "6:3,47:1",
+        rawAgg2: String? = null,
+        rawAgg3: String? = null,
         rawUnknownFields: RawUnknownFields? = null,
         eaPositionCode: String? = "25",
         id: String = "match-1",
@@ -48,7 +50,9 @@ class AdvancedStatsExplorerServiceTest {
             eaRecognition = EaRecognition(manOfTheMatch = true),
             advanced = AdvancedPlayerStats(secondAssists = 2, throughPasses = 9, dribblesCompleted = 18, beats = 8, interceptions = 7),
             advancedCoverage = advancedCoverage,
-            rawEventAggregates = if (rawAgg0 != null || rawAgg1 != null) RawEventAggregates(rawAgg0, rawAgg1) else null,
+            rawEventAggregates = if (listOf(rawAgg0, rawAgg1, rawAgg2, rawAgg3).any { it != null }) {
+                RawEventAggregates(rawAgg0, rawAgg1, rawAgg2, rawAgg3)
+            } else null,
             rawUnknownFields = rawUnknownFields,
             eaPositionCode = eaPositionCode,
         )
@@ -106,9 +110,16 @@ class AdvancedStatsExplorerServiceTest {
         override fun metadata(clubId: ClubId): CanonicalRepositoryMetadata = CanonicalRepositoryMetadata(1, null, null, null, emptySet(), emptySet())
     }
 
-    private fun fakeRepo(matches: List<CanonicalMatch>) = object : CanonicalMatchRepository {
+    private fun fakeRepo(
+        matches: List<CanonicalMatch>,
+        onFindByIds: (() -> Unit)? = null,
+    ) = object : CanonicalMatchRepository {
         override fun save(match: CanonicalMatch) {}
         override fun findById(clubId: ClubId, matchId: MatchId): CanonicalMatch? = matches.firstOrNull { it.matchId == matchId }
+        override fun findByIds(clubId: ClubId, matchIds: Collection<MatchId>): List<CanonicalMatch> {
+            onFindByIds?.invoke()
+            return matches.filter { it.matchId in matchIds }
+        }
         override fun findMatchIds(clubId: ClubId): Set<MatchId> = matches.map { it.matchId }.toSet()
         override fun findLatestMatchId(clubId: ClubId): MatchId? = matches.firstOrNull()?.matchId
         override fun findExistingMatchIds(clubId: ClubId, candidateMatchIds: Collection<MatchId>): Set<MatchId> = emptySet()
@@ -500,8 +511,43 @@ class AdvancedStatsExplorerServiceTest {
 
         val candidate = result.candidates.first { it.aggregateIndex == 0 && it.code == 182 }
         assertThat(candidate.comparableObservations).isEqualTo(2)
-        assertThat(result.rows.filter { it.aggregateIndex == 0 && it.code == 182 }.map { it.aggregateValue })
+        assertThat(candidate.evidence.map { it.aggregateValue })
             .containsExactlyInAnyOrder(1, 0)
+    }
+
+    @Test
+    fun `observation comparison includes available aggregate two while leaving an absent aggregate three unavailable`() {
+        val observations = InMemoryExplorerObservationRepository()
+        observations.save(ExplorerObservation(clubId, MatchId("one"), "player-1", "Ação observada", 1))
+        val service = AdvancedStatsExplorerService(
+            fakeRepo(buildCanonical(rawAgg0 = "", rawAgg1 = "", rawAgg2 = "77:1", rawAgg3 = null, id = "one")),
+            observationRepository = observations,
+        )
+
+        val result = service.compareObservations(clubId, "player-1", "Ação observada")
+
+        assertThat(result.candidates.map { it.aggregateIndex to it.code }).contains(2 to 77)
+        assertThat(result.excludedRawUnavailable).isEqualTo(1)
+    }
+
+    @Test
+    fun `observation analysis batch loads only the bounded annotated match set`() {
+        val observations = InMemoryExplorerObservationRepository()
+        observations.save(ExplorerObservation(clubId, MatchId("one"), "player-1", "Ação", 1))
+        observations.save(ExplorerObservation(clubId, MatchId("two"), "player-1", "Ação", 2))
+        observations.save(ExplorerObservation(clubId, MatchId("two"), "player-1", "Outra ação", 2))
+        val matches = listOf(
+            buildCanonical(rawAgg0 = "163:1", rawAgg1 = "", id = "one"),
+            buildCanonical(rawAgg0 = "163:2", rawAgg1 = "", id = "two"),
+        )
+        var batchReads = 0
+        val repository = fakeRepo(matches) { batchReads++ }
+        val service = AdvancedStatsExplorerService(repository, observationRepository = observations)
+
+        val result = service.compareObservations(clubId, "player-1", "Ação", limit = 20)
+
+        assertThat(batchReads).isEqualTo(1)
+        assertThat(result.candidates).isNotEmpty()
     }
 
     @Test

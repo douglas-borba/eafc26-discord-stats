@@ -2,7 +2,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { DiscoveryView, NovelMetricsView, PositionObservationsView, type DiscoveryData, type NovelResult, type PositionObservationsData } from "@/components/admin/advanced-stats-explorer";
+import { DiscoveryView, NovelMetricsView, ObservationComparisonView, PositionObservationsView, type DiscoveryData, type NovelResult, type ObservationComparison, type PositionObservationsData } from "@/components/admin/advanced-stats-explorer";
 
 const base: DiscoveryData = {
   analysis: {
@@ -106,6 +106,40 @@ describe("Advanced Stats Discovery V2", () => {
 });
 
 describe("Advanced Stats Explorer investigation surfaces", () => {
+  it("renders ranked unknown candidates, known controls and collision warnings without assigning a sporting meaning", () => {
+    const comparison: ObservationComparison = {
+      phrase: "Melhore seu tempo de bola", annotatedMatches: 3, annotatedObservations: 3, excludedRawUnavailable: 0, contradictedCandidates: 4,
+      observationCollisions: [], nextBestExperiments: ["Registre uma nova partida em que agg0[183] e agg0[112] tenham valores diferentes."],
+      candidates: [
+        {
+          aggregateIndex: 0, code: 183, candidateKind: "UNKNOWN_CANDIDATE", registryConfidence: "UNKNOWN", metricName: null, registryEvidence: null,
+          annotatedMatches: 3, comparableObservations: 3, totalObservedOccurrences: 8, aggregateLessThanObserved: 0, aggregateEqualObserved: 2,
+          aggregateGreaterThanObserved: 1, exactSupportingEvidence: 0, contradictions: 0, totalExcess: 1, atLeastCompatibleCases: 1, classification: "DIRECT_COUNTER_POSSIBLE",
+          investigationStatus: "HIGH_PRIORITY", investigationRank: 1,
+          evidence: [{ matchId: "cartola", opponentName: "Cartola", observedCount: 2, completeness: "AT_LEAST", aggregateValue: 3, comparison: "AT_LEAST_COMPATIBLE" }],
+          candidateCollisions: [{ aggregateIndex: 0, code: 112, candidateKind: "KNOWN_CONTROL", registryConfidence: "CONFIRMED", metricName: "Beats" }],
+        },
+        {
+          aggregateIndex: 0, code: 112, candidateKind: "KNOWN_CONTROL", registryConfidence: "CONFIRMED", metricName: "Beats", registryEvidence: "Validated against EA gameplay data",
+          annotatedMatches: 3, comparableObservations: 3, totalObservedOccurrences: 8, aggregateLessThanObserved: 0, aggregateEqualObserved: 2,
+          aggregateGreaterThanObserved: 1, exactSupportingEvidence: 0, contradictions: 0, totalExcess: 1, atLeastCompatibleCases: 1, classification: "DIRECT_COUNTER_POSSIBLE",
+          investigationStatus: "SURVIVES", investigationRank: null, evidence: [],
+          candidateCollisions: [{ aggregateIndex: 0, code: 183, candidateKind: "UNKNOWN_CANDIDATE", registryConfidence: "UNKNOWN", metricName: null }],
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(<ObservationComparisonView comparison={comparison} />);
+
+    expect(html).toContain("Discovery candidates");
+    expect(html).toContain("UNKNOWN_CANDIDATE");
+    expect(html).toContain("Known controls");
+    expect(html).toContain("Beats");
+    expect(html).toContain("Candidate collision");
+    expect(html).toContain("Observational compatibility does not confirm the sporting meaning of a code.");
+    expect(html).not.toContain("completed dribbles");
+  });
+
   it("renders an UNKNOWN novel candidate as investigation evidence without a sporting label", () => {
     const data: NovelResult = {
       rawMatchesAnalyzed: 5,
