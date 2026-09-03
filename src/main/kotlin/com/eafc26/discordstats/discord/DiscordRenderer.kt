@@ -111,7 +111,7 @@ class DiscordRenderer(
         })
         addSection(summary.bagre?.let {
             EmbedField(
-                "🍍 BAGRE DA PARTIDA",
+                it.title,
                 buildString {
                     append("$BLANK\n${it.name}\n$BLANK\n")
                     append("📊 Nota ${it.rating}\n")

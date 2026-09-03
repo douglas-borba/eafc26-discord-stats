@@ -233,13 +233,17 @@ class MatchFeaturesEvaluator {
         val playerId = decision.winnerId ?: return null
         val metrics = decision.metrics as? AwardMetrics.Bagre ?: return null
         return BagrePerformanceDecision(
-            playerId,
-            metrics.rating,
-            metrics.criticism,
-            metrics.tackleSummary,
-            metrics.passingSummary,
-            decision.rule,
-            decision.evidence,
+            playerId = playerId,
+            rating = metrics.rating,
+            criticism = metrics.criticism,
+            tackleSummary = metrics.tackleSummary,
+            passingSummary = metrics.passingSummary,
+            rule = BAGRE_PERFORMANCE_RULE,
+            evidence = decision.evidence,
+            recognition = metrics.recognition,
+            peerAverageRating = metrics.peerAverageRating,
+            ratingDeficit = metrics.ratingDeficit,
+            peerAveragePassErrors = metrics.peerAveragePassErrors,
         )
     }
 

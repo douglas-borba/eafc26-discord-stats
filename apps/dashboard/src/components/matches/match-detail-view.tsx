@@ -367,6 +367,7 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
             {(["craque", "bagre", "xerife"] as const).map((key) => {
               const award = match.awards[key];
               const meta = characterMeta[key];
+              const label = key === "bagre" ? award?.label ?? meta.label : meta.label;
               const awarded = !!award;
               const player = awarded
                 ? match.players.find((p) => p.playerId === award.winnerId)
@@ -392,7 +393,7 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-lg">{meta.emoji}</span>
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
-                        {meta.label}
+                        {label}
                       </span>
                     </div>
                     {awarded ? (
@@ -724,7 +725,7 @@ export function MatchDetailView({ match, clubId }: { match: MatchDetail; clubId:
                 if (!award) return null;
                 return (
                   <div key={key} className="border-t border-border/40 pt-3">
-                    <p className="font-semibold text-text-primary">{meta.label}</p>
+                    <p className="font-semibold text-text-primary">{key === "bagre" ? award.label ?? meta.label : meta.label}</p>
                     <p>
                       <span className="text-muted">Vencedor:</span> {award.winnerName ?? "---"}
                     </p>

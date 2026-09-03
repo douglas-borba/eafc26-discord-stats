@@ -6,6 +6,7 @@ import com.eafc26.discordstats.domain.interpretation.AwardDecisionReason
 import com.eafc26.discordstats.domain.interpretation.AwardMetrics
 import com.eafc26.discordstats.domain.interpretation.AwardType
 import com.eafc26.discordstats.domain.interpretation.BagreCriticism
+import com.eafc26.discordstats.domain.interpretation.NegativeRecognition
 import com.eafc26.discordstats.domain.interpretation.GoalkeeperArchetype
 import com.eafc26.discordstats.domain.interpretation.GoalkeeperNarrativeVariant
 import com.eafc26.discordstats.domain.interpretation.MatchInterpretation
@@ -203,19 +204,49 @@ class MatchSummaryBuilder(
             BagreCriticism.RATING -> PhraseCategory.RATING
         }
         return BagreSection(
-            playerName,
-            fmtRating(content.rating),
-            bagreReason(content.criticism),
-            tackle,
-            passing,
-            phrase(category, matchId, bagreSeed(seedName(player), content.criticism), random),
+            name = playerName,
+            rating = fmtRating(content.rating),
+            reason = negativeRecognitionReason(content),
+            tackleStats = tackle,
+            passStats = passing,
+            phrase = when (content.recognition) {
+                NegativeRecognition.BAGRE -> phrase(category, matchId, bagreSeed(seedName(player), content.criticism), random)
+                NegativeRecognition.LOW_PERFORMANCE -> lowPerformancePhrase(content)
+            },
+            title = content.recognition.title(),
         )
     }
 
-    private fun bagreReason(criticism: BagreCriticism): String = when (criticism) {
-        BagreCriticism.TACKLING -> "Baixo aproveitamento em desarmes com volume relevante."
-        BagreCriticism.PASSING -> "Baixo aproveitamento em passes com volume relevante."
-        BagreCriticism.RATING -> "Nota abaixo do nível esperado na partida."
+    private fun negativeRecognitionReason(content: StoryContent.BagrePerformance): String {
+        if (content.recognition == NegativeRecognition.BAGRE || content.rating < BigDecimal("7.5")) {
+            return "Menor nota entre os jogadores elegíveis."
+        }
+        val deficit = content.ratingDeficit?.let(::fmtRating)
+            ?: return "Desempenho abaixo da referência dos demais jogadores elegíveis."
+        return when (content.criticism) {
+            BagreCriticism.RATING -> "$deficit ponto(s) abaixo da média dos demais jogadores elegíveis."
+            BagreCriticism.PASSING -> {
+                val errors = content.passingSummary?.let { it.attempted - it.completed }
+                val peerErrors = content.peerAveragePassErrors?.let(::fmtRating)
+                if (errors != null && peerErrors != null) {
+                    "$deficit ponto(s) abaixo da média · $errors passes errados, contra média de $peerErrors dos demais."
+                } else {
+                    "$deficit ponto(s) abaixo da média com passes errados em volume relevante."
+                }
+            }
+            BagreCriticism.TACKLING -> "$deficit ponto(s) abaixo da média com desarmes em volume relevante."
+        }
+    }
+
+    private fun lowPerformancePhrase(content: StoryContent.BagrePerformance): String = when (content.criticism) {
+        BagreCriticism.RATING -> "A nota ficou abaixo da referência dos jogadores elegíveis."
+        BagreCriticism.PASSING -> "A comparação com os demais confirmou o baixo rendimento nos passes."
+        BagreCriticism.TACKLING -> "A comparação com os demais confirmou o baixo rendimento nos desarmes."
+    }
+
+    private fun NegativeRecognition.title(): String = when (this) {
+        NegativeRecognition.BAGRE -> "🍍 BAGRE DA PARTIDA"
+        NegativeRecognition.LOW_PERFORMANCE -> "📉 BAIXO RENDIMENTO"
     }
 
     private fun redCard(

@@ -18,6 +18,33 @@ import java.time.ZoneOffset
 class AdvancedMatchSummaryBuilderTest {
 
     @Test
+    fun `renders automatic low performance with its own factual recognition title`() {
+        val source = MatchResponse(
+            matchId = "low-performance-match",
+            timestamp = 1_767_225_600,
+            clubs = linkedMapOf(
+                OUR_CLUB to ClubMatchEntry(details = ClubDetails(name = "Our FC"), score = "1", result = "1"),
+                "opponent" to ClubMatchEntry(details = ClubDetails(name = "Opponent"), score = "0", result = "0"),
+            ),
+            players = mapOf(
+                OUR_CLUB to mapOf(
+                    "high" to player("High", "8.5", "2", "2", null),
+                    "low" to player("Low", "7.3", "2", "2", null),
+                ),
+            ),
+        )
+        val match = (EaMatchMapper().map(source) as MatchNormalizationResult.Success).match
+        val interpretation = MatchInterpreter().interpret(match, ClubId(OUR_CLUB))
+        val stories = MatchStoryExtractor().extract(interpretation)
+
+        val presentation = MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))
+            .build(match, interpretation, stories, ZoneOffset.UTC)
+
+        assertThat(presentation.bagre!!.title).isEqualTo("📉 BAIXO RENDIMENTO")
+        assertThat(presentation.bagre!!.reason).isEqualTo("Menor nota entre os jogadores elegíveis.")
+    }
+
+    @Test
     fun `projects decoded advanced facts into the conditional card sections`() {
         val source = MatchResponse(
             matchId = "advanced-match",

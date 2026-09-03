@@ -138,6 +138,7 @@ data class BagreSection(
     val tackleStats: String?,    // e.g., "0/6 certos (0%)"
     val passStats: String?,      // e.g., "10/20 certos (50%)"
     val phrase: String,
+    val title: String = "🍍 BAGRE DA PARTIDA",
 )
 
 data class XerifeSection(

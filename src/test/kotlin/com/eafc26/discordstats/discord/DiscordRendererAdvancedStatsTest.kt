@@ -20,6 +20,17 @@ class DiscordRendererAdvancedStatsTest {
     private val renderer = DiscordRenderer(MatchSummaryBuilder(PhraseBank(jacksonObjectMapper())))
 
     @Test
+    fun `renders automatic low performance with factual Discord copy`() {
+        val payload = render(match(players = linkedMapOf(
+            "high" to player("High", rating = "8.5"),
+            "low" to player("Low", rating = "7.3"),
+        )))
+        val field = payload.embeds.flatMap { it.fields }.single { it.name == "📉 BAIXO RENDIMENTO" }
+
+        assertThat(field.value).contains("Low", "Nota 7,30", "Menor nota entre os jogadores elegíveis.")
+    }
+
+    @Test
     fun `renders advanced decisions from RAW decoding through canonical interpretation and summary`() {
         val payload = render(advancedMatch())
         val fields = payload.embeds.flatMap { it.fields }.associateBy { it.name }

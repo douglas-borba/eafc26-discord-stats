@@ -236,7 +236,7 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
           {presentation.bagre && (
             <>
               <Divider my={divMy} />
-              <Section title="🍍 BAGRE DA PARTIDA" mb={sectionMb} titleCls={sectionTitleCls}>
+              <Section title={presentation.bagre.title ?? "🍍 BAGRE DA PARTIDA"} mb={sectionMb} titleCls={sectionTitleCls}>
                 <div className={`card-bagre flex flex-col ${c ? "gap-[0.05rem]" : "gap-[0.2rem]"}`}>
                   <span className={`card-bagre-name ${nameLg} font-semibold text-[#e6edf3]`}>{presentation.bagre.name}</span>
                   <span className={`card-bagre-reason ${textXs} text-muted leading-[1.35]`}>

@@ -1000,7 +1000,7 @@
       // Bagre - full width with clear structure
       if (p.bagre) {
         html += '<div class="card-divider"></div>';
-        html += '<div class="card-section"><div class="card-section-title">🍍 BAGRE DA PARTIDA</div>';
+        html += `<div class="card-section"><div class="card-section-title">${esc(p.bagre.title || '🍍 BAGRE DA PARTIDA')}</div>`;
         html += '<div class="card-bagre">';
         html += `<span class="card-bagre-name">${esc(p.bagre.name)}</span>`;
 

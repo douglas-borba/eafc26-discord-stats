@@ -84,13 +84,26 @@ class MatchHistoryControllerTest {
         assertThat(detail.players.map { it.name }).containsExactly("MVP", "Defender", "Bagre")
         assertThat(detail.awards.map { it.type }).containsExactly("CRAQUE", "BAGRE", "XERIFE")
         assertThat(detail.awards.first { it.type == "CRAQUE" }.winnerName).isEqualTo("MVP")
-        assertThat(detail.awards.first { it.type == "BAGRE" }.label).isEqualTo("Menor Desempenho")
+        assertThat(detail.awards.first { it.type == "BAGRE" }.label).isEqualTo("Bagre da Partida")
         assertThat(detail.stories).isNotEmpty
         assertThat(detail.stories.first().ruleIds).isNotEmpty
         assertThat(detail.stories.first().evidenceCount).isPositive()
         assertThat(detail.provenance.schemaVersion).isEqualTo(2)
         verify(historyService).findById(OUR_CLUB, MatchId("detail-1"))
         verifyNoMoreInteractions(historyService)
+    }
+
+    @Test
+    fun `historical detail preserves low performance recognition stored with the canonical match`() {
+        val canonical = canonical("low-performance", 1_801_000_000L, negativeRating = "7.3")
+        whenever(historyService.findById(OUR_CLUB, MatchId("low-performance"))).thenReturn(canonical)
+
+        val detail = controller.getMatch("low-performance").block()!!.body!!.match!!
+
+        assertThat(detail.awards.first { it.type == "BAGRE" }.label).isEqualTo("Baixo Rendimento")
+        assertThat(detail.stories).anySatisfy {
+            assertThat(it.title).isEqualTo("Baixo Rendimento")
+        }
     }
 
     @Test
@@ -113,7 +126,7 @@ class MatchHistoryControllerTest {
         verifyNoMoreInteractions(historyService)
     }
 
-    private fun canonical(id: String, timestamp: Long): CanonicalMatch {
+    private fun canonical(id: String, timestamp: Long, negativeRating: String = "5.5"): CanonicalMatch {
         val source = MatchResponse(
             matchId = id,
             timestamp = timestamp,
@@ -139,7 +152,7 @@ class MatchHistoryControllerTest {
                         tacklesMade = "5",
                         tackleAttempts = "6",
                     ),
-                    "bagre" to player("Bagre", "5.5"),
+                    "bagre" to player("Bagre", negativeRating),
                 )
             ),
         )

@@ -6,6 +6,18 @@ import org.junit.jupiter.api.Test
 
 class MatchSummaryPresentationContractTest {
     @Test
+    fun `missing negative recognition title keeps historical Bagre presentation compatible`() {
+        val json = """{
+          "name":"Jogador","rating":"6,80","reason":"Nota abaixo","tackleStats":null,
+          "passStats":null,"phrase":"Frase"
+        }"""
+
+        val section = jacksonObjectMapper().readValue(json, BagreSection::class.java)
+
+        assertThat(section.title).isEqualTo("🍍 BAGRE DA PARTIDA")
+    }
+
+    @Test
     fun `missing allPlayers remains null for payloads created before the field existed`() {
         val json = """{
           "ourName":"A","oppName":"B","ourScore":0,"oppScore":0,

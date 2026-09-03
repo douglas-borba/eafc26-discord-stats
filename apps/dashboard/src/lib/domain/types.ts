@@ -78,6 +78,7 @@ export interface Award {
   winnerId: string | null;
   winnerName: string | null;
   reason: string | null;
+  label?: string | null;
 }
 
 export interface Story {

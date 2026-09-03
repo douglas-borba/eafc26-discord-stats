@@ -164,7 +164,7 @@ class MatchFeaturesEvaluatorTest {
         assertThat(decision!!.criticism).isEqualTo(BagreCriticism.TACKLING)
         assertThat(decision.tackleSummary!!.accuracyPercent).isEqualTo(20)
         assertThat(decision.passingSummary!!.accuracyPercent).isEqualTo(30)
-        assertThat(decision.rule).isEqualTo(RuleReference(RuleId("test.bagre"), 1))
+        assertThat(decision.rule).isEqualTo(MatchFeaturesEvaluator.BAGRE_PERFORMANCE_RULE)
     }
 
     @Test

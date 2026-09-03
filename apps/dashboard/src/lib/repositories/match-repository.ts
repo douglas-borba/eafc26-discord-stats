@@ -19,7 +19,7 @@ export async function getMatchDetail(clubId:string, matchId:string): Promise<Mat
     const { summary, players, awards, stories } = data.match;
     const award = (type:string) => {
       const item = awards.find((a) => a.type === type && a.awarded === true);
-      return item ? { winnerId:(item.winnerId as string|null) ?? null, winnerName:(item.winnerName as string|null) ?? null, reason:(item.reason as string|null) ?? null } : null;
+      return item ? { winnerId:(item.winnerId as string|null) ?? null, winnerName:(item.winnerName as string|null) ?? null, reason:(item.reason as string|null) ?? null, label:(item.label as string|null) ?? null } : null;
     };
     const mappedAwards: MatchAwards = { craque:award("CRAQUE"), bagre:award("BAGRE"), xerife:award("XERIFE") };
     return {

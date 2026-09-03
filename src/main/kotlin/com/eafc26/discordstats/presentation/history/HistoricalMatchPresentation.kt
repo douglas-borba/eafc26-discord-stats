@@ -10,6 +10,7 @@ import com.eafc26.discordstats.domain.interpretation.BagreCriticism
 import com.eafc26.discordstats.domain.interpretation.EligibilityStatus
 import com.eafc26.discordstats.domain.interpretation.GoalkeeperArchetype
 import com.eafc26.discordstats.domain.interpretation.MatchOutcome
+import com.eafc26.discordstats.domain.interpretation.NegativeRecognition
 import com.eafc26.discordstats.domain.interpretation.OffensiveNarrativeCategory
 import com.eafc26.discordstats.domain.match.CompetitionType
 import com.eafc26.discordstats.domain.match.OutfieldPosition
@@ -219,13 +220,21 @@ object HistoricalMatchPresenter {
             interpretation.awards.bagre,
             interpretation.awards.xerife,
         ).map { decision ->
-            val bagreFacts = if (decision.type == AwardType.BAGRE) {
+            val bagrePerformance = if (decision.type == AwardType.BAGRE) {
                 interpretation.features.bagrePerformance
                     ?.takeIf { it.playerId == decision.winnerId }
+            } else {
+                null
+            }
+            val bagreFacts = bagrePerformance
                     ?.let {
                         buildList {
+                            add(HistoricalFact("Reconhecimento", it.recognition.label()))
                             add(HistoricalFact("Nota", it.rating.plain()))
                             add(HistoricalFact("Motivo", it.criticism.label()))
+                            it.ratingDeficit?.let { deficit ->
+                                add(HistoricalFact("Diferença para os demais", "${deficit.plain()} ponto(s)"))
+                            }
                             it.tackleSummary?.let { summary ->
                                 add(HistoricalFact(
                                     "Desarmes",
@@ -239,15 +248,13 @@ object HistoricalMatchPresenter {
                                 ))
                             }
                         }
-                    }.orEmpty()
-            } else {
-                decision.metrics.facts()
-            }
+                    }
+                    ?: decision.metrics.facts()
 
             HistoricalAward(
                 type = decision.type.name,
-                label = decision.type.label(),
-                icon = decision.type.icon(),
+                label = bagrePerformance?.recognition?.label() ?: decision.type.label(),
+                icon = bagrePerformance?.recognition?.icon() ?: decision.type.icon(),
                 awarded = decision.awarded,
                 winnerId = decision.winnerId?.value,
                 winnerName = decision.winnerId?.let(namesById::get),
@@ -281,7 +288,7 @@ object HistoricalMatchPresenter {
 
     private fun Story.presentation(namesById: Map<PlayerId, String>) = HistoricalStory(
         type = type.name,
-        title = type.label(),
+        title = (content as? StoryContent.BagrePerformance)?.recognition?.label() ?: type.label(),
         narrativeKey = narrativeKey.value,
         priority = priority.label(),
         involvedPlayers = involvedPlayers.map { namesById[it] ?: it.value }.sorted(),
@@ -321,9 +328,11 @@ object HistoricalMatchPresenter {
                 HistoricalFact("Nota", rating?.plain() ?: "—"),
             )
             is StoryContent.BagrePerformance -> buildList {
+                add(HistoricalFact("Reconhecimento", recognition.label()))
                 add(HistoricalFact("Jogador", namesById[playerId] ?: playerId.value))
                 add(HistoricalFact("Nota", rating.plain()))
                 add(HistoricalFact("Motivo", criticism.label()))
+                ratingDeficit?.let { add(HistoricalFact("Diferença para os demais", "${it.plain()} ponto(s)")) }
             }
             is StoryContent.OffensiveNarrative -> listOf(
                 HistoricalFact("Jogador", namesById[playerId] ?: playerId.value),
@@ -377,6 +386,7 @@ object HistoricalMatchPresenter {
             HistoricalFact("Impacto defensivo", defensiveImpactScore.plain()),
         )
         is AwardMetrics.Bagre -> buildList {
+            add(HistoricalFact("Reconhecimento", recognition.label()))
             add(HistoricalFact("Nota", rating.plain()))
             tackleSummary?.let { add(HistoricalFact("Desarmes", "${it.completed}/${it.attempted} (${it.accuracyPercent}%)")) }
             passingSummary?.let { add(HistoricalFact("Passes", "${it.completed}/${it.attempted} (${it.accuracyPercent}%)")) }
@@ -424,6 +434,16 @@ object HistoricalMatchPresenter {
         AwardType.CRAQUE -> "⭐"
         AwardType.BAGRE -> "📉"
         AwardType.XERIFE -> "🛡️"
+    }
+
+    private fun NegativeRecognition.label() = when (this) {
+        NegativeRecognition.BAGRE -> "Bagre da Partida"
+        NegativeRecognition.LOW_PERFORMANCE -> "Baixo Rendimento"
+    }
+
+    private fun NegativeRecognition.icon() = when (this) {
+        NegativeRecognition.BAGRE -> "🍍"
+        NegativeRecognition.LOW_PERFORMANCE -> "📉"
     }
 
     private fun AwardDecisionReason.label() = when (this) {

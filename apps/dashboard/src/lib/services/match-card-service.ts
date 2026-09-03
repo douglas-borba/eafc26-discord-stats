@@ -112,6 +112,7 @@ export interface BagreSection {
   tackleStats: string | null;
   passStats: string | null;
   phrase: string;
+  title?: string;
 }
 
 export interface XerifeSection {

@@ -83,6 +83,10 @@ data class BagrePerformanceDecision(
     val passingSummary: AccuracySummary?,
     val rule: RuleReference,
     val evidence: List<DecisionEvidence>,
+    val recognition: NegativeRecognition = NegativeRecognition.BAGRE,
+    val peerAverageRating: BigDecimal? = null,
+    val ratingDeficit: BigDecimal? = null,
+    val peerAveragePassErrors: BigDecimal? = null,
 )
 
 enum class BagreCriticism {

@@ -9,6 +9,7 @@ import com.eafc26.discordstats.domain.interpretation.GoalkeeperArchetype
 import com.eafc26.discordstats.domain.interpretation.GoalkeeperNarrativeVariant
 import com.eafc26.discordstats.domain.interpretation.BagreCriticism
 import com.eafc26.discordstats.domain.interpretation.AccuracySummary
+import com.eafc26.discordstats.domain.interpretation.NegativeRecognition
 import com.eafc26.discordstats.domain.interpretation.OffensiveNarrativeCategory
 import com.eafc26.discordstats.domain.interpretation.PlayerContribution
 import com.eafc26.discordstats.domain.interpretation.RatedHighlight
@@ -101,6 +102,10 @@ sealed interface StoryContent {
         val criticism: BagreCriticism,
         val tackleSummary: AccuracySummary?,
         val passingSummary: AccuracySummary?,
+        val recognition: NegativeRecognition = NegativeRecognition.BAGRE,
+        val peerAverageRating: java.math.BigDecimal? = null,
+        val ratingDeficit: java.math.BigDecimal? = null,
+        val peerAveragePassErrors: java.math.BigDecimal? = null,
     ) : StoryContent
 
     data class OffensiveNarrative(

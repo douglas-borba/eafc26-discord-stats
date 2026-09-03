@@ -53,11 +53,26 @@ sealed interface AwardMetrics {
 
     data class Bagre(
         val rating: BigDecimal,
+        /** Legacy persisted field. It is no longer used to select or classify a recognition. */
         val severity: Int,
         val criticism: BagreCriticism,
         val tackleSummary: AccuracySummary?,
         val passingSummary: AccuracySummary?,
+        val recognition: NegativeRecognition = NegativeRecognition.BAGRE,
+        val peerAverageRating: BigDecimal? = null,
+        val ratingDeficit: BigDecimal? = null,
+        val peerAveragePassErrors: BigDecimal? = null,
     ) : AwardMetrics
+}
+
+/**
+ * The single negative-recognition slot is still technically represented by
+ * [AwardType.BAGRE] for compatibility with the canonical award model. This
+ * value determines the product-facing recognition shown for a new match.
+ */
+enum class NegativeRecognition {
+    BAGRE,
+    LOW_PERFORMANCE,
 }
 
 enum class AwardType {
