@@ -124,7 +124,6 @@ data class BehindThePlayDecision(
 data class OneOnOneDecision(
     val playerId: PlayerId,
     val beats: Int,
-    val dribblesCompleted: Int,
     val rating: BigDecimal?,
     val rule: RuleReference,
     val evidence: List<DecisionEvidence>,

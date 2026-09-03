@@ -20,7 +20,9 @@ object AdvancedStatsCodeRegistry {
     private val mappings: List<CodeMapping> = listOf(
         CodeMapping(0, 115, "Pre-assists", CodeConfidence.CONFIRMED, "Validated against EA gameplay data"),
         CodeMapping(0, 152, "Through passes", CodeConfidence.CONFIRMED, "Validated against EA gameplay data"),
-        CodeMapping(0, 174, "Completed dribbles", CodeConfidence.CONFIRMED, "Validated against EA gameplay data"),
+        // Code 174 reproduces a third-party UI label, but EA has not documented
+        // its football meaning. Keep it visible as raw evidence, not a known stat.
+        CodeMapping(0, 174, null, CodeConfidence.UNKNOWN, "EA football semantics unverified"),
         CodeMapping(0, 112, "Beats", CodeConfidence.CONFIRMED, "Validated against EA gameplay data"),
         CodeMapping(0, 6, null, CodeConfidence.HYPOTHESIS, "Possible interception-related counter — NOT VALIDATED"),
         CodeMapping(1, 6, null, CodeConfidence.HYPOTHESIS, "Possible interception-related counter — NOT VALIDATED"),

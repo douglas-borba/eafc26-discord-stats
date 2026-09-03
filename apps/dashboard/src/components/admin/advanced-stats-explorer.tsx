@@ -38,7 +38,6 @@ type KnownStats = {
   tacklesCompleted: number | null;
   secondAssists: number;
   throughPasses: number;
-  dribblesCompleted: number;
   beats: number;
   interceptions: number;
   advancedCoverage: string;
@@ -726,7 +725,6 @@ function PlayerDetailView({
         <StatChip label="Tackles" value={`${data.knownStats.tacklesCompleted ?? "?"}/${data.knownStats.tacklesAttempted ?? "?"}`} />
         <StatChip label="Pre-assists" value={data.knownStats.secondAssists} />
         <StatChip label="Through passes" value={data.knownStats.throughPasses} />
-        <StatChip label="Dribbles completed" value={data.knownStats.dribblesCompleted} />
         <StatChip label="Beats" value={data.knownStats.beats} />
         <StatChip label="Interceptions (sum)" value={data.knownStats.interceptions} warn />
       </div>
@@ -1078,7 +1076,7 @@ function AnchorView({
   onSelectDiscriminator: (value: ResidualDiscriminator | null) => void;
 }) {
   const knownMetrics = ["goals", "assists", "shots", "passesAttempted", "passesCompleted", "tacklesAttempted", "tacklesCompleted"];
-  const confirmedCodes = [{ agg: 0, code: 112, name: "Beats" }, { agg: 0, code: 115, name: "Pre-assists" }, { agg: 0, code: 152, name: "Through passes" }, { agg: 0, code: 174, name: "Completed dribbles" }];
+  const confirmedCodes = [{ agg: 0, code: 112, name: "Beats" }, { agg: 0, code: 115, name: "Pre-assists" }, { agg: 0, code: 152, name: "Through passes" }];
 
   const anchorLabel = () => {
     if (anchorType === "KNOWN_METRIC") return metric;

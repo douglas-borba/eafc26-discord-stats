@@ -82,12 +82,11 @@ class DiscordRenderer(
         })
         addSection(summary.oneOnOne?.let {
             val beatLabel = if (it.beats == 1) "adversário superado" else "adversários superados"
-            val dribbleLabel = if (it.dribblesCompleted == 1) "drible completo" else "dribles completos"
             EmbedField(
                 "🪄 NO UM CONTRA UM",
                 "$BLANK\n${it.name}\n$BLANK\n" +
                     "⚡ ${it.beats} $beatLabel\n" +
-                    "🌀 ${it.dribblesCompleted} $dribbleLabel\n$BLANK\n" +
+                    "$BLANK\n" +
                     "💬 \"${it.phrase}\"",
             )
         })

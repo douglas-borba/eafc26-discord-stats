@@ -38,7 +38,8 @@ class DiscordRendererAdvancedStatsTest {
         assertThat(fields["🧠 POR TRÁS DA JOGADA"]?.value)
             .contains("Creator", "2 assistências prévias", "9 passes em profundidade")
         assertThat(fields["🪄 NO UM CONTRA UM"]?.value)
-            .contains("Dribbler", "8 adversários superados", "18 dribles completos")
+            .contains("Dribbler", "8 adversários superados")
+            .doesNotContain("drible completo", "dribles completos")
         assertThat(fields["🚧 XERIFE DA PARTIDA"]?.value)
             .contains("Creator", "6 ações defensivas", "2/2 desarmes", "4 interceptações", "Aproveitamento: 100%")
 

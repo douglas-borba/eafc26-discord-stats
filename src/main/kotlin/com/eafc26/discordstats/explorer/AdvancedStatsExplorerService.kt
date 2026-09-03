@@ -54,7 +54,6 @@ class AdvancedStatsExplorerService(
         val tacklesCompleted: Int?,
         val secondAssists: Int,
         val throughPasses: Int,
-        val dribblesCompleted: Int,
         val beats: Int,
         val interceptions: Int,
         val advancedCoverage: String,
@@ -557,7 +556,6 @@ class AdvancedStatsExplorerService(
                 tacklesCompleted = player.defending.tacklesCompleted,
                 secondAssists = player.advanced.secondAssists,
                 throughPasses = player.advanced.throughPasses,
-                dribblesCompleted = player.advanced.dribblesCompleted,
                 beats = player.advanced.beats,
                 interceptions = player.advanced.interceptions,
                 advancedCoverage = player.advancedCoverage.name,
@@ -619,7 +617,6 @@ class AdvancedStatsExplorerService(
                 "beats" to player.advanced.beats,
                 "preAssists" to player.advanced.secondAssists,
                 "throughPasses" to player.advanced.throughPasses,
-                "completedDribbles" to player.advanced.dribblesCompleted,
             )
         } else {
             mapOf(

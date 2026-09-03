@@ -95,7 +95,7 @@ function XRayContent({ profile, xRay }: { profile: PlayerProfile; xRay: NonNulla
       <h3 style={sectionTitle}>1 CONTRA 1</h3>
       <div style={surfaceStyle}>
         <p style={{ ...analysisTextStyle, color: "var(--color-text-muted)", marginBottom: 10 }}>Dados avançados em {xRay.oneOnOne.coveredAppearances} de {xRay.advancedCoverage.eligibleAppearances} partidas elegíveis.</p>
-        <div style={{ display: "flex", gap: 30, flexWrap: "wrap" }}><Fact label="Dribles completos" value={xRay.oneOnOne.dribblesCompleted} /><Fact label="Adversários superados" value={xRay.oneOnOne.opponentsBeaten} /></div>
+        <div style={{ display: "flex", gap: 30, flexWrap: "wrap" }}><Fact label="Adversários superados" value={xRay.oneOnOne.opponentsBeaten} /></div>
       </div>
     </section>}
 

@@ -9,6 +9,10 @@ package com.eafc26.discordstats.domain.match
 data class AdvancedPlayerStats(
     val secondAssists: Int = 0,
     val throughPasses: Int = 0,
+    /**
+     * Legacy typed transport of aggregate_0[174]. The name is retained only for
+     * canonical compatibility; it must not be treated as a football semantic.
+     */
     val dribblesCompleted: Int = 0,
     val beats: Int = 0,
     val interceptions: Int = 0,

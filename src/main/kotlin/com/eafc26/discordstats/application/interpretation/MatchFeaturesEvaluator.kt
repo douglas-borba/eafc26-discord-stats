@@ -348,15 +348,13 @@ class MatchFeaturesEvaluator {
         data class Candidate(
             val player: PlayerMatchPerformance,
             val beats: Int,
-            val dribblesCompleted: Int,
         )
         val winner = players.mapNotNull { player ->
             val beats = player.advanced.beats
             if (beats < MIN_BEATS_FOR_ONE_ON_ONE) return@mapNotNull null
-            Candidate(player, beats, player.advanced.dribblesCompleted)
+            Candidate(player, beats)
         }.maxWithOrNull(
             compareBy<Candidate> { it.beats }
-                .thenBy { it.dribblesCompleted }
                 .thenBy { it.player.rating?.value ?: BigDecimal.ZERO }
                 .thenBy { sourceName(it.player) }
         ) ?: return null
@@ -364,7 +362,6 @@ class MatchFeaturesEvaluator {
         return OneOnOneDecision(
             winner.player.player.id,
             winner.beats,
-            winner.dribblesCompleted,
             winner.player.rating?.value,
             ONE_ON_ONE_RULE,
             players.map(::advancedEvidence),

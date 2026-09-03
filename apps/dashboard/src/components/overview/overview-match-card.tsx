@@ -209,7 +209,7 @@ export function OverviewMatchCard({ presentation, variant = "full", isLatest = f
               <HighlightBlock
                 title="🪄 NO UM CONTRA UM"
                 name={presentation.oneOnOne.name}
-                stats={`${pluralize(presentation.oneOnOne.beats, "adversário superado", "adversários superados")} • ${pluralize(presentation.oneOnOne.dribblesCompleted, "drible completo", "dribles completos")}`}
+                stats={pluralize(presentation.oneOnOne.beats, "adversário superado", "adversários superados")}
                 phrase={presentation.oneOnOne.phrase}
                 sectionMb={sectionMb} titleCls={sectionTitleCls} nameCls={nameLg} textCls={textSm} statCls={textXs}
                 c={c}

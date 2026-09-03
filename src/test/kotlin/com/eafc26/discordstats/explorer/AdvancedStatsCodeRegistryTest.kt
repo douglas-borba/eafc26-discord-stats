@@ -15,10 +15,6 @@ class AdvancedStatsCodeRegistryTest {
         assertThat(throughPasses.confidence).isEqualTo(CodeConfidence.CONFIRMED)
         assertThat(throughPasses.metricName).isEqualTo("Through passes")
 
-        val dribbles = AdvancedStatsCodeRegistry.lookup(0, 174)
-        assertThat(dribbles.confidence).isEqualTo(CodeConfidence.CONFIRMED)
-        assertThat(dribbles.metricName).isEqualTo("Completed dribbles")
-
         val beats = AdvancedStatsCodeRegistry.lookup(0, 112)
         assertThat(beats.confidence).isEqualTo(CodeConfidence.CONFIRMED)
         assertThat(beats.metricName).isEqualTo("Beats")
@@ -40,6 +36,14 @@ class AdvancedStatsCodeRegistryTest {
         val code6agg1 = AdvancedStatsCodeRegistry.lookup(1, 6)
         assertThat(code6agg1.confidence).isEqualTo(CodeConfidence.HYPOTHESIS)
         assertThat(code6agg1.metricName).isNull()
+    }
+
+    @Test
+    fun `code 174 remains observable but has no assigned sporting meaning`() {
+        val code174 = AdvancedStatsCodeRegistry.lookup(0, 174)
+
+        assertThat(code174.confidence).isEqualTo(CodeConfidence.UNKNOWN)
+        assertThat(code174.metricName).isNull()
     }
 
     @Test

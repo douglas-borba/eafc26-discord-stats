@@ -310,7 +310,6 @@ class MatchSummaryBuilder(
         return OneOnOneSection(
             playerName,
             content.beats,
-            content.dribblesCompleted,
             phrase(PhraseCategory.ONE_ON_ONE, matchId, playerName, random),
         )
     }

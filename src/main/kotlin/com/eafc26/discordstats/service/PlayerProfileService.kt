@@ -281,7 +281,6 @@ class PlayerProfileService(
         val oneOnOne = fullAdvanced.takeIf { it.isNotEmpty() }?.let { covered ->
             PlayerOneOnOneMetrics(
                 coveredAppearances = covered.size,
-                dribblesCompleted = covered.sumOf { it.advancedDribblesCompleted ?: 0 },
                 opponentsBeaten = covered.sumOf { it.advancedBeats ?: 0 },
             )
         }

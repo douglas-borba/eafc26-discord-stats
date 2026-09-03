@@ -101,7 +101,6 @@ data class PlayerAdvancedCoverage(
 
 data class PlayerOneOnOneMetrics(
     val coveredAppearances: Int,
-    val dribblesCompleted: Int,
     val opponentsBeaten: Int,
 )
 

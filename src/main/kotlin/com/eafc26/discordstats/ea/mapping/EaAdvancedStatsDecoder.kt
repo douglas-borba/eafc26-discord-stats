@@ -14,7 +14,9 @@ import com.eafc26.discordstats.ea.model.PlayerEntry
 object EaAdvancedStatsDecoder {
     private const val SECOND_ASSISTS_CODE = 115
     private const val THROUGH_PASSES_CODE = 152
-    private const val DRIBBLES_COMPLETED_CODE = 174
+    // Legacy typed transport field for aggregate_0[174]. Its football semantics
+    // are intentionally not exposed until EA documents or validates them.
+    private const val UNVERIFIED_CODE_174 = 174
     private const val BEATS_CODE = 112
     private const val INTERCEPTIONS_CODE = 6
 
@@ -24,7 +26,7 @@ object EaAdvancedStatsDecoder {
         return AdvancedPlayerStats(
             secondAssists = aggregate0.valueAt(SECOND_ASSISTS_CODE),
             throughPasses = aggregate0.valueAt(THROUGH_PASSES_CODE),
-            dribblesCompleted = aggregate0.valueAt(DRIBBLES_COMPLETED_CODE),
+            dribblesCompleted = aggregate0.valueAt(UNVERIFIED_CODE_174),
             beats = aggregate0.valueAt(BEATS_CODE),
             interceptions = aggregate0.valueAt(INTERCEPTIONS_CODE) + aggregate1.valueAt(INTERCEPTIONS_CODE),
         )

@@ -8,6 +8,7 @@ import com.eafc26.discordstats.domain.match.*
 import com.eafc26.discordstats.domain.interpretation.MatchInterpretation
 import com.eafc26.discordstats.domain.interpretation.ResultDecision
 import com.eafc26.discordstats.ea.mapping.UnknownFieldCapture
+import com.eafc26.discordstats.domain.story.StoryContent
 import com.eafc26.discordstats.store.CanonicalObjectMapperFactory
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.JsonNodeFactory
@@ -160,6 +161,17 @@ class AdvancedStatsExplorerServiceTest {
             assertThat(it.confidence).isEqualTo("HYPOTHESIS")
             assertThat(it.metricName).isNull()
         }
+    }
+
+    @Test
+    fun `raw aggregate code 174 remains observable without a sporting label`() {
+        val service = AdvancedStatsExplorerService(fakeRepo(buildCanonical()))
+        val data = service.playerExplorerData(clubId, matchId, "player-1")!!
+
+        val code174 = data.aggregateEntries.first { it.aggregate == 0 && it.code == 174 }
+        assertThat(code174.value).isEqualTo(18)
+        assertThat(code174.confidence).isEqualTo("UNKNOWN")
+        assertThat(code174.metricName).isNull()
     }
 
     @Test
@@ -502,6 +514,19 @@ class AdvancedStatsExplorerServiceTest {
 
         assertThat(restored.eaPositionCode).isNull()
         assertThat(restored.role).isEqualTo(PlayerRole.Outfield(null))
+    }
+
+    @Test
+    fun `historical one on one story with legacy code 174 field remains readable`() {
+        val mapper = CanonicalObjectMapperFactory.create(jacksonObjectMapper().findAndRegisterModules())
+        val legacyStory = """{
+          "kind":"one_on_one","playerId":"player-1","beats":8,
+          "dribblesCompleted":18,"rating":8.5
+        }"""
+
+        val restored = mapper.readValue(legacyStory, StoryContent::class.java)
+
+        assertThat(restored).isEqualTo(StoryContent.OneOnOne(PlayerId("player-1"), 8, java.math.BigDecimal("8.5")))
     }
 
     @Test

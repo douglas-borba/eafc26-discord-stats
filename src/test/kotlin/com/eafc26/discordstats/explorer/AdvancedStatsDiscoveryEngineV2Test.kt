@@ -174,12 +174,13 @@ class AdvancedStatsDiscoveryEngineV2Test {
     }
 
     @Test
-    fun `confirmed advanced anchor works for code 174`() {
+    fun `raw code 174 remains available as an unverified anchor`() {
         val samples = (0 until 6).map { i ->
             sample(i, mapOf(174 to i + 1, 175 to i * 2, 176 to i))
         }
         val result = engine.investigateAnchor(samples, AdvancedStatsDiscoveryEngine.AnchorRef("CONFIRMED_ADVANCED", 0, 174, null))
-        assertThat(result.anchor.knownLabel).isEqualTo("Completed dribbles")
+        assertThat(result.anchor.knownLabel).isNull()
+        assertThat(result.anchor.registryStatus).isEqualTo("UNKNOWN")
         assertThat(result.relationships).isNotEmpty
         assertThat(result.relationships.none { it.candidateCode == 174 }).isTrue()
     }

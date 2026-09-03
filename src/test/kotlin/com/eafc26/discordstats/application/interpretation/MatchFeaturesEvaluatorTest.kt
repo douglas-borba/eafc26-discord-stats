@@ -122,19 +122,18 @@ class MatchFeaturesEvaluatorTest {
     }
 
     @Test
-    fun `one on one appears at three beats and prefers beats dribbles then rating`() {
+    fun `one on one appears at three beats and uses rating after beats without code 174`() {
         val threshold = awardPlayer("threshold", beats = 3, dribblesCompleted = 2, rating = "6.0")
         val bestBeats = awardPlayer("beats", beats = 6, dribblesCompleted = 1, rating = "5.0")
-        val bestDribbles = awardPlayer("dribbles", beats = 6, dribblesCompleted = 9, rating = "6.0")
-        val bestRating = awardPlayer("rating", beats = 6, dribblesCompleted = 9, rating = "8.0")
+        val highCode174 = awardPlayer("high-code-174", beats = 6, dribblesCompleted = 99, rating = "6.0")
+        val bestRating = awardPlayer("rating", beats = 6, dribblesCompleted = 0, rating = "8.0")
 
         val thresholdDecision = evaluate(listOf(threshold)).oneOnOne
-        val decision = evaluate(listOf(threshold, bestBeats, bestDribbles, bestRating)).oneOnOne
+        val decision = evaluate(listOf(threshold, bestBeats, highCode174, bestRating)).oneOnOne
 
         assertThat(thresholdDecision!!.playerId).isEqualTo(threshold.player.id)
         assertThat(decision!!.playerId).isEqualTo(bestRating.player.id)
         assertThat(decision.beats).isEqualTo(6)
-        assertThat(decision.dribblesCompleted).isEqualTo(9)
         assertThat(decision.rule).isEqualTo(MatchFeaturesEvaluator.ONE_ON_ONE_RULE)
     }
 

@@ -107,6 +107,25 @@ class MatchHistoryControllerTest {
     }
 
     @Test
+    fun `historical one on one story exposes only opponents beaten`() {
+        val canonical = canonical(
+            id = "one-on-one",
+            timestamp = 1_801_000_000L,
+            oneOnOneAggregate0 = "112:8,174:18",
+        )
+        whenever(historyService.findById(OUR_CLUB, MatchId("one-on-one"))).thenReturn(canonical)
+
+        val story = controller.getMatch("one-on-one").block()!!.body!!.match!!.stories
+            .single { it.type == "ONE_ON_ONE" }
+
+        assertThat(story.facts).containsExactly(
+            com.eafc26.discordstats.presentation.history.HistoricalFact("Jogador", "Dribbler"),
+            com.eafc26.discordstats.presentation.history.HistoricalFact("Adversários superados", "8"),
+        )
+        assertThat(story.facts.map { it.label }).doesNotContain("Dribles completos")
+    }
+
+    @Test
     fun `unknown MatchId returns not found`() {
         whenever(historyService.findById(OUR_CLUB, MatchId("missing"))).thenReturn(null)
 
@@ -126,7 +145,12 @@ class MatchHistoryControllerTest {
         verifyNoMoreInteractions(historyService)
     }
 
-    private fun canonical(id: String, timestamp: Long, negativeRating: String = "5.5"): CanonicalMatch {
+    private fun canonical(
+        id: String,
+        timestamp: Long,
+        negativeRating: String = "5.5",
+        oneOnOneAggregate0: String? = null,
+    ): CanonicalMatch {
         val source = MatchResponse(
             matchId = id,
             timestamp = timestamp,
@@ -144,16 +168,22 @@ class MatchHistoryControllerTest {
                 ),
             ),
             players = mapOf(
-                OUR_CLUB.value to linkedMapOf(
-                    "mvp" to player("MVP", "9.2", goals = "2", mom = "1"),
-                    "defender" to player(
-                        "Defender",
-                        "8.0",
-                        tacklesMade = "5",
-                        tackleAttempts = "6",
-                    ),
-                    "bagre" to player("Bagre", negativeRating),
-                )
+                OUR_CLUB.value to buildMap {
+                    put("mvp", player("MVP", "9.2", goals = "2", mom = "1"))
+                    put(
+                        "defender",
+                        player(
+                            "Defender",
+                            "8.0",
+                            tacklesMade = "5",
+                            tackleAttempts = "6",
+                        ),
+                    )
+                    put("bagre", player("Bagre", negativeRating))
+                    oneOnOneAggregate0?.let { aggregate0 ->
+                        put("dribbler", player("Dribbler", "8.4", aggregate0 = aggregate0))
+                    }
+                }
             ),
         )
         val footballMatch = (EaMatchMapper().map(source) as MatchNormalizationResult.Success).match
@@ -174,6 +204,7 @@ class MatchHistoryControllerTest {
         mom: String = "0",
         tacklesMade: String = "2",
         tackleAttempts: String = "4",
+        aggregate0: String? = null,
     ) = PlayerEntry(
         playerName = name,
         position = "14",
@@ -188,6 +219,7 @@ class MatchHistoryControllerTest {
         tackleAttempts = tackleAttempts,
         redCards = "0",
         secondsPlayed = "5400",
+        matchEventAggregate0 = aggregate0,
     )
 
     private fun metadata(count: Int) = CanonicalRepositoryMetadata(

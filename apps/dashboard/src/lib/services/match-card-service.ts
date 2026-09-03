@@ -134,7 +134,6 @@ export interface BehindThePlaySection {
 export interface OneOnOneSection {
   name: string;
   beats: number;
-  dribblesCompleted: number;
   phrase: string;
 }
 

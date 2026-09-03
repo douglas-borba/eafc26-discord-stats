@@ -125,7 +125,6 @@ sealed interface StoryContent {
     data class OneOnOne(
         val playerId: PlayerId,
         val beats: Int,
-        val dribblesCompleted: Int,
         val rating: java.math.BigDecimal?,
     ) : StoryContent
 

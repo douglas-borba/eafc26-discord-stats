@@ -302,7 +302,6 @@ class PlayerProfileServiceTest {
         assertThat(xRay.advancedCoverage.coverage).isEqualTo(AdvancedStatsCoverage.PARTIAL)
         assertThat(xRay.advancedCoverage.fullAppearances).isEqualTo(1)
         assertThat(xRay.advancedCoverage.unavailableAppearances).isEqualTo(1)
-        assertThat(xRay.oneOnOne!!.dribblesCompleted).isEqualTo(4)
         assertThat(xRay.oneOnOne!!.opponentsBeaten).isEqualTo(2)
     }
 
@@ -324,7 +323,6 @@ class PlayerProfileServiceTest {
         assertThat(xRay.advancedCoverage.coverage).isEqualTo(AdvancedStatsCoverage.FULL)
         assertThat(xRay.advancedCoverage.fullAppearances).isEqualTo(2)
         assertThat(xRay.oneOnOne).isNotNull
-        assertThat(xRay.oneOnOne!!.dribblesCompleted).isEqualTo(7)
         assertThat(xRay.oneOnOne!!.opponentsBeaten).isEqualTo(7)
     }
 
@@ -341,7 +339,7 @@ class PlayerProfileServiceTest {
 
         assertThat(coveredXRay.advancedCoverage.coverage).isEqualTo(AdvancedStatsCoverage.FULL)
         assertThat(coveredXRay.oneOnOne).isNotNull
-        assertThat(coveredXRay.oneOnOne!!.dribblesCompleted).isZero()
+        assertThat(coveredXRay.oneOnOne!!.opponentsBeaten).isZero()
         val unavailable = canonical("unavailable", "2026-07-02T10:00:00Z", playerId, "Cobertura", MatchOutcome.WIN, "8", 0, 0, 0, emptySet())
         whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId))).thenReturn(listOf(unavailable))
 

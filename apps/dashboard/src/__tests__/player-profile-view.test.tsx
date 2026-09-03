@@ -93,12 +93,12 @@ describe("PlayerProfileView", () => {
   });
 
   it("renders advanced 1v1 facts only when their coverage exists", () => {
-    const html = renderToStaticMarkup(<PlayerProfileView profile={{ ...profile, xRay: { ...basicXRay, advancedCoverage: { ...basicXRay.advancedCoverage, fullAppearances: 4, unavailableAppearances: 11, coverage: "PARTIAL" }, oneOnOne: { coveredAppearances: 4, dribblesCompleted: 12, opponentsBeaten: 7 } } }} />);
+    const html = renderToStaticMarkup(<PlayerProfileView profile={{ ...profile, xRay: { ...basicXRay, advancedCoverage: { ...basicXRay.advancedCoverage, fullAppearances: 4, unavailableAppearances: 11, coverage: "PARTIAL" }, oneOnOne: { coveredAppearances: 4, opponentsBeaten: 7 } } }} />);
 
     expect(html).toContain("1 CONTRA 1");
     expect(html).toContain("Dados avançados em 4 de 15 partidas elegíveis.");
-    expect(html).toContain("Dribles completos");
     expect(html).toContain("Adversários superados");
+    expect(html).not.toContain("Dribles completos");
     expect(html).not.toContain("Dribles falhos");
     expect(html).not.toContain("Perdas de posse");
   });

@@ -81,7 +81,7 @@ describe("OverviewMatchCard", () => {
       ...basePresentation,
       xerife: { name: "Dnph27", tacklesMade: 2, tackleAttempts: 2, successRate: 100, interceptions: 6, phrase: "Leu o jogo antes dos adversários." },
       behindThePlay: { name: "Guilherme", secondAssists: 2, throughPasses: 9, phrase: "Nem toda participação decisiva aparece na súmula." },
-      oneOnOne: { name: "Dnph27", beats: 8, dribblesCompleted: 18, phrase: "Chamou para o duelo e passou." },
+      oneOnOne: { name: "Dnph27", beats: 8, phrase: "Chamou para o duelo e passou." },
     });
 
     expect(html).toContain("card-highlights-layout grid grid-cols-[minmax(0,1fr)_auto]");
@@ -89,7 +89,8 @@ describe("OverviewMatchCard", () => {
     expect(html).toContain("POR TRÁS DA JOGADA");
     expect(html).toContain("2 pré-assistências • 9 passes em profundidade");
     expect(html).toContain("NO UM CONTRA UM");
-    expect(html).toContain("8 adversários superados • 18 dribles completos");
+    expect(html).toContain("8 adversários superados");
+    expect(html).not.toContain("drible completo");
     expect(html).toContain("🛡️ XERIFE");
     expect(html).toContain("6 interceptações • 2 desarmes certos (100% de acerto)");
     expect(html.indexOf("POR TRÁS DA JOGADA")).toBeLessThan(html.indexOf("NO UM CONTRA UM"));

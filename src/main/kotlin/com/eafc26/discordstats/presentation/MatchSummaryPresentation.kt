@@ -121,7 +121,6 @@ data class BehindThePlaySection(
 data class OneOnOneSection(
     val name: String,
     val beats: Int,
-    val dribblesCompleted: Int,
     val phrase: String,
 )
 

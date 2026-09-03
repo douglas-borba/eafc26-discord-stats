@@ -108,7 +108,7 @@ class NovelMetricDiscoveryEngine(
 
     private val controls = listOf(
         "goals", "assists", "shots", "passesAttempted", "passesCompleted", "tacklesAttempted", "tacklesCompleted",
-        "agg0[112] Beats", "agg0[115] Pre-assists", "agg0[152] Through passes", "agg0[174] Completed dribbles",
+        "agg0[112] Beats", "agg0[115] Pre-assists", "agg0[152] Through passes",
     )
 
     fun analyze(samples: List<AdvancedStatsDiscoveryEngine.AggregateSample>): Result {
@@ -245,7 +245,6 @@ class NovelMetricDiscoveryEngine(
         "agg0[112] Beats" -> if (sample.aggregateIndex == 0) sample.sparseValues[112] ?: 0 else sample.knownMetrics["beats"]
         "agg0[115] Pre-assists" -> if (sample.aggregateIndex == 0) sample.sparseValues[115] ?: 0 else sample.knownMetrics["preAssists"]
         "agg0[152] Through passes" -> if (sample.aggregateIndex == 0) sample.sparseValues[152] ?: 0 else sample.knownMetrics["throughPasses"]
-        "agg0[174] Completed dribbles" -> if (sample.aggregateIndex == 0) sample.sparseValues[174] ?: 0 else sample.knownMetrics["completedDribbles"]
         else -> sample.knownMetrics[name]
     }
 

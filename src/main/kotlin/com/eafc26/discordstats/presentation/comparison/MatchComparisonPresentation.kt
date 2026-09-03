@@ -253,7 +253,6 @@ object MatchComparisonPresenter {
         is StoryContent.OneOnOne -> listOf(
             ComparisonFactView("Jogador", names[playerId] ?: playerId.value),
             ComparisonFactView("Adversários superados", beats.toString()),
-            ComparisonFactView("Dribles completos", dribblesCompleted.toString()),
         )
         is StoryContent.RedCard -> listOf(ComparisonFactView(names[playerId] ?: playerId.value, "$redCards cartão(ões)"))
         is StoryContent.PassPrecision -> listOf(ComparisonFactView(names[playerId] ?: playerId.value, "$completed/$attempted ($accuracyPercent%)"))

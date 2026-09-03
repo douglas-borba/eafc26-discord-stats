@@ -74,7 +74,6 @@ class AdvancedMatchSummaryBuilderTest {
         assertThat(presentation.behindThePlay!!.throughPasses).isEqualTo(9)
         assertThat(presentation.oneOnOne).isNotNull
         assertThat(presentation.oneOnOne!!.beats).isEqualTo(8)
-        assertThat(presentation.oneOnOne!!.dribblesCompleted).isEqualTo(18)
         assertThat(presentation.xerife).isNotNull
         assertThat(presentation.xerife!!.interceptions).isEqualTo(6)
         assertThat(presentation.xerife!!.tacklesMade).isEqualTo(2)

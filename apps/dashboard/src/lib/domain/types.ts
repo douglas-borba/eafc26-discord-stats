@@ -190,7 +190,7 @@ export interface PlayerXRay {
   creation: { assists:number; assistsPerMatch:number; passesAttempted:number; passesCompleted:number; passAccuracy:number | null; directContributions:number; directContributionsPerMatch:number };
   defense: { tacklesAttempted:number; tacklesCompleted:number; tackleEfficiency:number | null; tacklesCompletedPerMatch:number };
   advancedCoverage: { eligibleAppearances:number; fullAppearances:number; partialAppearances:number; unavailableAppearances:number; coverage:"UNAVAILABLE"|"PARTIAL"|"FULL" };
-  oneOnOne: { coveredAppearances:number; dribblesCompleted:number; opponentsBeaten:number } | null;
+  oneOnOne: { coveredAppearances:number; opponentsBeaten:number } | null;
   recognitions: {
     craques:number;
     bagres:number;

@@ -155,7 +155,6 @@ class MatchStoryExtractor {
                         StoryContent.OneOnOne(
                             it.playerId,
                             it.beats,
-                            it.dribblesCompleted,
                             it.rating,
                         ),
                         it.rule,

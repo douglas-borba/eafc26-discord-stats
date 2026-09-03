@@ -348,7 +348,6 @@ object HistoricalMatchPresenter {
             is StoryContent.OneOnOne -> listOf(
                 HistoricalFact("Jogador", namesById[playerId] ?: playerId.value),
                 HistoricalFact("Adversários superados", beats.toString()),
-                HistoricalFact("Dribles completos", dribblesCompleted.toString()),
             )
             is StoryContent.RedCard -> listOf(
                 HistoricalFact("Jogador", namesById[playerId] ?: playerId.value),
