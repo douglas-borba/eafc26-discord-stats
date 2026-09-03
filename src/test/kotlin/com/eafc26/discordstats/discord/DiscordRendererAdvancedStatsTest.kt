@@ -106,7 +106,6 @@ class DiscordRendererAdvancedStatsTest {
         assertThat(names).contains(
             "⚽ GOLS",
             "🎯 ASSISTÊNCIAS",
-            "📊 DESTAQUES DA VITÓRIA",
             "🥇 DESTAQUES",
             "⭐ CRAQUE DA PARTIDA",
             "🧠 POR TRÁS DA JOGADA",
@@ -118,6 +117,7 @@ class DiscordRendererAdvancedStatsTest {
             "📮 CORREIO EXTRAVIADO",
             "🧤 GOLEIRO",
         )
+        assertThat(names).doesNotContain("📊 DESTAQUES DA VITÓRIA")
         assertThat(payload.embeds).hasSize(2)
         payload.embeds.forEach { embed ->
             assertThat(embed.fields).hasSizeLessThanOrEqualTo(25)
@@ -128,50 +128,7 @@ class DiscordRendererAdvancedStatsTest {
     }
 
     @Test
-    fun `victory details show only factual and validated player statistics`() {
-        val payload = render(
-            match(
-                players = linkedMapOf(
-                    "mvp" to player(
-                        "MVP", rating = "9.4", goals = "2", assists = "1", shots = "5",
-                        manOfTheMatch = "1", passesMade = "24", passAttempts = "28",
-                        tacklesMade = "4", tackleAttempts = "6", aggregate0 = "112:6,115:2,152:7,174:99",
-                    ),
-                    "support" to player("Support", rating = "8.7", passesMade = "12", passAttempts = "16"),
-                ),
-            ),
-        )
-
-        val field = payload.embeds.flatMap { it.fields }.single { it.name == "📊 DESTAQUES DA VITÓRIA" }
-
-        assertThat(payload.embeds.first().title).startsWith("🏆 Our FC 4 × 1 Opponent FC")
-        assertThat(field.value).contains(
-            "MVP", "MVP EA", "9,40", "2 gols", "1 assistência", "5 chutes", "24/28 passes (85%)",
-            "4/6 desarmes", "6 adversários superados", "2 pré-assistências", "7 passes em profundidade",
-        ).doesNotContain("drible completo", "174", "amarelo", "falta", "intercepta")
-    }
-
-    @Test
-    fun `victory details order EA MVP then rating then name and omit undefined rates`() {
-        val payload = render(
-            match(
-                players = linkedMapOf(
-                    "mvp" to player("MVP", rating = "8.0", manOfTheMatch = "1", passAttempts = "0", passesMade = "0"),
-                    "alpha" to player("Alpha", rating = "9.0", passAttempts = "0", passesMade = "0"),
-                    "bravo" to player("Bravo", rating = "9.0", passAttempts = "0", passesMade = "0"),
-                ),
-            ),
-        )
-        val value = payload.embeds.flatMap { it.fields }
-            .single { it.name == "📊 DESTAQUES DA VITÓRIA" }.value
-
-        assertThat(value.indexOf("MVP —")).isLessThan(value.indexOf("Alpha —"))
-        assertThat(value.indexOf("Alpha —")).isLessThan(value.indexOf("Bravo —"))
-        assertThat(value).doesNotContain("0/0 passes", "%")
-    }
-
-    @Test
-    fun `DNF opponent victory preserves factual contributions and uses rich victory presentation`() {
+    fun `opponent DNF victory keeps the normal presentation and factual contributions`() {
         val payload = render(
             match(
                 ourScore = "3",
@@ -180,7 +137,12 @@ class DiscordRendererAdvancedStatsTest {
                 opponentWinnerByDnf = "0",
                 players = linkedMapOf(
                     "scorer" to player(
-                        "Scorer", rating = "8.8", goals = "2", assists = "1", passesMade = "24", passAttempts = "28",
+                        "Scorer",
+                        rating = "8.8",
+                        goals = "2",
+                        assists = "1",
+                        passesMade = "24",
+                        passAttempts = "28",
                         aggregate0 = "112:6,115:1,152:3",
                     ),
                     "other" to player("Other", rating = "7.5", goals = "1", passesMade = "10", passAttempts = "12"),
@@ -193,8 +155,7 @@ class DiscordRendererAdvancedStatsTest {
         assertThat(payload.embeds.first().description).contains("Vitória", "Adversário saiu antes do fim")
         assertThat(fields["⚽ GOLS"]?.value).contains("Scorer ×2", "Other ×1")
         assertThat(fields["🎯 ASSISTÊNCIAS"]?.value).contains("Scorer ×1")
-        assertThat(fields["📊 DESTAQUES DA VITÓRIA"]?.value)
-            .contains("Scorer", "24/28 passes (85%)", "6 adversários superados", "1 pré-assistência")
+        assertThat(fields).doesNotContainKey("📊 DESTAQUES DA VITÓRIA")
     }
 
     @Test
@@ -223,7 +184,7 @@ class DiscordRendererAdvancedStatsTest {
     }
 
     @Test
-    fun `loss and draw do not add victory details`() {
+    fun `loss and draw do not add rich victory block`() {
         val loss = render(match(ourScore = "0", opponentScore = "1", players = mapOf("p" to player("P", rating = "8.0"))))
         val draw = render(match(ourScore = "1", opponentScore = "1", players = mapOf("p" to player("P", rating = "8.0"))))
 
@@ -234,29 +195,20 @@ class DiscordRendererAdvancedStatsTest {
     }
 
     @Test
-    fun `playoff victories use the same factual rich presentation`() {
-        val payload = render(
-            match(
-                matchType = "playoffMatch",
-                players = mapOf("scorer" to player("Scorer", rating = "8.5", goals = "2", assists = "1")),
-            ),
-        )
-
-        val fields = payload.embeds.flatMap { it.fields }.associateBy { it.name }
-        assertThat(fields["⚽ GOLS"]?.value).contains("Scorer ×2")
-        assertThat(fields["🎯 ASSISTÊNCIAS"]?.value).contains("Scorer ×1")
-        assertThat(fields["📊 DESTAQUES DA VITÓRIA"]?.value).contains("Scorer", "2 gols", "1 assistência")
-    }
-
-    @Test
     fun `trophy remains relative to the monitored club perspective`() {
-        val payload = render(
-            match(players = mapOf("scorer" to player("Scorer", rating = "8.5", goals = "2"))),
+        val victoryFromOpponentPerspective = render(
+            match(ourScore = "1", opponentScore = "4", players = mapOf("scorer" to player("Scorer", rating = "8.5", goals = "2"))),
+            perspectiveClubId = "opponent",
+        )
+        val lossFromOpponentPerspective = render(
+            match(ourScore = "4", opponentScore = "1", players = mapOf("scorer" to player("Scorer", rating = "8.5", goals = "2"))),
             perspectiveClubId = "opponent",
         )
 
-        assertThat(payload.embeds.first().title).isEqualTo("Opponent FC 1 × 4 Our FC")
-        assertThat(payload.embeds.first().description).contains("Derrota")
+        assertThat(victoryFromOpponentPerspective.embeds.first().title).isEqualTo("🏆 Opponent FC 4 × 1 Our FC")
+        assertThat(victoryFromOpponentPerspective.embeds.first().description).contains("Vitória")
+        assertThat(lossFromOpponentPerspective.embeds.first().title).isEqualTo("Opponent FC 1 × 4 Our FC")
+        assertThat(lossFromOpponentPerspective.embeds.first().description).contains("Derrota")
     }
 
     private fun render(source: MatchResponse, perspectiveClubId: String = OUR_CLUB): DiscordPayload {
@@ -280,7 +232,7 @@ class DiscordRendererAdvancedStatsTest {
         "defender" to player("Defender", rating = "7.8", tacklesMade = "2", tackleAttempts = "2", passesMade = "12", passAttempts = "18", aggregate0 = "6:4"),
         "red" to player("Sent Off", rating = "7.0", redCards = "1", passesMade = "11", passAttempts = "16"),
         "bagre" to player("Bagre", rating = "5.0", passesMade = "1", passAttempts = "10", tacklesMade = "0", tackleAttempts = "5"),
-        "keeper" to goalkeeper("Keeper"),
+        "keeper" to goalkeeper(),
     ))
 
     private fun match(
@@ -347,8 +299,8 @@ class DiscordRendererAdvancedStatsTest {
         matchEventAggregate0 = aggregate0,
     )
 
-    private fun goalkeeper(name: String) = PlayerEntry(
-        playerName = name,
+    private fun goalkeeper() = PlayerEntry(
+        playerName = "Keeper",
         position = PlayerEntry.POSITION_GOALKEEPER,
         rating = "8.8",
         saves = "7",

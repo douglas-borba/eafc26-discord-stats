@@ -196,12 +196,6 @@ class DiscordShadowModeTest {
 
     private fun semanticFields(payload: DiscordPayload): Map<String, String> = payload.embeds
         .flatMap { it.fields }
-        // The canonical renderer intentionally adds this factual-only victory
-        // section. Shadow parity still protects every legacy section below it.
-        .filterNot {
-            it.name == "​" ||
-                it.name == "🍍 BAGRE DA PARTIDA" ||
-                it.name == "📊 DESTAQUES DA VITÓRIA"
-        }
+        .filterNot { it.name == "​" || it.name == "🍍 BAGRE DA PARTIDA" }
         .associate { it.name to it.value }
 }
