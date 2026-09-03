@@ -1,6 +1,8 @@
 package com.eafc26.discordstats.discord
 
 import com.eafc26.discordstats.domain.interpretation.MatchInterpretation
+import com.eafc26.discordstats.domain.interpretation.MatchOutcome
+import com.eafc26.discordstats.domain.match.AdvancedStatsCoverage
 import com.eafc26.discordstats.domain.match.FootballMatch
 import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
@@ -8,6 +10,7 @@ import com.eafc26.discordstats.domain.match.PlayerRole
 import com.eafc26.discordstats.domain.story.MatchStories
 import com.eafc26.discordstats.domain.story.StoryContent
 import com.eafc26.discordstats.domain.story.StoryType
+import com.eafc26.discordstats.explorer.AdvancedStatsCodeRegistry
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.presentation.MatchSummaryPresentation
 import com.eafc26.discordstats.presentation.MatchPresentationTimeZone
@@ -52,6 +55,7 @@ class DiscordRenderer(
                 "• ${assister.name} ×${assister.count}"
             })
         })
+        addSection(victoryDetails(footballMatch, interpretation))
         addSection(highlights(stories, players))
         addSection(summary.craque?.let {
             EmbedField(
@@ -160,14 +164,15 @@ class DiscordRenderer(
 
         val description = buildString {
             append("${summary.outcome.emoji} ${summary.outcome.label}\n📅 ${summary.date}")
-            if (footballMatch.completion.status.name == "DNF") append("\n\n⚠️ PARTIDA ENCERRADA POR DNF")
+            dnfNotice(footballMatch, interpretation)?.let { append("\n\n$it") }
             // Temporarily hidden until LLM issue is resolved
             // if (!editorialNarrative.isNullOrBlank()) {
             //     append("\n\n")
             //     append(editorialNarrative)
             // }
         }
-        val title = "🏆 ${summary.ourName} ${summary.ourScore} × ${summary.oppScore} ${summary.oppName}"
+        val title = "${if (interpretation.result.outcome == MatchOutcome.WIN) "🏆 " else ""}" +
+            "${summary.ourName} ${summary.ourScore} × ${summary.oppScore} ${summary.oppName}"
 
         return DiscordPayload(
             splitIntoEmbeds(title, description, summary.outcome.color, summary.timestamp, fields)
@@ -236,6 +241,115 @@ class DiscordRenderer(
         return EmbedField("🥇 DESTAQUES", "\n" + parts.joinToString("\n\n"))
     }
 
+    /**
+     * A compact, factual-only view used exclusively for victories. This does
+     * not create awards or reinterpret unknown EA aggregates.
+     */
+    private fun victoryDetails(
+        footballMatch: FootballMatch,
+        interpretation: MatchInterpretation,
+    ): EmbedField? {
+        if (interpretation.result.outcome != MatchOutcome.WIN) return null
+
+        val details = perspectivePlayers(footballMatch, interpretation)
+            .values
+            .map(::victoryPlayerDetail)
+            .filter { it.parts.isNotEmpty() }
+            .sortedWith(
+                compareByDescending<VictoryPlayerDetail> { it.eaManOfTheMatch }
+                    .thenByDescending { it.rating ?: LOWEST_RATING_FOR_ORDER }
+                    .thenBy { it.name.lowercase() }
+                    .thenBy { it.playerId },
+            )
+            .take(VICTORY_DETAIL_PLAYER_LIMIT)
+
+        if (details.isEmpty()) return null
+        val value = details.joinToString("\n\n") { detail ->
+            "${detail.name} — ${detail.parts.joinToString(" • ")}"
+        }.limitDiscordFieldValue()
+        return EmbedField("📊 DESTAQUES DA VITÓRIA", "\n$value")
+    }
+
+    private fun victoryPlayerDetail(player: PlayerMatchPerformance): VictoryPlayerDetail {
+        val rating = player.rating?.value?.takeUnless { it == SENTINEL_RATING }
+        val facts = mutableListOf<String>()
+
+        if (player.eaRecognition.manOfTheMatch == true) facts += "👑 MVP EA"
+        rating?.let { facts += "⭐ ${fmtRating(it)}" }
+        player.attacking.goals?.takeIf { it > 0 }?.let { facts += "⚽ ${plural(it, "gol", "gols")}" }
+        player.attacking.assists?.takeIf { it > 0 }?.let { facts += "🅰️ ${plural(it, "assistência", "assistências")}" }
+        player.attacking.shots?.takeIf { it > 0 }?.let { facts += "🥅 ${plural(it, "chute", "chutes")}" }
+
+        val passAttempts = player.passing.attempted
+        val passesCompleted = player.passing.completed
+        if (passAttempts != null && passAttempts > 0 && passesCompleted != null) {
+            facts += "🎯 $passesCompleted/$passAttempts passes (${passesCompleted * 100 / passAttempts}%)"
+        }
+
+        val tackleAttempts = player.defending.tacklesAttempted
+        val tacklesCompleted = player.defending.tacklesCompleted
+        if (tackleAttempts != null && tackleAttempts > 0 && tacklesCompleted != null) {
+            facts += "🛡️ $tacklesCompleted/$tackleAttempts desarmes"
+        }
+
+        safeAdvanced(player, code = 112, value = player.advanced.beats)?.let {
+            facts += "🪄 ${plural(it, "adversário superado", "adversários superados")}"
+        }
+        safeAdvanced(player, code = 115, value = player.advanced.secondAssists)?.let {
+            facts += "🔑 ${plural(it, "pré-assistência", "pré-assistências")}"
+        }
+        safeAdvanced(player, code = 152, value = player.advanced.throughPasses)?.let {
+            facts += "🧵 ${plural(it, "passe em profundidade", "passes em profundidade")}"
+        }
+
+        player.goalkeeping?.let { goalkeeper ->
+            goalkeeper.saves?.takeIf { it > 0 }?.let { facts += "🧤 ${plural(it, "defesa", "defesas")}" }
+            if (goalkeeper.cleanSheetAsGoalkeeper == true) facts += "🧤 sem sofrer gol"
+        }
+        player.discipline.redCards?.takeIf { it > 0 }?.let {
+            facts += "🟥 ${plural(it, "cartão vermelho", "cartões vermelhos")}"
+        }
+
+        return VictoryPlayerDetail(
+            playerId = player.player.id.value,
+            name = displayName(player),
+            eaManOfTheMatch = player.eaRecognition.manOfTheMatch == true,
+            rating = rating,
+            parts = facts,
+        )
+    }
+
+    private fun safeAdvanced(player: PlayerMatchPerformance, code: Int, value: Int): Int? =
+        value.takeIf {
+            it > 0 &&
+                player.advancedCoverage == AdvancedStatsCoverage.FULL &&
+                AdvancedStatsCodeRegistry.isKnown(0, code)
+        }
+
+    private fun dnfNotice(
+        footballMatch: FootballMatch,
+        interpretation: MatchInterpretation,
+    ): String? {
+        if (footballMatch.completion.status.name != "DNF") return null
+        return when (footballMatch.completion.dnfClubId) {
+            interpretation.perspectiveClubId -> "⚠️ Nosso clube saiu antes do fim"
+            interpretation.result.opponentClub -> "⚠️ Adversário saiu antes do fim"
+            else -> "⚠️ Partida encerrada por DNF"
+        }
+    }
+
+    private fun String.limitDiscordFieldValue(): String =
+        if (length <= DISCORD_MAX_FIELD_VALUE_CHARACTERS) this
+        else take(DISCORD_MAX_FIELD_VALUE_CHARACTERS - ELLIPSIS.length) + ELLIPSIS
+
+    private data class VictoryPlayerDetail(
+        val playerId: String,
+        val name: String,
+        val eaManOfTheMatch: Boolean,
+        val rating: java.math.BigDecimal?,
+        val parts: List<String>,
+    )
+
     private fun perspectivePlayers(
         footballMatch: FootballMatch,
         interpretation: MatchInterpretation,
@@ -261,6 +375,9 @@ class DiscordRenderer(
     private fun fmtRating(value: java.math.BigDecimal): String =
         "%.2f".format(value).replace('.', ',')
 
+    private fun plural(value: Int, singular: String, plural: String): String =
+        "$value ${if (value == 1) singular else plural}"
+
     private companion object {
         val SEPARATOR = EmbedField("​", "──────────────────────────────")
         val MEDALS = listOf("🥇", "🥈", "🥉")
@@ -268,6 +385,11 @@ class DiscordRenderer(
         const val DISCORD_OFFENSIVE_STORY_LIMIT = 2
         const val DISCORD_MAX_FIELDS_PER_EMBED = 25
         const val DISCORD_MAX_EMBED_CHARACTERS = 6_000
+        const val DISCORD_MAX_FIELD_VALUE_CHARACTERS = 1_024
         const val DISCORD_CONTINUATION_TITLE_RESERVE = 20
+        const val VICTORY_DETAIL_PLAYER_LIMIT = 3
+        val SENTINEL_RATING = java.math.BigDecimal("3.0")
+        val LOWEST_RATING_FOR_ORDER = java.math.BigDecimal("-1")
+        const val ELLIPSIS = "..."
     }
 }

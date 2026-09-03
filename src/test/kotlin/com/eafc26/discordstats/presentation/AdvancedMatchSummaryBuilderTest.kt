@@ -79,6 +79,43 @@ class AdvancedMatchSummaryBuilderTest {
         assertThat(presentation.xerife!!.tacklesMade).isEqualTo(2)
     }
 
+    @Test
+    fun `DNF preserves factual goals and assists while sporting decisions remain suppressed`() {
+        val source = MatchResponse(
+            matchId = "dnf-factual-contributions",
+            timestamp = 1_767_225_600,
+            clubs = linkedMapOf(
+                OUR_CLUB to ClubMatchEntry(
+                    details = ClubDetails(name = "Our FC"), score = "3", result = "1", winnerByDnf = "1",
+                ),
+                "opponent" to ClubMatchEntry(
+                    details = ClubDetails(name = "Opponent"), score = "0", result = "0", winnerByDnf = "0",
+                ),
+            ),
+            players = mapOf(
+                OUR_CLUB to mapOf(
+                    "scorer" to player("Scorer", "8.5", "2", "2", null).copy(goals = "2", assists = "1"),
+                    "other" to player("Other", "7.0", "0", "0", null).copy(goals = "1"),
+                    "quiet" to player("Quiet", "6.0", "0", "0", null),
+                ),
+            ),
+        )
+        val match = (EaMatchMapper().map(source) as MatchNormalizationResult.Success).match
+        val interpretation = MatchInterpreter().interpret(match, ClubId(OUR_CLUB))
+        val stories = MatchStoryExtractor().extract(interpretation)
+
+        val presentation = MatchSummaryBuilder(PhraseBank(jacksonObjectMapper()))
+            .build(match, interpretation, stories, ZoneOffset.UTC)
+
+        assertThat(presentation.completionStatus).isEqualTo("DNF")
+        assertThat(presentation.goals!!.scorers).containsExactly(
+            PlayerGoal("Scorer", 2), PlayerGoal("Other", 1),
+        )
+        assertThat(presentation.assists!!.assisters).containsExactly(PlayerAssist("Scorer", 1))
+        assertThat(presentation.craque).isNull()
+        assertThat(presentation.xerife).isNull()
+    }
+
     private fun player(
         name: String,
         rating: String,

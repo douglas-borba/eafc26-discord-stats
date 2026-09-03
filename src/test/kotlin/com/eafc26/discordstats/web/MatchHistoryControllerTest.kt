@@ -126,6 +126,55 @@ class MatchHistoryControllerTest {
     }
 
     @Test
+    fun `historical DNF preserves only factual goal and assist contributions`() {
+        val canonical = canonical(
+            id = "dnf-contributions",
+            timestamp = 1_801_000_000L,
+            dnfClubId = ClubId("opponent"),
+            mvpAssists = "1",
+            defenderAssists = "0",
+            bagreAssists = "0",
+        )
+        whenever(historyService.findById(OUR_CLUB, MatchId("dnf-contributions"))).thenReturn(canonical)
+
+        val detail = controller.getMatch("dnf-contributions").block()!!.body!!.match!!
+
+        assertThat(detail.summary.completionStatus).isEqualTo("DNF")
+        assertThat(detail.players).hasSize(1)
+        val player = detail.players.single()
+        assertThat(player.name).isEqualTo("MVP")
+        assertThat(player.goals).isEqualTo(2)
+        assertThat(player.assists).isEqualTo(1)
+        assertThat(player.rating).isNull()
+        assertThat(player.shots).isNull()
+        assertThat(player.passesCompleted).isNull()
+        assertThat(player.tacklesCompleted).isNull()
+        assertThat(player.manOfTheMatch).isFalse()
+        assertThat(detail.awards).allMatch { !it.awarded }
+    }
+
+    @Test
+    fun `historical result icon remains relative to the monitored club`() {
+        val victory = canonical("historical-win", 1_801_000_000L)
+        val draw = canonical("historical-draw", 1_801_000_001L, ourScore = "2", opponentScore = "2")
+        val loss = canonical("historical-loss", 1_801_000_002L, ourScore = "0", opponentScore = "1")
+        whenever(historyService.findById(OUR_CLUB, MatchId("historical-win"))).thenReturn(victory)
+        whenever(historyService.findById(OUR_CLUB, MatchId("historical-draw"))).thenReturn(draw)
+        whenever(historyService.findById(OUR_CLUB, MatchId("historical-loss"))).thenReturn(loss)
+
+        val winOutcome = controller.getMatch("historical-win").block()!!.body!!.match!!.summary.outcome
+        val drawOutcome = controller.getMatch("historical-draw").block()!!.body!!.match!!.summary.outcome
+        val lossOutcome = controller.getMatch("historical-loss").block()!!.body!!.match!!.summary.outcome
+
+        assertThat(winOutcome.code).isEqualTo("WIN")
+        assertThat(winOutcome.icon).isEqualTo("🏆")
+        assertThat(drawOutcome.code).isEqualTo("DRAW")
+        assertThat(drawOutcome.icon).isEqualTo("🤝")
+        assertThat(lossOutcome.code).isEqualTo("LOSS")
+        assertThat(lossOutcome.icon).isEqualTo("📉")
+    }
+
+    @Test
     fun `unknown MatchId returns not found`() {
         whenever(historyService.findById(OUR_CLUB, MatchId("missing"))).thenReturn(null)
 
@@ -150,6 +199,12 @@ class MatchHistoryControllerTest {
         timestamp: Long,
         negativeRating: String = "5.5",
         oneOnOneAggregate0: String? = null,
+        dnfClubId: ClubId? = null,
+        mvpAssists: String = "1",
+        defenderAssists: String = "1",
+        bagreAssists: String = "1",
+        ourScore: String = "3",
+        opponentScore: String = "1",
     ): CanonicalMatch {
         val source = MatchResponse(
             matchId = id,
@@ -158,18 +213,28 @@ class MatchHistoryControllerTest {
             clubs = linkedMapOf(
                 OUR_CLUB.value to ClubMatchEntry(
                     details = ClubDetails("Our FC", OUR_CLUB.value),
-                    score = "3",
-                    result = "1",
+                    score = ourScore,
+                    result = result(ourScore, opponentScore),
+                    winnerByDnf = when (dnfClubId) {
+                        null -> null
+                        OUR_CLUB -> "0"
+                        else -> "1"
+                    },
                 ),
                 "opponent" to ClubMatchEntry(
                     details = ClubDetails("Opponent FC", "opponent"),
-                    score = "1",
-                    result = "0",
+                    score = opponentScore,
+                    result = result(opponentScore, ourScore),
+                    winnerByDnf = when (dnfClubId) {
+                        null -> null
+                        OUR_CLUB -> "1"
+                        else -> "0"
+                    },
                 ),
             ),
             players = mapOf(
                 OUR_CLUB.value to buildMap {
-                    put("mvp", player("MVP", "9.2", goals = "2", mom = "1"))
+                    put("mvp", player("MVP", "9.2", goals = "2", assists = mvpAssists, mom = "1"))
                     put(
                         "defender",
                         player(
@@ -177,9 +242,10 @@ class MatchHistoryControllerTest {
                             "8.0",
                             tacklesMade = "5",
                             tackleAttempts = "6",
+                            assists = defenderAssists,
                         ),
                     )
-                    put("bagre", player("Bagre", negativeRating))
+                    put("bagre", player("Bagre", negativeRating, assists = bagreAssists))
                     oneOnOneAggregate0?.let { aggregate0 ->
                         put("dribbler", player("Dribbler", "8.4", aggregate0 = aggregate0))
                     }
@@ -201,6 +267,7 @@ class MatchHistoryControllerTest {
         name: String,
         rating: String,
         goals: String = "0",
+        assists: String = "1",
         mom: String = "0",
         tacklesMade: String = "2",
         tackleAttempts: String = "4",
@@ -210,7 +277,7 @@ class MatchHistoryControllerTest {
         position = "14",
         rating = rating,
         goals = goals,
-        assists = "1",
+        assists = assists,
         shots = "3",
         manOfTheMatch = mom,
         passesMade = "18",
@@ -230,6 +297,12 @@ class MatchHistoryControllerTest {
         schemaVersions = emptySet(),
         engineVersions = emptySet(),
     )
+
+    private fun result(score: String, opponentScore: String): String = when {
+        score.toInt() > opponentScore.toInt() -> "1"
+        score.toInt() < opponentScore.toInt() -> "0"
+        else -> "2"
+    }
 
     private companion object {
         val OUR_CLUB = ClubId("our-club")

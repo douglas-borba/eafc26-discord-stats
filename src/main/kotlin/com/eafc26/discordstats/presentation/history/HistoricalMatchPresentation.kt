@@ -192,28 +192,35 @@ object HistoricalMatchPresenter {
         }
         val eligibilityById = interpretation.eligibility.decisions.associateBy { it.playerId }
 
-        val players = if (!canonical.footballMatch.completion.hasCompleteSportingStatistics) emptyList() else ourPerformance.players.map { performance ->
-            val eligibility = eligibilityById[performance.player.id]
-            HistoricalPlayer(
-                id = performance.player.id.value,
-                name = namesById.getValue(performance.player.id),
-                role = performance.role.label(),
-                eligibility = eligibility?.status?.label(),
-                durationSeconds = performance.participation.duration?.seconds,
-                rating = performance.rating?.value,
-                goals = performance.attacking.goals,
-                assists = performance.attacking.assists,
-                shots = performance.attacking.shots,
-                passesCompleted = performance.passing.completed,
-                passesAttempted = performance.passing.attempted,
-                tacklesCompleted = performance.defending.tacklesCompleted,
-                tacklesAttempted = performance.defending.tacklesAttempted,
-                redCards = performance.discipline.redCards,
-                saves = performance.goalkeeping?.saves,
-                goalsConceded = performance.goalkeeping?.goalsConceded,
-                manOfTheMatch = performance.eaRecognition.manOfTheMatch == true,
-            )
-        }
+        val hasCompleteSportingStatistics = canonical.footballMatch.completion.hasCompleteSportingStatistics
+        val players = ourPerformance.players
+            .filter { performance ->
+                hasCompleteSportingStatistics ||
+                    (performance.attacking.goals ?: 0) > 0 ||
+                    (performance.attacking.assists ?: 0) > 0
+            }
+            .map { performance ->
+                val eligibility = eligibilityById[performance.player.id]
+                HistoricalPlayer(
+                    id = performance.player.id.value,
+                    name = namesById.getValue(performance.player.id),
+                    role = performance.role.label(),
+                    eligibility = eligibility?.status?.label(),
+                    durationSeconds = if (hasCompleteSportingStatistics) performance.participation.duration?.seconds else null,
+                    rating = if (hasCompleteSportingStatistics) performance.rating?.value else null,
+                    goals = performance.attacking.goals,
+                    assists = performance.attacking.assists,
+                    shots = if (hasCompleteSportingStatistics) performance.attacking.shots else null,
+                    passesCompleted = if (hasCompleteSportingStatistics) performance.passing.completed else null,
+                    passesAttempted = if (hasCompleteSportingStatistics) performance.passing.attempted else null,
+                    tacklesCompleted = if (hasCompleteSportingStatistics) performance.defending.tacklesCompleted else null,
+                    tacklesAttempted = if (hasCompleteSportingStatistics) performance.defending.tacklesAttempted else null,
+                    redCards = if (hasCompleteSportingStatistics) performance.discipline.redCards else null,
+                    saves = if (hasCompleteSportingStatistics) performance.goalkeeping?.saves else null,
+                    goalsConceded = if (hasCompleteSportingStatistics) performance.goalkeeping?.goalsConceded else null,
+                    manOfTheMatch = hasCompleteSportingStatistics && performance.eaRecognition.manOfTheMatch == true,
+                )
+            }
 
         val awards = listOf(
             interpretation.awards.craque,

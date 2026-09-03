@@ -66,8 +66,10 @@ class MatchSummaryBuilder(
             matchId = footballMatch.id.value,
             completionStatus = footballMatch.completion.status.name,
             dnfClubId = footballMatch.completion.dnfClubId?.value,
-            goals = goals(storyByType[StoryType.GOALS], players),
-            assists = assists(storyByType[StoryType.ASSISTS], players),
+            // Goals and assists are factual player observations from EA. They remain
+            // presentable when DNF suppresses editorial decisions and awards.
+            goals = goals(ourClub.players),
+            assists = assists(ourClub.players),
             highlights = highlights(storyByType[StoryType.HIGHLIGHTS], players),
             craque = craque(storyByType[StoryType.AWARD], players, footballMatch.id.value, random),
             offensiveNarratives = offensive(storyByType[StoryType.OFFENSIVE_NARRATIVE], players),
@@ -119,21 +121,21 @@ class MatchSummaryBuilder(
         DomainOutcome.LOSS -> MatchOutcome("🔴", "Derrota", 0xE74C3C, OutcomeType.LOSS)
     }
 
-    private fun goals(
-        stories: List<com.eafc26.discordstats.domain.story.Story>?,
-        players: Map<PlayerId, PlayerMatchPerformance>,
-    ): GoalsSection? {
-        val content = stories?.singleOrNull()?.content as? StoryContent.Contributions ?: return null
-        return GoalsSection(content.players.map { PlayerGoal(name(players.getValue(it.playerId)), it.goals) })
-    }
+    private fun goals(players: List<PlayerMatchPerformance>): GoalsSection? = players
+        .mapNotNull { player ->
+            player.attacking.goals?.takeIf { it > 0 }?.let { PlayerGoal(name(player), it) }
+        }
+        .sortedWith(compareByDescending<PlayerGoal> { it.count }.thenBy { it.name })
+        .takeIf { it.isNotEmpty() }
+        ?.let(::GoalsSection)
 
-    private fun assists(
-        stories: List<com.eafc26.discordstats.domain.story.Story>?,
-        players: Map<PlayerId, PlayerMatchPerformance>,
-    ): AssistsSection? {
-        val content = stories?.singleOrNull()?.content as? StoryContent.Contributions ?: return null
-        return AssistsSection(content.players.map { PlayerAssist(name(players.getValue(it.playerId)), it.assists) })
-    }
+    private fun assists(players: List<PlayerMatchPerformance>): AssistsSection? = players
+        .mapNotNull { player ->
+            player.attacking.assists?.takeIf { it > 0 }?.let { PlayerAssist(name(player), it) }
+        }
+        .sortedWith(compareByDescending<PlayerAssist> { it.count }.thenBy { it.name })
+        .takeIf { it.isNotEmpty() }
+        ?.let(::AssistsSection)
 
     private fun highlights(
         stories: List<com.eafc26.discordstats.domain.story.Story>?,

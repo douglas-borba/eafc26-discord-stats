@@ -5,6 +5,7 @@ import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.discord.DiscordDeliveryException
 import com.eafc26.discordstats.discord.DiscordDestination
 import com.eafc26.discordstats.discord.DiscordDestinationResolver
+import com.eafc26.discordstats.discord.DiscordPayload
 import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.discord.DiscordWebhookClient
 import com.eafc26.discordstats.llm.LlmEditorialService
@@ -109,6 +110,41 @@ class DiscordMatchPublicationServiceTest {
 
     private fun canonical(id: String, ourScore: String = "2", oppScore: String = "1") =
         canonicalFor(CLUB_ID, id, ourScore, oppScore)
+
+    private fun opponentDnfCanonical(id: String) = CanonicalMatchFactory().create(
+        source = MatchResponse(
+            matchId = id,
+            timestamp = System.currentTimeMillis() / 1000,
+            clubs = mapOf(
+                CLUB_ID.value to ClubMatchEntry(
+                    details = ClubDetails(name = "Test FC"), score = "3", result = "1", winnerByDnf = "1",
+                ),
+                "opp" to ClubMatchEntry(
+                    details = ClubDetails(name = "Rival FC"), score = "0", result = "0", winnerByDnf = "0",
+                ),
+            ),
+            players = mapOf(
+                CLUB_ID.value to mapOf(
+                    "scorer" to com.eafc26.discordstats.ea.model.PlayerEntry(
+                        playerName = "Scorer",
+                        position = "14",
+                        rating = "8.5",
+                        goals = "2",
+                        assists = "1",
+                        passesMade = "24",
+                        passAttempts = "28",
+                    ),
+                    "support" to com.eafc26.discordstats.ea.model.PlayerEntry(
+                        playerName = "Support",
+                        position = "14",
+                        rating = "7.8",
+                        goals = "1",
+                    ),
+                ),
+            ),
+        ),
+        perspectiveClubId = CLUB_ID.value,
+    )
 
     private fun canonicalFor(perspective: ClubId, id: String, ourScore: String = "2", oppScore: String = "1") =
         CanonicalMatchFactory().create(
@@ -709,6 +745,26 @@ class DiscordMatchPublicationServiceTest {
             service.forcePublish(canonical("m1"))
 
             assertThat(store.loadRecords()["m1"]?.state).isEqualTo(PublicationState.DELIVERED)
+        }
+
+        @Test
+        fun `manual resend uses the same DNF contribution presentation as automatic delivery`() {
+            val canonical = opponentDnfCanonical("dnf-resend")
+
+            assertThat(service.publishIfNeeded(canonical).outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+            assertThat(service.forcePublish(canonical).outcome).isEqualTo(PublicationOutcome.PUBLISHED)
+
+            val payloads = argumentCaptor<DiscordPayload>()
+            verify(webhookClient, times(2)).send(any(), payloads.capture())
+            assertThat(payloads.allValues).hasSize(2)
+            assertThat(payloads.allValues[1]).isEqualTo(payloads.allValues[0])
+            assertThat(payloads.firstValue.embeds.first().title).startsWith("🏆 Test FC 3 × 0 Rival FC")
+            assertThat(payloads.firstValue.embeds.first().description)
+                .contains("Adversário saiu antes do fim")
+            assertThat(payloads.firstValue.embeds.flatMap { it.fields }
+                .single { it.name == "⚽ GOLS" }.value).contains("Scorer ×2", "Support ×1")
+            assertThat(payloads.firstValue.embeds.flatMap { it.fields }
+                .single { it.name == "🎯 ASSISTÊNCIAS" }.value).contains("Scorer ×1")
         }
 
         @Test
