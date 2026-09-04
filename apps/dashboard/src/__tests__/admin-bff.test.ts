@@ -19,6 +19,7 @@ import { GET as discovery } from "@/app/api/admin/explorer/clubs/[clubId]/discov
 import { GET as novelMetrics } from "@/app/api/admin/explorer/clubs/[clubId]/novel-metrics/route";
 import { GET as positionObservations } from "@/app/api/admin/explorer/clubs/[clubId]/players/[playerId]/position-observations/route";
 import { GET as getExplorerObservations, POST as saveExplorerObservation } from "@/app/api/admin/explorer/clubs/[clubId]/matches/[matchId]/players/[playerId]/observations/route";
+import { POST as reconcileExplorerObservation } from "@/app/api/admin/explorer/clubs/[clubId]/matches/[matchId]/players/[playerId]/observations/reconcile/route";
 import { GET as compareExplorerObservations } from "@/app/api/admin/explorer/clubs/[clubId]/players/[playerId]/observation-comparison/route";
 import { POST as previewImport } from "@/app/api/admin/explorer/clubs/[clubId]/observations/preview/route";
 import { POST as executeImport } from "@/app/api/admin/explorer/clubs/[clubId]/observations/import/route";
@@ -179,6 +180,26 @@ describe("administrative BFF", () => {
     expect((fetchMock.mock.calls[2][1].headers as Headers).get("Authorization")).toBe("Bearer test-admin-token");
   });
 
+  it("reconciles one explicit observation phrase through the server-side CSRF boundary", async () => {
+    const body = JSON.stringify({ sourcePhrase: "otimo emepenho ofensivo", targetPhrase: "Ótimo empenho ofensivo" });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(csrf())
+      .mockResolvedValueOnce(json({ status: "SUCCESS", observation: { phrase: "Ótimo empenho ofensivo", observedCount: 2 } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await reconcileExplorerObservation(new Request("https://dashboard.test", { method: "POST", body }), matchPlayerExplorerContext);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ status: "SUCCESS" });
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      "https://spring.example.test/api/admin/explorer/clubs/8874106/matches/match-1/players/player-1/observations/reconcile",
+    );
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: "POST", body });
+    const headers = fetchMock.mock.calls[1][1].headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer test-admin-token");
+    expect(headers.get("X-XSRF-TOKEN")).toBe("server-token");
+  });
+
   it("proxies club deletion and returns 204", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(csrf()).mockResolvedValueOnce(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -268,6 +289,20 @@ describe("administrative BFF", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await handler(new Request("https://dashboard.test", { method: "POST" }), clubContext);
+
+    expect(response.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects phrase reconciliation before contacting Spring when the caller is not an admin", async () => {
+    vi.mocked(requireAdmin).mockResolvedValueOnce({ kind: "anonymous" });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await reconcileExplorerObservation(
+      new Request("https://dashboard.test", { method: "POST", body: JSON.stringify({ sourcePhrase: "a", targetPhrase: "b" }) }),
+      matchPlayerExplorerContext,
+    );
 
     expect(response.status).toBe(401);
     expect(fetchMock).not.toHaveBeenCalled();

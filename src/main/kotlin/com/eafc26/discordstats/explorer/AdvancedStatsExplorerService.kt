@@ -401,6 +401,24 @@ class AdvancedStatsExplorerService(
 
     fun saveObservation(observation: ExplorerObservation): ExplorerObservation = observationRepository.save(observation)
 
+    /**
+     * Reconciles only an administrator-confirmed literal phrase. The analyzer
+     * remains exact: this changes historical evidence rather than its query
+     * semantics.
+     */
+    fun reconcileObservationPhrase(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+        sourcePhrase: String,
+        targetPhrase: String,
+    ): ObservationPhraseReconciliationResult {
+        if (targetPhrase.isBlank()) {
+            return ObservationPhraseReconciliationResult(ObservationPhraseReconciliationStatus.INVALID_TARGET)
+        }
+        return observationRepository.reconcilePhrase(clubId, matchId, playerId, sourcePhrase, targetPhrase)
+    }
+
     fun distinctPhrasesForPlayer(clubId: ClubId, playerId: String, limit: Int = 50): List<String> =
         observationRepository.findForPlayer(clubId, playerId, limit)
             .map { it.phrase }

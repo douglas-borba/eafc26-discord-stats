@@ -54,6 +54,13 @@ describe("live feedback phrase comparison", () => {
     expect(findLiveFeedbackSuggestions("Boa jogada", ["Ótima jogada"])).toEqual([]);
   });
 
+  it("suggests the known literal phrase for the persisted empenho spelling variant", () => {
+    expect(findLiveFeedbackSuggestions("otimo emepenho ofensivo", DEFAULT_LIVE_FEEDBACK_PHRASES)[0]).toMatchObject({
+      phrase: "Ótimo empenho ofensivo",
+      kind: "TYPO",
+    });
+  });
+
   it("returns no more than three strong candidates", () => {
     expect(findLiveFeedbackSuggestions("otima", DEFAULT_LIVE_FEEDBACK_PHRASES)).toHaveLength(3);
     expect(findLiveFeedbackSuggestions("texto sem relação", DEFAULT_LIVE_FEEDBACK_PHRASES)).toEqual([]);

@@ -5,6 +5,7 @@ import com.eafc26.discordstats.ea.mapping.EaPositionCodeDecoder
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.test.web.reactive.server.WebTestClient
 
@@ -89,5 +90,28 @@ class AdvancedStatsExplorerControllerTest {
         client.get().uri("/api/admin/explorer/clubs/club-1/players/player-1/position-observations?limit=20")
             .exchange().expectStatus().isOk
             .expectBody().jsonPath("$.coverage").isEqualTo("FULL")
+    }
+
+    @Test
+    fun `reconciliation endpoint keeps source and target explicit`() {
+        val result = ObservationPhraseReconciliationResult(
+            ObservationPhraseReconciliationStatus.SUCCESS,
+            observation = ExplorerObservation(ClubId("club-1"), com.eafc26.discordstats.domain.match.MatchId("match-1"), "player-1", "Ótimo empenho ofensivo", 2),
+        )
+        whenever(explorerService.reconcileObservationPhrase(
+            ClubId("club-1"), com.eafc26.discordstats.domain.match.MatchId("match-1"), "player-1",
+            "otimo emepenho ofensivo", "Ótimo empenho ofensivo",
+        )).thenReturn(result)
+
+        client.post().uri("/api/admin/explorer/clubs/club-1/matches/match-1/players/player-1/observations/reconcile")
+            .bodyValue(mapOf("sourcePhrase" to "otimo emepenho ofensivo", "targetPhrase" to "Ótimo empenho ofensivo"))
+            .exchange().expectStatus().isOk
+            .expectBody().jsonPath("$.status").isEqualTo("SUCCESS")
+            .jsonPath("$.observation.phrase").isEqualTo("Ótimo empenho ofensivo")
+
+        verify(explorerService).reconcileObservationPhrase(
+            ClubId("club-1"), com.eafc26.discordstats.domain.match.MatchId("match-1"), "player-1",
+            "otimo emepenho ofensivo", "Ótimo empenho ofensivo",
+        )
     }
 }

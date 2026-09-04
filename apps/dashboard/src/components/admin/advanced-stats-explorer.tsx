@@ -851,6 +851,11 @@ function PlayerDetailView({
 }
 
 type ExplorerObservation = { phrase: string; observedCount: number; completeness: "AT_LEAST" | "EXACT"; note: string | null; observedPositionContext: string | null };
+type ObservationReconciliationResult = {
+  status: "SUCCESS" | "SOURCE_NOT_FOUND" | "TARGET_ALREADY_EXISTS" | "INVALID_TARGET" | "NO_CHANGE";
+  observation: ExplorerObservation | null;
+  existingTarget: ExplorerObservation | null;
+};
 export type ObservationEvidence = {
   matchId: string; opponentName: string | null; observedCount: number; completeness: string; aggregateValue: number; comparison: string;
 };
@@ -880,6 +885,9 @@ function ObservationPanel({ clubId, data }: { clubId: string; data: PlayerExplor
   const [comparison, setComparison] = useState<ObservationComparison | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingReconciliation, setPendingReconciliation] = useState<{ source: ExplorerObservation; targetPhrase: string } | null>(null);
+  const [reconciliationMessage, setReconciliationMessage] = useState<string | null>(null);
+  const [reconciling, setReconciling] = useState(false);
 
   const base = `/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/matches/${encodeURIComponent(data.matchId)}/players/${encodeURIComponent(data.playerId)}/observations`;
   const load = async () => {
@@ -910,6 +918,47 @@ function ObservationPanel({ clubId, data }: { clubId: string; data: PlayerExplor
     finally { setLoading(false); }
   };
 
+  const reconcile = async () => {
+    if (!pendingReconciliation) return;
+    setReconciling(true); setError(null); setReconciliationMessage(null);
+    try {
+      const response = await fetch(`${base}/reconcile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourcePhrase: pendingReconciliation.source.phrase, targetPhrase: pendingReconciliation.targetPhrase }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = await response.json() as ObservationReconciliationResult;
+      if (result.status === "SUCCESS") {
+        await load();
+        setComparison(null);
+        setPendingReconciliation(null);
+        setReconciliationMessage("Frase reconciliada. A evidência foi preservada e a lista foi atualizada.");
+        return;
+      }
+      if (result.status === "TARGET_ALREADY_EXISTS") {
+        const existing = result.existingTarget;
+        setReconciliationMessage(
+          existing
+            ? `Conflito: a frase de destino já existe nesta partida para este jogador (${existing.phrase} = ${existing.observedCount}, ${existing.completeness}). Nenhuma evidência foi alterada.`
+            : "Conflito: a frase de destino já existe nesta partida para este jogador. Nenhuma evidência foi alterada.",
+        );
+      } else if (result.status === "SOURCE_NOT_FOUND") {
+        setReconciliationMessage("A frase original não foi encontrada. Atualize as observações antes de tentar novamente.");
+      } else if (result.status === "NO_CHANGE") {
+        setReconciliationMessage("A frase atual e a frase de destino são iguais. Nenhuma evidência foi alterada.");
+      } else {
+        setReconciliationMessage("A frase de destino não é válida. Nenhuma evidência foi alterada.");
+      }
+      setPendingReconciliation(null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to reconcile observation"); }
+    finally { setReconciling(false); }
+  };
+
+  const knownPhrases = uniqueExactPhrases([...DEFAULT_LIVE_FEEDBACK_PHRASES, ...items.map((item) => item.phrase)]);
+  const suggestionFor = (item: ExplorerObservation) =>
+    findLiveFeedbackSuggestions(item.phrase, knownPhrases, 1).find((suggestion) => suggestion.phrase !== item.phrase) ?? null;
+
   return <section style={{ marginBottom: 16, padding: 12, border: "1px solid #30363d", borderRadius: 6 }}>
     <h3 style={h3Style}>Human observational evidence</h3>
     <p style={{ color: "#f0883e", fontSize: 11 }}>Observations are separate from EA facts. AT_LEAST is the default because messages can be missed while playing.</p>
@@ -923,7 +972,18 @@ function ObservationPanel({ clubId, data }: { clubId: string; data: PlayerExplor
       <button onClick={load} disabled={loading} style={btnStyle}>Load observations</button>
     </div>
     {error && <p style={{ color: "#f85149", fontSize: 11 }}>{error}</p>}
-    {items.length > 0 && <table style={tableStyle}><thead><tr><th style={thStyle}>Phrase</th><th style={thStyle}>Observed</th><th style={thStyle}>Completeness</th><th style={thStyle}>Position context</th><th style={thStyle}></th></tr></thead><tbody>{items.map((item) => <tr key={item.phrase} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{item.phrase}</td><td style={tdStyle}>{item.observedCount}</td><td style={tdStyle}>{item.completeness}</td><td style={tdStyle}>{item.observedPositionContext ?? "—"}</td><td style={tdStyle}><button onClick={() => compare(item.phrase)} disabled={loading} style={{ ...btnStyle, fontSize: 11 }}>Compare</button></td></tr>)}</tbody></table>}
+    {reconciliationMessage && <p style={{ color: reconciliationMessage.startsWith("Frase reconciliada") ? "#3fb950" : reconciliationMessage.startsWith("Conflito") ? "#f0883e" : "#f85149", fontSize: 11 }}>{reconciliationMessage}</p>}
+    {items.length > 0 && <table style={tableStyle}><thead><tr><th style={thStyle}>Phrase</th><th style={thStyle}>Observed</th><th style={thStyle}>Completeness</th><th style={thStyle}>Position context</th><th style={thStyle}></th></tr></thead><tbody>{items.map((item) => {
+      const suggestion = suggestionFor(item);
+      return <tr key={item.phrase} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{item.phrase}{suggestion && <div style={{ color: "#8b949e", fontSize: 10, marginTop: 3 }}>Possível frase conhecida: <strong style={{ color: "#c9d1d9" }}>{suggestion.phrase}</strong></div>}</td><td style={tdStyle}>{item.observedCount}</td><td style={tdStyle}>{item.completeness}</td><td style={tdStyle}>{item.observedPositionContext ?? "—"}</td><td style={tdStyle}><div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}><button onClick={() => compare(item.phrase)} disabled={loading || reconciling} style={{ ...btnStyle, fontSize: 11 }}>Compare</button>{suggestion && <button onClick={() => { setPendingReconciliation({ source: item, targetPhrase: suggestion.phrase }); setReconciliationMessage(null); }} disabled={loading || reconciling} style={{ ...btnStyle, fontSize: 11 }}>Reconciliar</button>}</div></td></tr>;
+    })}</tbody></table>}
+    {pendingReconciliation && <div style={{ marginTop: 8, padding: 8, border: "1px solid #d29922", borderRadius: 4, background: "#161b22", fontSize: 11 }}>
+      <strong>Confirmar reconciliação de evidência</strong>
+      <p style={{ margin: "5px 0", color: "#c9d1d9" }}>Frase atual: <strong>{pendingReconciliation.source.phrase}</strong><br />Frase de destino: <strong>{pendingReconciliation.targetPhrase}</strong><br />Partida: {data.matchId}<br />Jogador: {data.playerId}<br />Observado: {pendingReconciliation.source.observedCount} · {pendingReconciliation.source.completeness}</p>
+      <p style={{ margin: "5px 0", color: "#f0883e" }}>A frase será alterada somente nesta evidência. Contagens nunca são somadas; uma colisão bloqueará a operação.</p>
+      <button onClick={reconcile} disabled={reconciling} style={{ ...btnStyle, fontSize: 11 }}>{reconciling ? "Reconciliando…" : "Confirmar reconciliação"}</button>
+      <button onClick={() => setPendingReconciliation(null)} disabled={reconciling} style={{ ...btnStyle, marginLeft: 6, fontSize: 11 }}>Cancelar</button>
+    </div>}
     {comparison && <ObservationComparisonView comparison={comparison} />}
     <ObservationImportPanel clubId={clubId} onImported={() => { load(); }} />
   </section>;

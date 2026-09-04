@@ -33,6 +33,26 @@ enum class ObservationCompleteness {
     EXACT,
 }
 
+/**
+ * Explicit result of an administrator-confirmed literal phrase reconciliation.
+ * Phrase identity stays exact; this does not create semantic aliases.
+ */
+enum class ObservationPhraseReconciliationStatus {
+    SUCCESS,
+    SOURCE_NOT_FOUND,
+    TARGET_ALREADY_EXISTS,
+    INVALID_TARGET,
+    NO_CHANGE,
+}
+
+data class ObservationPhraseReconciliationResult(
+    val status: ObservationPhraseReconciliationStatus,
+    /** The reconciled observation when [status] is [ObservationPhraseReconciliationStatus.SUCCESS]. */
+    val observation: ExplorerObservation? = null,
+    /** The exact target observation that blocked the reconciliation, when present. */
+    val existingTarget: ExplorerObservation? = null,
+)
+
 interface ExplorerObservationRepository {
     /**
      * One row per exact club/match/player/phrase. Saving updates the same
@@ -41,6 +61,19 @@ interface ExplorerObservationRepository {
     fun save(observation: ExplorerObservation): ExplorerObservation
 
     fun findForPlayerMatch(clubId: ClubId, matchId: MatchId, playerId: String): List<ExplorerObservation>
+
+    /**
+     * Changes only one exact phrase identity for one player-match. Implementations
+     * must never merge counts and must leave both observations untouched on a
+     * target identity collision.
+     */
+    fun reconcilePhrase(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+        sourcePhrase: String,
+        targetPhrase: String,
+    ): ObservationPhraseReconciliationResult
 
     /** A bounded annotated investigation set, never a full canonical scan. */
     fun findForPlayerPhrase(clubId: ClubId, playerId: String, phrase: String, limit: Int): List<ExplorerObservation>
@@ -102,6 +135,38 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
     override fun findForPlayerMatch(clubId: ClubId, matchId: MatchId, playerId: String): List<ExplorerObservation> =
         observations.values.filter { it.clubId == clubId && it.matchId == matchId && it.playerId == playerId }
             .sortedBy { it.phrase }
+
+    @Synchronized
+    override fun reconcilePhrase(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+        sourcePhrase: String,
+        targetPhrase: String,
+    ): ObservationPhraseReconciliationResult {
+        val sourceKey = listOf(clubId.value, matchId.value, playerId, sourcePhrase)
+        val source = observations[sourceKey]
+            ?: return ObservationPhraseReconciliationResult(ObservationPhraseReconciliationStatus.SOURCE_NOT_FOUND)
+        if (sourcePhrase == targetPhrase) {
+            return ObservationPhraseReconciliationResult(ObservationPhraseReconciliationStatus.NO_CHANGE, observation = source)
+        }
+        val targetKey = listOf(clubId.value, matchId.value, playerId, targetPhrase)
+        val target = observations[targetKey]
+        if (target != null) {
+            return ObservationPhraseReconciliationResult(
+                ObservationPhraseReconciliationStatus.TARGET_ALREADY_EXISTS,
+                existingTarget = target,
+            )
+        }
+
+        val reconciled = source.copy(phrase = targetPhrase, updatedAt = Instant.now())
+        observations.remove(sourceKey)
+        observations[targetKey] = reconciled
+        return ObservationPhraseReconciliationResult(
+            ObservationPhraseReconciliationStatus.SUCCESS,
+            observation = reconciled,
+        )
+    }
 
     override fun findForPlayerPhrase(clubId: ClubId, playerId: String, phrase: String, limit: Int): List<ExplorerObservation> =
         observations.values.filter { it.clubId == clubId && it.playerId == playerId && it.phrase == phrase }

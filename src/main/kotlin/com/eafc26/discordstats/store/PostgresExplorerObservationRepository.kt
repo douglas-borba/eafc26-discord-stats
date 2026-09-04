@@ -6,6 +6,9 @@ import com.eafc26.discordstats.explorer.ExplorerObservation
 import com.eafc26.discordstats.explorer.ExplorerObservationRepository
 import com.eafc26.discordstats.explorer.ObservationCompleteness
 import com.eafc26.discordstats.explorer.ObservationIdentityKey
+import com.eafc26.discordstats.explorer.ObservationPhraseReconciliationResult
+import com.eafc26.discordstats.explorer.ObservationPhraseReconciliationStatus
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.transaction.support.TransactionTemplate
 import java.sql.ResultSet
@@ -50,6 +53,56 @@ class PostgresExplorerObservationRepository(
             { rs, _ -> read(rs) },
             clubId.value, matchId.value, playerId,
         )
+
+    override fun reconcilePhrase(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+        sourcePhrase: String,
+        targetPhrase: String,
+    ): ObservationPhraseReconciliationResult {
+        val source = findExact(clubId, matchId, playerId, sourcePhrase)
+            ?: return ObservationPhraseReconciliationResult(ObservationPhraseReconciliationStatus.SOURCE_NOT_FOUND)
+        if (sourcePhrase == targetPhrase) {
+            return ObservationPhraseReconciliationResult(ObservationPhraseReconciliationStatus.NO_CHANGE, observation = source)
+        }
+        val target = findExact(clubId, matchId, playerId, targetPhrase)
+        if (target != null) {
+            return ObservationPhraseReconciliationResult(
+                ObservationPhraseReconciliationStatus.TARGET_ALREADY_EXISTS,
+                existingTarget = target,
+            )
+        }
+
+        return try {
+            val updated = jdbcTemplate.query(
+                """
+                UPDATE explorer_observations
+                SET phrase = ?, updated_at = now()
+                WHERE club_id = ? AND match_id = ? AND player_id = ? AND phrase = ?
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM explorer_observations
+                    WHERE club_id = ? AND match_id = ? AND player_id = ? AND phrase = ?
+                  )
+                RETURNING club_id, match_id, player_id, phrase, observed_count, completeness, note, observed_position_context, created_at, updated_at
+                """.trimIndent(),
+                { rs, _ -> read(rs) },
+                targetPhrase,
+                clubId.value, matchId.value, playerId, sourcePhrase,
+                clubId.value, matchId.value, playerId, targetPhrase,
+            ).singleOrNull()
+            if (updated != null) {
+                ObservationPhraseReconciliationResult(ObservationPhraseReconciliationStatus.SUCCESS, observation = updated)
+            } else {
+                reconciliationFailureAfterConcurrentChange(clubId, matchId, playerId, sourcePhrase, targetPhrase)
+            }
+        } catch (_: DataIntegrityViolationException) {
+            // The unique index remains the final concurrent-write guard. A failed
+            // statement leaves the source untouched; re-read only this identity.
+            reconciliationFailureAfterConcurrentChange(clubId, matchId, playerId, sourcePhrase, targetPhrase)
+        }
+    }
 
     override fun findForPlayerPhrase(clubId: ClubId, playerId: String, phrase: String, limit: Int): List<ExplorerObservation> {
         require(limit in 1..50) { "limit must be 1-50" }
@@ -134,6 +187,43 @@ class PostgresExplorerObservationRepository(
             inserted
         }!!
     }
+
+    private fun reconciliationFailureAfterConcurrentChange(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+        sourcePhrase: String,
+        targetPhrase: String,
+    ): ObservationPhraseReconciliationResult {
+        val target = findExact(clubId, matchId, playerId, targetPhrase)
+        if (target != null) {
+            return ObservationPhraseReconciliationResult(
+                ObservationPhraseReconciliationStatus.TARGET_ALREADY_EXISTS,
+                existingTarget = target,
+            )
+        }
+        val source = findExact(clubId, matchId, playerId, sourcePhrase)
+        return if (source == null) {
+            ObservationPhraseReconciliationResult(ObservationPhraseReconciliationStatus.SOURCE_NOT_FOUND)
+        } else {
+            throw IllegalStateException("Observation phrase reconciliation did not complete")
+        }
+    }
+
+    private fun findExact(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+        phrase: String,
+    ): ExplorerObservation? = jdbcTemplate.query(
+        """
+        SELECT club_id, match_id, player_id, phrase, observed_count, completeness, note, observed_position_context, created_at, updated_at
+        FROM explorer_observations
+        WHERE club_id = ? AND match_id = ? AND player_id = ? AND phrase = ?
+        """.trimIndent(),
+        { rs, _ -> read(rs) },
+        clubId.value, matchId.value, playerId, phrase,
+    ).singleOrNull()
 
     private fun read(rs: ResultSet) = ExplorerObservation(
         clubId = ClubId(rs.getString("club_id")),

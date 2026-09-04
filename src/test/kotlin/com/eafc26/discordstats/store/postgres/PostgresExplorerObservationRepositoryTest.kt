@@ -4,6 +4,7 @@ import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.explorer.ExplorerObservation
 import com.eafc26.discordstats.explorer.ObservationCompleteness
+import com.eafc26.discordstats.explorer.ObservationPhraseReconciliationStatus
 import com.eafc26.discordstats.store.PostgresExplorerObservationRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
@@ -60,5 +61,36 @@ class PostgresExplorerObservationRepositoryTest {
         assertThat(observations).hasSize(1)
         assertThat(observations.single().playerId).isEqualTo("player-a")
         assertThat(observations.single().clubId).isEqualTo(ClubId("club-a"))
+    }
+
+    @Test fun `atomically reconciles one phrase while preserving its evidence metadata`() {
+        val source = repository.save(
+            ExplorerObservation(
+                ClubId("club-a"), MatchId("match-a"), "player-a", "otimo emepenho ofensivo", 2,
+                ObservationCompleteness.AT_LEAST, "live", "CAM",
+            ),
+        )
+
+        val result = repository.reconcilePhrase(
+            ClubId("club-a"), MatchId("match-a"), "player-a", source.phrase, "Ótimo empenho ofensivo",
+        )
+
+        assertThat(result.status).isEqualTo(ObservationPhraseReconciliationStatus.SUCCESS)
+        assertThat(result.observation).usingRecursiveComparison().ignoringFields("phrase", "updatedAt")
+            .isEqualTo(source)
+        assertThat(result.observation!!.phrase).isEqualTo("Ótimo empenho ofensivo")
+        assertThat(repository.findForPlayerPhrase(ClubId("club-a"), "player-a", source.phrase, 20)).isEmpty()
+    }
+
+    @Test fun `target collision leaves both exact evidence rows unchanged`() {
+        val variant = repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-a"), "player-a", "otima finta", 1))
+        val target = repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-a"), "player-a", "Ótima finta", 2))
+
+        val result = repository.reconcilePhrase(ClubId("club-a"), MatchId("match-a"), "player-a", variant.phrase, target.phrase)
+
+        assertThat(result.status).isEqualTo(ObservationPhraseReconciliationStatus.TARGET_ALREADY_EXISTS)
+        assertThat(result.existingTarget).isEqualTo(target)
+        assertThat(repository.findForPlayerMatch(ClubId("club-a"), MatchId("match-a"), "player-a"))
+            .containsExactly(variant, target)
     }
 }

@@ -2,6 +2,8 @@ package com.eafc26.discordstats.explorer
 
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.store.AdminAuditLogRepository
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -17,7 +19,9 @@ import org.springframework.web.server.ResponseStatusException
 @RequestMapping("/api/admin/explorer")
 class AdvancedStatsExplorerController(
     private val explorerService: AdvancedStatsExplorerService,
+    private val auditLog: AdminAuditLogRepository? = null,
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
 
     data class ObservationRequest(
         val phrase: String,
@@ -25,6 +29,11 @@ class AdvancedStatsExplorerController(
         val completeness: ObservationCompleteness = ObservationCompleteness.AT_LEAST,
         val note: String? = null,
         val observedPositionContext: String? = null,
+    )
+
+    data class ObservationReconciliationRequest(
+        val sourcePhrase: String,
+        val targetPhrase: String,
     )
 
     @GetMapping("/clubs/{clubId}/matches")
@@ -85,6 +94,35 @@ class AdvancedStatsExplorerController(
         ))
     } catch (exception: IllegalArgumentException) {
         throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message)
+    }
+
+    @PostMapping("/clubs/{clubId}/matches/{matchId}/players/{playerId}/observations/reconcile")
+    fun reconcileObservationPhrase(
+        @PathVariable clubId: String,
+        @PathVariable matchId: String,
+        @PathVariable playerId: String,
+        @RequestBody request: ObservationReconciliationRequest,
+        @org.springframework.web.bind.annotation.RequestHeader("X-Admin-Identity", defaultValue = "nextjs-admin-bff") admin: String,
+    ): ResponseEntity<ObservationPhraseReconciliationResult> {
+        val club = ClubId(clubId)
+        val result = explorerService.reconcileObservationPhrase(
+            clubId = club,
+            matchId = MatchId(matchId),
+            playerId = playerId,
+            sourcePhrase = request.sourcePhrase,
+            targetPhrase = request.targetPhrase,
+        )
+        recordReconciliationAudit(admin, club, matchId, result.status)
+        log.info(
+            "Explorer observation phrase reconciliation: status={}, clubId={}, matchId={}, playerId={}, oldPhrase={}, newPhrase={}",
+            result.status,
+            clubId,
+            matchId,
+            playerId,
+            safePhraseForLog(request.sourcePhrase),
+            safePhraseForLog(request.targetPhrase),
+        )
+        return ResponseEntity.ok(result)
     }
 
     data class BulkObservationRequest(
@@ -323,6 +361,37 @@ class AdvancedStatsExplorerController(
         if (limit < 1 || limit > 50) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be 1-50")
         return ResponseEntity.ok(explorerService.positionObservations(ClubId(clubId), playerId, limit))
     }
+
+    private fun recordReconciliationAudit(
+        admin: String,
+        clubId: ClubId,
+        matchId: String,
+        status: ObservationPhraseReconciliationStatus,
+    ) {
+        try {
+            auditLog?.record(
+                adminEmail = admin,
+                action = "OBSERVATION_RECONCILIATION",
+                clubId = clubId,
+                matchId = matchId,
+                result = status.name,
+                errorCode = status.takeUnless { it == ObservationPhraseReconciliationStatus.SUCCESS }?.name,
+            )
+        } catch (exception: Exception) {
+            // The reconciliation outcome is still traceable in the application
+            // log below; never conceal a completed evidence mutation as failed.
+            log.error(
+                "Explorer reconciliation audit persistence failed: clubId={}, matchId={}, status={}, errorType={}",
+                clubId.value,
+                matchId,
+                status,
+                exception::class.simpleName,
+            )
+        }
+    }
+
+    private fun safePhraseForLog(value: String): String =
+        value.replace(Regex("[\\r\\n\\t]"), " ").take(500)
 
     @GetMapping("/registry")
     fun registry(): ResponseEntity<List<CodeMapping>> {
