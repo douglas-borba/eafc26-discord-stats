@@ -42,8 +42,12 @@ class PostgresExplorerObservationRepository(
         observation.observedPositionContext,
     )!!
 
-    override fun findForPlayerMatch(clubId: ClubId, matchId: MatchId, playerId: String): List<ExplorerObservation> =
-        jdbcTemplate.query(
+    override fun findForPlayerMatch(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+    ): List<ExplorerObservation> {
+        return jdbcTemplate.query(
             """
             SELECT club_id, match_id, player_id, phrase, observed_count, completeness, note, observed_position_context, created_at, updated_at
             FROM explorer_observations
@@ -53,6 +57,43 @@ class PostgresExplorerObservationRepository(
             { rs, _ -> read(rs) },
             clubId.value, matchId.value, playerId,
         )
+    }
+
+    override fun findForPlayerMatchLimited(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+        limit: Int,
+    ): List<ExplorerObservation> {
+        require(limit in 1..101) { "limit must be 1-101" }
+        return jdbcTemplate.query(
+            """
+            SELECT club_id, match_id, player_id, phrase, observed_count, completeness, note, observed_position_context, created_at, updated_at
+            FROM explorer_observations
+            WHERE club_id = ? AND match_id = ? AND player_id = ?
+            ORDER BY phrase ASC
+            LIMIT ?
+            """.trimIndent(),
+            { rs, _ -> read(rs) },
+            clubId.value, matchId.value, playerId, limit,
+        )
+    }
+
+    override fun findExact(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+        phrase: String,
+    ): ExplorerObservation? = jdbcTemplate.query(
+        """
+        SELECT club_id, match_id, player_id, phrase, observed_count, completeness, note, observed_position_context, created_at, updated_at
+        FROM explorer_observations
+        WHERE club_id = ? AND match_id = ? AND player_id = ? AND phrase = ?
+        LIMIT 1
+        """.trimIndent(),
+        { rs, _ -> read(rs) },
+        clubId.value, matchId.value, playerId, phrase,
+    ).singleOrNull()
 
     override fun reconcilePhrase(
         clubId: ClubId,
@@ -209,21 +250,6 @@ class PostgresExplorerObservationRepository(
             throw IllegalStateException("Observation phrase reconciliation did not complete")
         }
     }
-
-    private fun findExact(
-        clubId: ClubId,
-        matchId: MatchId,
-        playerId: String,
-        phrase: String,
-    ): ExplorerObservation? = jdbcTemplate.query(
-        """
-        SELECT club_id, match_id, player_id, phrase, observed_count, completeness, note, observed_position_context, created_at, updated_at
-        FROM explorer_observations
-        WHERE club_id = ? AND match_id = ? AND player_id = ? AND phrase = ?
-        """.trimIndent(),
-        { rs, _ -> read(rs) },
-        clubId.value, matchId.value, playerId, phrase,
-    ).singleOrNull()
 
     private fun read(rs: ResultSet) = ExplorerObservation(
         clubId = ClubId(rs.getString("club_id")),

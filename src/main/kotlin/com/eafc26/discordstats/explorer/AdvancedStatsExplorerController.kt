@@ -195,6 +195,29 @@ class AdvancedStatsExplorerController(
         return ResponseEntity.ok(explorerService.compareObservations(ClubId(clubId), playerId, phrase, limit))
     }
 
+    @GetMapping("/clubs/{clubId}/players/{playerId}/observation-evidence/{matchId}")
+    fun observationEvidenceAudit(
+        @PathVariable clubId: String,
+        @PathVariable playerId: String,
+        @PathVariable matchId: String,
+        @RequestParam phrase: String,
+        @RequestParam aggregateIndex: Int,
+        @RequestParam code: Int,
+    ): ResponseEntity<AdvancedStatsExplorerService.ObservationEvidenceAudit> {
+        if (phrase.isBlank()) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "phrase must not be blank")
+        if (aggregateIndex !in 0..3) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "aggregateIndex must be 0-3")
+        if (code < 0) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "code must be non-negative")
+        val audit = explorerService.observationEvidenceAudit(
+            clubId = ClubId(clubId),
+            matchId = MatchId(matchId),
+            playerId = playerId,
+            phrase = phrase,
+            aggregateIndex = aggregateIndex,
+            code = code,
+        ) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Observation not found")
+        return ResponseEntity.ok(audit)
+    }
+
     @GetMapping("/clubs/{clubId}/players/{playerId}/compare")
     fun compareMatches(
         @PathVariable clubId: String,

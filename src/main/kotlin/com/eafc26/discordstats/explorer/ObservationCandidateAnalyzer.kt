@@ -247,16 +247,6 @@ class ObservationCandidateAnalyzer(
         else -> InvestigationStatus.SURVIVES
     }
 
-    private fun comparisonFor(
-        completeness: ObservationCompleteness,
-        aggregateValue: Int,
-        observedCount: Int,
-    ): EvidenceComparison = when {
-        aggregateValue == observedCount -> EvidenceComparison.EXACT_COINCIDENCE
-        completeness == ObservationCompleteness.AT_LEAST && aggregateValue > observedCount -> EvidenceComparison.AT_LEAST_COMPATIBLE
-        else -> EvidenceComparison.CONTRADICTED
-    }
-
     private fun candidateOrdering(): Comparator<CandidateDraft> =
         compareBy<CandidateDraft> { statusOrder(it.status) }
             .thenByDescending { it.direct.comparableObservations }
@@ -314,5 +304,18 @@ class ObservationCandidateAnalyzer(
             recommendations += "Mais observações são necessárias para verificar o excesso de agg${leadUnknown.aggregateIndex}[${leadUnknown.code}]."
         }
         return recommendations.distinct().take(3)
+    }
+
+    companion object {
+        /** Shared by the read-only audit view so it reports the Analyzer's existing comparison rule verbatim. */
+        internal fun comparisonFor(
+            completeness: ObservationCompleteness,
+            aggregateValue: Int,
+            observedCount: Int,
+        ): EvidenceComparison = when {
+            aggregateValue == observedCount -> EvidenceComparison.EXACT_COINCIDENCE
+            completeness == ObservationCompleteness.AT_LEAST && aggregateValue > observedCount -> EvidenceComparison.AT_LEAST_COMPATIBLE
+            else -> EvidenceComparison.CONTRADICTED
+        }
     }
 }

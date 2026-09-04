@@ -153,6 +153,81 @@ class AdvancedStatsExplorerService(
         val nextBestExperiments: List<String>,
     )
 
+    /** Read-only, on-demand provenance for one exact candidate/evidence pair. */
+    data class ObservationEvidenceAudit(
+        val identity: ObservationIdentity,
+        val canonicalMatch: AuditCanonicalMatch?,
+        val player: AuditPlayer,
+        val observation: AuditObservation,
+        val playerMatchObservations: List<AuditObservationVectorEntry>,
+        val vectorTruncated: Boolean,
+        val candidate: AuditCandidate,
+    )
+
+    data class ObservationIdentity(
+        val clubId: String,
+        val matchId: String,
+        val playerId: String,
+        val phrase: String,
+    )
+
+    data class AuditCanonicalMatch(
+        val clubId: String,
+        val matchId: String,
+        val playedAt: String,
+        val ourClubName: String?,
+        val opponentName: String?,
+        val ourScore: Int,
+        val opponentScore: Int,
+        val outcome: String,
+    )
+
+    data class AuditPlayer(
+        val playerId: String,
+        val platformName: String?,
+        val proName: String?,
+    )
+
+    data class AuditObservation(
+        val phrase: String,
+        val observedCount: Int,
+        val completeness: String,
+        val note: String?,
+        val observedPositionContext: String?,
+        val createdAt: String?,
+        val updatedAt: String?,
+    )
+
+    data class AuditObservationVectorEntry(
+        val phrase: String,
+        val observedCount: Int,
+        val completeness: String,
+    )
+
+    enum class RawAggregateProvenance {
+        EXPLICIT_VALUE,
+        CODE_ABSENT_ASSUMED_ZERO,
+        AGGREGATE_UNAVAILABLE,
+    }
+
+    data class AuditRawAggregateEntry(
+        val code: Int,
+        val value: Int,
+    )
+
+    data class AuditCandidate(
+        val aggregateIndex: Int,
+        val code: Int,
+        val provenance: RawAggregateProvenance,
+        val explicitRawValue: Int?,
+        val valueUsedByAnalyzer: Int?,
+        val comparison: String?,
+        val difference: Int?,
+        val rawAggregate: String?,
+        val rawEntries: List<AuditRawAggregateEntry>,
+        val rawEntriesTruncated: Boolean,
+    )
+
     data class PositionObservation(
         val matchId: String,
         val playedAt: String,
@@ -680,6 +755,78 @@ class AdvancedStatsExplorerService(
         )
     }
 
+    /**
+     * Loads only the facts needed to audit one exact persisted observation.
+     * It intentionally runs outside the normal candidate comparison path.
+     */
+    fun observationEvidenceAudit(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+        phrase: String,
+        aggregateIndex: Int,
+        code: Int,
+    ): ObservationEvidenceAudit? {
+        require(aggregateIndex in 0..3) { "aggregateIndex must be 0-3" }
+        require(code >= 0) { "code must be non-negative" }
+
+        val observation = observationRepository.findExact(clubId, matchId, playerId, phrase) ?: return null
+        val vectorWithSentinel = observationRepository.findForPlayerMatchLimited(
+            clubId,
+            matchId,
+            playerId,
+            AUDIT_VECTOR_LIMIT + 1,
+        )
+        val vectorTruncated = vectorWithSentinel.size > AUDIT_VECTOR_LIMIT
+        val vector = vectorWithSentinel.take(AUDIT_VECTOR_LIMIT)
+        val canonical = matchRepository.findById(clubId, matchId)
+        val player = canonical?.let { perspectivePlayer(it, playerId) }
+        val rawAggregate = player?.rawEventAggregates?.let { aggregateSlot(it, aggregateIndex) }
+        val histogram = parseHistogram(rawAggregate)
+        val explicitRawValue = histogram?.get(code)
+        val provenance = when {
+            rawAggregate == null -> RawAggregateProvenance.AGGREGATE_UNAVAILABLE
+            histogram?.containsKey(code) == true -> RawAggregateProvenance.EXPLICIT_VALUE
+            else -> RawAggregateProvenance.CODE_ABSENT_ASSUMED_ZERO
+        }
+        val valueUsedByAnalyzer = when (provenance) {
+            RawAggregateProvenance.EXPLICIT_VALUE -> explicitRawValue
+            RawAggregateProvenance.CODE_ABSENT_ASSUMED_ZERO -> 0
+            RawAggregateProvenance.AGGREGATE_UNAVAILABLE -> null
+        }
+        val rawEntries = histogram.orEmpty().entries
+            .sortedBy { it.key }
+            .take(AUDIT_RAW_ENTRY_LIMIT)
+            .map { AuditRawAggregateEntry(it.key, it.value) }
+
+        return ObservationEvidenceAudit(
+            identity = ObservationIdentity(clubId.value, matchId.value, playerId, observation.phrase),
+            canonicalMatch = canonical?.let { it.toAuditCanonicalMatch() },
+            player = AuditPlayer(
+                playerId = playerId,
+                platformName = player?.player?.platformName?.value,
+                proName = player?.player?.proName?.value,
+            ),
+            observation = observation.toAuditObservation(),
+            playerMatchObservations = vector.map { it.toAuditVectorEntry() },
+            vectorTruncated = vectorTruncated,
+            candidate = AuditCandidate(
+                aggregateIndex = aggregateIndex,
+                code = code,
+                provenance = provenance,
+                explicitRawValue = explicitRawValue,
+                valueUsedByAnalyzer = valueUsedByAnalyzer,
+                comparison = valueUsedByAnalyzer?.let {
+                    ObservationCandidateAnalyzer.comparisonFor(observation.completeness, it, observation.observedCount).name
+                },
+                difference = valueUsedByAnalyzer?.minus(observation.observedCount),
+                rawAggregate = rawAggregate,
+                rawEntries = rawEntries,
+                rawEntriesTruncated = histogram.orEmpty().size > AUDIT_RAW_ENTRY_LIMIT,
+            ),
+        )
+    }
+
     fun anchorInvestigation(
         clubId: ClubId,
         limit: Int = 10,
@@ -929,6 +1076,46 @@ class AdvancedStatsExplorerService(
         3 to raw.aggregate3,
     )
 
+    private fun aggregateSlot(raw: RawEventAggregates, aggregateIndex: Int): String? = when (aggregateIndex) {
+        0 -> raw.aggregate0
+        1 -> raw.aggregate1
+        2 -> raw.aggregate2
+        3 -> raw.aggregate3
+        else -> error("aggregateIndex must be 0-3")
+    }
+
+    private fun CanonicalMatch.toAuditCanonicalMatch(): AuditCanonicalMatch {
+        val perspectiveClubId = interpretation.perspectiveClubId
+        val perspective = footballMatch.participants.firstOrNull { it.club.id == perspectiveClubId }
+        val opponent = footballMatch.participants.firstOrNull { it.club.id != perspectiveClubId }
+        return AuditCanonicalMatch(
+            clubId = perspectiveClubId.value,
+            matchId = matchId.value,
+            playedAt = footballMatch.playedAt.toString(),
+            ourClubName = perspective?.club?.name?.value,
+            opponentName = opponent?.club?.name?.value,
+            ourScore = interpretation.result.ourScore.goals,
+            opponentScore = interpretation.result.opponentScore.goals,
+            outcome = interpretation.result.outcome.name,
+        )
+    }
+
+    private fun ExplorerObservation.toAuditObservation() = AuditObservation(
+        phrase = phrase,
+        observedCount = observedCount,
+        completeness = completeness.name,
+        note = note,
+        observedPositionContext = observedPositionContext,
+        createdAt = createdAt?.toString(),
+        updatedAt = updatedAt?.toString(),
+    )
+
+    private fun ExplorerObservation.toAuditVectorEntry() = AuditObservationVectorEntry(
+        phrase = phrase,
+        observedCount = observedCount,
+        completeness = completeness.name,
+    )
+
     private fun perspectivePlayer(canonical: CanonicalMatch, playerId: String): PlayerMatchPerformance? =
         canonical.footballMatch.participants
             .firstOrNull { it.club.id == canonical.interpretation.perspectiveClubId }
@@ -1053,6 +1240,8 @@ class AdvancedStatsExplorerService(
             .orEmpty()
 
     private companion object {
+        const val AUDIT_VECTOR_LIMIT = 100
+        const val AUDIT_RAW_ENTRY_LIMIT = 100
         const val DISCOVERY_SCAN_MULTIPLIER = 2
         const val MAX_DISCOVERY_CANONICAL_MATCHES = 20
         val RAW_CONTEXT_FIELD_NAMES = setOf("gameTime", "realtimegame", "realtimeidle", "archetypeid")

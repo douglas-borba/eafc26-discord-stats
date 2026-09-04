@@ -2,7 +2,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { DiscoveryView, NovelMetricsView, ObservationComparisonView, PositionObservationsView, type DiscoveryData, type NovelResult, type ObservationComparison, type PositionObservationsData } from "@/components/admin/advanced-stats-explorer";
+import { DiscoveryView, EvidenceAuditDetails, NovelMetricsView, ObservationComparisonView, PositionObservationsView, type DiscoveryData, type NovelResult, type ObservationComparison, type ObservationEvidenceAudit, type PositionObservationsData } from "@/components/admin/advanced-stats-explorer";
 
 const base: DiscoveryData = {
   analysis: {
@@ -106,6 +106,50 @@ describe("Advanced Stats Discovery V2", () => {
 });
 
 describe("Advanced Stats Explorer investigation surfaces", () => {
+  it("renders read-only exact audit facts and RAW provenance without a sporting claim", () => {
+    const audit: ObservationEvidenceAudit = {
+      identity: { clubId: "club-a", matchId: "tumultua-match", playerId: "player-1", phrase: "Melhore seu tempo de bola" },
+      canonicalMatch: { clubId: "club-a", matchId: "tumultua-match", playedAt: "2026-09-04T12:00:00Z", ourClubName: "QI da Topeira", opponentName: "Tumultua FC", ourScore: 3, opponentScore: 1, outcome: "WIN" },
+      player: { playerId: "player-1", platformName: "dbeng_bass", proName: "R. Nazario" },
+      observation: { phrase: "Melhore seu tempo de bola", observedCount: 6, completeness: "AT_LEAST", note: "literal", observedPositionContext: "CAM", createdAt: "2026-09-01T12:00:00Z", updatedAt: "2026-09-02T12:00:00Z" },
+      playerMatchObservations: [
+        { phrase: "Bom passe", observedCount: 2, completeness: "AT_LEAST" },
+        { phrase: "Melhore seu tempo de bola", observedCount: 6, completeness: "AT_LEAST" },
+      ],
+      vectorTruncated: false,
+      candidate: { aggregateIndex: 0, code: 183, provenance: "EXPLICIT_VALUE", explicitRawValue: 3, valueUsedByAnalyzer: 3, comparison: "CONTRADICTED", difference: -3, rawAggregate: "174:25,183:3", rawEntries: [{ code: 174, value: 25 }, { code: 183, value: 3 }], rawEntriesTruncated: false },
+    };
+
+    const html = renderToStaticMarkup(<EvidenceAuditDetails audit={audit} />);
+
+    expect(html).toContain("AUDITORIA DE EVIDÊNCIA");
+    expect(html).toContain("QI da Topeira");
+    expect(html).toContain("Tumultua FC");
+    expect(html).toContain("Melhore seu tempo de bola");
+    expect(html).toContain("Observado ≥ 6 · Aggregate = 3 · Diferença = -3 · CONTRADICTED");
+    expect(html).toContain("EXPLICIT_VALUE — código presente no RAW");
+    expect(html).toContain("Outras observações deste mesmo jogador na partida");
+    expect(html).toContain("Bom passe");
+    expect(html).not.toContain("Reconciliar");
+    expect(html).not.toContain("likely wrong match");
+  });
+
+  it("renders absent-code and unavailable RAW provenance distinctly", () => {
+    const baseAudit: ObservationEvidenceAudit = {
+      identity: { clubId: "club", matchId: "match", playerId: "player", phrase: "Frase" }, canonicalMatch: null,
+      player: { playerId: "player", platformName: null, proName: null },
+      observation: { phrase: "Frase", observedCount: 1, completeness: "AT_LEAST", note: null, observedPositionContext: null, createdAt: null, updatedAt: null },
+      playerMatchObservations: [{ phrase: "Frase", observedCount: 1, completeness: "AT_LEAST" }], vectorTruncated: false,
+      candidate: { aggregateIndex: 0, code: 183, provenance: "CODE_ABSENT_ASSUMED_ZERO", explicitRawValue: null, valueUsedByAnalyzer: 0, comparison: "CONTRADICTED", difference: -1, rawAggregate: "182:1", rawEntries: [{ code: 182, value: 1 }], rawEntriesTruncated: false },
+    };
+    const absentHtml = renderToStaticMarkup(<EvidenceAuditDetails audit={baseAudit} />);
+    const unavailableHtml = renderToStaticMarkup(<EvidenceAuditDetails audit={{ ...baseAudit, candidate: { ...baseAudit.candidate, provenance: "AGGREGATE_UNAVAILABLE", valueUsedByAnalyzer: null, comparison: null, difference: null, rawAggregate: null, rawEntries: [] } }} />);
+
+    expect(absentHtml).toContain("CODE_ABSENT_ASSUMED_ZERO — código ausente; o Analyzer usa 0");
+    expect(absentHtml).toContain("Valor usado pelo Analyzer");
+    expect(unavailableHtml).toContain("AGGREGATE_UNAVAILABLE — slot RAW indisponível");
+  });
+
   it("renders ranked unknown candidates, known controls and collision warnings without assigning a sporting meaning", () => {
     const comparison: ObservationComparison = {
       phrase: "Melhore seu tempo de bola", annotatedMatches: 3, annotatedObservations: 3, excludedRawUnavailable: 0, contradictedCandidates: 4,

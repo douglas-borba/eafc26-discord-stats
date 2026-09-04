@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { Fragment, useState, useCallback, useEffect, useMemo } from "react";
 import {
   DEFAULT_LIVE_FEEDBACK_PHRASES,
   findLiveFeedbackSuggestions,
@@ -883,6 +883,27 @@ export type ObservationComparison = {
   observationCollisions: { phrase: string; sharedObservedMatches: number }[];
   nextBestExperiments: string[];
 };
+export type ObservationEvidenceAudit = {
+  identity: { clubId: string; matchId: string; playerId: string; phrase: string };
+  canonicalMatch: {
+    clubId: string; matchId: string; playedAt: string; ourClubName: string | null; opponentName: string | null;
+    ourScore: number; opponentScore: number; outcome: string;
+  } | null;
+  player: { playerId: string; platformName: string | null; proName: string | null };
+  observation: {
+    phrase: string; observedCount: number; completeness: "AT_LEAST" | "EXACT"; note: string | null;
+    observedPositionContext: string | null; createdAt: string | null; updatedAt: string | null;
+  };
+  playerMatchObservations: { phrase: string; observedCount: number; completeness: "AT_LEAST" | "EXACT" }[];
+  vectorTruncated: boolean;
+  candidate: {
+    aggregateIndex: number; code: number;
+    provenance: "EXPLICIT_VALUE" | "CODE_ABSENT_ASSUMED_ZERO" | "AGGREGATE_UNAVAILABLE";
+    explicitRawValue: number | null; valueUsedByAnalyzer: number | null; comparison: string | null;
+    difference: number | null; rawAggregate: string | null;
+    rawEntries: { code: number; value: number }[]; rawEntriesTruncated: boolean;
+  };
+};
 
 function ObservationPanel({ clubId, data }: { clubId: string; data: PlayerExplorerData }) {
   const [phrase, setPhrase] = useState("");
@@ -993,7 +1014,7 @@ function ObservationPanel({ clubId, data }: { clubId: string; data: PlayerExplor
       <button onClick={reconcile} disabled={reconciling} style={{ ...btnStyle, fontSize: 11 }}>{reconciling ? "Reconciliando…" : "Confirmar reconciliação"}</button>
       <button onClick={() => setPendingReconciliation(null)} disabled={reconciling} style={{ ...btnStyle, marginLeft: 6, fontSize: 11 }}>Cancelar</button>
     </div>}
-    {comparison && <ObservationComparisonView comparison={comparison} />}
+    {comparison && <ObservationComparisonView comparison={comparison} clubId={clubId} playerId={data.playerId} />}
     <ObservationImportPanel clubId={clubId} onImported={() => { load(); }} />
   </section>;
 }
@@ -1701,10 +1722,44 @@ function LiveCollector({ clubId, onSaved }: {
   </div>;
 }
 
-export function ObservationComparisonView({ comparison }: { comparison: ObservationComparison }) {
+export function ObservationComparisonView({
+  comparison,
+  clubId,
+  playerId,
+}: {
+  comparison: ObservationComparison;
+  clubId?: string;
+  playerId?: string;
+}) {
   const [showContradicted, setShowContradicted] = useState(false);
   const [expandedEvidence, setExpandedEvidence] = useState<string | null>(null);
+  const [audit, setAudit] = useState<{ key: string; data: ObservationEvidenceAudit } | null>(null);
+  const [auditLoadingKey, setAuditLoadingKey] = useState<string | null>(null);
+  const [auditError, setAuditError] = useState<{ key: string; message: string } | null>(null);
   const keyFor = (candidate: ObservationCandidate) => `${candidate.aggregateIndex}-${candidate.code}`;
+  const auditKeyFor = (candidate: ObservationCandidate, evidence: ObservationEvidence) =>
+    `${keyFor(candidate)}-${evidence.matchId}`;
+  const loadAudit = async (candidate: ObservationCandidate, evidence: ObservationEvidence) => {
+    if (!clubId || !playerId) return;
+    const key = auditKeyFor(candidate, evidence);
+    if (audit?.key === key) {
+      setAudit(null);
+      setAuditError(null);
+      return;
+    }
+    setAuditLoadingKey(key);
+    setAuditError(null);
+    try {
+      const url = `/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/players/${encodeURIComponent(playerId)}/observation-evidence/${encodeURIComponent(evidence.matchId)}?phrase=${encodeURIComponent(comparison.phrase)}&aggregateIndex=${candidate.aggregateIndex}&code=${candidate.code}`;
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setAudit({ key, data: await response.json() as ObservationEvidenceAudit });
+    } catch (cause) {
+      setAuditError({ key, message: cause instanceof Error ? cause.message : "Não foi possível carregar a auditoria." });
+    } finally {
+      setAuditLoadingKey(null);
+    }
+  };
   const unknown = comparison.candidates.filter((candidate) => candidate.candidateKind === "UNKNOWN_CANDIDATE");
   const discoveries = unknown.filter((candidate) => candidate.investigationStatus === "HIGH_PRIORITY" || candidate.investigationStatus === "SURVIVES").slice(0, 12);
   const controls = comparison.candidates.filter((candidate) => candidate.candidateKind === "KNOWN_CONTROL" && candidate.investigationStatus !== "CONTRADICTED");
@@ -1726,7 +1781,21 @@ export function ObservationComparisonView({ comparison }: { comparison: Observat
         Candidate collision: {candidate.candidateCollisions.map((collision) => `agg${collision.aggregateIndex}[${collision.code}]${collision.metricName ? ` (${collision.metricName})` : ""}`).join(", ")}
       </p>}
       <button onClick={() => setExpandedEvidence(expanded ? null : key)} style={{ ...btnStyle, fontSize: 11, padding: "2px 8px" }}>{expanded ? "Hide evidence" : "View evidence"}</button>
-      {expanded && <div style={{ overflowX: "auto", marginTop: 8 }}><table style={tableStyle}><thead><tr><th style={thStyle}>Match</th><th style={thStyle}>Observed</th><th style={thStyle}>Aggregate</th><th style={thStyle}>Result</th></tr></thead><tbody>{candidate.evidence.map((evidence) => <tr key={evidence.matchId} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{evidence.opponentName ?? evidence.matchId}</td><td style={tdStyle}>{evidence.completeness === "AT_LEAST" ? "≥ " : ""}{evidence.observedCount}</td><td style={tdStyle}>{evidence.aggregateValue}</td><td style={tdStyle}>{evidence.comparison}</td></tr>)}</tbody></table></div>}
+      {expanded && <div style={{ overflowX: "auto", marginTop: 8 }}><table style={tableStyle}><thead><tr><th style={thStyle}>Match</th><th style={thStyle}>Observed</th><th style={thStyle}>Aggregate</th><th style={thStyle}>Result</th><th style={thStyle}></th></tr></thead><tbody>{candidate.evidence.map((evidence) => {
+        const auditKey = auditKeyFor(candidate, evidence);
+        const contradictedRow = evidence.comparison === "CONTRADICTED";
+        return <Fragment key={auditKey}>
+          <tr style={{ borderBottom: "1px solid #21262d", background: contradictedRow ? "#3d1f1f" : undefined }}>
+            <td style={tdStyle}>{evidence.opponentName ?? evidence.matchId}</td>
+            <td style={tdStyle}>{evidence.completeness === "AT_LEAST" ? "≥ " : ""}{evidence.observedCount}</td>
+            <td style={tdStyle}>{evidence.aggregateValue}</td>
+            <td style={{ ...tdStyle, color: contradictedRow ? "#f85149" : undefined }}>{evidence.comparison}</td>
+            <td style={tdStyle}>{clubId && playerId && <button onClick={() => void loadAudit(candidate, evidence)} disabled={auditLoadingKey === auditKey} style={{ ...btnStyle, fontSize: 11, padding: "2px 8px" }}>{auditLoadingKey === auditKey ? "Carregando…" : audit?.key === auditKey ? "Ocultar auditoria" : "Auditar evidência"}</button>}</td>
+          </tr>
+          {auditError?.key === auditKey && <tr><td colSpan={5} style={{ ...tdStyle, color: "#f85149" }}>{auditError.message}</td></tr>}
+          {audit?.key === auditKey && <tr><td colSpan={5} style={{ ...tdStyle, padding: 10 }}><EvidenceAuditDetails audit={audit.data} /></td></tr>}
+        </Fragment>;
+      })}</tbody></table></div>}
     </div>;
   };
 
@@ -1743,6 +1812,92 @@ export function ObservationComparisonView({ comparison }: { comparison: Observat
     {controls.length > 0 && <div style={{ marginTop: 10 }}><strong style={{ fontSize: 11 }}>Known controls</strong>{controls.map(renderCandidate)}</div>}
     {contradicted.length > 0 && <div style={{ marginTop: 10 }}><button onClick={() => setShowContradicted(!showContradicted)} style={{ ...btnStyle, fontSize: 11 }}>{showContradicted ? "Hide contradicted" : `Show ${contradicted.length} contradicted`}</button>{showContradicted && contradicted.map(renderCandidate)}</div>}
   </div>;
+}
+
+function auditDate(value: string | null) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("pt-BR");
+}
+
+function observationCount(observedCount: number, completeness: string) {
+  return `${completeness === "AT_LEAST" ? "≥ " : ""}${observedCount}`;
+}
+
+function rawProvenanceLabel(provenance: ObservationEvidenceAudit["candidate"]["provenance"]) {
+  switch (provenance) {
+    case "EXPLICIT_VALUE": return "EXPLICIT_VALUE — código presente no RAW";
+    case "CODE_ABSENT_ASSUMED_ZERO": return "CODE_ABSENT_ASSUMED_ZERO — código ausente; o Analyzer usa 0";
+    case "AGGREGATE_UNAVAILABLE": return "AGGREGATE_UNAVAILABLE — slot RAW indisponível";
+  }
+}
+
+/** Read-only detail; it exposes persistence and RAW provenance without diagnosing the evidence. */
+export function EvidenceAuditDetails({ audit }: { audit: ObservationEvidenceAudit }) {
+  const { canonicalMatch, player, observation, candidate } = audit;
+  return <section style={{ borderLeft: "3px solid #30363d", paddingLeft: 12 }}>
+    <h4 style={{ ...h3Style, margin: "0 0 8px" }}>AUDITORIA DE EVIDÊNCIA</h4>
+    <p style={{ color: "#8b949e", fontSize: 11, margin: "0 0 10px" }}>Fatos persistidos e proveniência RAW. Esta tela não infere a causa da observação.</p>
+
+    <h5 style={{ ...h3Style, fontSize: 12 }}>Identidade</h5>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 5, marginBottom: 10 }}>
+      <StatChip label="Club ID" value={audit.identity.clubId} />
+      <StatChip label="Match ID" value={audit.identity.matchId} />
+      <StatChip label="Player ID" value={audit.identity.playerId} />
+      <StatChip label="Frase literal" value={audit.identity.phrase} />
+    </div>
+
+    <h5 style={{ ...h3Style, fontSize: 12 }}>Partida canônica</h5>
+    {canonicalMatch ? <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 5, marginBottom: 10 }}>
+      <StatChip label="Clube em perspectiva" value={canonicalMatch.ourClubName ?? "—"} />
+      <StatChip label="Adversário" value={canonicalMatch.opponentName ?? "—"} />
+      <StatChip label="Data/hora" value={auditDate(canonicalMatch.playedAt)} />
+      <StatChip label="Placar" value={`${canonicalMatch.ourScore} × ${canonicalMatch.opponentScore}`} />
+      <StatChip label="Resultado" value={canonicalMatch.outcome} />
+    </div> : <p style={{ color: "#8b949e", fontSize: 11 }}>Partida canônica indisponível.</p>}
+
+    <h5 style={{ ...h3Style, fontSize: 12 }}>Jogador</h5>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 5, marginBottom: 10 }}>
+      <StatChip label="Nome na plataforma" value={player.platformName ?? "—"} />
+      <StatChip label="Pro name" value={player.proName ?? "—"} />
+      <StatChip label="Player ID" value={player.playerId} />
+    </div>
+
+    <h5 style={{ ...h3Style, fontSize: 12 }}>Observação</h5>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 5, marginBottom: 10 }}>
+      <StatChip label="Contagem" value={observationCount(observation.observedCount, observation.completeness)} />
+      <StatChip label="Completude" value={observation.completeness} />
+      <StatChip label="Criada em" value={auditDate(observation.createdAt)} />
+      <StatChip label="Atualizada em" value={auditDate(observation.updatedAt)} />
+      <StatChip label="Nota" value={observation.note ?? "—"} />
+      <StatChip label="Contexto" value={observation.observedPositionContext ?? "—"} />
+    </div>
+
+    <h5 style={{ ...h3Style, fontSize: 12 }}>Candidato</h5>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 5, marginBottom: 10 }}>
+      <StatChip label="Aggregate" value={`agg${candidate.aggregateIndex}`} />
+      <StatChip label="Code" value={candidate.code} />
+      <StatChip label="Valor usado pelo Analyzer" value={candidate.valueUsedByAnalyzer ?? "—"} />
+      <StatChip label="Diferença" value={candidate.difference ?? "—"} />
+      <StatChip label="Classificação" value={candidate.comparison ?? "—"} />
+    </div>
+    <p style={{ color: candidate.comparison === "CONTRADICTED" ? "#f85149" : "#8b949e", fontSize: 11, margin: "0 0 10px" }}>
+      Observado {observationCount(observation.observedCount, observation.completeness)} · Aggregate = {candidate.valueUsedByAnalyzer ?? "—"} · Diferença = {candidate.difference ?? "—"} · {candidate.comparison ?? "Sem comparação"}
+    </p>
+
+    <h5 style={{ ...h3Style, fontSize: 12 }}>Proveniência RAW</h5>
+    <p style={{ color: "#8b949e", fontSize: 11, margin: "0 0 6px" }}>{rawProvenanceLabel(candidate.provenance)}</p>
+    <p style={{ color: "#8b949e", fontSize: 11, margin: "0 0 10px" }}>Valor RAW explícito: {candidate.explicitRawValue ?? "—"}</p>
+    {candidate.rawAggregate !== null && <details><summary style={{ cursor: "pointer", color: "#c9d1d9", fontSize: 11 }}>Ver contexto RAW de agg{candidate.aggregateIndex}</summary>
+      <pre style={{ ...inputStyle, whiteSpace: "pre-wrap", overflowWrap: "anywhere", marginTop: 6 }}>{candidate.rawAggregate}</pre>
+      <div style={{ overflowX: "auto" }}><table style={tableStyle}><thead><tr><th style={thStyle}>Código</th><th style={thStyle}>Valor</th></tr></thead><tbody>{candidate.rawEntries.map((entry) => <tr key={entry.code} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{entry.code}</td><td style={tdStyle}>{entry.value}</td></tr>)}</tbody></table></div>
+      {candidate.rawEntriesTruncated && <p style={{ color: "#f0883e", fontSize: 11 }}>Contexto RAW limitado aos primeiros 100 códigos.</p>}
+    </details>}
+
+    <h5 style={{ ...h3Style, fontSize: 12, marginTop: 12 }}>Outras observações deste mesmo jogador na partida</h5>
+    <div style={{ overflowX: "auto" }}><table style={tableStyle}><thead><tr><th style={thStyle}>Frase literal</th><th style={thStyle}>Contagem</th><th style={thStyle}>Completude</th></tr></thead><tbody>{audit.playerMatchObservations.map((item) => <tr key={item.phrase} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{item.phrase}</td><td style={tdStyle}>{item.observedCount}</td><td style={tdStyle}>{item.completeness}</td></tr>)}</tbody></table></div>
+    {audit.vectorTruncated && <p style={{ color: "#f0883e", fontSize: 11 }}>Vetor limitado às primeiras 100 observações persistidas.</p>}
+  </section>;
 }
 
 function CompareView({

@@ -21,6 +21,7 @@ import { GET as positionObservations } from "@/app/api/admin/explorer/clubs/[clu
 import { GET as getExplorerObservations, POST as saveExplorerObservation } from "@/app/api/admin/explorer/clubs/[clubId]/matches/[matchId]/players/[playerId]/observations/route";
 import { POST as reconcileExplorerObservation } from "@/app/api/admin/explorer/clubs/[clubId]/matches/[matchId]/players/[playerId]/observations/reconcile/route";
 import { GET as compareExplorerObservations } from "@/app/api/admin/explorer/clubs/[clubId]/players/[playerId]/observation-comparison/route";
+import { GET as auditExplorerObservationEvidence } from "@/app/api/admin/explorer/clubs/[clubId]/players/[playerId]/observation-evidence/[matchId]/route";
 import { POST as previewImport } from "@/app/api/admin/explorer/clubs/[clubId]/observations/preview/route";
 import { POST as executeImport } from "@/app/api/admin/explorer/clubs/[clubId]/observations/import/route";
 
@@ -30,6 +31,7 @@ const publicationContext = { params: Promise.resolve({ clubId: "8874106", matchI
 const trialRequestContext = { params: Promise.resolve({ requestId: "42" }) };
 const explorerContext = { params: Promise.resolve({ clubId: "8874106" }) };
 const playerExplorerContext = { params: Promise.resolve({ clubId: "8874106", playerId: "player-1" }) };
+const auditExplorerContext = { params: Promise.resolve({ clubId: "8874106", playerId: "player-1", matchId: "match-1" }) };
 const matchPlayerExplorerContext = { params: Promise.resolve({ clubId: "8874106", matchId: "match-1", playerId: "player-1" }) };
 
 beforeEach(() => { process.env.BACKEND_URL = "https://spring.example.test/"; process.env.ADMIN_INTERNAL_TOKEN = "test-admin-token"; });
@@ -180,6 +182,29 @@ describe("administrative BFF", () => {
     expect((fetchMock.mock.calls[2][1].headers as Headers).get("Authorization")).toBe("Bearer test-admin-token");
   });
 
+  it("loads one exact evidence audit through the authenticated BFF without exposing the internal token", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json({
+      identity: { clubId: "8874106", matchId: "match-1", playerId: "player-1", phrase: "Melhore seu tempo de bola" },
+      candidate: { aggregateIndex: 0, code: 183, provenance: "EXPLICIT_VALUE", explicitRawValue: 3, valueUsedByAnalyzer: 3, comparison: "CONTRADICTED", difference: -3 },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await auditExplorerObservationEvidence(
+      new Request("https://dashboard.test/api/admin/explorer/clubs/8874106/players/player-1/observation-evidence/match-1?phrase=Melhore%20seu%20tempo%20de%20bola&aggregateIndex=0&code=183"),
+      auditExplorerContext,
+    );
+
+    expect(response.status).toBe(200);
+    const responseBody = JSON.stringify(await response.json());
+    expect(responseBody).toContain('"difference":-3');
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "https://spring.example.test/api/admin/explorer/clubs/8874106/players/player-1/observation-evidence/match-1?phrase=Melhore%20seu%20tempo%20de%20bola&aggregateIndex=0&code=183",
+    );
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer test-admin-token");
+    expect(responseBody).not.toContain("test-admin-token");
+  });
+
   it("reconciles one explicit observation phrase through the server-side CSRF boundary", async () => {
     const body = JSON.stringify({ sourcePhrase: "otimo emepenho ofensivo", targetPhrase: "Ótimo empenho ofensivo" });
     const fetchMock = vi.fn()
@@ -302,6 +327,20 @@ describe("administrative BFF", () => {
     const response = await reconcileExplorerObservation(
       new Request("https://dashboard.test", { method: "POST", body: JSON.stringify({ sourcePhrase: "a", targetPhrase: "b" }) }),
       matchPlayerExplorerContext,
+    );
+
+    expect(response.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects unauthenticated evidence audit before contacting Spring", async () => {
+    vi.mocked(requireAdmin).mockResolvedValueOnce({ kind: "anonymous" });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await auditExplorerObservationEvidence(
+      new Request("https://dashboard.test/api/admin/explorer/clubs/8874106/players/player-1/observation-evidence/match-1?phrase=x&aggregateIndex=0&code=183"),
+      auditExplorerContext,
     );
 
     expect(response.status).toBe(401);

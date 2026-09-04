@@ -6,6 +6,7 @@ import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadat
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.*
 import com.eafc26.discordstats.domain.interpretation.MatchInterpretation
+import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.domain.interpretation.ResultDecision
 import com.eafc26.discordstats.ea.mapping.UnknownFieldCapture
 import com.eafc26.discordstats.domain.story.StoryContent
@@ -82,6 +83,7 @@ class AdvancedStatsExplorerServiceTest {
         whenever(resultDecision.ourScore).thenReturn(Score(3))
         whenever(resultDecision.opponentScore).thenReturn(Score(1))
         whenever(resultDecision.opponentClub).thenReturn(ClubId("opp-1"))
+        whenever(resultDecision.outcome).thenReturn(MatchOutcome.WIN)
 
         val interpretation = mock<MatchInterpretation>()
         whenever(interpretation.perspectiveClubId).thenReturn(clubId)
@@ -548,6 +550,117 @@ class AdvancedStatsExplorerServiceTest {
 
         assertThat(batchReads).isEqualTo(1)
         assertThat(result.candidates).isNotEmpty()
+    }
+
+    @Test
+    fun `normal candidate comparison never loads the lazy audit vector`() {
+        val stored = InMemoryExplorerObservationRepository()
+        stored.save(ExplorerObservation(clubId, MatchId("one"), "player-1", "Ação", 1))
+        val noAuditReads = object : ExplorerObservationRepository by stored {
+            override fun findForPlayerMatchLimited(
+                clubId: ClubId,
+                matchId: MatchId,
+                playerId: String,
+                limit: Int,
+            ): List<ExplorerObservation> = error("Candidate comparison must not load audit vectors")
+        }
+        val service = AdvancedStatsExplorerService(
+            fakeRepo(buildCanonical(rawAgg0 = "183:1", id = "one")),
+            observationRepository = noAuditReads,
+        )
+
+        val result = service.compareObservations(clubId, "player-1", "Ação")
+
+        assertThat(result.candidates).isNotEmpty()
+    }
+
+    @Test
+    fun `evidence audit keeps the exact persisted identity and same player match vector`() {
+        val observations = InMemoryExplorerObservationRepository()
+        observations.save(
+            ExplorerObservation(
+                clubId, MatchId("one"), "player-1", "Melhore seu tempo de bola", 6,
+                ObservationCompleteness.AT_LEAST, "nota literal", "CAM",
+            ),
+        )
+        observations.save(ExplorerObservation(clubId, MatchId("one"), "player-1", "Bom passe", 2))
+        observations.save(ExplorerObservation(clubId, MatchId("two"), "player-1", "Outra partida", 9))
+        observations.save(ExplorerObservation(clubId, MatchId("one"), "player-2", "Outro jogador", 7))
+        val service = AdvancedStatsExplorerService(
+            fakeRepo(buildCanonical(rawAgg0 = "183:3,24:6", id = "one")),
+            observationRepository = observations,
+        )
+
+        val audit = service.observationEvidenceAudit(clubId, MatchId("one"), "player-1", "Melhore seu tempo de bola", 0, 183)!!
+
+        assertThat(audit.identity).isEqualTo(
+            AdvancedStatsExplorerService.ObservationIdentity("club-1", "one", "player-1", "Melhore seu tempo de bola"),
+        )
+        assertThat(audit.observation).extracting("observedCount", "completeness", "note", "observedPositionContext")
+            .containsExactly(6, "AT_LEAST", "nota literal", "CAM")
+        assertThat(audit.playerMatchObservations.map { it.phrase })
+            .containsExactly("Bom passe", "Melhore seu tempo de bola")
+        assertThat(audit.canonicalMatch?.opponentName).isEqualTo("Opponent FC")
+        assertThat(audit.player).extracting("playerId", "platformName").containsExactly("player-1", "Neymar")
+        assertThat(audit.candidate).extracting("provenance", "explicitRawValue", "valueUsedByAnalyzer", "comparison", "difference")
+            .containsExactly(
+                AdvancedStatsExplorerService.RawAggregateProvenance.EXPLICIT_VALUE,
+                3,
+                3,
+                "CONTRADICTED",
+                -3,
+            )
+        assertThat(audit.candidate.rawEntries).contains(AdvancedStatsExplorerService.AuditRawAggregateEntry(183, 3))
+    }
+
+    @Test
+    fun `evidence audit preserves the analyzer AT LEAST comparison rule for a one count contradiction`() {
+        val observations = InMemoryExplorerObservationRepository()
+        observations.save(ExplorerObservation(clubId, MatchId("one"), "player-1", "Melhore seu tempo de bola", 4))
+        val service = AdvancedStatsExplorerService(
+            fakeRepo(buildCanonical(rawAgg0 = "183:3", id = "one")),
+            observationRepository = observations,
+        )
+
+        val audit = service.observationEvidenceAudit(clubId, MatchId("one"), "player-1", "Melhore seu tempo de bola", 0, 183)!!
+
+        assertThat(audit.candidate.comparison).isEqualTo("CONTRADICTED")
+        assertThat(audit.candidate.difference).isEqualTo(-1)
+    }
+
+    @Test
+    fun `evidence audit distinguishes an absent code from an unavailable aggregate without changing zero semantics`() {
+        val observations = InMemoryExplorerObservationRepository()
+        observations.save(ExplorerObservation(clubId, MatchId("available"), "player-1", "Ação", 1))
+        observations.save(ExplorerObservation(clubId, MatchId("unavailable"), "player-1", "Ação", 1))
+        val service = AdvancedStatsExplorerService(
+            fakeRepo(
+                listOf(
+                    buildCanonical(rawAgg0 = "182:1", rawAgg1 = "", id = "available"),
+                    buildCanonical(rawAgg0 = null, rawAgg1 = null, id = "unavailable"),
+                ),
+            ),
+            observationRepository = observations,
+        )
+
+        val absent = service.observationEvidenceAudit(clubId, MatchId("available"), "player-1", "Ação", 0, 183)!!
+        val unavailable = service.observationEvidenceAudit(clubId, MatchId("unavailable"), "player-1", "Ação", 0, 183)!!
+
+        assertThat(absent.candidate).extracting("provenance", "explicitRawValue", "valueUsedByAnalyzer", "comparison")
+            .containsExactly(
+                AdvancedStatsExplorerService.RawAggregateProvenance.CODE_ABSENT_ASSUMED_ZERO,
+                null,
+                0,
+                "CONTRADICTED",
+            )
+        assertThat(unavailable.candidate).extracting("provenance", "explicitRawValue", "valueUsedByAnalyzer", "comparison", "difference")
+            .containsExactly(
+                AdvancedStatsExplorerService.RawAggregateProvenance.AGGREGATE_UNAVAILABLE,
+                null,
+                null,
+                null,
+                null,
+            )
     }
 
     @Test

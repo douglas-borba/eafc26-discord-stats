@@ -60,7 +60,37 @@ interface ExplorerObservationRepository {
      */
     fun save(observation: ExplorerObservation): ExplorerObservation
 
-    fun findForPlayerMatch(clubId: ClubId, matchId: MatchId, playerId: String): List<ExplorerObservation>
+    /** All observations recorded for one exact club/match/player identity. */
+    fun findForPlayerMatch(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+    ): List<ExplorerObservation>
+
+    /**
+     * Bounded evidence vector for one exact club/match/player identity.
+     *
+     * Production stores override this so the limit is applied by PostgreSQL;
+     * the fallback keeps the same semantic order for local/test use.
+     */
+    fun findForPlayerMatchLimited(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+        limit: Int,
+    ): List<ExplorerObservation> {
+        require(limit in 1..101) { "limit must be 1-101" }
+        return findForPlayerMatch(clubId, matchId, playerId).take(limit)
+    }
+
+    /** One exact persisted evidence identity, without phrase normalization. */
+    fun findExact(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+        phrase: String,
+    ): ExplorerObservation? =
+        findForPlayerMatch(clubId, matchId, playerId).firstOrNull { it.phrase == phrase }
 
     /**
      * Changes only one exact phrase identity for one player-match. Implementations
@@ -132,9 +162,31 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
         return stored
     }
 
-    override fun findForPlayerMatch(clubId: ClubId, matchId: MatchId, playerId: String): List<ExplorerObservation> =
-        observations.values.filter { it.clubId == clubId && it.matchId == matchId && it.playerId == playerId }
+    override fun findForPlayerMatch(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+    ): List<ExplorerObservation> {
+        return observations.values.filter { it.clubId == clubId && it.matchId == matchId && it.playerId == playerId }
             .sortedBy { it.phrase }
+    }
+
+    override fun findForPlayerMatchLimited(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+        limit: Int,
+    ): List<ExplorerObservation> {
+        require(limit in 1..101) { "limit must be 1-101" }
+        return findForPlayerMatch(clubId, matchId, playerId).take(limit)
+    }
+
+    override fun findExact(
+        clubId: ClubId,
+        matchId: MatchId,
+        playerId: String,
+        phrase: String,
+    ): ExplorerObservation? = observations[listOf(clubId.value, matchId.value, playerId, phrase)]
 
     @Synchronized
     override fun reconcilePhrase(

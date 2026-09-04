@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.explorer
 
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.ea.mapping.EaPositionCodeDecoder
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -112,6 +113,44 @@ class AdvancedStatsExplorerControllerTest {
         verify(explorerService).reconcileObservationPhrase(
             ClubId("club-1"), com.eafc26.discordstats.domain.match.MatchId("match-1"), "player-1",
             "otimo emepenho ofensivo", "Ótimo empenho ofensivo",
+        )
+    }
+
+    @Test
+    fun `evidence audit endpoint forwards one exact persisted identity`() {
+        val audit = AdvancedStatsExplorerService.ObservationEvidenceAudit(
+            identity = AdvancedStatsExplorerService.ObservationIdentity("club-1", "match-1", "player-1", "Melhore seu tempo de bola"),
+            canonicalMatch = null,
+            player = AdvancedStatsExplorerService.AuditPlayer("player-1", "Player", null),
+            observation = AdvancedStatsExplorerService.AuditObservation("Melhore seu tempo de bola", 6, "AT_LEAST", null, null, null, null),
+            playerMatchObservations = emptyList(),
+            vectorTruncated = false,
+            candidate = AdvancedStatsExplorerService.AuditCandidate(
+                aggregateIndex = 0,
+                code = 183,
+                provenance = AdvancedStatsExplorerService.RawAggregateProvenance.EXPLICIT_VALUE,
+                explicitRawValue = 3,
+                valueUsedByAnalyzer = 3,
+                comparison = "CONTRADICTED",
+                difference = -3,
+                rawAggregate = "183:3",
+                rawEntries = listOf(AdvancedStatsExplorerService.AuditRawAggregateEntry(183, 3)),
+                rawEntriesTruncated = false,
+            ),
+        )
+        whenever(explorerService.observationEvidenceAudit(ClubId("club-1"), MatchId("match-1"), "player-1", "Melhore seu tempo de bola", 0, 183))
+            .thenReturn(audit)
+
+        val response = AdvancedStatsExplorerController(explorerService).observationEvidenceAudit(
+            "club-1", "player-1", "match-1", "Melhore seu tempo de bola", 0, 183,
+        )
+
+        assertThat(response.statusCode.value()).isEqualTo(200)
+        assertThat(response.body?.identity?.phrase).isEqualTo("Melhore seu tempo de bola")
+        assertThat(response.body?.candidate?.difference).isEqualTo(-3)
+
+        verify(explorerService).observationEvidenceAudit(
+            ClubId("club-1"), MatchId("match-1"), "player-1", "Melhore seu tempo de bola", 0, 183,
         )
     }
 }

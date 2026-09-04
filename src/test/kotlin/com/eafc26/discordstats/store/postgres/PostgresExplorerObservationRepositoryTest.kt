@@ -63,6 +63,23 @@ class PostgresExplorerObservationRepositoryTest {
         assertThat(observations.single().clubId).isEqualTo(ClubId("club-a"))
     }
 
+    @Test fun `loads a bounded same player match vector without leaking other identities`() {
+        repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-a"), "player-a", "Alpha", 1))
+        repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-a"), "player-a", "Beta", 2))
+        repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-a"), "player-a", "Gamma", 3))
+        repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-b"), "player-a", "Other match", 4))
+        repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-a"), "player-b", "Other player", 5))
+
+        val observations = repository.findForPlayerMatchLimited(ClubId("club-a"), MatchId("match-a"), "player-a", 2)
+
+        assertThat(observations.map { it.phrase }).containsExactly("Alpha", "Beta")
+        assertThat(observations).allSatisfy {
+            assertThat(it.clubId).isEqualTo(ClubId("club-a"))
+            assertThat(it.matchId).isEqualTo(MatchId("match-a"))
+            assertThat(it.playerId).isEqualTo("player-a")
+        }
+    }
+
     @Test fun `atomically reconciles one phrase while preserving its evidence metadata`() {
         val source = repository.save(
             ExplorerObservation(
