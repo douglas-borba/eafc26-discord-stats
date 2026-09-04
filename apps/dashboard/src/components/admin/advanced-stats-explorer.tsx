@@ -1080,6 +1080,8 @@ type CollectorDraft = {
   matchId: string | null;
   playerId: string | null;
   playerName: string | null;
+  /** Local-only reminder. It never participates in match association or import. */
+  opponentName: string;
   phrases: Record<string, number>;
   completeness: "AT_LEAST" | "EXACT";
   startedAt: string;
@@ -1093,12 +1095,21 @@ function readDraft(): CollectorDraft | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || typeof parsed.clubId !== "string" || typeof parsed.phrases !== "object" || parsed.phrases === null) return null;
-    return parsed as CollectorDraft;
+    // Drafts created before the opponent reminder existed remain valid.
+    return {
+      ...parsed,
+      opponentName: typeof parsed.opponentName === "string" ? parsed.opponentName.trim() : "",
+    } as CollectorDraft;
   } catch { return null; }
 }
 
 function writeDraft(draft: CollectorDraft) {
-  try { localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft)); } catch {}
+  try {
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({
+      ...draft,
+      opponentName: draft.opponentName.trim(),
+    }));
+  } catch {}
 }
 
 function clearDraft() {
@@ -1115,7 +1126,6 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<CollectorDraft | null>(null);
   const [phase, setPhase] = useState<CollectorPhase>("collect");
-  const [palette, setPalette] = useState<string[]>([]);
   const [newPhrase, setNewPhrase] = useState("");
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1135,12 +1145,29 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
   // Load phrase palette (requires a known playerId; without one, manual entry still works)
   const palettePlayerId = draft?.playerId ?? playerId;
   useEffect(() => {
-    if (!open || !palettePlayerId) return;
+    if (!open || !palettePlayerId || (draft && draft.clubId !== clubId)) return;
     fetch(`/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/players/${encodeURIComponent(palettePlayerId)}/observation-phrases`, { cache: "no-store" })
       .then((r) => r.ok ? r.json() : [])
-      .then((phrases: string[]) => setPalette(phrases))
+      .then((phrases: unknown) => {
+        const nextPalette = Array.isArray(phrases)
+          ? [...new Set(phrases.filter((phrase): phrase is string => typeof phrase === "string" && phrase.trim().length > 0))]
+          : [];
+
+        // Seed a fetched palette once. Subsequent counter changes must never rearrange it.
+        setDraft((current) => {
+          if (!current || current.clubId !== clubId || current.playerId !== palettePlayerId) return current;
+          const missing = nextPalette.filter((phrase) => !(phrase in current.phrases));
+          if (missing.length === 0) return current;
+          const next = {
+            ...current,
+            phrases: { ...current.phrases, ...Object.fromEntries(missing.map((phrase) => [phrase, 0])) },
+          };
+          writeDraft(next);
+          return next;
+        });
+      })
       .catch(() => {});
-  }, [open, clubId, palettePlayerId]);
+  }, [open, clubId, palettePlayerId, draft?.clubId, draft?.startedAt]);
 
   const updateDraft = (updater: (d: CollectorDraft) => CollectorDraft) => {
     setDraft((prev) => {
@@ -1157,6 +1184,7 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
       matchId: matchId ?? null,
       playerId: playerId ?? null,
       playerName: playerName ?? null,
+      opponentName: "",
       phrases: {},
       completeness: "AT_LEAST",
       startedAt: new Date().toISOString(),
@@ -1185,11 +1213,7 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
   const decrement = (phrase: string) => {
     updateDraft((d) => {
       const current = d.phrases[phrase] ?? 0;
-      if (current <= 1) {
-        const { [phrase]: _, ...rest } = d.phrases;
-        return { ...d, phrases: rest };
-      }
-      return { ...d, phrases: { ...d.phrases, [phrase]: current - 1 } };
+      return { ...d, phrases: { ...d.phrases, [phrase]: Math.max(0, current - 1) } };
     });
   };
 
@@ -1205,23 +1229,9 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
   const totalCount = draft ? Object.values(draft.phrases).reduce((s, c) => s + c, 0) : 0;
   const activeCount = draft ? Object.values(draft.phrases).filter((c) => c > 0).length : 0;
 
-  // Build sorted phrase list: active (count > 0) first sorted by count desc, then palette/zero-count alphabetical
-  const sortedPhrases = (() => {
-    if (!draft) return [];
-    const allPhrases = new Set([...Object.keys(draft.phrases), ...palette]);
-    const active: [string, number][] = [];
-    const inactive: string[] = [];
-    for (const p of allPhrases) {
-      const count = draft.phrases[p] ?? 0;
-      if (count > 0) active.push([p, count]);
-      else inactive.push(p);
-    }
-    active.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-    inactive.sort((a, b) => a.localeCompare(b));
-    return [...active.map(([p]) => p), ...inactive];
-  })();
-
-  const filteredPhrases = filter ? sortedPhrases.filter((p) => p.toLowerCase().includes(filter.toLowerCase())) : sortedPhrases;
+  // Object insertion order is the collector's stable visual order. Counts and filters never sort it.
+  const orderedPhrases = draft ? Object.keys(draft.phrases) : [];
+  const filteredPhrases = filter ? orderedPhrases.filter((p) => p.toLowerCase().includes(filter.toLowerCase())) : orderedPhrases;
 
   // Association: load recent matches
   const loadMatches = async () => {
@@ -1343,7 +1353,6 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
   }
 
   const canSave = draft.matchId && draft.playerId && activeCount > 0;
-  const bigBtn: React.CSSProperties = { ...btnStyle, fontSize: 22, width: 54, height: 54, lineHeight: "54px", textAlign: "center", padding: 0, borderRadius: 8 };
 
   // SAVE phase
   if (phase === "save" && preview) {
@@ -1374,6 +1383,7 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
     return <div style={{ marginTop: 12, padding: 16, border: "1px solid #30363d", borderRadius: 8, background: "#161b22" }}>
       <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: "0 0 8px" }}>Associar partida e jogador</h4>
       <p style={{ color: "#8b949e", fontSize: 12 }}>Selecione a partida canônica e o jogador para esta coleta.</p>
+      {draft.opponentName && <p style={{ color: "#8b949e", fontSize: 12, margin: "0 0 8px" }}>Coleta: vs. {draft.opponentName}</p>}
       {error && <p style={{ color: "#f85149", fontSize: 12 }}>{error}</p>}
 
       <h5 style={{ color: "#c9d1d9", fontSize: 13, margin: "12px 0 6px" }}>Partida</h5>
@@ -1417,6 +1427,7 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
     return <div style={{ marginTop: 12, padding: 16, border: "1px solid #30363d", borderRadius: 8, background: "#161b22" }}>
       <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: "0 0 8px" }}>Revisão da coleta</h4>
       <p style={{ color: "#8b949e", fontSize: 12, margin: "0 0 8px" }}>{totalCount} feedback{totalCount !== 1 ? "s" : ""} · {activeCount} frase{activeCount !== 1 ? "s" : ""}</p>
+      {draft.opponentName && <p style={{ color: "#8b949e", fontSize: 12, margin: "0 0 8px" }}>Coleta: vs. {draft.opponentName}</p>}
       {draft.matchId && <p style={{ color: "#8b949e", fontSize: 11 }}>Partida: {draft.matchId.slice(-8)} · Jogador: {draft.playerName ?? draft.playerId?.slice(-8)}</p>}
 
       {entries.map(([phrase, count]) => (
@@ -1459,42 +1470,48 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
   // COLLECT phase (main mobile-friendly counting UI)
   return <div style={{ marginTop: 12, padding: 12, border: "1px solid #30363d", borderRadius: 8, background: "#161b22" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-      <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: 0 }}>Coletando ao vivo</h4>
+      <div>
+        <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: 0 }}>COLETANDO AO VIVO</h4>
+        {draft.opponentName && <p style={{ color: "#8b949e", fontSize: 12, margin: "2px 0 0" }}>vs. {draft.opponentName}</p>}
+      </div>
       <button onClick={() => setOpen(false)} style={{ ...btnStyle, fontSize: 10 }}>Minimizar</button>
     </div>
 
-    <div style={{ display: "flex", gap: 12, marginBottom: 10, fontSize: 13, color: "#8b949e" }}>
-      <span><strong style={{ color: "#3fb950", fontSize: 18 }}>{totalCount}</strong> feedback{totalCount !== 1 ? "s" : ""}</span>
-      <span><strong style={{ color: "#c9d1d9", fontSize: 18 }}>{activeCount}</strong> frase{activeCount !== 1 ? "s" : ""}</span>
-    </div>
+    <label className="live-collector-opponent">
+      <span>Adversário (lembrete local)</span>
+      <input aria-label="Adversário da partida" value={draft.opponentName}
+        onChange={(event) => updateDraft((current) => ({ ...current, opponentName: event.target.value.trim() }))}
+        placeholder="Ex.: Esporte Fino" style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }} />
+    </label>
 
-    {/* Search filter */}
-    {sortedPhrases.length > 6 && (
-      <input aria-label="Filtrar frases" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filtrar frases…"
-        style={{ ...inputStyle, width: "100%", marginBottom: 8, fontSize: 14, padding: "10px 12px" }} />
-    )}
+    <div className="live-collector-toolbar">
+      <div className="live-collector-summary" aria-label="Resumo da coleta">
+        <span><strong>{totalCount}</strong> feedback{totalCount !== 1 ? "s" : ""}</span>
+        <span><strong>{activeCount}</strong> frase{activeCount !== 1 ? "s" : ""}</span>
+      </div>
+      <input className="live-collector-filter" aria-label="Filtrar frases" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filtrar frases…"
+        style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }} />
+      <div className="live-collector-new-phrase">
+        <input aria-label="Nova frase de feedback" value={newPhrase} onChange={(e) => setNewPhrase(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") addPhrase(); }}
+          placeholder="Nova frase EA…" style={{ ...inputStyle, minWidth: 0, flex: 1, fontSize: 13, padding: "8px 10px" }} />
+        <button onClick={addPhrase} disabled={!newPhrase.trim()} style={{ ...btnStyle, fontSize: 13, padding: "8px 12px", whiteSpace: "nowrap" }}>+ Frase</button>
+      </div>
+    </div>
 
     {/* Phrase counters */}
-    <div style={{ maxHeight: "60vh", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+    <div className="live-collector-phrase-grid">
       {filteredPhrases.map((phrase) => {
         const count = draft.phrases[phrase] ?? 0;
-        return <div key={phrase} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 4px", borderBottom: "1px solid #21262d" }}>
+        return <div key={phrase} className="live-collector-phrase-item">
           <button aria-label={`Decrementar ${phrase}`} onClick={() => decrement(phrase)} disabled={count === 0}
-            style={{ ...bigBtn, opacity: count === 0 ? 0.3 : 1, fontSize: 24 }}>−</button>
-          <span style={{ color: count > 0 ? "#3fb950" : "#484f58", fontSize: 22, fontWeight: 700, minWidth: 36, textAlign: "center" }}>{count}</span>
+            className="live-collector-phrase-action" style={{ ...btnStyle, opacity: count === 0 ? 0.3 : 1 }}>−</button>
+          <span className="live-collector-phrase-count" style={{ color: count > 0 ? "#3fb950" : "#484f58" }}>{count}</span>
           <button aria-label={`Incrementar ${phrase}`} onClick={() => increment(phrase)}
-            style={{ ...bigBtn, background: "#238636", borderColor: "#2ea043" }}>+</button>
-          <span style={{ color: count > 0 ? "#c9d1d9" : "#8b949e", fontSize: 14, flex: 1, wordBreak: "break-word" }}>{phrase}</span>
+            className="live-collector-phrase-action" style={{ ...btnStyle, background: "#238636", borderColor: "#2ea043" }}>+</button>
+          <span className="live-collector-phrase-label" style={{ color: count > 0 ? "#c9d1d9" : "#8b949e" }}>{phrase}</span>
         </div>;
       })}
-    </div>
-
-    {/* Add new phrase */}
-    <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-      <input aria-label="Nova frase de feedback" value={newPhrase} onChange={(e) => setNewPhrase(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") addPhrase(); }}
-        placeholder="Nova frase EA…" style={{ ...inputStyle, flex: 1, fontSize: 14, padding: "10px 12px" }} />
-      <button onClick={addPhrase} disabled={!newPhrase.trim()} style={{ ...btnStyle, fontSize: 14, padding: "10px 16px" }}>+ Frase</button>
     </div>
 
     {error && <p style={{ color: "#f85149", fontSize: 12, marginTop: 6 }}>{error}</p>}

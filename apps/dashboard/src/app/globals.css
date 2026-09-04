@@ -66,3 +66,115 @@ body {
   box-shadow: var(--shadow-card-featured-hover);
   transform: translateY(-3px);
 }
+
+/* Live Observation Collector: desktop density without sacrificing mobile tap targets. */
+.live-collector-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.live-collector-summary {
+  display: flex;
+  gap: 12px;
+  color: var(--color-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.live-collector-summary strong {
+  color: var(--color-win);
+  font-size: 16px;
+}
+
+.live-collector-summary span + span strong {
+  color: var(--color-text-soft);
+}
+
+.live-collector-filter {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.live-collector-new-phrase {
+  display: flex;
+  flex: 1 1 240px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.live-collector-phrase-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.live-collector-phrase-item {
+  display: grid;
+  grid-template-columns: 52px 32px 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 4px;
+  border-bottom: 1px solid #21262d;
+}
+
+.live-collector-phrase-action {
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.live-collector-phrase-count {
+  min-width: 0;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.live-collector-phrase-label {
+  min-width: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.live-collector-opponent {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+@media (min-width: 720px) {
+  .live-collector-phrase-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+  }
+
+  .live-collector-phrase-item {
+    grid-template-columns: 40px 28px 40px minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .live-collector-phrase-action {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+  }
+
+  .live-collector-phrase-count {
+    font-size: 16px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .live-collector-phrase-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

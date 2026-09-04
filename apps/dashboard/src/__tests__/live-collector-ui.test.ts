@@ -7,6 +7,7 @@ const read = (path: string) => readFileSync(resolve(root, path), "utf8");
 
 describe("live collector UI", () => {
   const explorer = read("components/admin/advanced-stats-explorer.tsx");
+  const styles = read("app/globals.css");
 
   it("defines LiveCollector component", () => {
     expect(explorer).toContain("function LiveCollector");
@@ -28,9 +29,20 @@ describe("live collector UI", () => {
     expect(explorer).toContain("decrement(phrase)");
   });
 
-  it("renders mobile-friendly large tap targets", () => {
-    expect(explorer).toContain("width: 54");
-    expect(explorer).toContain("height: 54");
+  it("uses responsive tap targets without an internal phrase scrollbar", () => {
+    expect(styles).toContain(".live-collector-phrase-grid");
+    expect(styles).toContain("grid-template-columns: minmax(0, 1fr)");
+    expect(styles).toContain("@media (min-width: 720px)");
+    expect(styles).toContain("repeat(2, minmax(0, 1fr))");
+    expect(styles).toContain("@media (min-width: 1024px)");
+    expect(styles).toContain("repeat(3, minmax(0, 1fr))");
+    expect(styles).toContain("width: 52px");
+    expect(styles).toContain("height: 52px");
+    expect(styles).toContain("width: 40px");
+    expect(styles).toContain("height: 40px");
+    const collectPhase = explorer.slice(explorer.indexOf("// COLLECT phase"));
+    expect(collectPhase).not.toContain('maxHeight: "60vh"');
+    expect(collectPhase).not.toContain("overflowY: \"auto\"");
   });
 
   it("has add new phrase input", () => {
@@ -54,6 +66,13 @@ describe("live collector UI", () => {
   it("uses existing preview/import endpoints for safe save", () => {
     expect(explorer).toContain("observations/preview");
     expect(explorer).toContain("observations/import");
+  });
+
+  it("keeps the opponent reminder out of preview and import payloads", () => {
+    const previewPayload = explorer.slice(explorer.indexOf("const doPreview"), explorer.indexOf("const doImport"));
+    const importPayload = explorer.slice(explorer.indexOf("const doImport"), explorer.indexOf("if (!open)"));
+    expect(previewPayload).not.toContain("opponentName");
+    expect(importPayload).not.toContain("opponentName");
   });
 
   it("clears draft only on server success", () => {
@@ -80,6 +99,37 @@ describe("live collector UI", () => {
     expect(explorer).toContain("Filtrar frases");
   });
 
+  it("keeps phrase positions stable while counts change", () => {
+    const orderSection = explorer.slice(explorer.indexOf("const orderedPhrases"), explorer.indexOf("// Association: load recent matches"));
+    expect(orderSection).toContain("Object.keys(draft.phrases)");
+    expect(orderSection).not.toContain(".sort(");
+    expect(orderSection).toContain("filter ? orderedPhrases.filter");
+    expect(orderSection).toContain(": orderedPhrases");
+    expect(explorer).toContain("Math.max(0, current - 1)");
+    expect(explorer).toContain("phrases: { ...d.phrases, [trimmed]: 0 }");
+  });
+
+  it("stores an optional opponent reminder and restores older drafts", () => {
+    expect(explorer).toContain("opponentName: string");
+    expect(explorer).toContain('opponentName: typeof parsed.opponentName === "string" ? parsed.opponentName.trim() : ""');
+    expect(explorer).toContain("localStorage.getItem(DRAFT_STORAGE_KEY)");
+    expect(explorer).toContain("localStorage.setItem(DRAFT_STORAGE_KEY");
+    expect(explorer).toContain('opponentName: ""');
+    expect(explorer).toContain("Adversário (lembrete local)");
+    expect(explorer).toContain("Adversário da partida");
+  });
+
+  it("still starts a collection before canonical match and player IDs exist", () => {
+    expect(explorer).toContain("matchId: matchId ?? null");
+    expect(explorer).toContain("playerId: playerId ?? null");
+  });
+
+  it("shows the opponent reminder throughout collect, review, and association", () => {
+    expect(explorer).toContain("COLETANDO AO VIVO");
+    expect(explorer).toContain("vs. {draft.opponentName}");
+    expect(explorer).toContain("Coleta: vs. {draft.opponentName}");
+  });
+
   it("shows session summary counters", () => {
     expect(explorer).toContain("totalCount");
     expect(explorer).toContain("activeCount");
@@ -87,13 +137,24 @@ describe("live collector UI", () => {
 
   it("loads phrase palette from observation-phrases endpoint", () => {
     expect(explorer).toContain("observation-phrases");
-    expect(explorer).toContain("setPalette");
+    expect(explorer).toContain("Seed a fetched palette once");
   });
 
   it("has match association flow", () => {
     expect(explorer).toContain("Associar partida");
     expect(explorer).toContain("selectMatch");
     expect(explorer).toContain("selectPlayer");
+  });
+
+  it("keeps association manual and does not call EA from the collector", () => {
+    const collectorCode = explorer.slice(
+      explorer.indexOf("function LiveCollector"),
+      explorer.indexOf("export function ObservationComparisonView"),
+    );
+    const associationCode = collectorCode.slice(collectorCode.indexOf("const loadMatches"), collectorCode.indexOf("// Save flow"));
+    expect(collectorCode).not.toContain("/ea/");
+    expect(collectorCode).toContain("onClick={() => selectMatch(m.matchId)}");
+    expect(associationCode).not.toContain("opponentName");
   });
 
   it("renders success state after save", () => {
