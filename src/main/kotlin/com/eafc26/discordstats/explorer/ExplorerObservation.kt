@@ -51,7 +51,38 @@ interface ExplorerObservationRepository {
      * phrase at a time.
      */
     fun findForPlayer(clubId: ClubId, playerId: String, limit: Int): List<ExplorerObservation>
+
+    /**
+     * Batch lookup by identity keys. Returns existing observations matching any
+     * of the supplied (clubId, matchId, playerId, phrase) tuples. The input
+     * collection must not exceed 50 entries.
+     */
+    fun findByIdentities(clubId: ClubId, keys: Collection<ObservationIdentityKey>): List<ExplorerObservation> {
+        require(keys.size <= 50) { "batch lookup limited to 50 keys" }
+        return keys.flatMap { key -> findForPlayerMatch(clubId, key.matchId, key.playerId).filter { it.phrase == key.phrase } }
+    }
+
+    /**
+     * Inserts observations that do not yet exist. If any identity already exists,
+     * aborts without writing. Returns the number of rows inserted.
+     *
+     * Default implementation calls [save] per row; production implementations
+     * must use a single atomic transaction with INSERT ... ON CONFLICT DO NOTHING
+     * and verify all expected rows were inserted.
+     */
+    fun insertIfAbsent(clubId: ClubId, observations: List<ExplorerObservation>): Int {
+        require(observations.size <= 50) { "batch insert limited to 50 observations" }
+        require(observations.all { it.clubId == clubId }) { "all observations must belong to the same club" }
+        observations.forEach { save(it) }
+        return observations.size
+    }
 }
+
+data class ObservationIdentityKey(
+    val matchId: MatchId,
+    val playerId: String,
+    val phrase: String,
+)
 
 /** Test/local fallback only. Production wires the PostgreSQL implementation. */
 class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
@@ -82,5 +113,26 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
         return observations.values.filter { it.clubId == clubId && it.playerId == playerId }
             .sortedWith(compareByDescending<ExplorerObservation> { it.updatedAt }.thenByDescending { it.createdAt })
             .take(limit)
+    }
+
+    override fun insertIfAbsent(clubId: ClubId, observations: List<ExplorerObservation>): Int {
+        require(observations.size <= 50) { "batch insert limited to 50 observations" }
+        require(observations.all { it.clubId == clubId }) { "all observations must belong to the same club" }
+        var inserted = 0
+        for (observation in observations) {
+            val key = listOf(observation.clubId.value, observation.matchId.value, observation.playerId, observation.phrase)
+            if (key !in this.observations) {
+                val stored = observation.copy(
+                    createdAt = observation.createdAt ?: Instant.now(),
+                    updatedAt = Instant.now(),
+                )
+                this.observations[key] = stored
+                inserted++
+            }
+        }
+        if (inserted != observations.size) {
+            error("Expected to insert ${observations.size} but $inserted were absent; aborting")
+        }
+        return inserted
     }
 }

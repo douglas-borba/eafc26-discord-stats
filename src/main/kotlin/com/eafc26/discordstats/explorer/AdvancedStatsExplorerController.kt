@@ -87,6 +87,64 @@ class AdvancedStatsExplorerController(
         throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message)
     }
 
+    data class BulkObservationRequest(
+        val observations: List<BulkObservationEntry>,
+    )
+
+    data class BulkObservationEntry(
+        val matchId: String,
+        val playerId: String,
+        val phrase: String,
+        val observedCount: Int,
+        val completeness: ObservationCompleteness = ObservationCompleteness.AT_LEAST,
+        val note: String? = null,
+        val observedPositionContext: String? = null,
+    )
+
+    @PostMapping("/clubs/{clubId}/observations/preview")
+    fun previewObservationImport(
+        @PathVariable clubId: String,
+        @RequestBody request: BulkObservationRequest,
+    ): ResponseEntity<AdvancedStatsExplorerService.ObservationImportPreview> = try {
+        val inputs = request.observations.map { entry ->
+            AdvancedStatsExplorerService.ObservationImportInput(
+                matchId = entry.matchId,
+                playerId = entry.playerId,
+                phrase = entry.phrase,
+                observedCount = entry.observedCount,
+                completeness = entry.completeness,
+                note = entry.note,
+                observedPositionContext = entry.observedPositionContext,
+            )
+        }
+        ResponseEntity.ok(explorerService.previewObservationImport(ClubId(clubId), inputs))
+    } catch (exception: IllegalArgumentException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message)
+    }
+
+    @PostMapping("/clubs/{clubId}/observations/import")
+    fun importObservations(
+        @PathVariable clubId: String,
+        @RequestBody request: BulkObservationRequest,
+    ): ResponseEntity<AdvancedStatsExplorerService.ObservationImportResult> = try {
+        val inputs = request.observations.map { entry ->
+            AdvancedStatsExplorerService.ObservationImportInput(
+                matchId = entry.matchId,
+                playerId = entry.playerId,
+                phrase = entry.phrase,
+                observedCount = entry.observedCount,
+                completeness = entry.completeness,
+                note = entry.note,
+                observedPositionContext = entry.observedPositionContext,
+            )
+        }
+        ResponseEntity.ok(explorerService.importObservations(ClubId(clubId), inputs))
+    } catch (exception: IllegalArgumentException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message)
+    } catch (exception: IllegalStateException) {
+        throw ResponseStatusException(HttpStatus.CONFLICT, exception.message)
+    }
+
     @GetMapping("/clubs/{clubId}/players/{playerId}/observation-comparison")
     fun observationComparison(
         @PathVariable clubId: String,

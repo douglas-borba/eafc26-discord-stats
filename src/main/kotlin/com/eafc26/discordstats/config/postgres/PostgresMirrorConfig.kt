@@ -154,8 +154,8 @@ class PostgresMirrorConfig {
     ): AdvancedStatsExplorerService = AdvancedStatsExplorerService(canonicalMatchRepository, observationRepository = explorerObservationRepository)
 
     @Bean
-    fun explorerObservationRepository(jdbcTemplate: JdbcTemplate): ExplorerObservationRepository =
-        PostgresExplorerObservationRepository(jdbcTemplate)
+    fun explorerObservationRepository(jdbcTemplate: JdbcTemplate, transactionManager: PlatformTransactionManager): ExplorerObservationRepository =
+        PostgresExplorerObservationRepository(jdbcTemplate, TransactionTemplate(transactionManager))
 
     @Bean
     fun postgresSyncService(

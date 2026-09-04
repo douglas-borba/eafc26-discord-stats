@@ -916,7 +916,157 @@ function ObservationPanel({ clubId, data }: { clubId: string; data: PlayerExplor
     {error && <p style={{ color: "#f85149", fontSize: 11 }}>{error}</p>}
     {items.length > 0 && <table style={tableStyle}><thead><tr><th style={thStyle}>Phrase</th><th style={thStyle}>Observed</th><th style={thStyle}>Completeness</th><th style={thStyle}>Position context</th><th style={thStyle}></th></tr></thead><tbody>{items.map((item) => <tr key={item.phrase} style={{ borderBottom: "1px solid #21262d" }}><td style={tdStyle}>{item.phrase}</td><td style={tdStyle}>{item.observedCount}</td><td style={tdStyle}>{item.completeness}</td><td style={tdStyle}>{item.observedPositionContext ?? "—"}</td><td style={tdStyle}><button onClick={() => compare(item.phrase)} disabled={loading} style={{ ...btnStyle, fontSize: 11 }}>Compare</button></td></tr>)}</tbody></table>}
     {comparison && <ObservationComparisonView comparison={comparison} />}
+    <ObservationImportPanel clubId={clubId} onImported={() => { load(); }} />
   </section>;
+}
+
+type ImportPreview = {
+  total: number;
+  newCount: number;
+  alreadyExistsCount: number;
+  conflictCount: number;
+  invalidCount: number;
+  records: {
+    index: number;
+    matchId: string;
+    playerId: string;
+    phrase: string;
+    observedCount: number;
+    completeness: string;
+    status: "NEW" | "ALREADY_EXISTS" | "CONFLICT" | "INVALID";
+    reason: string | null;
+    existingObservedCount: number | null;
+    existingCompleteness: string | null;
+    existingNote: string | null;
+  }[];
+};
+
+type ImportResult = {
+  inserted: number;
+  alreadyExisted: number;
+  total: number;
+};
+
+function ObservationImportPanel({ clubId, onImported }: { clubId: string; onImported: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [json, setJson] = useState("");
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reset = () => { setPreview(null); setResult(null); setError(null); };
+
+  const doPreview = async () => {
+    reset();
+    let parsed: unknown;
+    try { parsed = JSON.parse(json); } catch { setError("Invalid JSON. Check syntax."); return; }
+    if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as Record<string, unknown>).observations)) {
+      setError('Expected format: { "observations": [ ... ] }'); return;
+    }
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/observations/preview`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: json,
+      });
+      if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.message ?? `HTTP ${response.status}`); }
+      setPreview(await response.json());
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Preview failed"); }
+    finally { setLoading(false); }
+  };
+
+  const doImport = async () => {
+    if (!preview || preview.conflictCount > 0 || preview.invalidCount > 0) return;
+    setLoading(true); setError(null);
+    try {
+      const response = await fetch(`/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/observations/import`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: json,
+      });
+      if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.message ?? `HTTP ${response.status}`); }
+      const importResult: ImportResult = await response.json();
+      setResult(importResult);
+      setPreview(null);
+      onImported();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Import failed"); }
+    finally { setLoading(false); }
+  };
+
+  if (!open) return <button onClick={() => setOpen(true)} style={{ ...btnStyle, marginTop: 8, fontSize: 11 }}>Import observations</button>;
+
+  const canImport = preview && preview.conflictCount === 0 && preview.invalidCount === 0 && preview.newCount > 0;
+  const statusColor = (status: string) => {
+    switch (status) {
+      case "NEW": return "#3fb950";
+      case "ALREADY_EXISTS": return "#8b949e";
+      case "CONFLICT": return "#f85149";
+      case "INVALID": return "#f85149";
+      default: return "#c9d1d9";
+    }
+  };
+
+  return <div style={{ marginTop: 12, padding: 10, border: "1px solid #30363d", borderRadius: 6, background: "#161b22" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+      <h4 style={{ color: "#c9d1d9", fontSize: 13, margin: 0 }}>Import observations</h4>
+      <button onClick={() => { setOpen(false); reset(); setJson(""); }} style={{ ...btnStyle, fontSize: 10 }}>Close</button>
+    </div>
+
+    {!result && <>
+      <textarea
+        aria-label="Observation import JSON"
+        value={json}
+        onChange={(event) => { setJson(event.target.value); reset(); }}
+        placeholder='{ "observations": [ { "matchId": "...", "playerId": "...", "phrase": "...", "observedCount": 1 } ] }'
+        style={{ ...inputStyle, width: "100%", minHeight: 120, fontFamily: "monospace", fontSize: 11, resize: "vertical" }}
+      />
+      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+        <button onClick={doPreview} disabled={loading || !json.trim()} style={btnStyle}>{loading && !preview ? "Validating…" : "Validate / Preview"}</button>
+        {canImport && <button onClick={doImport} disabled={loading} style={{ ...btnStyle, background: "#238636", borderColor: "#2ea043" }}>
+          {loading ? "Importing…" : `Import ${preview.newCount} observation${preview.newCount === 1 ? "" : "s"}`}
+        </button>}
+      </div>
+    </>}
+
+    {error && <p style={{ color: "#f85149", fontSize: 11, marginTop: 6 }}>{error}</p>}
+
+    {preview && <div style={{ marginTop: 8 }}>
+      <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#c9d1d9", marginBottom: 8 }}>
+        <span><strong>{preview.total}</strong> records</span>
+        <span style={{ color: "#3fb950" }}>{preview.newCount} NEW</span>
+        <span style={{ color: "#8b949e" }}>{preview.alreadyExistsCount} ALREADY EXISTS</span>
+        <span style={{ color: preview.conflictCount > 0 ? "#f85149" : "#8b949e" }}>{preview.conflictCount} CONFLICT</span>
+        <span style={{ color: preview.invalidCount > 0 ? "#f85149" : "#8b949e" }}>{preview.invalidCount} INVALID</span>
+      </div>
+      <div style={{ maxHeight: 300, overflowY: "auto", overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead><tr>
+            <th style={thStyle}>#</th>
+            <th style={thStyle}>Match</th>
+            <th style={thStyle}>Player</th>
+            <th style={thStyle}>Phrase</th>
+            <th style={thStyle}>Count</th>
+            <th style={thStyle}>Completeness</th>
+            <th style={thStyle}>Status</th>
+            <th style={thStyle}>Reason</th>
+          </tr></thead>
+          <tbody>{preview.records.map((record) => <tr key={record.index} style={{ borderBottom: "1px solid #21262d" }}>
+            <td style={tdStyle}>{record.index}</td>
+            <td style={{ ...tdStyle, fontSize: 10 }}>{record.matchId.slice(-8)}</td>
+            <td style={{ ...tdStyle, fontSize: 10 }}>{record.playerId.slice(-8)}</td>
+            <td style={tdStyle}>{record.phrase}</td>
+            <td style={tdStyle}>{record.observedCount}</td>
+            <td style={tdStyle}>{record.completeness}</td>
+            <td style={{ ...tdStyle, color: statusColor(record.status), fontWeight: 600 }}>{record.status}</td>
+            <td style={{ ...tdStyle, fontSize: 10, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{record.reason ?? "—"}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+    </div>}
+
+    {result && <div style={{ marginTop: 8, padding: 8, background: "#0d1117", borderRadius: 4 }}>
+      <p style={{ color: "#3fb950", fontSize: 12, margin: 0 }}>Import complete: {result.inserted} inserted, {result.alreadyExisted} already existed ({result.total} total).</p>
+      <button onClick={() => { setResult(null); setJson(""); reset(); }} style={{ ...btnStyle, marginTop: 6, fontSize: 11 }}>New import</button>
+    </div>}
+  </div>;
 }
 
 export function ObservationComparisonView({ comparison }: { comparison: ObservationComparison }) {

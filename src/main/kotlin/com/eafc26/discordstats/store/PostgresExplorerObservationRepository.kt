@@ -5,12 +5,15 @@ import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.explorer.ExplorerObservation
 import com.eafc26.discordstats.explorer.ExplorerObservationRepository
 import com.eafc26.discordstats.explorer.ObservationCompleteness
+import com.eafc26.discordstats.explorer.ObservationIdentityKey
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.transaction.support.TransactionTemplate
 import java.sql.ResultSet
 import java.time.Instant
 
 class PostgresExplorerObservationRepository(
     private val jdbcTemplate: JdbcTemplate,
+    private val transactions: TransactionTemplate? = null,
 ) : ExplorerObservationRepository {
     override fun save(observation: ExplorerObservation): ExplorerObservation = jdbcTemplate.queryForObject(
         """
@@ -76,6 +79,60 @@ class PostgresExplorerObservationRepository(
             { rs, _ -> read(rs) },
             clubId.value, playerId, limit,
         )
+    }
+
+    override fun findByIdentities(clubId: ClubId, keys: Collection<ObservationIdentityKey>): List<ExplorerObservation> {
+        require(keys.size <= 50) { "batch lookup limited to 50 keys" }
+        if (keys.isEmpty()) return emptyList()
+        val uniqueKeys = keys.toSet()
+        val conditions = uniqueKeys.joinToString(" OR ") { "( match_id = ? AND player_id = ? AND phrase = ? )" }
+        val params = mutableListOf<Any>(clubId.value)
+        uniqueKeys.forEach { key -> params.addAll(listOf(key.matchId.value, key.playerId, key.phrase)) }
+        return jdbcTemplate.query(
+            """
+            SELECT club_id, match_id, player_id, phrase, observed_count, completeness, note, observed_position_context, created_at, updated_at
+            FROM explorer_observations
+            WHERE club_id = ? AND ($conditions)
+            """.trimIndent(),
+            { rs, _ -> read(rs) },
+            *params.toTypedArray(),
+        )
+    }
+
+    override fun insertIfAbsent(clubId: ClubId, observations: List<ExplorerObservation>): Int {
+        require(observations.size <= 50) { "batch insert limited to 50 observations" }
+        require(observations.all { it.clubId == clubId }) { "all observations must belong to the same club" }
+        if (observations.isEmpty()) return 0
+        val tx = requireNotNull(transactions) { "TransactionTemplate required for atomic bulk insert" }
+        return tx.execute { _ ->
+            var inserted = 0
+            for (observation in observations) {
+                val rows = jdbcTemplate.update(
+                    """
+                    INSERT INTO explorer_observations
+                        (club_id, match_id, player_id, phrase, observed_count, completeness, note, observed_position_context, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, now(), now())
+                    ON CONFLICT (club_id, match_id, player_id, phrase) DO NOTHING
+                    """.trimIndent(),
+                    observation.clubId.value,
+                    observation.matchId.value,
+                    observation.playerId,
+                    observation.phrase,
+                    observation.observedCount,
+                    observation.completeness.name,
+                    observation.note,
+                    observation.observedPositionContext,
+                )
+                inserted += rows
+            }
+            if (inserted != observations.size) {
+                throw IllegalStateException(
+                    "Concurrent conflict detected: expected ${observations.size} inserts but $inserted succeeded. " +
+                        "Another request may have inserted observations after preview. No records were written.",
+                )
+            }
+            inserted
+        }!!
     }
 
     private fun read(rs: ResultSet) = ExplorerObservation(

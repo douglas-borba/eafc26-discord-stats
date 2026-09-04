@@ -20,6 +20,8 @@ import { GET as novelMetrics } from "@/app/api/admin/explorer/clubs/[clubId]/nov
 import { GET as positionObservations } from "@/app/api/admin/explorer/clubs/[clubId]/players/[playerId]/position-observations/route";
 import { GET as getExplorerObservations, POST as saveExplorerObservation } from "@/app/api/admin/explorer/clubs/[clubId]/matches/[matchId]/players/[playerId]/observations/route";
 import { GET as compareExplorerObservations } from "@/app/api/admin/explorer/clubs/[clubId]/players/[playerId]/observation-comparison/route";
+import { POST as previewImport } from "@/app/api/admin/explorer/clubs/[clubId]/observations/preview/route";
+import { POST as executeImport } from "@/app/api/admin/explorer/clubs/[clubId]/observations/import/route";
 
 const originalBackendUrl = process.env.BACKEND_URL;
 const clubContext = { params: Promise.resolve({ clubId: "8874106" }) };
@@ -410,5 +412,73 @@ describe("administrative BFF", () => {
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toMatchObject({ error: "csrf_unavailable" });
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("rejects unauthenticated observation preview", async () => {
+    vi.mocked(requireAdmin).mockResolvedValueOnce({ kind: "anonymous" });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await previewImport(new Request("https://dashboard.test", { method: "POST", body: '{"observations":[]}' }), explorerContext);
+
+    expect(response.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects unauthenticated observation import", async () => {
+    vi.mocked(requireAdmin).mockResolvedValueOnce({ kind: "anonymous" });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await executeImport(new Request("https://dashboard.test", { method: "POST", body: '{"observations":[]}' }), explorerContext);
+
+    expect(response.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("proxies authenticated observation preview with CSRF", async () => {
+    const previewResult = { total: 1, newCount: 1, alreadyExistsCount: 0, conflictCount: 0, invalidCount: 0, records: [] };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(csrf())
+      .mockResolvedValueOnce(json(previewResult));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await previewImport(new Request("https://dashboard.test", { method: "POST", body: '{"observations":[]}' }), explorerContext);
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const previewCall = fetchMock.mock.calls[1];
+    expect(previewCall[0]).toContain("/observations/preview");
+    const headers = previewCall[1].headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer test-admin-token");
+    expect(headers.get("X-XSRF-TOKEN")).toBe("server-token");
+  });
+
+  it("proxies authenticated observation import with CSRF", async () => {
+    const importResult = { inserted: 1, alreadyExisted: 0, total: 1 };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(csrf())
+      .mockResolvedValueOnce(json(importResult));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await executeImport(new Request("https://dashboard.test", { method: "POST", body: '{"observations":[]}' }), explorerContext);
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const importCall = fetchMock.mock.calls[1];
+    expect(importCall[0]).toContain("/observations/import");
+    const headers = importCall[1].headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer test-admin-token");
+  });
+
+  it("internal token remains server-side in import routes", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(csrf())
+      .mockResolvedValueOnce(json({ total: 0 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await previewImport(new Request("https://dashboard.test", { method: "POST", body: '{"observations":[]}' }), explorerContext);
+    const body = await response.text();
+    expect(body).not.toContain("test-admin-token");
   });
 });

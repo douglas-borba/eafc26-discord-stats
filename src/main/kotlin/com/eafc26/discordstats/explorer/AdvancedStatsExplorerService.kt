@@ -401,6 +401,198 @@ class AdvancedStatsExplorerService(
 
     fun saveObservation(observation: ExplorerObservation): ExplorerObservation = observationRepository.save(observation)
 
+    // ── Bulk import ─────────────────────────────────────────────────────
+
+    enum class ObservationImportStatus { NEW, ALREADY_EXISTS, CONFLICT, INVALID }
+
+    data class ObservationImportRecord(
+        val index: Int,
+        val matchId: String,
+        val playerId: String,
+        val phrase: String,
+        val observedCount: Int,
+        val completeness: ObservationCompleteness,
+        val status: ObservationImportStatus,
+        val reason: String? = null,
+        val existingObservedCount: Int? = null,
+        val existingCompleteness: ObservationCompleteness? = null,
+        val existingNote: String? = null,
+    )
+
+    data class ObservationImportPreview(
+        val total: Int,
+        val newCount: Int,
+        val alreadyExistsCount: Int,
+        val conflictCount: Int,
+        val invalidCount: Int,
+        val records: List<ObservationImportRecord>,
+    )
+
+    data class ObservationImportResult(
+        val inserted: Int,
+        val alreadyExisted: Int,
+        val total: Int,
+    )
+
+    data class ObservationImportInput(
+        val matchId: String,
+        val playerId: String,
+        val phrase: String,
+        val observedCount: Int,
+        val completeness: ObservationCompleteness = ObservationCompleteness.AT_LEAST,
+        val note: String? = null,
+        val observedPositionContext: String? = null,
+    )
+
+    fun previewObservationImport(clubId: ClubId, inputs: List<ObservationImportInput>): ObservationImportPreview {
+        if (inputs.isEmpty()) return ObservationImportPreview(0, 0, 0, 0, 1, listOf(
+            ObservationImportRecord(0, "", "", "", 0, ObservationCompleteness.AT_LEAST, ObservationImportStatus.INVALID, "Empty payload"),
+        ))
+        if (inputs.size > 50) return ObservationImportPreview(inputs.size, 0, 0, 0, 1, listOf(
+            ObservationImportRecord(0, "", "", "", 0, ObservationCompleteness.AT_LEAST, ObservationImportStatus.INVALID, "Batch exceeds 50 observation limit (received ${inputs.size})"),
+        ))
+
+        val records = mutableListOf<ObservationImportRecord>()
+
+        // Phase 1: validate each record individually
+        val validInputs = mutableListOf<Pair<Int, ObservationImportInput>>()
+        for ((index, input) in inputs.withIndex()) {
+            val validationError = validateInput(input)
+            if (validationError != null) {
+                records.add(ObservationImportRecord(index, input.matchId, input.playerId, input.phrase, input.observedCount, input.completeness, ObservationImportStatus.INVALID, validationError))
+            } else {
+                validInputs.add(index to input)
+            }
+        }
+
+        // Phase 2: detect intra-batch duplicates
+        val grouped = validInputs.groupBy { (_, input) -> Triple(input.matchId, input.playerId, input.phrase) }
+        val duplicateConflicts = mutableSetOf<Triple<String, String, String>>()
+        val deduplicatedInputs = mutableListOf<Pair<Int, ObservationImportInput>>()
+        for ((key, group) in grouped) {
+            if (group.size > 1) {
+                val allIdentical = group.all { (_, inp) ->
+                    inp.observedCount == group[0].second.observedCount &&
+                        inp.completeness == group[0].second.completeness &&
+                        inp.note == group[0].second.note &&
+                        inp.observedPositionContext == group[0].second.observedPositionContext
+                }
+                if (allIdentical) {
+                    deduplicatedInputs.add(group[0])
+                    for (dup in group.drop(1)) {
+                        records.add(ObservationImportRecord(dup.first, dup.second.matchId, dup.second.playerId, dup.second.phrase, dup.second.observedCount, dup.second.completeness, ObservationImportStatus.ALREADY_EXISTS, "Duplicate of record ${group[0].first} (identical, deduplicated)"))
+                    }
+                } else {
+                    duplicateConflicts.add(key)
+                    for ((idx, inp) in group) {
+                        records.add(ObservationImportRecord(idx, inp.matchId, inp.playerId, inp.phrase, inp.observedCount, inp.completeness, ObservationImportStatus.CONFLICT, "Conflicting duplicate within batch for same identity"))
+                    }
+                }
+            } else {
+                deduplicatedInputs.add(group[0])
+            }
+        }
+
+        // Phase 3: batch-validate matches and players
+        val uniqueMatchIds = deduplicatedInputs.map { (_, inp) -> MatchId(inp.matchId) }.toSet()
+        val canonicalMatches = matchRepository.findByIds(clubId, uniqueMatchIds).associateBy { it.matchId }
+        val matchPlayerSets = mutableMapOf<MatchId, Set<String>>()
+        for ((matchId, canonical) in canonicalMatches) {
+            val perspective = canonical.interpretation.perspectiveClubId
+            val ourPlayers = canonical.footballMatch.participants
+                .firstOrNull { it.club.id == perspective }
+                ?.players?.map { it.player.id.value }?.toSet() ?: emptySet()
+            matchPlayerSets[matchId] = ourPlayers
+        }
+
+        // Phase 4: classify against canonical data
+        val canonicallyValid = mutableListOf<Pair<Int, ObservationImportInput>>()
+        for ((index, input) in deduplicatedInputs) {
+            val mid = MatchId(input.matchId)
+            if (mid !in canonicalMatches) {
+                records.add(ObservationImportRecord(index, input.matchId, input.playerId, input.phrase, input.observedCount, input.completeness, ObservationImportStatus.INVALID, "Match not found in canonical data"))
+                continue
+            }
+            val canonical = canonicalMatches[mid]!!
+            if (canonical.interpretation.perspectiveClubId != clubId) {
+                records.add(ObservationImportRecord(index, input.matchId, input.playerId, input.phrase, input.observedCount, input.completeness, ObservationImportStatus.INVALID, "Match does not belong to this club"))
+                continue
+            }
+            val playerIds = matchPlayerSets[mid] ?: emptySet()
+            if (input.playerId !in playerIds) {
+                records.add(ObservationImportRecord(index, input.matchId, input.playerId, input.phrase, input.observedCount, input.completeness, ObservationImportStatus.INVALID, "Player not found in this match"))
+                continue
+            }
+            canonicallyValid.add(index to input)
+        }
+
+        // Phase 5: batch lookup existing observations
+        val identityKeys = canonicallyValid.map { (_, inp) -> ObservationIdentityKey(MatchId(inp.matchId), inp.playerId, inp.phrase) }
+        val existingObs = observationRepository.findByIdentities(clubId, identityKeys)
+            .associateBy { Triple(it.matchId.value, it.playerId, it.phrase) }
+
+        for ((index, input) in canonicallyValid) {
+            val key = Triple(input.matchId, input.playerId, input.phrase)
+            val existing = existingObs[key]
+            if (existing == null) {
+                records.add(ObservationImportRecord(index, input.matchId, input.playerId, input.phrase, input.observedCount, input.completeness, ObservationImportStatus.NEW))
+            } else {
+                val conflicts = mutableListOf<String>()
+                if (existing.observedCount != input.observedCount) conflicts.add("observedCount: existing=${existing.observedCount}, submitted=${input.observedCount}")
+                if (existing.completeness != input.completeness) conflicts.add("completeness: existing=${existing.completeness}, submitted=${input.completeness}")
+                if (existing.note != input.note) conflicts.add("note: existing=${existing.note}, submitted=${input.note}")
+                if (existing.observedPositionContext != input.observedPositionContext) conflicts.add("observedPositionContext: existing=${existing.observedPositionContext}, submitted=${input.observedPositionContext}")
+                if (conflicts.isEmpty()) {
+                    records.add(ObservationImportRecord(index, input.matchId, input.playerId, input.phrase, input.observedCount, input.completeness, ObservationImportStatus.ALREADY_EXISTS, "Identical observation already exists"))
+                } else {
+                    records.add(ObservationImportRecord(index, input.matchId, input.playerId, input.phrase, input.observedCount, input.completeness, ObservationImportStatus.CONFLICT, conflicts.joinToString("; "), existing.observedCount, existing.completeness, existing.note))
+                }
+            }
+        }
+
+        records.sortBy { it.index }
+        val newCount = records.count { it.status == ObservationImportStatus.NEW }
+        val alreadyExistsCount = records.count { it.status == ObservationImportStatus.ALREADY_EXISTS }
+        val conflictCount = records.count { it.status == ObservationImportStatus.CONFLICT }
+        val invalidCount = records.count { it.status == ObservationImportStatus.INVALID }
+        return ObservationImportPreview(inputs.size, newCount, alreadyExistsCount, conflictCount, invalidCount, records)
+    }
+
+    fun importObservations(clubId: ClubId, inputs: List<ObservationImportInput>): ObservationImportResult {
+        val preview = previewObservationImport(clubId, inputs)
+        if (preview.conflictCount > 0) throw IllegalStateException("Cannot import: ${preview.conflictCount} conflict(s) detected")
+        if (preview.invalidCount > 0) throw IllegalStateException("Cannot import: ${preview.invalidCount} invalid record(s) detected")
+
+        val newRecords = preview.records.filter { it.status == ObservationImportStatus.NEW }
+        if (newRecords.isEmpty()) return ObservationImportResult(0, preview.alreadyExistsCount, preview.total)
+
+        val inputsByKey = inputs.associateBy { Triple(it.matchId, it.playerId, it.phrase) }
+        val toInsert = newRecords.mapNotNull { record ->
+            val input = inputsByKey[Triple(record.matchId, record.playerId, record.phrase)] ?: return@mapNotNull null
+            ExplorerObservation(
+                clubId = clubId,
+                matchId = MatchId(input.matchId),
+                playerId = input.playerId,
+                phrase = input.phrase,
+                observedCount = input.observedCount,
+                completeness = input.completeness,
+                note = input.note,
+                observedPositionContext = input.observedPositionContext,
+            )
+        }
+
+        val inserted = observationRepository.insertIfAbsent(clubId, toInsert)
+        return ObservationImportResult(inserted, preview.alreadyExistsCount, preview.total)
+    }
+
+    private fun validateInput(input: ObservationImportInput): String? {
+        if (input.phrase.isBlank()) return "phrase must not be blank"
+        if (input.observedCount < 0) return "observedCount must be non-negative"
+        if (input.matchId.isBlank()) return "matchId must not be blank"
+        if (input.playerId.isBlank()) return "playerId must not be blank"
+        return null
+    }
+
     /**
      * Bounded, evidence-only comparison. Every available RAW namespace joins
      * the comparison; an absent code in an available sparse namespace is zero,
