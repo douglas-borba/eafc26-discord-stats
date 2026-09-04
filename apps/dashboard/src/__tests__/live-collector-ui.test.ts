@@ -8,6 +8,7 @@ const read = (path: string) => readFileSync(resolve(root, path), "utf8");
 describe("live collector UI", () => {
   const explorer = read("components/admin/advanced-stats-explorer.tsx");
   const styles = read("app/globals.css");
+  const draftLifecycle = read("lib/live-collector-draft.ts");
 
   it("defines LiveCollector component", () => {
     expect(explorer).toContain("function LiveCollector");
@@ -105,14 +106,19 @@ describe("live collector UI", () => {
     expect(explorer).toContain("Filtrar frases");
   });
 
-  it("keeps phrase positions stable while counts change", () => {
+  it("sorts the combined visible collection alphabetically while keeping count changes out of ordering", () => {
     const orderSection = explorer.slice(explorer.indexOf("const orderedPhrases"), explorer.indexOf("// Association: load recent matches"));
-    expect(orderSection).toContain("phraseOrder.filter");
-    expect(orderSection).not.toContain(".sort(");
+    expect(orderSection).toContain("sortLiveFeedbackPhrases(phraseOrder.filter");
     expect(orderSection).toContain("? orderedPhrases.filter");
     expect(orderSection).toContain(": orderedPhrases");
     expect(explorer).toContain("Math.max(0, current - 1)");
     expect(explorer).toContain("phrases: { ...d.phrases, [trimmed]: 0 }");
+  });
+
+  it("keeps normal row-major grid placement for alphabetical DOM order", () => {
+    const gridSection = styles.slice(styles.indexOf(".live-collector-phrase-grid"), styles.indexOf(".live-collector-phrase-item"));
+    expect(gridSection).toContain("display: grid");
+    expect(gridSection).not.toContain("grid-auto-flow: column");
   });
 
   it("stores an optional opponent reminder and restores older drafts", () => {
@@ -120,14 +126,18 @@ describe("live collector UI", () => {
     expect(explorer).toContain('opponentName: typeof parsed.opponentName === "string" ? parsed.opponentName.trim() : ""');
     expect(explorer).toContain("localStorage.getItem(DRAFT_STORAGE_KEY)");
     expect(explorer).toContain("localStorage.setItem(DRAFT_STORAGE_KEY");
-    expect(explorer).toContain('opponentName: ""');
+    expect(draftLifecycle).toContain('opponentName: ""');
     expect(explorer).toContain("Adversário (lembrete local)");
     expect(explorer).toContain("Adversário da partida");
   });
 
-  it("still starts a collection before canonical match and player IDs exist", () => {
-    expect(explorer).toContain("matchId: matchId ?? null");
-    expect(explorer).toContain("playerId: playerId ?? null");
+  it("starts every new collection without a canonical match or player association", () => {
+    expect(explorer).toContain("createLiveCollectorDraft(clubId)");
+    expect(explorer).not.toContain("matchId: matchId ?? null");
+    expect(explorer).not.toContain("playerId: playerId ?? null");
+    expect(draftLifecycle).toContain("matchId: null");
+    expect(draftLifecycle).toContain("playerId: null");
+    expect(draftLifecycle).toContain("associationDraftStartedAt: null");
   });
 
   it("shows the opponent reminder throughout collect, review, and association", () => {
@@ -148,8 +158,8 @@ describe("live collector UI", () => {
   });
 
   it("initializes only new drafts with the frontend-owned default phrase collection", () => {
-    expect(explorer).toContain("createDefaultLiveFeedbackCounters()");
-    expect(explorer).toContain("phraseCollectionVersion: 1");
+    expect(draftLifecycle).toContain("createDefaultLiveFeedbackCounters()");
+    expect(draftLifecycle).toContain("phraseCollectionVersion: 1");
     expect(explorer).toContain("current.phraseCollectionVersion !== 1");
   });
 
@@ -166,8 +176,9 @@ describe("live collector UI", () => {
     );
     const previewPayload = collectorCode.slice(collectorCode.indexOf("const doPreview"), collectorCode.indexOf("const doImport"));
     const importPayload = collectorCode.slice(collectorCode.indexOf("const doImport"), collectorCode.indexOf("if (!open)"));
-    expect(previewPayload).toContain(".filter(([, count]) => count > 0)");
-    expect(importPayload).toContain(".filter(([, count]) => count > 0)");
+    expect(previewPayload).toContain("buildLiveCollectorObservationInputs(draft)");
+    expect(importPayload).toContain("buildLiveCollectorObservationInputs(draft)");
+    expect(draftLifecycle).toContain(".filter(([, count]) => count > 0)");
   });
 
   it("keeps spelling assistance local, explicit, and bounded", () => {
@@ -187,6 +198,20 @@ describe("live collector UI", () => {
     expect(explorer).toContain("Associar partida");
     expect(explorer).toContain("selectMatch");
     expect(explorer).toContain("selectPlayer");
+    expect(explorer).toContain("Trocar associação");
+  });
+
+  it("guards Preview and Import with the current draft association invariant", () => {
+    const collectorCode = explorer.slice(
+      explorer.indexOf("function LiveCollector"),
+      explorer.indexOf("export function ObservationComparisonView"),
+    );
+    const previewCode = collectorCode.slice(collectorCode.indexOf("const doPreview"), collectorCode.indexOf("const doImport"));
+    const importCode = collectorCode.slice(collectorCode.indexOf("const doImport"), collectorCode.indexOf("if (!open)"));
+    expect(previewCode).toContain("hasCurrentLiveCollectorAssociation(draft)");
+    expect(importCode).toContain("hasCurrentLiveCollectorAssociation(draft)");
+    expect(previewCode).toContain("beginAssociation");
+    expect(importCode).toContain("beginAssociation");
   });
 
   it("keeps association manual and does not call EA from the collector", () => {

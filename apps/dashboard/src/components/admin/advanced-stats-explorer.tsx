@@ -3,11 +3,20 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
 import {
   DEFAULT_LIVE_FEEDBACK_PHRASES,
-  createDefaultLiveFeedbackCounters,
   findLiveFeedbackSuggestions,
   normalizeLiveFeedbackPhrase,
+  sortLiveFeedbackPhrases,
   uniqueExactPhrases,
 } from "@/lib/live-feedback-phrases";
+import {
+  buildLiveCollectorObservationInputs,
+  clearLiveCollectorAssociation,
+  createLiveCollectorDraft,
+  hasCurrentLiveCollectorAssociation,
+  selectLiveCollectorMatch,
+  selectLiveCollectorPlayer,
+  type CollectorDraft,
+} from "@/lib/live-collector-draft";
 
 type MatchSummary = {
   matchId: string;
@@ -681,7 +690,7 @@ export function AdvancedStatsExplorer() {
       {view === "novel" && <NovelMetricsView data={novel} detail={novelDetail} loading={loading} onRun={loadNovel} onInspect={loadNovelDetail} onCloseDetail={() => setNovelDetail(null)} onBack={() => setView("matches")} />}
       {view === "position" && <PositionObservationsView data={positionObservations} onBack={() => setView("detail")} />}
 
-      {activeClubId && <LiveCollector clubId={activeClubId} matchId={playerData?.matchId} playerId={playerData?.playerId} playerName={playerData?.platformName ?? playerData?.playerId} onSaved={() => { if (playerData) { /* detail reload handled by parent state */ } }} />}
+      {activeClubId && <LiveCollector clubId={activeClubId} onSaved={() => { if (playerData) { /* detail reload handled by parent state */ } }} />}
     </div>
   );
 }
@@ -1142,20 +1151,6 @@ function ObservationImportPanel({ clubId, onImported }: { clubId: string; onImpo
 
 const DRAFT_STORAGE_KEY = "fc-stats-live-collector-draft";
 
-type CollectorDraft = {
-  clubId: string;
-  matchId: string | null;
-  playerId: string | null;
-  playerName: string | null;
-  /** Local-only reminder. It never participates in match association or import. */
-  opponentName: string;
-  phrases: Record<string, number>;
-  /** Marks drafts created with the collector-owned shortcut collection. */
-  phraseCollectionVersion?: 1;
-  completeness: "AT_LEAST" | "EXACT";
-  startedAt: string;
-};
-
 type CollectorPhase = "collect" | "review" | "associate" | "save";
 
 function readDraft(): CollectorDraft | null {
@@ -1168,6 +1163,9 @@ function readDraft(): CollectorDraft | null {
     return {
       ...parsed,
       opponentName: typeof parsed.opponentName === "string" ? parsed.opponentName.trim() : "",
+      associationDraftStartedAt: typeof parsed.associationDraftStartedAt === "string"
+        ? parsed.associationDraftStartedAt
+        : null,
     } as CollectorDraft;
   } catch { return null; }
 }
@@ -1185,11 +1183,8 @@ function clearDraft() {
   try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch {}
 }
 
-function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
+function LiveCollector({ clubId, onSaved }: {
   clubId: string;
-  matchId?: string | null;
-  playerId?: string | null;
-  playerName?: string | null;
   onSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -1218,8 +1213,8 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
     }
   }, []);
 
-  // Load phrase palette (requires a known playerId; without one, manual entry still works)
-  const palettePlayerId = draft?.playerId ?? playerId;
+  // Load phrase palette only after this collection explicitly selects a player.
+  const palettePlayerId = draft?.playerId;
   useEffect(() => {
     if (!open || !palettePlayerId || (draft && draft.clubId !== clubId)) return;
     fetch(`/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/players/${encodeURIComponent(palettePlayerId)}/observation-phrases`, { cache: "no-store" })
@@ -1258,17 +1253,7 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
   };
 
   const startNew = () => {
-    const d: CollectorDraft = {
-      clubId,
-      matchId: matchId ?? null,
-      playerId: playerId ?? null,
-      playerName: playerName ?? null,
-      opponentName: "",
-      phrases: createDefaultLiveFeedbackCounters(),
-      phraseCollectionVersion: 1,
-      completeness: "AT_LEAST",
-      startedAt: new Date().toISOString(),
-    };
+    const d = createLiveCollectorDraft(clubId);
     setDraft(d);
     setPhraseOrder([...DEFAULT_LIVE_FEEDBACK_PHRASES]);
     writeDraft(d);
@@ -1279,6 +1264,9 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
     setNewPhrase("");
     setPhraseAssistNotice(null);
     setDismissedReviewSuggestions([]);
+    setMatches([]);
+    setPlayers([]);
+    setConfirmDiscard(false);
   };
 
   const handleOpen = () => {
@@ -1349,8 +1337,11 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
     addPhraseAsNew();
   };
 
-  // The separate order state includes zero-count palette shortcuts without reordering on count changes.
-  const orderedPhrases = draft ? phraseOrder.filter((phrase) => phraseCandidates.includes(phrase)) : [];
+  // The separate order state includes zero-count palette shortcuts. Sorting is presentation-only,
+  // so counts and persisted evidence never affect a phrase's visual position.
+  const orderedPhrases = draft
+    ? sortLiveFeedbackPhrases(phraseOrder.filter((phrase) => phraseCandidates.includes(phrase)))
+    : [];
   const normalizedFilter = normalizeLiveFeedbackPhrase(filter);
   const filteredPhrases = normalizedFilter
     ? orderedPhrases.filter((phrase) => normalizeLiveFeedbackPhrase(phrase).includes(normalizedFilter))
@@ -1394,30 +1385,40 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
 
   const selectMatch = async (mid: string) => {
     setLoading(true);
+    setError(null);
+    setPreview(null);
+    setPlayers([]);
+    updateDraft((d) => selectLiveCollectorMatch(d, mid));
     try {
       const data = await fetch(`/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/matches/${encodeURIComponent(mid)}/players`, { cache: "no-store" }).then((r) => r.json());
       setPlayers(data);
-      updateDraft((d) => ({ ...d, matchId: mid }));
     } catch { setError("Failed to load players"); }
     finally { setLoading(false); }
   };
 
   const selectPlayer = (pid: string, name: string | null) => {
-    updateDraft((d) => ({ ...d, playerId: pid, playerName: name ?? pid }));
+    setPreview(null);
+    updateDraft((d) => selectLiveCollectorPlayer(d, pid, name));
+  };
+
+  const beginAssociation = (message?: string) => {
+    setPreview(null);
+    setSaveResult(null);
+    setError(message ?? null);
+    setPlayers([]);
+    setMatches([]);
+    updateDraft(clearLiveCollectorAssociation);
+    void loadMatches();
   };
 
   // Save flow: preview then import
   const doPreview = async () => {
-    if (!draft || !draft.matchId || !draft.playerId) return;
-    const observations = Object.entries(draft.phrases)
-      .filter(([, count]) => count > 0)
-      .map(([phrase, observedCount]) => ({
-        matchId: draft.matchId,
-        playerId: draft.playerId,
-        phrase,
-        observedCount,
-        completeness: draft.completeness,
-      }));
+    if (!draft) return;
+    if (!hasCurrentLiveCollectorAssociation(draft)) {
+      beginAssociation("Associe a partida e o jogador desta coleta antes de validar.");
+      return;
+    }
+    const observations = buildLiveCollectorObservationInputs(draft);
     if (observations.length === 0) { setError("No observations with count > 0"); return; }
     setLoading(true); setError(null);
     try {
@@ -1433,17 +1434,13 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
   };
 
   const doImport = async () => {
-    if (!draft || !draft.matchId || !draft.playerId || !preview) return;
+    if (!draft || !preview) return;
+    if (!hasCurrentLiveCollectorAssociation(draft)) {
+      beginAssociation("Associe a partida e o jogador desta coleta antes de salvar.");
+      return;
+    }
     if (preview.conflictCount > 0 || preview.invalidCount > 0) return;
-    const observations = Object.entries(draft.phrases)
-      .filter(([, count]) => count > 0)
-      .map(([phrase, observedCount]) => ({
-        matchId: draft.matchId,
-        playerId: draft.playerId,
-        phrase,
-        observedCount,
-        completeness: draft.completeness,
-      }));
+    const observations = buildLiveCollectorObservationInputs(draft);
     setLoading(true); setError(null);
     try {
       const response = await fetch(`/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/observations/import`, {
@@ -1500,11 +1497,12 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
     </div>;
   }
 
-  const canSave = draft.matchId && draft.playerId && activeCount > 0;
+  const hasCurrentAssociation = hasCurrentLiveCollectorAssociation(draft);
+  const canSave = hasCurrentAssociation && activeCount > 0;
 
   // SAVE phase
   if (phase === "save" && preview) {
-    const canImport = preview.conflictCount === 0 && preview.invalidCount === 0 && preview.newCount > 0;
+    const canImport = hasCurrentAssociation && preview.conflictCount === 0 && preview.invalidCount === 0 && preview.newCount > 0;
     return <div style={{ marginTop: 12, padding: 16, border: "1px solid #30363d", borderRadius: 8, background: "#161b22" }}>
       <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: "0 0 8px" }}>Revisão do import</h4>
       <div style={{ display: "flex", gap: 16, fontSize: 13, color: "#c9d1d9", marginBottom: 8, flexWrap: "wrap" }}>
@@ -1516,9 +1514,11 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
       {preview.records.filter((r) => r.status === "CONFLICT" || r.status === "INVALID").map((r) => (
         <p key={r.index} style={{ color: "#f85149", fontSize: 11, margin: 2 }}>{r.phrase}: {r.reason}</p>
       ))}
+      {!hasCurrentAssociation && <p style={{ color: "#f0883e", fontSize: 12, marginTop: 4 }}>A associação desta coleta precisa ser confirmada antes de salvar.</p>}
       {error && <p style={{ color: "#f85149", fontSize: 12, marginTop: 4 }}>{error}</p>}
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <button onClick={() => setPhase("review")} style={btnStyle}>← Voltar</button>
+        <button onClick={() => beginAssociation()} style={btnStyle}>Trocar associação</button>
         {canImport && <button onClick={doImport} disabled={loading} style={{ ...btnStyle, background: "#238636", borderColor: "#2ea043", fontSize: 14, padding: "10px 20px" }}>
           {loading ? "Salvando…" : `Salvar ${preview.newCount} observação${preview.newCount === 1 ? "" : "ões"}`}
         </button>}
@@ -1561,7 +1561,7 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
 
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <button onClick={() => setPhase("review")} style={btnStyle}>← Voltar</button>
-        {draft.matchId && draft.playerId && <button onClick={doPreview} disabled={loading || activeCount === 0}
+        {hasCurrentAssociation && <button onClick={doPreview} disabled={loading || activeCount === 0}
           style={{ ...btnStyle, background: "#238636", borderColor: "#2ea043", fontSize: 14, padding: "10px 20px" }}>
           {loading ? "Validando…" : "Validar e salvar"}
         </button>}
@@ -1576,7 +1576,8 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
       <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: "0 0 8px" }}>Revisão da coleta</h4>
       <p style={{ color: "#8b949e", fontSize: 12, margin: "0 0 8px" }}>{totalCount} feedback{totalCount !== 1 ? "s" : ""} · {activeCount} frase{activeCount !== 1 ? "s" : ""}</p>
       {draft.opponentName && <p style={{ color: "#8b949e", fontSize: 12, margin: "0 0 8px" }}>Coleta: vs. {draft.opponentName}</p>}
-      {draft.matchId && <p style={{ color: "#8b949e", fontSize: 11 }}>Partida: {draft.matchId.slice(-8)} · Jogador: {draft.playerName ?? draft.playerId?.slice(-8)}</p>}
+      {hasCurrentAssociation && <p style={{ color: "#8b949e", fontSize: 11 }}>Partida: {draft.matchId.slice(-8)} · Jogador: {draft.playerName ?? draft.playerId?.slice(-8)}</p>}
+      {!hasCurrentAssociation && (draft.matchId || draft.playerId) && <p style={{ color: "#f0883e", fontSize: 11 }}>A associação anterior precisa ser confirmada novamente para esta coleta.</p>}
 
       {reviewSuggestions.map(({ phrase, suggestedPhrase }) => (
         <div key={phrase} className="live-collector-review-suggestion">
@@ -1610,11 +1611,14 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
         <button onClick={() => setPhase("collect")} style={btnStyle}>← Editar</button>
         {canSave ? (
-          <button onClick={doPreview} disabled={loading} style={{ ...btnStyle, background: "#238636", borderColor: "#2ea043", fontSize: 14, padding: "10px 20px" }}>
-            {loading ? "Validando…" : "Validar e salvar"}
-          </button>
+          <>
+            <button onClick={doPreview} disabled={loading} style={{ ...btnStyle, background: "#238636", borderColor: "#2ea043", fontSize: 14, padding: "10px 20px" }}>
+              {loading ? "Validando…" : "Validar e salvar"}
+            </button>
+            <button onClick={() => beginAssociation()} disabled={loading} style={btnStyle}>Trocar associação</button>
+          </>
         ) : (
-          <button onClick={loadMatches} disabled={loading} style={{ ...btnStyle, fontSize: 14, padding: "10px 20px" }}>
+          <button onClick={() => beginAssociation()} disabled={loading} style={{ ...btnStyle, fontSize: 14, padding: "10px 20px" }}>
             {loading ? "Carregando…" : "Associar partida"}
           </button>
         )}

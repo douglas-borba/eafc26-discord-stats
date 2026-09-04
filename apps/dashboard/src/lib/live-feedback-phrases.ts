@@ -59,6 +59,23 @@ export function uniqueExactPhrases(phrases: readonly string[]): string[] {
   return [...new Set(phrases)];
 }
 
+const liveFeedbackPhraseCollator = new Intl.Collator("pt-BR", {
+  sensitivity: "base",
+  numeric: true,
+  usage: "sort",
+});
+
+/**
+ * Presentation-only ordering for collector shortcuts. Exact phrase literals
+ * remain untouched for drafts, review, Preview, and Import.
+ */
+export function sortLiveFeedbackPhrases(phrases: readonly string[]): string[] {
+  return uniqueExactPhrases(phrases).sort((left, right) => {
+    const primaryComparison = liveFeedbackPhraseCollator.compare(left, right);
+    return primaryComparison || left.localeCompare(right, "pt-BR", { sensitivity: "variant", numeric: true });
+  });
+}
+
 export function levenshteinDistance(left: string, right: string): number {
   if (left === right) return 0;
   if (left.length === 0) return right.length;
