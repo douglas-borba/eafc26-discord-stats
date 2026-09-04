@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
+import {
+  DEFAULT_LIVE_FEEDBACK_PHRASES,
+  createDefaultLiveFeedbackCounters,
+  findLiveFeedbackSuggestions,
+  normalizeLiveFeedbackPhrase,
+  uniqueExactPhrases,
+} from "@/lib/live-feedback-phrases";
 
 type MatchSummary = {
   matchId: string;
@@ -1083,6 +1090,8 @@ type CollectorDraft = {
   /** Local-only reminder. It never participates in match association or import. */
   opponentName: string;
   phrases: Record<string, number>;
+  /** Marks drafts created with the collector-owned shortcut collection. */
+  phraseCollectionVersion?: 1;
   completeness: "AT_LEAST" | "EXACT";
   startedAt: string;
 };
@@ -1126,7 +1135,11 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<CollectorDraft | null>(null);
   const [phase, setPhase] = useState<CollectorPhase>("collect");
+  const [historicalPalette, setHistoricalPalette] = useState<string[]>([]);
+  const [phraseOrder, setPhraseOrder] = useState<string[]>([]);
   const [newPhrase, setNewPhrase] = useState("");
+  const [phraseAssistNotice, setPhraseAssistNotice] = useState<string | null>(null);
+  const [dismissedReviewSuggestions, setDismissedReviewSuggestions] = useState<string[]>([]);
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1139,7 +1152,10 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
   // Load existing draft on mount
   useEffect(() => {
     const existing = readDraft();
-    if (existing) setDraft(existing);
+    if (existing) {
+      setDraft(existing);
+      setPhraseOrder(Object.keys(existing.phrases));
+    }
   }, []);
 
   // Load phrase palette (requires a known playerId; without one, manual entry still works)
@@ -1152,10 +1168,13 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
         const nextPalette = Array.isArray(phrases)
           ? [...new Set(phrases.filter((phrase): phrase is string => typeof phrase === "string" && phrase.trim().length > 0))]
           : [];
+        setHistoricalPalette(nextPalette);
+        setPhraseOrder((currentOrder) => uniqueExactPhrases([...currentOrder, ...nextPalette]));
 
-        // Seed a fetched palette once. Subsequent counter changes must never rearrange it.
+        // Only new drafts receive palette shortcuts in their persisted local draft.
+        // Restored drafts retain their phrase set exactly as it was collected.
         setDraft((current) => {
-          if (!current || current.clubId !== clubId || current.playerId !== palettePlayerId) return current;
+          if (!current || current.clubId !== clubId || current.playerId !== palettePlayerId || current.phraseCollectionVersion !== 1) return current;
           const missing = nextPalette.filter((phrase) => !(phrase in current.phrases));
           if (missing.length === 0) return current;
           const next = {
@@ -1185,16 +1204,21 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
       playerId: playerId ?? null,
       playerName: playerName ?? null,
       opponentName: "",
-      phrases: {},
+      phrases: createDefaultLiveFeedbackCounters(),
+      phraseCollectionVersion: 1,
       completeness: "AT_LEAST",
       startedAt: new Date().toISOString(),
     };
     setDraft(d);
+    setPhraseOrder([...DEFAULT_LIVE_FEEDBACK_PHRASES]);
     writeDraft(d);
     setPhase("collect");
     setError(null);
     setPreview(null);
     setSaveResult(null);
+    setNewPhrase("");
+    setPhraseAssistNotice(null);
+    setDismissedReviewSuggestions([]);
   };
 
   const handleOpen = () => {
@@ -1202,11 +1226,13 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
     const existing = readDraft();
     if (existing) {
       setDraft(existing);
+      setPhraseOrder(Object.keys(existing.phrases));
       setPhase("collect");
     }
   };
 
   const increment = (phrase: string) => {
+    setPhraseOrder((currentOrder) => uniqueExactPhrases([...currentOrder, phrase]));
     updateDraft((d) => ({ ...d, phrases: { ...d.phrases, [phrase]: (d.phrases[phrase] ?? 0) + 1 } }));
   };
 
@@ -1217,21 +1243,83 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
     });
   };
 
-  const addPhrase = () => {
+  const addPhraseAsNew = () => {
     const trimmed = newPhrase.trim();
     if (!trimmed) return;
     if (draft && !(trimmed in draft.phrases)) {
+      setPhraseOrder((currentOrder) => uniqueExactPhrases([...currentOrder, trimmed]));
       updateDraft((d) => ({ ...d, phrases: { ...d.phrases, [trimmed]: 0 } }));
     }
     setNewPhrase("");
+    setPhraseAssistNotice(null);
   };
 
   const totalCount = draft ? Object.values(draft.phrases).reduce((s, c) => s + c, 0) : 0;
   const activeCount = draft ? Object.values(draft.phrases).filter((c) => c > 0).length : 0;
 
-  // Object insertion order is the collector's stable visual order. Counts and filters never sort it.
-  const orderedPhrases = draft ? Object.keys(draft.phrases) : [];
-  const filteredPhrases = filter ? orderedPhrases.filter((p) => p.toLowerCase().includes(filter.toLowerCase())) : orderedPhrases;
+  const knownPhrases = useMemo(
+    () => uniqueExactPhrases([...DEFAULT_LIVE_FEEDBACK_PHRASES, ...historicalPalette]),
+    [historicalPalette],
+  );
+  const phraseCandidates = useMemo(
+    () => uniqueExactPhrases([...knownPhrases, ...Object.keys(draft?.phrases ?? {})]),
+    [draft?.phrases, knownPhrases],
+  );
+  const phraseSuggestions = useMemo(
+    () => findLiveFeedbackSuggestions(newPhrase, phraseCandidates.filter((phrase) => phrase !== newPhrase.trim())),
+    [newPhrase, phraseCandidates],
+  );
+
+  const useSuggestedPhrase = (phrase: string) => {
+    setPhraseOrder((currentOrder) => uniqueExactPhrases([...currentOrder, phrase]));
+    updateDraft((current) => ({
+      ...current,
+      phrases: { ...current.phrases, [phrase]: (current.phrases[phrase] ?? 0) + 1 },
+    }));
+    setNewPhrase("");
+    setPhraseAssistNotice(null);
+  };
+
+  const addPhrase = () => {
+    if (!newPhrase.trim()) return;
+    if (phraseSuggestions.length > 0) {
+      setPhraseAssistNotice("Escolha uma sugestão ou mantenha a frase como nova.");
+      return;
+    }
+    addPhraseAsNew();
+  };
+
+  // The separate order state includes zero-count palette shortcuts without reordering on count changes.
+  const orderedPhrases = draft ? phraseOrder.filter((phrase) => phraseCandidates.includes(phrase)) : [];
+  const normalizedFilter = normalizeLiveFeedbackPhrase(filter);
+  const filteredPhrases = normalizedFilter
+    ? orderedPhrases.filter((phrase) => normalizeLiveFeedbackPhrase(phrase).includes(normalizedFilter))
+    : orderedPhrases;
+
+  const reviewSuggestions = useMemo(() => {
+    if (!draft) return [];
+    return Object.entries(draft.phrases)
+      .filter(([phrase, count]) => count > 0 && !knownPhrases.includes(phrase) && !dismissedReviewSuggestions.includes(phrase))
+      .flatMap(([phrase]) => {
+        const suggestion = findLiveFeedbackSuggestions(phrase, knownPhrases)[0];
+        return suggestion && suggestion.kind !== "PREFIX" ? [{ phrase, suggestedPhrase: suggestion.phrase }] : [];
+      });
+  }, [draft, knownPhrases, dismissedReviewSuggestions]);
+
+  const mergeIntoKnownPhrase = (sourcePhrase: string, targetPhrase: string) => {
+    setPhraseOrder((currentOrder) => {
+      const withoutSource = currentOrder.filter((phrase) => phrase !== sourcePhrase);
+      return uniqueExactPhrases([...withoutSource, targetPhrase]);
+    });
+    updateDraft((current) => {
+      const sourceCount = current.phrases[sourcePhrase] ?? 0;
+      const { [sourcePhrase]: _, ...withoutSource } = current.phrases;
+      return {
+        ...current,
+        phrases: { ...withoutSource, [targetPhrase]: (withoutSource[targetPhrase] ?? 0) + sourceCount },
+      };
+    });
+  };
 
   // Association: load recent matches
   const loadMatches = async () => {
@@ -1430,6 +1518,17 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
       {draft.opponentName && <p style={{ color: "#8b949e", fontSize: 12, margin: "0 0 8px" }}>Coleta: vs. {draft.opponentName}</p>}
       {draft.matchId && <p style={{ color: "#8b949e", fontSize: 11 }}>Partida: {draft.matchId.slice(-8)} · Jogador: {draft.playerName ?? draft.playerId?.slice(-8)}</p>}
 
+      {reviewSuggestions.map(({ phrase, suggestedPhrase }) => (
+        <div key={phrase} className="live-collector-review-suggestion">
+          <strong>Possível frase já conhecida</strong>
+          <span>“{phrase}” → “{suggestedPhrase}”</span>
+          <div>
+            <button onClick={() => mergeIntoKnownPhrase(phrase, suggestedPhrase)} style={{ ...btnStyle, fontSize: 11, padding: "5px 8px" }}>Usar “{suggestedPhrase}”</button>
+            <button onClick={() => setDismissedReviewSuggestions((current) => [...current, phrase])} style={{ ...btnStyle, fontSize: 11, padding: "5px 8px" }}>Manter como está</button>
+          </div>
+        </div>
+      ))}
+
       {entries.map(([phrase, count]) => (
         <div key={phrase} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #21262d" }}>
           <span style={{ color: "#c9d1d9", fontSize: 14 }}>{phrase}</span>
@@ -1492,12 +1591,25 @@ function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
       <input className="live-collector-filter" aria-label="Filtrar frases" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filtrar frases…"
         style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }} />
       <div className="live-collector-new-phrase">
-        <input aria-label="Nova frase de feedback" value={newPhrase} onChange={(e) => setNewPhrase(e.target.value)}
+        <input aria-label="Nova frase de feedback" value={newPhrase} onChange={(e) => { setNewPhrase(e.target.value); setPhraseAssistNotice(null); }}
           onKeyDown={(e) => { if (e.key === "Enter") addPhrase(); }}
           placeholder="Nova frase EA…" style={{ ...inputStyle, minWidth: 0, flex: 1, fontSize: 13, padding: "8px 10px" }} />
-        <button onClick={addPhrase} disabled={!newPhrase.trim()} style={{ ...btnStyle, fontSize: 13, padding: "8px 12px", whiteSpace: "nowrap" }}>+ Frase</button>
+        <button onClick={phraseSuggestions.length > 0 ? addPhraseAsNew : addPhrase} disabled={!newPhrase.trim()} style={{ ...btnStyle, fontSize: 13, padding: "8px 12px", whiteSpace: "nowrap" }}>
+          {phraseSuggestions.length > 0 ? "Manter como nova" : "+ Frase"}
+        </button>
       </div>
     </div>
+
+    {newPhrase.trim() && phraseSuggestions.length > 0 && <div className="live-collector-suggestions" role="status">
+      <strong>Você quis dizer?</strong>
+      {phraseSuggestions.map((suggestion) => (
+        <button key={suggestion.phrase} onClick={() => useSuggestedPhrase(suggestion.phrase)} style={{ ...btnStyle, fontSize: 12, padding: "5px 8px" }}>
+          Usar “{suggestion.phrase}”
+        </button>
+      ))}
+    </div>}
+
+    {phraseAssistNotice && <p style={{ color: "#8b949e", fontSize: 12, margin: "0 0 8px" }}>{phraseAssistNotice}</p>}
 
     {/* Phrase counters */}
     <div className="live-collector-phrase-grid">

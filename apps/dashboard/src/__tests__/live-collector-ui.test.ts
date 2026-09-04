@@ -69,10 +69,16 @@ describe("live collector UI", () => {
   });
 
   it("keeps the opponent reminder out of preview and import payloads", () => {
-    const previewPayload = explorer.slice(explorer.indexOf("const doPreview"), explorer.indexOf("const doImport"));
-    const importPayload = explorer.slice(explorer.indexOf("const doImport"), explorer.indexOf("if (!open)"));
+    const collectorCode = explorer.slice(
+      explorer.indexOf("function LiveCollector"),
+      explorer.indexOf("export function ObservationComparisonView"),
+    );
+    const previewPayload = collectorCode.slice(collectorCode.indexOf("const doPreview"), collectorCode.indexOf("const doImport"));
+    const importPayload = collectorCode.slice(collectorCode.indexOf("const doImport"), collectorCode.indexOf("if (!open)"));
     expect(previewPayload).not.toContain("opponentName");
     expect(importPayload).not.toContain("opponentName");
+    expect(previewPayload).not.toContain("normalizeLiveFeedbackPhrase");
+    expect(importPayload).not.toContain("normalizeLiveFeedbackPhrase");
   });
 
   it("clears draft only on server success", () => {
@@ -101,9 +107,9 @@ describe("live collector UI", () => {
 
   it("keeps phrase positions stable while counts change", () => {
     const orderSection = explorer.slice(explorer.indexOf("const orderedPhrases"), explorer.indexOf("// Association: load recent matches"));
-    expect(orderSection).toContain("Object.keys(draft.phrases)");
+    expect(orderSection).toContain("phraseOrder.filter");
     expect(orderSection).not.toContain(".sort(");
-    expect(orderSection).toContain("filter ? orderedPhrases.filter");
+    expect(orderSection).toContain("? orderedPhrases.filter");
     expect(orderSection).toContain(": orderedPhrases");
     expect(explorer).toContain("Math.max(0, current - 1)");
     expect(explorer).toContain("phrases: { ...d.phrases, [trimmed]: 0 }");
@@ -137,7 +143,44 @@ describe("live collector UI", () => {
 
   it("loads phrase palette from observation-phrases endpoint", () => {
     expect(explorer).toContain("observation-phrases");
-    expect(explorer).toContain("Seed a fetched palette once");
+    expect(explorer).toContain("setHistoricalPalette");
+    expect(explorer).toContain("uniqueExactPhrases([...currentOrder, ...nextPalette])");
+  });
+
+  it("initializes only new drafts with the frontend-owned default phrase collection", () => {
+    expect(explorer).toContain("createDefaultLiveFeedbackCounters()");
+    expect(explorer).toContain("phraseCollectionVersion: 1");
+    expect(explorer).toContain("current.phraseCollectionVersion !== 1");
+  });
+
+  it("combines default, historical, and manual phrases without exact duplicates", () => {
+    expect(explorer).toContain("uniqueExactPhrases([...DEFAULT_LIVE_FEEDBACK_PHRASES, ...historicalPalette])");
+    expect(explorer).toContain("uniqueExactPhrases([...knownPhrases, ...Object.keys(draft?.phrases ?? {})])");
+    expect(explorer).toContain("uniqueExactPhrases([...currentOrder, trimmed])");
+  });
+
+  it("keeps zero-count shortcuts out of Preview and Import", () => {
+    const collectorCode = explorer.slice(
+      explorer.indexOf("function LiveCollector"),
+      explorer.indexOf("export function ObservationComparisonView"),
+    );
+    const previewPayload = collectorCode.slice(collectorCode.indexOf("const doPreview"), collectorCode.indexOf("const doImport"));
+    const importPayload = collectorCode.slice(collectorCode.indexOf("const doImport"), collectorCode.indexOf("if (!open)"));
+    expect(previewPayload).toContain(".filter(([, count]) => count > 0)");
+    expect(importPayload).toContain(".filter(([, count]) => count > 0)");
+  });
+
+  it("keeps spelling assistance local, explicit, and bounded", () => {
+    expect(explorer).toContain("findLiveFeedbackSuggestions");
+    expect(explorer).toContain("Você quis dizer?");
+    expect(explorer).toContain("Manter como nova");
+    expect(explorer).toContain("Possível frase já conhecida");
+    expect(explorer).toContain("mergeIntoKnownPhrase");
+    const collectorCode = explorer.slice(
+      explorer.indexOf("function LiveCollector"),
+      explorer.indexOf("export function ObservationComparisonView"),
+    );
+    expect(collectorCode).not.toContain("fetch(`/ea/");
   });
 
   it("has match association flow", () => {

@@ -151,6 +151,37 @@ body {
   font-size: 12px;
 }
 
+.live-collector-suggestions,
+.live-collector-review-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.live-collector-suggestions strong,
+.live-collector-review-suggestion strong {
+  color: var(--color-text-soft);
+}
+
+.live-collector-review-suggestion {
+  display: grid;
+  justify-items: start;
+  margin-top: 8px;
+}
+
+.live-collector-review-suggestion > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 @media (min-width: 720px) {
   .live-collector-phrase-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
