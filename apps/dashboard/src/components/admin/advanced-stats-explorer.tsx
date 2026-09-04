@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 type MatchSummary = {
   matchId: string;
@@ -673,6 +673,8 @@ export function AdvancedStatsExplorer() {
 
       {view === "novel" && <NovelMetricsView data={novel} detail={novelDetail} loading={loading} onRun={loadNovel} onInspect={loadNovelDetail} onCloseDetail={() => setNovelDetail(null)} onBack={() => setView("matches")} />}
       {view === "position" && <PositionObservationsView data={positionObservations} onBack={() => setView("detail")} />}
+
+      {activeClubId && <LiveCollector clubId={activeClubId} matchId={playerData?.matchId} playerId={playerData?.playerId} playerName={playerData?.platformName ?? playerData?.playerId} onSaved={() => { if (playerData) { /* detail reload handled by parent state */ } }} />}
     </div>
   );
 }
@@ -1066,6 +1068,443 @@ function ObservationImportPanel({ clubId, onImported }: { clubId: string; onImpo
       <p style={{ color: "#3fb950", fontSize: 12, margin: 0 }}>Import complete: {result.inserted} inserted, {result.alreadyExisted} already existed ({result.total} total).</p>
       <button onClick={() => { setResult(null); setJson(""); reset(); }} style={{ ...btnStyle, marginTop: 6, fontSize: 11 }}>New import</button>
     </div>}
+  </div>;
+}
+
+// ── Live Observation Collector ──────────────────────────────────────
+
+const DRAFT_STORAGE_KEY = "fc-stats-live-collector-draft";
+
+type CollectorDraft = {
+  clubId: string;
+  matchId: string | null;
+  playerId: string | null;
+  playerName: string | null;
+  phrases: Record<string, number>;
+  completeness: "AT_LEAST" | "EXACT";
+  startedAt: string;
+};
+
+type CollectorPhase = "collect" | "review" | "associate" | "save";
+
+function readDraft(): CollectorDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || typeof parsed.clubId !== "string" || typeof parsed.phrases !== "object" || parsed.phrases === null) return null;
+    return parsed as CollectorDraft;
+  } catch { return null; }
+}
+
+function writeDraft(draft: CollectorDraft) {
+  try { localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft)); } catch {}
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch {}
+}
+
+function LiveCollector({ clubId, matchId, playerId, playerName, onSaved }: {
+  clubId: string;
+  matchId?: string | null;
+  playerId?: string | null;
+  playerName?: string | null;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<CollectorDraft | null>(null);
+  const [phase, setPhase] = useState<CollectorPhase>("collect");
+  const [palette, setPalette] = useState<string[]>([]);
+  const [newPhrase, setNewPhrase] = useState("");
+  const [filter, setFilter] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [saveResult, setSaveResult] = useState<ImportResult | null>(null);
+  const [matches, setMatches] = useState<{ matchId: string; playedAt: string; opponentName: string | null; ourScore: number; opponentScore: number }[]>([]);
+  const [players, setPlayers] = useState<{ playerId: string; platformName: string | null; proName: string | null }[]>([]);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+
+  // Load existing draft on mount
+  useEffect(() => {
+    const existing = readDraft();
+    if (existing) setDraft(existing);
+  }, []);
+
+  // Load phrase palette (requires a known playerId; without one, manual entry still works)
+  const palettePlayerId = draft?.playerId ?? playerId;
+  useEffect(() => {
+    if (!open || !palettePlayerId) return;
+    fetch(`/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/players/${encodeURIComponent(palettePlayerId)}/observation-phrases`, { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : [])
+      .then((phrases: string[]) => setPalette(phrases))
+      .catch(() => {});
+  }, [open, clubId, palettePlayerId]);
+
+  const updateDraft = (updater: (d: CollectorDraft) => CollectorDraft) => {
+    setDraft((prev) => {
+      if (!prev) return prev;
+      const next = updater(prev);
+      writeDraft(next);
+      return next;
+    });
+  };
+
+  const startNew = () => {
+    const d: CollectorDraft = {
+      clubId,
+      matchId: matchId ?? null,
+      playerId: playerId ?? null,
+      playerName: playerName ?? null,
+      phrases: {},
+      completeness: "AT_LEAST",
+      startedAt: new Date().toISOString(),
+    };
+    setDraft(d);
+    writeDraft(d);
+    setPhase("collect");
+    setError(null);
+    setPreview(null);
+    setSaveResult(null);
+  };
+
+  const handleOpen = () => {
+    setOpen(true);
+    const existing = readDraft();
+    if (existing) {
+      setDraft(existing);
+      setPhase("collect");
+    }
+  };
+
+  const increment = (phrase: string) => {
+    updateDraft((d) => ({ ...d, phrases: { ...d.phrases, [phrase]: (d.phrases[phrase] ?? 0) + 1 } }));
+  };
+
+  const decrement = (phrase: string) => {
+    updateDraft((d) => {
+      const current = d.phrases[phrase] ?? 0;
+      if (current <= 1) {
+        const { [phrase]: _, ...rest } = d.phrases;
+        return { ...d, phrases: rest };
+      }
+      return { ...d, phrases: { ...d.phrases, [phrase]: current - 1 } };
+    });
+  };
+
+  const addPhrase = () => {
+    const trimmed = newPhrase.trim();
+    if (!trimmed) return;
+    if (draft && !(trimmed in draft.phrases)) {
+      updateDraft((d) => ({ ...d, phrases: { ...d.phrases, [trimmed]: 0 } }));
+    }
+    setNewPhrase("");
+  };
+
+  const totalCount = draft ? Object.values(draft.phrases).reduce((s, c) => s + c, 0) : 0;
+  const activeCount = draft ? Object.values(draft.phrases).filter((c) => c > 0).length : 0;
+
+  // Build sorted phrase list: active (count > 0) first sorted by count desc, then palette/zero-count alphabetical
+  const sortedPhrases = (() => {
+    if (!draft) return [];
+    const allPhrases = new Set([...Object.keys(draft.phrases), ...palette]);
+    const active: [string, number][] = [];
+    const inactive: string[] = [];
+    for (const p of allPhrases) {
+      const count = draft.phrases[p] ?? 0;
+      if (count > 0) active.push([p, count]);
+      else inactive.push(p);
+    }
+    active.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    inactive.sort((a, b) => a.localeCompare(b));
+    return [...active.map(([p]) => p), ...inactive];
+  })();
+
+  const filteredPhrases = filter ? sortedPhrases.filter((p) => p.toLowerCase().includes(filter.toLowerCase())) : sortedPhrases;
+
+  // Association: load recent matches
+  const loadMatches = async () => {
+    setLoading(true);
+    try {
+      const data = await fetch(`/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/matches?limit=20`, { cache: "no-store" }).then((r) => r.json());
+      setMatches(data);
+      setPhase("associate");
+    } catch { setError("Failed to load matches"); }
+    finally { setLoading(false); }
+  };
+
+  const selectMatch = async (mid: string) => {
+    setLoading(true);
+    try {
+      const data = await fetch(`/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/matches/${encodeURIComponent(mid)}/players`, { cache: "no-store" }).then((r) => r.json());
+      setPlayers(data);
+      updateDraft((d) => ({ ...d, matchId: mid }));
+    } catch { setError("Failed to load players"); }
+    finally { setLoading(false); }
+  };
+
+  const selectPlayer = (pid: string, name: string | null) => {
+    updateDraft((d) => ({ ...d, playerId: pid, playerName: name ?? pid }));
+  };
+
+  // Save flow: preview then import
+  const doPreview = async () => {
+    if (!draft || !draft.matchId || !draft.playerId) return;
+    const observations = Object.entries(draft.phrases)
+      .filter(([, count]) => count > 0)
+      .map(([phrase, observedCount]) => ({
+        matchId: draft.matchId,
+        playerId: draft.playerId,
+        phrase,
+        observedCount,
+        completeness: draft.completeness,
+      }));
+    if (observations.length === 0) { setError("No observations with count > 0"); return; }
+    setLoading(true); setError(null);
+    try {
+      const response = await fetch(`/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/observations/preview`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ observations }),
+      });
+      if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.message ?? `HTTP ${response.status}`); }
+      setPreview(await response.json());
+      setPhase("save");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Preview failed"); }
+    finally { setLoading(false); }
+  };
+
+  const doImport = async () => {
+    if (!draft || !draft.matchId || !draft.playerId || !preview) return;
+    if (preview.conflictCount > 0 || preview.invalidCount > 0) return;
+    const observations = Object.entries(draft.phrases)
+      .filter(([, count]) => count > 0)
+      .map(([phrase, observedCount]) => ({
+        matchId: draft.matchId,
+        playerId: draft.playerId,
+        phrase,
+        observedCount,
+        completeness: draft.completeness,
+      }));
+    setLoading(true); setError(null);
+    try {
+      const response = await fetch(`/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/observations/import`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ observations }),
+      });
+      if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.message ?? `HTTP ${response.status}`); }
+      const result: ImportResult = await response.json();
+      setSaveResult(result);
+      clearDraft();
+      setDraft(null);
+      onSaved();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Import failed"); }
+    finally { setLoading(false); }
+  };
+
+  if (!open) {
+    const existing = readDraft();
+    return <button onClick={handleOpen} style={{ ...btnStyle, marginTop: 8, fontSize: 11 }}>
+      {existing ? `Coletar ao vivo (draft ativo)` : "Coletar ao vivo"}
+    </button>;
+  }
+
+  // Success state
+  if (saveResult) return <div style={{ marginTop: 12, padding: 16, border: "1px solid #238636", borderRadius: 8, background: "#0d1117" }}>
+    <p style={{ color: "#3fb950", fontSize: 14, margin: 0, fontWeight: 600 }}>Coleta salva com sucesso</p>
+    <p style={{ color: "#8b949e", fontSize: 12, margin: "8px 0" }}>{saveResult.inserted} inseridas, {saveResult.alreadyExisted} já existiam ({saveResult.total} total).</p>
+    <button onClick={() => { setSaveResult(null); setOpen(false); }} style={btnStyle}>Fechar</button>
+  </div>;
+
+  // Existing draft from another context
+  if (draft && draft.clubId !== clubId) {
+    return <div style={{ marginTop: 12, padding: 16, border: "1px solid #f0883e", borderRadius: 8, background: "#161b22" }}>
+      <p style={{ color: "#f0883e", fontSize: 13 }}>Existe um rascunho ativo de outro contexto (club: {draft.clubId}).</p>
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <button onClick={() => { setPhase("collect"); }} style={btnStyle}>Continuar rascunho existente</button>
+        <button onClick={() => { if (confirmDiscard) { clearDraft(); setDraft(null); setConfirmDiscard(false); startNew(); } else setConfirmDiscard(true); }}
+          style={{ ...btnStyle, borderColor: confirmDiscard ? "#f85149" : undefined }}>
+          {confirmDiscard ? "Confirmar descarte" : "Descartar e começar novo"}
+        </button>
+      </div>
+    </div>;
+  }
+
+  // No draft — start new or resume
+  if (!draft) {
+    return <div style={{ marginTop: 12, padding: 16, border: "1px solid #30363d", borderRadius: 8, background: "#161b22" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: 0 }}>Coletar ao vivo</h4>
+        <button onClick={() => setOpen(false)} style={{ ...btnStyle, fontSize: 10 }}>Fechar</button>
+      </div>
+      <p style={{ color: "#8b949e", fontSize: 12, margin: "8px 0" }}>Conte feedbacks da EA em tempo real enquanto joga.</p>
+      <button onClick={startNew} style={{ ...btnStyle, background: "#238636", borderColor: "#2ea043", fontSize: 14, padding: "12px 24px" }}>Iniciar coleta</button>
+    </div>;
+  }
+
+  const canSave = draft.matchId && draft.playerId && activeCount > 0;
+  const bigBtn: React.CSSProperties = { ...btnStyle, fontSize: 22, width: 54, height: 54, lineHeight: "54px", textAlign: "center", padding: 0, borderRadius: 8 };
+
+  // SAVE phase
+  if (phase === "save" && preview) {
+    const canImport = preview.conflictCount === 0 && preview.invalidCount === 0 && preview.newCount > 0;
+    return <div style={{ marginTop: 12, padding: 16, border: "1px solid #30363d", borderRadius: 8, background: "#161b22" }}>
+      <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: "0 0 8px" }}>Revisão do import</h4>
+      <div style={{ display: "flex", gap: 16, fontSize: 13, color: "#c9d1d9", marginBottom: 8, flexWrap: "wrap" }}>
+        <span style={{ color: "#3fb950" }}>{preview.newCount} NEW</span>
+        <span style={{ color: "#8b949e" }}>{preview.alreadyExistsCount} ALREADY EXISTS</span>
+        <span style={{ color: preview.conflictCount > 0 ? "#f85149" : "#8b949e" }}>{preview.conflictCount} CONFLICT</span>
+        <span style={{ color: preview.invalidCount > 0 ? "#f85149" : "#8b949e" }}>{preview.invalidCount} INVALID</span>
+      </div>
+      {preview.records.filter((r) => r.status === "CONFLICT" || r.status === "INVALID").map((r) => (
+        <p key={r.index} style={{ color: "#f85149", fontSize: 11, margin: 2 }}>{r.phrase}: {r.reason}</p>
+      ))}
+      {error && <p style={{ color: "#f85149", fontSize: 12, marginTop: 4 }}>{error}</p>}
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button onClick={() => setPhase("review")} style={btnStyle}>← Voltar</button>
+        {canImport && <button onClick={doImport} disabled={loading} style={{ ...btnStyle, background: "#238636", borderColor: "#2ea043", fontSize: 14, padding: "10px 20px" }}>
+          {loading ? "Salvando…" : `Salvar ${preview.newCount} observação${preview.newCount === 1 ? "" : "ões"}`}
+        </button>}
+      </div>
+    </div>;
+  }
+
+  // ASSOCIATE phase
+  if (phase === "associate") {
+    return <div style={{ marginTop: 12, padding: 16, border: "1px solid #30363d", borderRadius: 8, background: "#161b22" }}>
+      <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: "0 0 8px" }}>Associar partida e jogador</h4>
+      <p style={{ color: "#8b949e", fontSize: 12 }}>Selecione a partida canônica e o jogador para esta coleta.</p>
+      {error && <p style={{ color: "#f85149", fontSize: 12 }}>{error}</p>}
+
+      <h5 style={{ color: "#c9d1d9", fontSize: 13, margin: "12px 0 6px" }}>Partida</h5>
+      {matches.length === 0 && <p style={{ color: "#8b949e", fontSize: 12 }}>Carregando…</p>}
+      <div style={{ maxHeight: 250, overflowY: "auto" }}>
+        {matches.map((m) => (
+          <button key={m.matchId} onClick={() => selectMatch(m.matchId)} disabled={loading}
+            style={{ ...btnStyle, display: "block", width: "100%", textAlign: "left", marginBottom: 4, padding: "10px 12px", fontSize: 13,
+              background: draft.matchId === m.matchId ? "#1f6feb33" : undefined, borderColor: draft.matchId === m.matchId ? "#1f6feb" : undefined }}>
+            {new Date(m.playedAt).toLocaleDateString("pt-BR")} vs {m.opponentName ?? "?"} ({m.ourScore}×{m.opponentScore})
+          </button>
+        ))}
+      </div>
+
+      {draft.matchId && players.length > 0 && <>
+        <h5 style={{ color: "#c9d1d9", fontSize: 13, margin: "12px 0 6px" }}>Jogador</h5>
+        <div style={{ maxHeight: 200, overflowY: "auto" }}>
+          {players.map((p) => (
+            <button key={p.playerId} onClick={() => selectPlayer(p.playerId, p.platformName ?? p.proName)} disabled={loading}
+              style={{ ...btnStyle, display: "block", width: "100%", textAlign: "left", marginBottom: 4, padding: "10px 12px", fontSize: 13,
+                background: draft.playerId === p.playerId ? "#1f6feb33" : undefined, borderColor: draft.playerId === p.playerId ? "#1f6feb" : undefined }}>
+              {p.platformName ?? p.proName ?? p.playerId}
+            </button>
+          ))}
+        </div>
+      </>}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button onClick={() => setPhase("review")} style={btnStyle}>← Voltar</button>
+        {draft.matchId && draft.playerId && <button onClick={doPreview} disabled={loading || activeCount === 0}
+          style={{ ...btnStyle, background: "#238636", borderColor: "#2ea043", fontSize: 14, padding: "10px 20px" }}>
+          {loading ? "Validando…" : "Validar e salvar"}
+        </button>}
+      </div>
+    </div>;
+  }
+
+  // REVIEW phase
+  if (phase === "review") {
+    const entries = Object.entries(draft.phrases).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]);
+    return <div style={{ marginTop: 12, padding: 16, border: "1px solid #30363d", borderRadius: 8, background: "#161b22" }}>
+      <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: "0 0 8px" }}>Revisão da coleta</h4>
+      <p style={{ color: "#8b949e", fontSize: 12, margin: "0 0 8px" }}>{totalCount} feedback{totalCount !== 1 ? "s" : ""} · {activeCount} frase{activeCount !== 1 ? "s" : ""}</p>
+      {draft.matchId && <p style={{ color: "#8b949e", fontSize: 11 }}>Partida: {draft.matchId.slice(-8)} · Jogador: {draft.playerName ?? draft.playerId?.slice(-8)}</p>}
+
+      {entries.map(([phrase, count]) => (
+        <div key={phrase} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #21262d" }}>
+          <span style={{ color: "#c9d1d9", fontSize: 14 }}>{phrase}</span>
+          <span style={{ color: "#3fb950", fontSize: 16, fontWeight: 700, minWidth: 30, textAlign: "right" }}>{count}</span>
+        </div>
+      ))}
+
+      <div style={{ marginTop: 12 }}>
+        <label style={{ color: "#c9d1d9", fontSize: 12, display: "block", marginBottom: 4 }}>Completude</label>
+        <select aria-label="Completude da coleta" value={draft.completeness} onChange={(e) => updateDraft((d) => ({ ...d, completeness: e.target.value as "AT_LEAST" | "EXACT" }))}
+          style={{ ...selectStyle, fontSize: 14, padding: "8px 12px", width: "100%" }}>
+          <option value="AT_LEAST">AT_LEAST — Alguns feedbacks podem ter sido perdidos</option>
+          <option value="EXACT">EXACT — Todos os feedbacks foram observados</option>
+        </select>
+      </div>
+
+      {error && <p style={{ color: "#f85149", fontSize: 12, marginTop: 4 }}>{error}</p>}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        <button onClick={() => setPhase("collect")} style={btnStyle}>← Editar</button>
+        {canSave ? (
+          <button onClick={doPreview} disabled={loading} style={{ ...btnStyle, background: "#238636", borderColor: "#2ea043", fontSize: 14, padding: "10px 20px" }}>
+            {loading ? "Validando…" : "Validar e salvar"}
+          </button>
+        ) : (
+          <button onClick={loadMatches} disabled={loading} style={{ ...btnStyle, fontSize: 14, padding: "10px 20px" }}>
+            {loading ? "Carregando…" : "Associar partida"}
+          </button>
+        )}
+        <button onClick={() => { if (confirmDiscard) { clearDraft(); setDraft(null); setConfirmDiscard(false); setPhase("collect"); } else setConfirmDiscard(true); }}
+          style={{ ...btnStyle, borderColor: confirmDiscard ? "#f85149" : undefined, fontSize: 12 }}>
+          {confirmDiscard ? "Confirmar descarte" : "Descartar"}
+        </button>
+      </div>
+    </div>;
+  }
+
+  // COLLECT phase (main mobile-friendly counting UI)
+  return <div style={{ marginTop: 12, padding: 12, border: "1px solid #30363d", borderRadius: 8, background: "#161b22" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+      <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: 0 }}>Coletando ao vivo</h4>
+      <button onClick={() => setOpen(false)} style={{ ...btnStyle, fontSize: 10 }}>Minimizar</button>
+    </div>
+
+    <div style={{ display: "flex", gap: 12, marginBottom: 10, fontSize: 13, color: "#8b949e" }}>
+      <span><strong style={{ color: "#3fb950", fontSize: 18 }}>{totalCount}</strong> feedback{totalCount !== 1 ? "s" : ""}</span>
+      <span><strong style={{ color: "#c9d1d9", fontSize: 18 }}>{activeCount}</strong> frase{activeCount !== 1 ? "s" : ""}</span>
+    </div>
+
+    {/* Search filter */}
+    {sortedPhrases.length > 6 && (
+      <input aria-label="Filtrar frases" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filtrar frases…"
+        style={{ ...inputStyle, width: "100%", marginBottom: 8, fontSize: 14, padding: "10px 12px" }} />
+    )}
+
+    {/* Phrase counters */}
+    <div style={{ maxHeight: "60vh", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      {filteredPhrases.map((phrase) => {
+        const count = draft.phrases[phrase] ?? 0;
+        return <div key={phrase} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 4px", borderBottom: "1px solid #21262d" }}>
+          <button aria-label={`Decrementar ${phrase}`} onClick={() => decrement(phrase)} disabled={count === 0}
+            style={{ ...bigBtn, opacity: count === 0 ? 0.3 : 1, fontSize: 24 }}>−</button>
+          <span style={{ color: count > 0 ? "#3fb950" : "#484f58", fontSize: 22, fontWeight: 700, minWidth: 36, textAlign: "center" }}>{count}</span>
+          <button aria-label={`Incrementar ${phrase}`} onClick={() => increment(phrase)}
+            style={{ ...bigBtn, background: "#238636", borderColor: "#2ea043" }}>+</button>
+          <span style={{ color: count > 0 ? "#c9d1d9" : "#8b949e", fontSize: 14, flex: 1, wordBreak: "break-word" }}>{phrase}</span>
+        </div>;
+      })}
+    </div>
+
+    {/* Add new phrase */}
+    <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+      <input aria-label="Nova frase de feedback" value={newPhrase} onChange={(e) => setNewPhrase(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") addPhrase(); }}
+        placeholder="Nova frase EA…" style={{ ...inputStyle, flex: 1, fontSize: 14, padding: "10px 12px" }} />
+      <button onClick={addPhrase} disabled={!newPhrase.trim()} style={{ ...btnStyle, fontSize: 14, padding: "10px 16px" }}>+ Frase</button>
+    </div>
+
+    {error && <p style={{ color: "#f85149", fontSize: 12, marginTop: 6 }}>{error}</p>}
+
+    <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+      <button onClick={() => { setPhase("review"); setFilter(""); }} disabled={activeCount === 0}
+        style={{ ...btnStyle, background: activeCount > 0 ? "#1f6feb" : undefined, borderColor: activeCount > 0 ? "#388bfd" : undefined, fontSize: 14, padding: "12px 20px", flex: 1 }}>
+        Finalizar coleta
+      </button>
+    </div>
   </div>;
 }
 

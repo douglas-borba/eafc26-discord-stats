@@ -401,6 +401,11 @@ class AdvancedStatsExplorerService(
 
     fun saveObservation(observation: ExplorerObservation): ExplorerObservation = observationRepository.save(observation)
 
+    fun distinctPhrasesForPlayer(clubId: ClubId, playerId: String, limit: Int = 50): List<String> =
+        observationRepository.findForPlayer(clubId, playerId, limit)
+            .map { it.phrase }
+            .distinct()
+
     // ── Bulk import ─────────────────────────────────────────────────────
 
     enum class ObservationImportStatus { NEW, ALREADY_EXISTS, CONFLICT, INVALID }

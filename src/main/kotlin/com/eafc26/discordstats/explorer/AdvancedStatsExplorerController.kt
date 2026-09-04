@@ -307,6 +307,13 @@ class AdvancedStatsExplorerController(
         return ResponseEntity.ok(result ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown aggregate code not found in bounded sample"))
     }
 
+    @GetMapping("/clubs/{clubId}/players/{playerId}/observation-phrases")
+    fun observationPhrases(
+        @PathVariable clubId: String,
+        @PathVariable playerId: String,
+    ): ResponseEntity<List<String>> =
+        ResponseEntity.ok(explorerService.distinctPhrasesForPlayer(ClubId(clubId), playerId))
+
     @GetMapping("/clubs/{clubId}/players/{playerId}/position-observations")
     fun positionObservations(
         @PathVariable clubId: String,
