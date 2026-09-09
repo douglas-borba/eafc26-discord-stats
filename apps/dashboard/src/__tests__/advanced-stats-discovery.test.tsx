@@ -221,22 +221,23 @@ describe("Advanced Stats Explorer investigation surfaces", () => {
       researchIdentityLimit: 40, canonicalMatchLimit: 50, observationsPerIdentityLimit: 20,
       researchIdentitiesRead: 2, observationsRead: 11, canonicalMatchesRead: 11,
       identityWindowTruncated: false, canonicalWindowTruncated: false,
+      summary: { strongFeedbackAssociations: 1, emergingFeedbackAssociations: 1, directCounterCandidates: 1, directCounterRefutedWithAssociation: 1, readyForControlledTest: 1, provisionalValidations: 0 },
       items: [
         {
           playerId: "player-1", playerName: "Player", phrase: "Melhore seu tempo de bola", aggregateIndex: 0, code: 183,
-          researchState: "ASSOCIATED_BUT_NOT_DIRECT", queueSection: "ASSOCIATED_NOT_DIRECT", directCounterValidity: "REFUTED", associationInterest: "HIGH",
+          researchState: "ASSOCIATED_BUT_NOT_DIRECT", queueSection: "ASSOCIATED_NOT_DIRECT", directCounterStatus: "REFUTED", feedbackAssociationStatus: "STRONG", validationStatus: "NOT_VALIDATED", directCounterValidity: "REFUTED", associationInterest: "HIGH",
           researchPriority: "P3", researchPriorityScore: 390, comparableObservations: 11, exactCoincidences: 6,
           compatibleObservations: 3, contradictions: 2, trustworthyContradictions: 2, totalExcess: 5,
-          collisionCandidates: [], rawProvenance: { explicitValueEvidence: 11, codeAbsentAssumedZeroEvidence: 0, aggregateUnavailableEvidence: 0 },
+          collisionCandidates: [], background: { classification: "NOT_ENOUGH_BACKGROUND", explicitOtherPhraseObservations: 0, positiveOtherPhraseOccurrences: 0, distinctOtherPhrases: 0 }, rawProvenance: { explicitValueEvidence: 11, codeAbsentAssumedZeroEvidence: 0, aggregateUnavailableEvidence: 0 },
           evidenceTruncated: false, auditMatchId: "tumultua", nextActionType: "RETAIN_ASSOCIATION_ONLY",
           nextAction: "Não teste este código como contador direto. Retenha-o apenas para pesquisa observacional futura.",
         },
         {
           playerId: "player-1", playerName: "Player", phrase: "Ótima interceptação", aggregateIndex: 0, code: 110,
-          researchState: "READY_FOR_CONTROLLED_TEST", queueSection: "READY_FOR_CONTROLLED_TEST", directCounterValidity: "NOT_REFUTED", associationInterest: "NONE",
+          researchState: "READY_FOR_CONTROLLED_TEST", queueSection: "READY_FOR_CONTROLLED_TEST", directCounterStatus: "PROMISING", feedbackAssociationStatus: "STRONG", validationStatus: "NOT_VALIDATED", directCounterValidity: "NOT_REFUTED", associationInterest: "HIGH",
           researchPriority: "P1", researchPriorityScore: 650, comparableObservations: 12, exactCoincidences: 9,
           compatibleObservations: 3, contradictions: 0, trustworthyContradictions: 0, totalExcess: 2,
-          collisionCandidates: [], rawProvenance: { explicitValueEvidence: 12, codeAbsentAssumedZeroEvidence: 0, aggregateUnavailableEvidence: 0 },
+          collisionCandidates: [], background: { classification: "DISCRIMINATIVE", explicitOtherPhraseObservations: 4, positiveOtherPhraseOccurrences: 1, distinctOtherPhrases: 2 }, rawProvenance: { explicitValueEvidence: 12, codeAbsentAssumedZeroEvidence: 0, aggregateUnavailableEvidence: 0 },
           evidenceTruncated: false, auditMatchId: "match-2", nextActionType: "CONTROLLED_HIGH_COUNT_TARGET",
           nextAction: "Experimento direcionado: registre uma partida com várias ocorrências observadas de “Ótima interceptação” .",
         },
@@ -246,10 +247,11 @@ describe("Advanced Stats Explorer investigation surfaces", () => {
     const html = renderToStaticMarkup(<ObservationResearchQueueView data={queue} clubId="club-1" onBack={() => {}} />);
 
     expect(html).toContain("PRONTOS PARA EXPERIMENTO CONTROLADO");
-    expect(html).toContain("ASSOCIADOS, MAS NÃO SÃO CONTADORES DIRETOS");
+    expect(html).toContain("ASSOCIAÇÕES FORTES — NÃO DIRETAS");
     expect(html).toContain("agg0[183]");
     expect(html).toContain("ASSOCIATED_BUT_NOT_DIRECT");
-    expect(html).toContain("Direto: REFUTED");
+    expect(html).toContain("Contador direto: REFUTED");
+    expect(html).toContain("Associações fortes");
     expect(html).toContain("6");
     expect(html).toContain("Auditar evidência");
     expect(html).not.toContain("timing metric");
@@ -260,12 +262,13 @@ describe("Advanced Stats Explorer investigation surfaces", () => {
       researchIdentityLimit: 40, canonicalMatchLimit: 50, observationsPerIdentityLimit: 20,
       researchIdentitiesRead: 1, observationsRead: 4, canonicalMatchesRead: 4,
       identityWindowTruncated: false, canonicalWindowTruncated: false,
+      summary: { strongFeedbackAssociations: 0, emergingFeedbackAssociations: 1, directCounterCandidates: 1, directCounterRefutedWithAssociation: 0, readyForControlledTest: 0, provisionalValidations: 0 },
       items: [{
         playerId: "player-1", playerName: "Player", phrase: "Sinal emergente", aggregateIndex: 0, code: 183,
         researchState: "COLLECT_MORE", queueSection: "PROMISING_CONTINUE_COLLECTING",
-        directCounterValidity: "NOT_REFUTED", associationInterest: "NONE", researchPriority: "P3", researchPriorityScore: 280,
+        directCounterStatus: "PROMISING", feedbackAssociationStatus: "EMERGING", validationStatus: "NOT_VALIDATED", directCounterValidity: "NOT_REFUTED", associationInterest: "MEDIUM", researchPriority: "P3", researchPriorityScore: 280,
         comparableObservations: 4, exactCoincidences: 2, compatibleObservations: 1, contradictions: 0,
-        trustworthyContradictions: 0, totalExcess: 1, collisionCandidates: [],
+        trustworthyContradictions: 0, totalExcess: 1, collisionCandidates: [], background: { classification: "NOT_ENOUGH_BACKGROUND", explicitOtherPhraseObservations: 0, positiveOtherPhraseOccurrences: 0, distinctOtherPhrases: 0 },
         rawProvenance: { explicitValueEvidence: 4, codeAbsentAssumedZeroEvidence: 0, aggregateUnavailableEvidence: 0 },
         evidenceTruncated: false, auditMatchId: "match-1", nextActionType: "CONTINUE_PASSIVE_COLLECTION",
         nextAction: "Continue a coleta normal desta frase para aumentar a evidência independente.",

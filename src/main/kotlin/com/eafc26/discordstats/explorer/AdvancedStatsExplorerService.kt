@@ -167,7 +167,52 @@ class AdvancedStatsExplorerService(
         val canonicalMatchesRead: Int,
         val identityWindowTruncated: Boolean,
         val canonicalWindowTruncated: Boolean,
-        val items: List<ObservationResearchQueueItem>,
+        val summary: ObservationResearchQueueSummary = ObservationResearchQueueSummary(
+            strongFeedbackAssociations = 0,
+            emergingFeedbackAssociations = 0,
+            directCounterCandidates = 0,
+            directCounterRefutedWithAssociation = 0,
+            readyForControlledTest = 0,
+            provisionalValidations = 0,
+        ),
+        /** Bounded per-literal-identity diagnosis for research audit, never product analytics. */
+        val identityDiagnostics: List<ResearchIdentityDiagnostic> = emptyList(),
+        val items: List<ObservationResearchQueueItem> = emptyList(),
+    )
+
+    data class ResearchIdentityDiagnostic(
+        val playerId: String,
+        val phrase: String,
+        /** Exact only when [historyTruncated] is false; otherwise a lower bound. */
+        val observationsKnownAtLeast: Int,
+        val observationsLoaded: Int,
+        val historyTruncated: Boolean,
+        val canonicalEvidenceUnavailable: Int,
+        val unknownCandidatesGenerated: Int,
+        val noiseCandidates: Int,
+        val directCounterRefuted: Int,
+        val associationInsufficient: Int,
+        val hiddenByVisibility: Int,
+        val strongestCandidates: List<ResearchDiagnosticCandidate>,
+    )
+
+    data class ResearchDiagnosticCandidate(
+        val aggregateIndex: Int,
+        val code: Int,
+        val directCounterStatus: String,
+        val feedbackAssociationStatus: String,
+        val queueSection: String?,
+    )
+
+    /** Compact derived research state; it never represents public product metrics. */
+    data class ObservationResearchQueueSummary(
+        val strongFeedbackAssociations: Int,
+        val emergingFeedbackAssociations: Int,
+        val directCounterCandidates: Int,
+        val directCounterRefutedWithAssociation: Int,
+        val readyForControlledTest: Int,
+        /** Always zero until controlled evidence obtains persisted provenance. */
+        val provisionalValidations: Int,
     )
 
     data class ObservationResearchQueueItem(
@@ -178,6 +223,9 @@ class AdvancedStatsExplorerService(
         val code: Int,
         val researchState: String,
         val queueSection: String,
+        val directCounterStatus: String = "INSUFFICIENT",
+        val feedbackAssociationStatus: String = "INSUFFICIENT",
+        val validationStatus: String = "NOT_VALIDATED",
         val directCounterValidity: String,
         val associationInterest: String,
         val researchPriority: String,
@@ -189,6 +237,12 @@ class AdvancedStatsExplorerService(
         val trustworthyContradictions: Int,
         val totalExcess: Int,
         val collisionCandidates: List<ObservationCandidateAnalyzer.CandidateCollision>,
+        val background: ResearchBackground = ResearchBackground(
+            classification = ObservationResearchTriage.BackgroundDiscrimination.NOT_ENOUGH_BACKGROUND.name,
+            explicitOtherPhraseObservations = 0,
+            positiveOtherPhraseOccurrences = 0,
+            distinctOtherPhrases = 0,
+        ),
         val rawProvenance: ResearchRawProvenance,
         val evidenceTruncated: Boolean,
         /** One existing evidence record suitable for the lazy evidence audit. */
@@ -201,6 +255,18 @@ class AdvancedStatsExplorerService(
         val explicitValueEvidence: Int,
         val codeAbsentAssumedZeroEvidence: Int,
         val aggregateUnavailableEvidence: Int,
+    )
+
+    data class ResearchBackground(
+        val classification: String,
+        val explicitOtherPhraseObservations: Int,
+        val positiveOtherPhraseOccurrences: Int,
+        val distinctOtherPhrases: Int,
+    )
+
+    private data class ResearchQueueEvaluation(
+        val item: ObservationResearchQueueItem,
+        val triage: ObservationResearchTriage.Result,
     )
 
     /** Read-only, on-demand provenance for one exact candidate/evidence pair. */
@@ -836,15 +902,16 @@ class AdvancedStatsExplorerService(
         }
         val canonicalWindowTruncated = queueObservations.any { it.matchId !in selectedMatchIds }
         val matchesById = matchRepository.findByIds(clubId, selectedMatchIds).associateBy { it.matchId }
+        val sourcesByIdentity = selectedGroupObservations.mapValues { (identity, observations) ->
+            observations.map { observation -> researchSource(observation, matchesById[observation.matchId], identity.playerId) }
+        }
         val triage = ObservationResearchTriage()
-        val items = selectedIdentities.flatMap { identity ->
+        val evaluatedCandidates = selectedIdentities.flatMap { identity ->
             val playerId = identity.playerId
             val phrase = identity.phrase
             val allPhraseObservations = evidenceByIdentity[identity].orEmpty()
             val phraseObservations = selectedGroupObservations.getValue(identity)
-            val sources = phraseObservations.map { observation ->
-                researchSource(observation, matchesById[observation.matchId], playerId)
-            }
+            val sources = sourcesByIdentity.getValue(identity)
             val inputs = sources.mapNotNull { source ->
                 val available = source.aggregateHistograms.mapNotNull { (aggregateIndex, histogram) ->
                     histogram?.let { aggregateIndex to it }
@@ -879,6 +946,12 @@ class AdvancedStatsExplorerService(
                 .map { candidate ->
                     val provenance = researchProvenance(sources, candidate.aggregateIndex, candidate.code)
                     val explicitEvidence = explicitResearchEvidence(sources, candidate)
+                    val background = researchBackground(
+                        sourcesByIdentity = sourcesByIdentity,
+                        currentIdentity = identity,
+                        aggregateIndex = candidate.aggregateIndex,
+                        code = candidate.code,
+                    )
                     val trustworthyContradictions = candidate.evidence.count { evidence ->
                         val source = sources.firstOrNull { it.observation.matchId.value == evidence.matchId }
                         source?.provenance(candidate.aggregateIndex, candidate.code) == RawAggregateProvenance.EXPLICIT_VALUE &&
@@ -897,11 +970,15 @@ class AdvancedStatsExplorerService(
                             candidate = candidate,
                             provenance = provenance,
                             explicitEvidence = explicitEvidence,
+                            background = background,
                             trustworthyContradictions = trustworthyContradictions,
                             evidenceTruncated = evidenceTruncated,
+                            hasMeaningfulVariation = hasMeaningfulVariation(sources, candidate),
                         ),
                     )
-                    result.queueSection?.let { queueSection -> ObservationResearchQueueItem(
+                    ResearchQueueEvaluation(
+                        triage = result,
+                        item = ObservationResearchQueueItem(
                         playerId = playerId,
                         playerName = sources.firstNotNullOfOrNull { source ->
                             source.player?.player?.platformName?.value ?: source.player?.player?.proName?.value
@@ -910,18 +987,27 @@ class AdvancedStatsExplorerService(
                         aggregateIndex = candidate.aggregateIndex,
                         code = candidate.code,
                         researchState = result.state.name,
-                        queueSection = queueSection.name,
+                        queueSection = result.queueSection?.name ?: HIDDEN_RESEARCH_QUEUE_SECTION,
+                        directCounterStatus = result.directCounterStatus.name,
+                        feedbackAssociationStatus = result.feedbackAssociationStatus.name,
+                        validationStatus = result.validationStatus.name,
                         directCounterValidity = result.directCounterValidity.name,
                         associationInterest = result.associationInterest.name,
                         researchPriority = result.priority.name,
                         researchPriorityScore = result.priorityScore,
-                        comparableObservations = candidate.comparableObservations,
-                        exactCoincidences = candidate.exactSupportingEvidence,
-                        compatibleObservations = candidate.atLeastCompatibleCases,
-                        contradictions = candidate.contradictions,
+                        comparableObservations = explicitEvidence.comparableObservations,
+                        exactCoincidences = explicitEvidence.exactCoincidences,
+                        compatibleObservations = explicitEvidence.compatibleObservations,
+                        contradictions = explicitEvidence.explicitContradictions,
                         trustworthyContradictions = trustworthyContradictions,
                         totalExcess = candidate.totalExcess,
                         collisionCandidates = candidate.candidateCollisions,
+                        background = ResearchBackground(
+                            classification = background.classification.name,
+                            explicitOtherPhraseObservations = background.explicitOtherPhraseObservations,
+                            positiveOtherPhraseOccurrences = background.positiveOtherPhraseOccurrences,
+                            distinctOtherPhrases = background.distinctOtherPhrases,
+                        ),
                         rawProvenance = ResearchRawProvenance(
                             explicitValueEvidence = provenance.explicitValueEvidence,
                             codeAbsentAssumedZeroEvidence = provenance.codeAbsentAssumedZeroEvidence,
@@ -935,11 +1021,15 @@ class AdvancedStatsExplorerService(
                         }?.matchId ?: candidate.evidence.firstOrNull()?.matchId,
                         nextActionType = result.nextAction.name,
                         nextAction = result.nextActionText,
-                    ) }
+                    ),
+                    )
                 }
-                .filterNotNull()
                 .toList()
-        }.sortedWith(
+        }
+        val items = evaluatedCandidates
+            .filter { it.triage.queueSection != null }
+            .map { it.item }
+            .sortedWith(
             compareBy<ObservationResearchQueueItem> { queueSectionOrder(it.queueSection) }
                 .thenBy { priorityOrder(it.researchPriority) }
                 .thenByDescending { it.researchPriorityScore }
@@ -947,7 +1037,70 @@ class AdvancedStatsExplorerService(
                 .thenBy { it.phrase }
                 .thenBy { it.aggregateIndex }
                 .thenBy { it.code },
-        ).take(RESEARCH_QUEUE_MAX_ITEMS)
+            ).take(RESEARCH_QUEUE_MAX_ITEMS)
+        val summary = ObservationResearchQueueSummary(
+            strongFeedbackAssociations = evaluatedCandidates.count {
+                it.triage.feedbackAssociationStatus == ObservationResearchTriage.FeedbackAssociationStatus.STRONG
+            },
+            emergingFeedbackAssociations = evaluatedCandidates.count {
+                it.triage.feedbackAssociationStatus == ObservationResearchTriage.FeedbackAssociationStatus.EMERGING
+            },
+            directCounterCandidates = evaluatedCandidates.count {
+                it.triage.directCounterStatus == ObservationResearchTriage.DirectCounterStatus.PROMISING
+            },
+            directCounterRefutedWithAssociation = evaluatedCandidates.count {
+                it.triage.directCounterStatus == ObservationResearchTriage.DirectCounterStatus.REFUTED &&
+                    it.triage.feedbackAssociationStatus != ObservationResearchTriage.FeedbackAssociationStatus.INSUFFICIENT
+            },
+            readyForControlledTest = evaluatedCandidates.count {
+                it.triage.state == ObservationResearchTriage.ResearchState.READY_FOR_CONTROLLED_TEST
+            },
+            provisionalValidations = evaluatedCandidates.count {
+                it.triage.validationStatus == ObservationResearchTriage.ValidationStatus.PROVISIONAL_VALIDATED
+            },
+        )
+        val identityDiagnostics = selectedIdentities.map { identity ->
+            val evaluations = evaluatedCandidates.filter {
+                it.item.playerId == identity.playerId && it.item.phrase == identity.phrase
+            }
+            val allPhraseEvidence = evidenceByIdentity[identity].orEmpty()
+            val loadedSources = sourcesByIdentity.getValue(identity)
+            ResearchIdentityDiagnostic(
+                playerId = identity.playerId,
+                phrase = identity.phrase,
+                observationsKnownAtLeast = allPhraseEvidence.size,
+                observationsLoaded = selectedGroupObservations.getValue(identity).size,
+                historyTruncated = allPhraseEvidence.size > RESEARCH_QUEUE_OBSERVATIONS_PER_IDENTITY_LIMIT,
+                canonicalEvidenceUnavailable = loadedSources.count { it.canonical == null },
+                unknownCandidatesGenerated = evaluations.size,
+                noiseCandidates = evaluations.count {
+                    it.triage.directCounterStatus == ObservationResearchTriage.DirectCounterStatus.INSUFFICIENT &&
+                        it.triage.feedbackAssociationStatus == ObservationResearchTriage.FeedbackAssociationStatus.INSUFFICIENT
+                },
+                directCounterRefuted = evaluations.count {
+                    it.triage.directCounterStatus == ObservationResearchTriage.DirectCounterStatus.REFUTED
+                },
+                associationInsufficient = evaluations.count {
+                    it.triage.feedbackAssociationStatus == ObservationResearchTriage.FeedbackAssociationStatus.INSUFFICIENT
+                },
+                hiddenByVisibility = evaluations.count { it.triage.queueSection == null },
+                strongestCandidates = evaluations.sortedWith(
+                    compareByDescending<ResearchQueueEvaluation> { it.triage.feedbackAssociationStatus.ordinal }
+                        .thenByDescending { it.triage.directCounterStatus.ordinal }
+                        .thenByDescending { it.item.researchPriorityScore }
+                        .thenBy { it.item.aggregateIndex }
+                        .thenBy { it.item.code },
+                ).take(RESEARCH_IDENTITY_DIAGNOSTIC_CANDIDATE_LIMIT).map { evaluation ->
+                    ResearchDiagnosticCandidate(
+                        aggregateIndex = evaluation.item.aggregateIndex,
+                        code = evaluation.item.code,
+                        directCounterStatus = evaluation.triage.directCounterStatus.name,
+                        feedbackAssociationStatus = evaluation.triage.feedbackAssociationStatus.name,
+                        queueSection = evaluation.triage.queueSection?.name,
+                    )
+                },
+            )
+        }
 
         return ObservationResearchQueueData(
             researchIdentityLimit = RESEARCH_QUEUE_IDENTITY_LIMIT,
@@ -958,6 +1111,8 @@ class AdvancedStatsExplorerService(
             canonicalMatchesRead = matchesById.size,
             identityWindowTruncated = identityWindowTruncated,
             canonicalWindowTruncated = canonicalWindowTruncated,
+            summary = summary,
+            identityDiagnostics = identityDiagnostics,
             items = items,
         )
     }
@@ -1384,7 +1539,47 @@ class AdvancedStatsExplorerService(
             compatibleObservations = explicitEvidence.count {
                 it.comparison == ObservationCandidateAnalyzer.EvidenceComparison.AT_LEAST_COMPATIBLE.name
             },
+            explicitContradictions = explicitEvidence.count {
+                isTrustworthyDirectContradiction(it)
+            },
         )
+    }
+
+    /**
+     * Uses only sources already loaded for the bounded queue. Other literal
+     * phrases are never merged; they only provide a conservative background
+     * signal for whether a RAW code appears broadly for this player.
+     */
+    private fun researchBackground(
+        sourcesByIdentity: Map<ObservationResearchIdentity, List<ResearchObservationSource>>,
+        currentIdentity: ObservationResearchIdentity,
+        aggregateIndex: Int,
+        code: Int,
+    ): ObservationResearchTriage.BackgroundSummary {
+        val otherSources = sourcesByIdentity.asSequence()
+            .filter { (identity, _) -> identity.playerId == currentIdentity.playerId && identity.phrase != currentIdentity.phrase }
+            .flatMap { (identity, sources) -> sources.asSequence().map { identity.phrase to it } }
+            .filter { (_, source) -> source.provenance(aggregateIndex, code) == RawAggregateProvenance.EXPLICIT_VALUE }
+            .toList()
+        return ObservationResearchTriage.BackgroundSummary(
+            explicitOtherPhraseObservations = otherSources.size,
+            positiveOtherPhraseOccurrences = otherSources.count { (_, source) ->
+                source.aggregateHistograms[aggregateIndex]?.get(code)?.let { it > 0 } == true
+            },
+            distinctOtherPhrases = otherSources.map { (phrase, _) -> phrase }.distinct().size,
+        )
+    }
+
+    private fun hasMeaningfulVariation(
+        sources: List<ResearchObservationSource>,
+        candidate: ObservationCandidateAnalyzer.CandidateAnalysis,
+    ): Boolean {
+        val explicitEvidence = candidate.evidence.filter { evidence ->
+            sources.firstOrNull { it.observation.matchId.value == evidence.matchId }
+                ?.provenance(candidate.aggregateIndex, candidate.code) == RawAggregateProvenance.EXPLICIT_VALUE
+        }
+        return explicitEvidence.map { it.aggregateValue }.distinct().size >= 2 ||
+            explicitEvidence.map { it.observedCount }.distinct().size >= 2
     }
 
     private fun isTrustworthyDirectContradiction(evidence: ObservationCandidateAnalyzer.Evidence): Boolean {
@@ -1541,6 +1736,8 @@ class AdvancedStatsExplorerService(
         const val RESEARCH_QUEUE_CANONICAL_MATCH_LIMIT = 50
         const val RESEARCH_QUEUE_OBSERVATIONS_PER_IDENTITY_LIMIT = 20
         const val RESEARCH_QUEUE_MAX_ITEMS = 24
+        const val RESEARCH_IDENTITY_DIAGNOSTIC_CANDIDATE_LIMIT = 3
+        const val HIDDEN_RESEARCH_QUEUE_SECTION = "HIDDEN"
         val RAW_CONTEXT_FIELD_NAMES = setOf("gameTime", "realtimegame", "realtimeidle", "archetypeid")
     }
 }

@@ -945,6 +945,9 @@ export type ObservationResearchQueueItem = {
   code: number;
   researchState: "COLLECT_MORE" | "PROMISING_DIRECT_COUNTER" | "READY_FOR_CONTROLLED_TEST" | "ASSOCIATED_BUT_NOT_DIRECT" | "DIRECT_COUNTER_REFUTED" | "VALIDATION_BLOCKED";
   queueSection: "READY_FOR_CONTROLLED_TEST" | "PROMISING_CONTINUE_COLLECTING" | "ASSOCIATED_NOT_DIRECT" | "NEEDS_AUDIT";
+  directCounterStatus: "INSUFFICIENT" | "PROMISING" | "REFUTED" | "CONTROLLED_CONFIRMED";
+  feedbackAssociationStatus: "INSUFFICIENT" | "EMERGING" | "STRONG";
+  validationStatus: "NOT_VALIDATED" | "PROVISIONAL_VALIDATED" | "VALIDATED_DIRECT_COUNTER";
   directCounterValidity: "NOT_REFUTED" | "REFUTED" | "INTEGRITY_LIMITED";
   associationInterest: "NONE" | "LOW" | "MEDIUM" | "HIGH";
   researchPriority: "P1" | "P2" | "P3" | "P4";
@@ -956,6 +959,7 @@ export type ObservationResearchQueueItem = {
   trustworthyContradictions: number;
   totalExcess: number;
   collisionCandidates: ObservationCandidate["candidateCollisions"];
+  background: { classification: "NOT_ENOUGH_BACKGROUND" | "DISCRIMINATIVE" | "BROADLY_PRESENT"; explicitOtherPhraseObservations: number; positiveOtherPhraseOccurrences: number; distinctOtherPhrases: number };
   rawProvenance: { explicitValueEvidence: number; codeAbsentAssumedZeroEvidence: number; aggregateUnavailableEvidence: number };
   evidenceTruncated: boolean;
   auditMatchId: string | null;
@@ -972,6 +976,14 @@ export type ObservationResearchQueue = {
   canonicalMatchesRead: number;
   identityWindowTruncated: boolean;
   canonicalWindowTruncated: boolean;
+  summary: {
+    strongFeedbackAssociations: number;
+    emergingFeedbackAssociations: number;
+    directCounterCandidates: number;
+    directCounterRefutedWithAssociation: number;
+    readyForControlledTest: number;
+    provisionalValidations: number;
+  };
   items: ObservationResearchQueueItem[];
 };
 
@@ -1836,7 +1848,7 @@ export function ObservationResearchQueueView({
   const sections: { title: string; queueSection: ObservationResearchQueueItem["queueSection"]; empty: string }[] = [
     { title: "PRONTOS PARA EXPERIMENTO CONTROLADO", queueSection: "READY_FOR_CONTROLLED_TEST", empty: "Nenhum candidato pronto para experimento controlado." },
     { title: "PROMISSORES — CONTINUE COLETANDO", queueSection: "PROMISING_CONTINUE_COLLECTING", empty: "Nenhum sinal emergente com ação de coleta." },
-    { title: "ASSOCIADOS, MAS NÃO SÃO CONTADORES DIRETOS", queueSection: "ASSOCIATED_NOT_DIRECT", empty: "Nenhuma associação forte já refutada como contador direto." },
+    { title: "ASSOCIAÇÕES FORTES — NÃO DIRETAS", queueSection: "ASSOCIATED_NOT_DIRECT", empty: "Nenhuma associação forte já refutada como contador direto." },
     { title: "PRECISAM DE AUDITORIA", queueSection: "NEEDS_AUDIT", empty: "Nenhuma evidência relevante aguardando auditoria." },
   ];
 
@@ -1850,7 +1862,7 @@ export function ObservationResearchQueueView({
         <span style={{ color: "#8b949e", fontSize: 10 }}>Prioridade {item.researchPriority}</span>
       </div>
       <p style={{ color: "#8b949e", fontSize: 11, margin: "6px 0" }}>
-        Jogador: {item.playerName ?? item.playerId} · Direto: {item.directCounterValidity} · Interesse observacional: {item.associationInterest}
+        Jogador: {item.playerName ?? item.playerId} · Contador direto: {item.directCounterStatus} · Associação com feedback EA: {item.feedbackAssociationStatus} · Validação: {item.validationStatus}
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 5, marginBottom: 8 }}>
         <StatChip label="Comparáveis" value={item.comparableObservations} />
@@ -1862,6 +1874,7 @@ export function ObservationResearchQueueView({
         <StatChip label="RAW explícito" value={item.rawProvenance.explicitValueEvidence} />
         <StatChip label="RAW zero assumido" value={item.rawProvenance.codeAbsentAssumedZeroEvidence} warn={item.rawProvenance.codeAbsentAssumedZeroEvidence > 0} />
         <StatChip label="RAW indisponível" value={item.rawProvenance.aggregateUnavailableEvidence} warn={item.rawProvenance.aggregateUnavailableEvidence > 0} />
+        <StatChip label="Background" value={item.background.classification} warn={item.background.classification === "BROADLY_PRESENT"} />
       </div>
       {item.collisionCandidates.length > 0 && <p style={{ color: "#f0883e", fontSize: 11, margin: "5px 0" }}>
         Colisão de candidato: {item.collisionCandidates.map((collision) => `agg${collision.aggregateIndex}[${collision.code}]`).join(", ")}
@@ -1883,6 +1896,14 @@ export function ObservationResearchQueueView({
     <p style={{ color: "#8b949e", fontSize: 11 }}>
       {data.researchIdentitiesRead}/{data.researchIdentityLimit} identidades de pesquisa · {data.observationsRead} observações carregadas · {data.canonicalMatchesRead}/{data.canonicalMatchLimit} partidas canônicas · até {data.observationsPerIdentityLimit} observações por identidade.
     </p>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "10px 0 4px" }}>
+      <StatChip label="Associações fortes" value={data.summary.strongFeedbackAssociations} />
+      <StatChip label="Associações emergentes" value={data.summary.emergingFeedbackAssociations} />
+      <StatChip label="Candidatos diretos" value={data.summary.directCounterCandidates} />
+      <StatChip label="Diretos refutados com associação" value={data.summary.directCounterRefutedWithAssociation} />
+      <StatChip label="Prontos para experimento" value={data.summary.readyForControlledTest} />
+      <StatChip label="Validações provisórias" value={data.summary.provisionalValidations} />
+    </div>
     {(data.identityWindowTruncated || data.canonicalWindowTruncated) && <p style={{ color: "#f0883e", fontSize: 11 }}>
       A fila usa leitura limitada. Apenas identidades com histórico próprio incompleto ficam impedidas de receber maturidade máxima.
     </p>}

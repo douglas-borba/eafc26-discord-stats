@@ -7,136 +7,103 @@ class ObservationResearchTriageTest {
     private val triage = ObservationResearchTriage()
 
     @Test
-    fun `tiny exact sample remains collect more`() {
-        val result = triage.triage(input(candidate(comparable = 2, exact = 2), explicit = 2))
+    fun `near direct explicit pattern is strong promising and ready for a controlled test`() {
+        val result = triage.triage(input(candidate(comparable = 8, exact = 6, compatible = 2), explicit = 8))
 
-        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.COLLECT_MORE)
-        assertThat(result.nextAction).isEqualTo(ObservationResearchTriage.NextActionType.CONTINUE_PASSIVE_COLLECTION)
-    }
-
-    @Test
-    fun `mature explicit zero-contradiction pattern is ready for controlled test`() {
-        val result = triage.triage(input(candidate(comparable = 12, exact = 9, compatible = 3, excess = 3), explicit = 12))
-
+        assertThat(result.directCounterStatus).isEqualTo(ObservationResearchTriage.DirectCounterStatus.PROMISING)
+        assertThat(result.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.STRONG)
         assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.READY_FOR_CONTROLLED_TEST)
-        assertThat(result.directCounterValidity).isEqualTo(ObservationResearchTriage.DirectCounterValidity.NOT_REFUTED)
-        assertThat(result.priority).isEqualTo(ObservationResearchTriage.ResearchPriority.P1)
-        assertThat(result.nextAction).isEqualTo(ObservationResearchTriage.NextActionType.CONTROLLED_HIGH_COUNT_TARGET)
-        assertThat(result.nextActionText).contains("Frase literal")
+        assertThat(result.queueSection).isEqualTo(ObservationResearchTriage.QueueSection.READY_FOR_CONTROLLED_TEST)
+        assertThat(result.validationStatus).isEqualTo(ObservationResearchTriage.ValidationStatus.NOT_VALIDATED)
     }
 
     @Test
-    fun `one trustworthy contradiction permanently refutes direct counter despite many exact rows`() {
-        val result = triage.triage(input(candidate(comparable = 11, exact = 10, contradictions = 1), explicit = 11, trustworthyContradictions = 1))
-
-        assertThat(result.directCounterValidity).isEqualTo(ObservationResearchTriage.DirectCounterValidity.REFUTED)
-        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.ASSOCIATED_BUT_NOT_DIRECT)
-        assertThat(result.nextAction).isNotEqualTo(ObservationResearchTriage.NextActionType.CONTROLLED_HIGH_COUNT_TARGET)
-    }
-
-    @Test
-    fun `183-style evidence retains association interest but cannot be a direct candidate`() {
-        val result = triage.triage(input(candidate(comparable = 11, exact = 6, compatible = 3, contradictions = 2, excess = 5), explicit = 11, trustworthyContradictions = 2))
-
-        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.ASSOCIATED_BUT_NOT_DIRECT)
-        assertThat(result.directCounterValidity).isEqualTo(ObservationResearchTriage.DirectCounterValidity.REFUTED)
-        assertThat(result.associationInterest).isEqualTo(ObservationResearchTriage.AssociationInterest.HIGH)
-        assertThat(result.queueSection).isEqualTo(ObservationResearchTriage.QueueSection.ASSOCIATED_NOT_DIRECT)
-        assertThat(result.nextAction).isEqualTo(ObservationResearchTriage.NextActionType.RETAIN_ASSOCIATION_ONLY)
-    }
-
-    @Test
-    fun `all contradictory candidate has refuted low research priority`() {
-        val result = triage.triage(input(candidate(comparable = 11, contradictions = 11), explicit = 11, trustworthyContradictions = 11))
-
-        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.DIRECT_COUNTER_REFUTED)
-        assertThat(result.associationInterest).isEqualTo(ObservationResearchTriage.AssociationInterest.NONE)
-        assertThat(result.priority).isEqualTo(ObservationResearchTriage.ResearchPriority.P4)
-    }
-
-    @Test
-    fun `assumed zero unavailable and truncated evidence cannot receive strongest maturity`() {
-        val mature = candidate(comparable = 12, exact = 9, compatible = 3, excess = 3)
-
-        val assumed = triage.triage(input(mature, explicit = 9, assumed = 3))
-        val unavailable = triage.triage(input(mature, explicit = 9, unavailable = 3))
-        val truncated = triage.triage(input(mature, explicit = 12, truncated = true))
-
-        assertThat(assumed.state).isEqualTo(ObservationResearchTriage.ResearchState.VALIDATION_BLOCKED)
-        assertThat(assumed.directCounterValidity).isEqualTo(ObservationResearchTriage.DirectCounterValidity.INTEGRITY_LIMITED)
-        assertThat(unavailable.state).isEqualTo(ObservationResearchTriage.ResearchState.VALIDATION_BLOCKED)
-        assertThat(truncated.state).isEqualTo(ObservationResearchTriage.ResearchState.VALIDATION_BLOCKED)
-    }
-
-    @Test
-    fun `promising collision recommends discrimination instead of choosing a candidate`() {
-        val collision = ObservationCandidateAnalyzer.CandidateCollision(
-            aggregateIndex = 1,
-            code = 183,
-            candidateKind = ObservationCandidateAnalyzer.CandidateKind.UNKNOWN_CANDIDATE.name,
-            registryConfidence = "UNKNOWN",
-            metricName = null,
+    fun `historical 183 shaped evidence refutes direct equality without losing strong association`() {
+        val result = triage.triage(
+            input(candidate(comparable = 11, exact = 6, compatible = 3, contradictions = 2, excess = 5), explicit = 11, trustworthyContradictions = 2),
         )
+
+        assertThat(result.directCounterStatus).isEqualTo(ObservationResearchTriage.DirectCounterStatus.REFUTED)
+        assertThat(result.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.STRONG)
+        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.READY_FOR_CONTROLLED_TEST)
+        assertThat(result.nextAction).isEqualTo(ObservationResearchTriage.NextActionType.CONTROLLED_DISCRIMINATION_TARGET)
+    }
+
+    @Test
+    fun `five repeated explicit rows form an emerging visible association`() {
+        val result = triage.triage(input(candidate(comparable = 5, exact = 3, compatible = 2), explicit = 5))
+
+        assertThat(result.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.EMERGING)
+        assertThat(result.queueSection).isEqualTo(ObservationResearchTriage.QueueSection.PROMISING_CONTINUE_COLLECTING)
+        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.PROMISING_DIRECT_COUNTER)
+    }
+
+    @Test
+    fun `assumed zero dominated noise is hidden and cannot refute or associate strongly`() {
+        val result = triage.triage(
+            input(candidate(comparable = 15, contradictions = 14), explicit = 1, assumed = 14),
+        )
+
+        assertThat(result.directCounterStatus).isEqualTo(ObservationResearchTriage.DirectCounterStatus.INSUFFICIENT)
+        assertThat(result.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.INSUFFICIENT)
+        assertThat(result.queueSection).isNull()
+    }
+
+    @Test
+    fun `weak coincidence remains hidden`() {
+        val result = triage.triage(input(candidate(comparable = 15, exact = 1), explicit = 15))
+
+        assertThat(result.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.INSUFFICIENT)
+        assertThat(result.queueSection).isNull()
+    }
+
+    @Test
+    fun `an explicit contradiction refutes direct equality but association remains independently evaluated`() {
         val result = triage.triage(
             input(
-                candidate(comparable = 4, exact = 3, compatible = 1, collisions = listOf(collision)),
-                explicit = 4,
+                candidate(comparable = 8, exact = 5, compatible = 2, contradictions = 1),
+                explicit = 8,
+                trustworthyContradictions = 1,
             ),
         )
 
+        assertThat(result.directCounterStatus).isEqualTo(ObservationResearchTriage.DirectCounterStatus.REFUTED)
+        assertThat(result.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.STRONG)
+    }
+
+    @Test
+    fun `broad background behavior prevents strong maturity and asks for discrimination`() {
+        val result = triage.triage(
+            input(
+                candidate(comparable = 8, exact = 6, compatible = 2),
+                explicit = 8,
+                background = ObservationResearchTriage.BackgroundSummary(8, 7, 2),
+            ),
+        )
+
+        assertThat(result.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.EMERGING)
         assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.PROMISING_DIRECT_COUNTER)
         assertThat(result.nextAction).isEqualTo(ObservationResearchTriage.NextActionType.DISCRIMINATE_COLLISION)
-        assertThat(result.nextActionText).contains("agg0[183]").contains("agg1[183]")
     }
 
     @Test
-    fun `assumed zero noise is not promoted into the research queue`() {
+    fun `truncated strong passive evidence remains visible for audit but is not ready`() {
         val result = triage.triage(
-            input(
-                candidate(comparable = 15, contradictions = 14),
-                explicit = 1,
-                assumed = 14,
-            ),
+            input(candidate(comparable = 8, exact = 6, compatible = 2), explicit = 8, truncated = true),
         )
 
-        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.COLLECT_MORE)
-        assertThat(result.directCounterValidity).isEqualTo(ObservationResearchTriage.DirectCounterValidity.INTEGRITY_LIMITED)
-        assertThat(result.associationInterest).isEqualTo(ObservationResearchTriage.AssociationInterest.NONE)
-        assertThat(result.queueSection).isNull()
-    }
-
-    @Test
-    fun `one compatible assumed zero background candidate is not a queue item`() {
-        val result = triage.triage(
-            input(
-                candidate(comparable = 15, compatible = 1, contradictions = 14),
-                explicit = 1,
-                assumed = 14,
-            ),
-        )
-
-        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.COLLECT_MORE)
-        assertThat(result.queueSection).isNull()
-    }
-
-    @Test
-    fun `repeated explicit emerging pattern is visible before direct maturity`() {
-        val result = triage.triage(
-            input(candidate(comparable = 5, exact = 2, compatible = 1), explicit = 5),
-        )
-
-        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.COLLECT_MORE)
-        assertThat(result.queueSection).isEqualTo(ObservationResearchTriage.QueueSection.PROMISING_CONTINUE_COLLECTING)
-    }
-
-    @Test
-    fun `truncated but otherwise meaningful pattern is an audit action not ready`() {
-        val result = triage.triage(
-            input(candidate(comparable = 8, exact = 6, compatible = 2, excess = 2), explicit = 8, truncated = true),
-        )
-
+        assertThat(result.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.STRONG)
         assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.VALIDATION_BLOCKED)
         assertThat(result.queueSection).isEqualTo(ObservationResearchTriage.QueueSection.NEEDS_AUDIT)
+    }
+
+    @Test
+    fun `aggregate slots remain separate identities`() {
+        val aggregateZero = triage.triage(input(candidate(comparable = 5, exact = 3, compatible = 2, aggregateIndex = 0), explicit = 5))
+        val aggregateOne = triage.triage(input(candidate(comparable = 5, exact = 3, compatible = 2, aggregateIndex = 1), explicit = 5))
+
+        assertThat(aggregateZero.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.EMERGING)
+        assertThat(aggregateOne.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.EMERGING)
     }
 
     private fun input(
@@ -146,19 +113,21 @@ class ObservationResearchTriageTest {
         unavailable: Int = 0,
         trustworthyContradictions: Int = 0,
         truncated: Boolean = false,
-        explicitExact: Int = candidate.exactSupportingEvidence,
-        explicitCompatible: Int = candidate.atLeastCompatibleCases,
+        background: ObservationResearchTriage.BackgroundSummary = ObservationResearchTriage.BackgroundSummary(0, 0, 0),
     ) = ObservationResearchTriage.CandidateInput(
         phrase = "Frase literal",
         candidate = candidate,
         provenance = ObservationResearchTriage.RawProvenanceSummary(explicit, assumed, unavailable),
         explicitEvidence = ObservationResearchTriage.ExplicitEvidenceSummary(
             comparableObservations = explicit,
-            exactCoincidences = explicitExact,
-            compatibleObservations = explicitCompatible,
+            exactCoincidences = candidate.exactSupportingEvidence,
+            compatibleObservations = candidate.atLeastCompatibleCases,
+            explicitContradictions = trustworthyContradictions,
         ),
+        background = background,
         trustworthyContradictions = trustworthyContradictions,
         evidenceTruncated = truncated,
+        hasMeaningfulVariation = true,
     )
 
     private fun candidate(
@@ -167,9 +136,9 @@ class ObservationResearchTriageTest {
         compatible: Int = 0,
         contradictions: Int = 0,
         excess: Int = 0,
-        collisions: List<ObservationCandidateAnalyzer.CandidateCollision> = emptyList(),
+        aggregateIndex: Int = 0,
     ) = ObservationCandidateAnalyzer.CandidateAnalysis(
-        aggregateIndex = 0,
+        aggregateIndex = aggregateIndex,
         code = 183,
         candidateKind = ObservationCandidateAnalyzer.CandidateKind.UNKNOWN_CANDIDATE.name,
         registryConfidence = "UNKNOWN",
@@ -189,6 +158,6 @@ class ObservationResearchTriageTest {
         investigationStatus = if (contradictions > 0) "CONTRADICTED" else "HIGH_PRIORITY",
         investigationRank = null,
         evidence = emptyList(),
-        candidateCollisions = collisions,
+        candidateCollisions = emptyList(),
     )
 }

@@ -627,7 +627,7 @@ class AdvancedStatsExplorerServiceTest {
         assertThat(canonicalBatchReads).isEqualTo(1)
         assertThat(queue.items).anySatisfy {
             assertThat(it.aggregateIndex to it.code).isEqualTo(0 to 183)
-            assertThat(it.researchState).isEqualTo("COLLECT_MORE")
+            assertThat(it.researchState).isEqualTo("PROMISING_DIRECT_COUNTER")
             assertThat(it.queueSection).isEqualTo("PROMISING_CONTINUE_COLLECTING")
         }
     }
@@ -656,8 +656,8 @@ class AdvancedStatsExplorerServiceTest {
 
         val candidate = service.observationResearchQueue(clubId).items.single { it.aggregateIndex == 0 && it.code == 183 }
 
-        assertThat(candidate.researchState).isEqualTo("ASSOCIATED_BUT_NOT_DIRECT")
-        assertThat(candidate.queueSection).isEqualTo("ASSOCIATED_NOT_DIRECT")
+        assertThat(candidate.researchState).isEqualTo("READY_FOR_CONTROLLED_TEST")
+        assertThat(candidate.queueSection).isEqualTo("READY_FOR_CONTROLLED_TEST")
         assertThat(candidate.directCounterValidity).isEqualTo("REFUTED")
         assertThat(candidate.associationInterest).isEqualTo("HIGH")
         assertThat(candidate.trustworthyContradictions).isEqualTo(2)
@@ -722,6 +722,40 @@ class AdvancedStatsExplorerServiceTest {
         assertThat(item.researchState).isEqualTo("VALIDATION_BLOCKED")
         assertThat(item.queueSection).isEqualTo("NEEDS_AUDIT")
         assertThat(item.evidenceTruncated).isTrue()
+    }
+
+    @Test
+    fun `research queue penalizes a candidate that is broadly positive across other literal phrases`() {
+        val observations = InMemoryExplorerObservationRepository()
+        val matches = buildList {
+            repeat(8) { index ->
+                val id = "focus-$index"
+                observations.save(ExplorerObservation(clubId, MatchId(id), "player-1", "Ótima interceptação", 1))
+                add(buildCanonical(rawAgg0 = "110:1", rawAgg1 = "", id = id))
+            }
+            repeat(4) { index ->
+                val id = "background-$index"
+                observations.save(ExplorerObservation(clubId, MatchId(id), "player-1", "Ótima finta", 1))
+                add(buildCanonical(rawAgg0 = "110:1", rawAgg1 = "", id = id))
+            }
+            repeat(4) { index ->
+                val id = "second-background-$index"
+                observations.save(ExplorerObservation(clubId, MatchId(id), "player-1", "Bela dividida", 1))
+                add(buildCanonical(rawAgg0 = "110:1", rawAgg1 = "", id = id))
+            }
+        }
+        val queue = AdvancedStatsExplorerService(fakeRepo(matches), observationRepository = observations)
+            .observationResearchQueue(clubId)
+
+        val candidate = queue.items.single { it.phrase == "Ótima interceptação" && it.aggregateIndex == 0 && it.code == 110 }
+        assertThat(candidate.background.classification).isEqualTo("BROADLY_PRESENT")
+        assertThat(candidate.feedbackAssociationStatus).isEqualTo("EMERGING")
+        assertThat(candidate.queueSection).isEqualTo("PROMISING_CONTINUE_COLLECTING")
+        assertThat(queue.summary.strongFeedbackAssociations).isZero()
+        assertThat(queue.identityDiagnostics).anySatisfy { diagnostic ->
+            assertThat(diagnostic.phrase).isEqualTo("Ótima interceptação")
+            assertThat(diagnostic.unknownCandidatesGenerated).isGreaterThan(0)
+        }
     }
 
     @Test
