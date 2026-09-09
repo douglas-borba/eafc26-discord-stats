@@ -36,6 +36,17 @@ class AdvancedStatsExplorerController(
         val targetPhrase: String,
     )
 
+    data class ControlledObservationRequest(
+        val matchId: String,
+        val playerId: String,
+        val phrase: String,
+        val observedCount: Int,
+        val completeness: ObservationCompleteness = ObservationCompleteness.AT_LEAST,
+        val aggregateIndex: Int,
+        val code: Int,
+        val experimentType: ControlledExperimentType,
+    )
+
     @GetMapping("/clubs/{clubId}/matches")
     fun matches(
         @PathVariable clubId: String,
@@ -177,6 +188,31 @@ class AdvancedStatsExplorerController(
             )
         }
         ResponseEntity.ok(explorerService.importObservations(ClubId(clubId), inputs))
+    } catch (exception: IllegalArgumentException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message)
+    } catch (exception: IllegalStateException) {
+        throw ResponseStatusException(HttpStatus.CONFLICT, exception.message)
+    }
+
+    /** Marks a separately saved literal observation as deliberate validation evidence. */
+    @PostMapping("/clubs/{clubId}/controlled-observations")
+    fun saveControlledObservation(
+        @PathVariable clubId: String,
+        @RequestBody request: ControlledObservationRequest,
+    ): ResponseEntity<ControlledObservation> = try {
+        ResponseEntity.ok(explorerService.saveControlledObservation(
+            ControlledObservation(
+                clubId = ClubId(clubId),
+                matchId = MatchId(request.matchId),
+                playerId = request.playerId,
+                phrase = request.phrase,
+                observedCount = request.observedCount,
+                completeness = request.completeness,
+                aggregateIndex = request.aggregateIndex,
+                code = request.code,
+                experimentType = request.experimentType,
+            ),
+        ))
     } catch (exception: IllegalArgumentException) {
         throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message)
     } catch (exception: IllegalStateException) {

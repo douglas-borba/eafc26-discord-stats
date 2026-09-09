@@ -35,7 +35,9 @@ import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnostics
 import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
 import com.eafc26.discordstats.explorer.AdvancedStatsExplorerService
 import com.eafc26.discordstats.explorer.ExplorerObservationRepository
+import com.eafc26.discordstats.explorer.ControlledObservationRepository
 import com.eafc26.discordstats.store.PostgresExplorerObservationRepository
+import com.eafc26.discordstats.store.PostgresControlledObservationRepository
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.flywaydb.core.Flyway
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -151,11 +153,20 @@ class PostgresMirrorConfig {
     fun advancedStatsExplorerService(
         canonicalMatchRepository: CanonicalMatchRepository,
         explorerObservationRepository: ExplorerObservationRepository,
-    ): AdvancedStatsExplorerService = AdvancedStatsExplorerService(canonicalMatchRepository, observationRepository = explorerObservationRepository)
+        controlledObservationRepository: ControlledObservationRepository,
+    ): AdvancedStatsExplorerService = AdvancedStatsExplorerService(
+        canonicalMatchRepository,
+        observationRepository = explorerObservationRepository,
+        controlledObservationRepository = controlledObservationRepository,
+    )
 
     @Bean
     fun explorerObservationRepository(jdbcTemplate: JdbcTemplate, transactionManager: PlatformTransactionManager): ExplorerObservationRepository =
         PostgresExplorerObservationRepository(jdbcTemplate, TransactionTemplate(transactionManager))
+
+    @Bean
+    fun controlledObservationRepository(jdbcTemplate: JdbcTemplate): ControlledObservationRepository =
+        PostgresControlledObservationRepository(jdbcTemplate)
 
     @Bean
     fun postgresSyncService(

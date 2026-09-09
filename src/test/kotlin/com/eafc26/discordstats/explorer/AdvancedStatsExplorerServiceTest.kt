@@ -134,6 +134,69 @@ class AdvancedStatsExplorerServiceTest {
     }
 
     @Test
+    fun `rare clean hypothesis ranks ahead of a common loose hypothesis without hardcoding either`() {
+        val observations = InMemoryExplorerObservationRepository()
+        val matches = buildList {
+            repeat(7) { index ->
+                val count = if (index < 5) index + 1 else index
+                observations.save(ExplorerObservation(clubId, MatchId("rare-$index"), "player-rare", "Frase rara", count, ObservationCompleteness.AT_LEAST))
+                add(buildCanonical(rawAgg0 = "106:${count + if (index >= 5) 1 else 0}", rawAgg1 = "", id = "rare-$index", playerId = "player-rare"))
+            }
+            repeat(12) { index ->
+                val count = index % 3 + 1
+                observations.save(ExplorerObservation(clubId, MatchId("loose-$index"), "player-loose", "Frase comum", count, ObservationCompleteness.AT_LEAST))
+                add(buildCanonical(rawAgg0 = "107:${count + if (index < 3) 0 else 3}", rawAgg1 = "", id = "loose-$index", playerId = "player-loose"))
+            }
+        }
+        val queue = AdvancedStatsExplorerService(fakeRepo(matches), observationRepository = observations).observationResearchQueue(clubId)
+
+        assertThat(queue.items.first()).extracting("phrase", "aggregateIndex", "code")
+            .containsExactly("Frase rara", 0, 106)
+        assertThat(queue.items.first().experimentType).isEqualTo("COUNT_MATCH")
+    }
+
+    @Test
+    fun `two clean controlled matches provisionally validate only feedback association`() {
+        val passive = InMemoryExplorerObservationRepository()
+        val controlled = InMemoryControlledObservationRepository()
+        val matches = (1..7).map { index ->
+            val id = "controlled-$index"
+            passive.save(ExplorerObservation(clubId, MatchId(id), "player-1", "Frase alvo", index, ObservationCompleteness.EXACT))
+            buildCanonical(rawAgg0 = "106:$index", rawAgg1 = "", id = id)
+        }
+        controlled.saveIfAbsent(ControlledObservation(clubId, MatchId("controlled-6"), "player-1", "Frase alvo", 6, ObservationCompleteness.EXACT, 0, 106, ControlledExperimentType.COUNT_MATCH))
+        controlled.saveIfAbsent(ControlledObservation(clubId, MatchId("controlled-7"), "player-1", "Frase alvo", 7, ObservationCompleteness.EXACT, 0, 106, ControlledExperimentType.COUNT_MATCH))
+        val item = AdvancedStatsExplorerService(fakeRepo(matches), observationRepository = passive, controlledObservationRepository = controlled)
+            .observationResearchQueue(clubId).items.single { it.aggregateIndex == 0 && it.code == 106 }
+
+        assertThat(item.controlledEvidence.supportingMatches).isEqualTo(2)
+        assertThat(item.validationStatus).isEqualTo("PROVISIONAL_VALIDATED_FEEDBACK_ASSOCIATION")
+        assertThat(item.validationStatus).doesNotContain("SPORTING")
+    }
+
+    @Test
+    fun `one controlled support shows progress and an unavailable controlled RAW remains inconclusive`() {
+        val passive = InMemoryExplorerObservationRepository()
+        val controlled = InMemoryControlledObservationRepository()
+        val matches = (1..7).map { index ->
+            val id = "progress-$index"
+            passive.save(ExplorerObservation(clubId, MatchId(id), "player-1", "Frase alvo", index, ObservationCompleteness.EXACT))
+            buildCanonical(rawAgg0 = if (index == 7) "999:7" else "106:$index", rawAgg1 = "", id = id)
+        }
+        controlled.saveIfAbsent(ControlledObservation(clubId, MatchId("progress-6"), "player-1", "Frase alvo", 6, ObservationCompleteness.EXACT, 0, 106, ControlledExperimentType.COUNT_MATCH))
+        var item = AdvancedStatsExplorerService(fakeRepo(matches), observationRepository = passive, controlledObservationRepository = controlled)
+            .observationResearchQueue(clubId).items.single { it.aggregateIndex == 0 && it.code == 106 }
+        assertThat(item.controlledEvidence.supportingMatches).isEqualTo(1)
+        assertThat(item.validationStatus).isEqualTo("NOT_VALIDATED")
+
+        controlled.saveIfAbsent(ControlledObservation(clubId, MatchId("progress-7"), "player-1", "Frase alvo", 7, ObservationCompleteness.EXACT, 0, 106, ControlledExperimentType.COUNT_MATCH))
+        item = AdvancedStatsExplorerService(fakeRepo(matches), observationRepository = passive, controlledObservationRepository = controlled)
+            .observationResearchQueue(clubId).items.single { it.aggregateIndex == 0 && it.code == 106 }
+        assertThat(item.controlledEvidence.inconclusive).isEqualTo(1)
+        assertThat(item.validationStatus).isEqualTo("NOT_VALIDATED")
+    }
+
+    @Test
     fun `aggregate_0 and aggregate_1 entries are kept separate`() {
         val service = AdvancedStatsExplorerService(fakeRepo(buildCanonical()))
         val data = service.playerExplorerData(clubId, matchId, "player-1")!!
@@ -627,8 +690,8 @@ class AdvancedStatsExplorerServiceTest {
         assertThat(canonicalBatchReads).isEqualTo(1)
         assertThat(queue.items).anySatisfy {
             assertThat(it.aggregateIndex to it.code).isEqualTo(0 to 183)
-            assertThat(it.researchState).isEqualTo("PROMISING_DIRECT_COUNTER")
-            assertThat(it.queueSection).isEqualTo("PROMISING_CONTINUE_COLLECTING")
+            assertThat(it.researchState).isEqualTo("READY_FOR_CONTROLLED_TEST")
+            assertThat(it.queueSection).isEqualTo("READY_FOR_CONTROLLED_TEST")
         }
     }
 
@@ -683,8 +746,8 @@ class AdvancedStatsExplorerServiceTest {
         val observations = InMemoryExplorerObservationRepository()
         val matches = (1..4).map { index ->
             val id = "identity-$index"
-            observations.save(ExplorerObservation(clubId, MatchId(id), "player-1", "Ótima interceptação", 1))
-            buildCanonical(rawAgg0 = "110:1,112:1", rawAgg1 = "110:1", id = id)
+            observations.save(ExplorerObservation(clubId, MatchId(id), "player-1", "Ótima interceptação", index))
+            buildCanonical(rawAgg0 = "110:$index,112:$index", rawAgg1 = "110:$index", id = id)
         }
         val service = AdvancedStatsExplorerService(
             fakeRepo(matches),
@@ -693,13 +756,13 @@ class AdvancedStatsExplorerServiceTest {
 
         val items = service.observationResearchQueue(clubId).items
 
-        assertThat(items.map { it.aggregateIndex to it.code }).contains(0 to 110, 1 to 110)
+        assertThat(items.map { it.aggregateIndex to it.code }).contains(0 to 110)
         assertThat(items.map { it.aggregateIndex to it.code }).doesNotContain(0 to 112)
-        assertThat(items).allSatisfy { assertThat(it.researchState).isNotEqualTo("READY_FOR_CONTROLLED_TEST") }
+        assertThat(items).allSatisfy { assertThat(it.researchState).isEqualTo("READY_FOR_CONTROLLED_TEST") }
     }
 
     @Test
-    fun `truncated identity history cannot become ready and remains an audit item when otherwise meaningful`() {
+    fun `truncated identity remains visible only when its bounded evidence has useful variation`() {
         val observations = InMemoryExplorerObservationRepository()
         val matches = (1..21).map { index ->
             val id = "truncated-$index"
@@ -717,11 +780,7 @@ class AdvancedStatsExplorerServiceTest {
         }
         val service = AdvancedStatsExplorerService(fakeRepo(matches), observationRepository = observations)
 
-        val item = service.observationResearchQueue(clubId).items.single { it.aggregateIndex == 0 && it.code == 183 }
-
-        assertThat(item.researchState).isEqualTo("VALIDATION_BLOCKED")
-        assertThat(item.queueSection).isEqualTo("NEEDS_AUDIT")
-        assertThat(item.evidenceTruncated).isTrue()
+        assertThat(service.observationResearchQueue(clubId).items).isEmpty()
     }
 
     @Test
@@ -730,8 +789,8 @@ class AdvancedStatsExplorerServiceTest {
         val matches = buildList {
             repeat(8) { index ->
                 val id = "focus-$index"
-                observations.save(ExplorerObservation(clubId, MatchId(id), "player-1", "Ótima interceptação", 1))
-                add(buildCanonical(rawAgg0 = "110:1", rawAgg1 = "", id = id))
+                observations.save(ExplorerObservation(clubId, MatchId(id), "player-1", "Ótima interceptação", index + 1))
+                add(buildCanonical(rawAgg0 = "110:${index + 1}", rawAgg1 = "", id = id))
             }
             repeat(4) { index ->
                 val id = "background-$index"
@@ -749,9 +808,9 @@ class AdvancedStatsExplorerServiceTest {
 
         val candidate = queue.items.single { it.phrase == "Ótima interceptação" && it.aggregateIndex == 0 && it.code == 110 }
         assertThat(candidate.background.classification).isEqualTo("BROADLY_PRESENT")
-        assertThat(candidate.feedbackAssociationStatus).isEqualTo("EMERGING")
-        assertThat(candidate.queueSection).isEqualTo("PROMISING_CONTINUE_COLLECTING")
-        assertThat(queue.summary.strongFeedbackAssociations).isZero()
+        assertThat(candidate.feedbackAssociationStatus).isEqualTo("STRONG")
+        assertThat(candidate.queueSection).isEqualTo("READY_FOR_CONTROLLED_TEST")
+        assertThat(candidate.experimentType).isEqualTo("DISCRIMINATION")
         assertThat(queue.identityDiagnostics).anySatisfy { diagnostic ->
             assertThat(diagnostic.phrase).isEqualTo("Ótima interceptação")
             assertThat(diagnostic.unknownCandidatesGenerated).isGreaterThan(0)

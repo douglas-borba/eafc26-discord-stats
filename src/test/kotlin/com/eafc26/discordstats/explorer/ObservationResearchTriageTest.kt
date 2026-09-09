@@ -30,12 +30,12 @@ class ObservationResearchTriageTest {
     }
 
     @Test
-    fun `five repeated explicit rows form an emerging visible association`() {
+    fun `five clean explicit rows are sent to controlled testing instead of passive limbo`() {
         val result = triage.triage(input(candidate(comparable = 5, exact = 3, compatible = 2), explicit = 5))
 
         assertThat(result.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.EMERGING)
-        assertThat(result.queueSection).isEqualTo(ObservationResearchTriage.QueueSection.PROMISING_CONTINUE_COLLECTING)
-        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.PROMISING_DIRECT_COUNTER)
+        assertThat(result.queueSection).isEqualTo(ObservationResearchTriage.QueueSection.READY_FOR_CONTROLLED_TEST)
+        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.READY_FOR_CONTROLLED_TEST)
     }
 
     @Test
@@ -72,7 +72,7 @@ class ObservationResearchTriageTest {
     }
 
     @Test
-    fun `broad background behavior prevents strong maturity and asks for discrimination`() {
+    fun `broad background remains testable and changes the experiment to discrimination`() {
         val result = triage.triage(
             input(
                 candidate(comparable = 8, exact = 6, compatible = 2),
@@ -81,20 +81,20 @@ class ObservationResearchTriageTest {
             ),
         )
 
-        assertThat(result.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.EMERGING)
-        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.PROMISING_DIRECT_COUNTER)
-        assertThat(result.nextAction).isEqualTo(ObservationResearchTriage.NextActionType.DISCRIMINATE_COLLISION)
+        assertThat(result.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.STRONG)
+        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.READY_FOR_CONTROLLED_TEST)
+        assertThat(result.nextAction).isEqualTo(ObservationResearchTriage.NextActionType.CONTROLLED_DISCRIMINATION_TARGET)
     }
 
     @Test
-    fun `truncated strong passive evidence remains visible for audit but is not ready`() {
+    fun `truncated strong passive evidence remains eligible for a targeted test`() {
         val result = triage.triage(
             input(candidate(comparable = 8, exact = 6, compatible = 2), explicit = 8, truncated = true),
         )
 
         assertThat(result.feedbackAssociationStatus).isEqualTo(ObservationResearchTriage.FeedbackAssociationStatus.STRONG)
-        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.VALIDATION_BLOCKED)
-        assertThat(result.queueSection).isEqualTo(ObservationResearchTriage.QueueSection.NEEDS_AUDIT)
+        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.READY_FOR_CONTROLLED_TEST)
+        assertThat(result.queueSection).isEqualTo(ObservationResearchTriage.QueueSection.READY_FOR_CONTROLLED_TEST)
     }
 
     @Test

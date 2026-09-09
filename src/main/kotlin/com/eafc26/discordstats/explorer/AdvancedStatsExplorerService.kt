@@ -17,6 +17,7 @@ class AdvancedStatsExplorerService(
     private val matchRepository: CanonicalMatchRepository,
     private val objectMapper: ObjectMapper = jacksonObjectMapper(),
     private val observationRepository: ExplorerObservationRepository = InMemoryExplorerObservationRepository(),
+    private val controlledObservationRepository: ControlledObservationRepository = InMemoryControlledObservationRepository(),
 ) {
 
     data class MatchSummary(
@@ -213,6 +214,8 @@ class AdvancedStatsExplorerService(
         val readyForControlledTest: Int,
         /** Always zero until controlled evidence obtains persisted provenance. */
         val provisionalValidations: Int,
+        val validationsInProgress: Int = 0,
+        val hypothesesNeedingAudit: Int = 0,
     )
 
     data class ObservationResearchQueueItem(
@@ -249,6 +252,21 @@ class AdvancedStatsExplorerService(
         val auditMatchId: String?,
         val nextActionType: String,
         val nextAction: String,
+        val experimentType: String = ControlledExperimentType.COUNT_MATCH.name,
+        val rankingReasons: List<String> = emptyList(),
+        val controlledEvidence: ControlledEvidenceProgress = ControlledEvidenceProgress(),
+    )
+
+    data class ControlledEvidenceProgress(
+        val supportingMatches: Int = 0,
+        val requiredSupportingMatches: Int = 2,
+        val exactMatches: Int = 0,
+        val compatibleMatches: Int = 0,
+        val contradictions: Int = 0,
+        val inconclusive: Int = 0,
+        val lastResult: String? = null,
+        val lastObservedCount: Int? = null,
+        val lastRawValue: Int? = null,
     )
 
     data class ResearchRawProvenance(
@@ -591,6 +609,32 @@ class AdvancedStatsExplorerService(
         observationRepository.findForPlayerMatch(clubId, matchId, playerId)
 
     fun saveObservation(observation: ExplorerObservation): ExplorerObservation = observationRepository.save(observation)
+
+    /**
+     * Controlled provenance is only valid when the same literal observation is
+     * already present. This keeps the human count as the source of truth and
+     * prevents a validation request from silently inventing passive evidence.
+     */
+    fun saveControlledObservation(observation: ControlledObservation): ControlledObservation {
+        val canonical = matchRepository.findById(observation.clubId, observation.matchId)
+            ?: throw IllegalArgumentException("Match not found in canonical data")
+        if (perspectivePlayer(canonical, observation.playerId) == null) {
+            throw IllegalArgumentException("Player not found in this match")
+        }
+        require(canonical.interpretation.perspectiveClubId == observation.clubId) {
+            "Match does not belong to this club"
+        }
+        val passive = observationRepository.findExact(
+            observation.clubId,
+            observation.matchId,
+            observation.playerId,
+            observation.phrase,
+        ) ?: throw IllegalStateException("Save the literal observation before marking it as controlled")
+        require(passive.observedCount == observation.observedCount && passive.completeness == observation.completeness) {
+            "Controlled evidence must match the saved literal observation"
+        }
+        return controlledObservationRepository.saveIfAbsent(observation)
+    }
 
     /**
      * Reconciles only an administrator-confirmed literal phrase. The analyzer
@@ -974,6 +1018,7 @@ class AdvancedStatsExplorerService(
                             trustworthyContradictions = trustworthyContradictions,
                             evidenceTruncated = evidenceTruncated,
                             hasMeaningfulVariation = hasMeaningfulVariation(sources, candidate),
+                            independentPositiveMatches = explicitEvidence.supportiveObservations,
                         ),
                     )
                     ResearchQueueEvaluation(
@@ -1026,18 +1071,50 @@ class AdvancedStatsExplorerService(
                 }
                 .toList()
         }
-        val items = evaluatedCandidates
-            .filter { it.triage.queueSection != null }
-            .map { it.item }
-            .sortedWith(
-            compareBy<ObservationResearchQueueItem> { queueSectionOrder(it.queueSection) }
-                .thenBy { priorityOrder(it.researchPriority) }
-                .thenByDescending { it.researchPriorityScore }
-                .thenByDescending { it.comparableObservations }
-                .thenBy { it.phrase }
-                .thenBy { it.aggregateIndex }
-                .thenBy { it.code },
-            ).take(RESEARCH_QUEUE_MAX_ITEMS)
+        // The primary queue is intentionally small: it selects the best
+        // hypothesis per literal phrase before considering a second candidate.
+        // This prevents a single noisy aggregate family from monopolising the
+        // next human experiment.
+        val eligible = evaluatedCandidates.filter { it.triage.state == ObservationResearchTriage.ResearchState.READY_FOR_CONTROLLED_TEST }
+        val ranked = eligible.sortedWith(
+            compareByDescending<ResearchQueueEvaluation> { it.item.researchPriorityScore }
+                .thenByDescending { it.item.exactCoincidences }
+                .thenBy { it.item.contradictions }
+                .thenBy { it.item.totalExcess }
+                .thenBy { it.item.phrase }
+                .thenBy { it.item.aggregateIndex }
+                .thenBy { it.item.code },
+        )
+        val selected = selectDiverseTopHypotheses(ranked, RESEARCH_QUEUE_TOP_HYPOTHESES)
+        val controlledCandidates = selected.map {
+            ControlledCandidateIdentity(it.item.playerId, it.item.phrase, it.item.aggregateIndex, it.item.code)
+        }
+        val controlledObservations = controlledObservationRepository.findForCandidates(
+            clubId,
+            controlledCandidates,
+            CONTROLLED_EVIDENCE_PER_CANDIDATE_LIMIT,
+        )
+        val controlledMatchIds = controlledObservations.map { it.matchId }.filter { it !in matchesById }.toSet()
+        val controlledMatches = if (controlledMatchIds.isEmpty()) emptyMap() else
+            matchRepository.findByIds(clubId, controlledMatchIds).associateBy { it.matchId }
+        val allMatchesById = matchesById + controlledMatches
+        val items = selected.map { evaluation ->
+            val item = evaluation.item
+            val candidateIdentity = ControlledCandidateIdentity(item.playerId, item.phrase, item.aggregateIndex, item.code)
+            val progress = controlledEvidenceProgress(
+                controlledObservations.filter {
+                    ControlledCandidateIdentity(it.playerId, it.phrase, it.aggregateIndex, it.code) == candidateIdentity
+                },
+                allMatchesById,
+            )
+            val provisional = isProvisionallyValidated(progress)
+            item.copy(
+                validationStatus = if (provisional) "PROVISIONAL_VALIDATED_FEEDBACK_ASSOCIATION" else "NOT_VALIDATED",
+                experimentType = recommendedExperimentType(item),
+                rankingReasons = rankingReasons(item),
+                controlledEvidence = progress,
+            )
+        }
         val summary = ObservationResearchQueueSummary(
             strongFeedbackAssociations = evaluatedCandidates.count {
                 it.triage.feedbackAssociationStatus == ObservationResearchTriage.FeedbackAssociationStatus.STRONG
@@ -1052,12 +1129,10 @@ class AdvancedStatsExplorerService(
                 it.triage.directCounterStatus == ObservationResearchTriage.DirectCounterStatus.REFUTED &&
                     it.triage.feedbackAssociationStatus != ObservationResearchTriage.FeedbackAssociationStatus.INSUFFICIENT
             },
-            readyForControlledTest = evaluatedCandidates.count {
-                it.triage.state == ObservationResearchTriage.ResearchState.READY_FOR_CONTROLLED_TEST
-            },
-            provisionalValidations = evaluatedCandidates.count {
-                it.triage.validationStatus == ObservationResearchTriage.ValidationStatus.PROVISIONAL_VALIDATED
-            },
+            readyForControlledTest = items.size,
+            provisionalValidations = items.count { it.validationStatus == "PROVISIONAL_VALIDATED_FEEDBACK_ASSOCIATION" },
+            validationsInProgress = items.count { it.controlledEvidence.supportingMatches in 1 until it.controlledEvidence.requiredSupportingMatches },
+            hypothesesNeedingAudit = evaluatedCandidates.count { it.triage.state == ObservationResearchTriage.ResearchState.VALIDATION_BLOCKED },
         )
         val identityDiagnostics = selectedIdentities.map { identity ->
             val evaluations = evaluatedCandidates.filter {
@@ -1590,6 +1665,87 @@ class AdvancedStatsExplorerService(
         }
     }
 
+    private fun selectDiverseTopHypotheses(
+        ranked: List<ResearchQueueEvaluation>,
+        limit: Int,
+    ): List<ResearchQueueEvaluation> {
+        val selected = mutableListOf<ResearchQueueEvaluation>()
+        val firstByPhrase = ranked.groupBy { it.item.playerId to it.item.phrase }
+            .values.mapNotNull { candidates -> candidates.firstOrNull() }
+            .sortedWith(compareByDescending<ResearchQueueEvaluation> { it.item.researchPriorityScore }
+                .thenBy { it.item.phrase }.thenBy { it.item.aggregateIndex }.thenBy { it.item.code })
+        selected += firstByPhrase.take(limit)
+        if (selected.size < limit) {
+            ranked.filter { candidate -> selected.none { it.item == candidate.item } }
+                .forEach { candidate ->
+                    if (selected.size < limit) selected += candidate
+                }
+        }
+        return selected.sortedWith(compareByDescending<ResearchQueueEvaluation> { it.item.researchPriorityScore }
+            .thenBy { it.item.phrase }.thenBy { it.item.aggregateIndex }.thenBy { it.item.code })
+    }
+
+    private fun recommendedExperimentType(item: ObservationResearchQueueItem): String = when {
+        item.directCounterStatus == ObservationResearchTriage.DirectCounterStatus.REFUTED.name ->
+            ControlledExperimentType.DISCRIMINATION.name
+        item.background.classification == ObservationResearchTriage.BackgroundDiscrimination.BROADLY_PRESENT.name ->
+            ControlledExperimentType.DISCRIMINATION.name
+        item.collisionCandidates.isNotEmpty() -> ControlledExperimentType.DISCRIMINATION.name
+        else -> ControlledExperimentType.COUNT_MATCH.name
+    }
+
+    private fun rankingReasons(item: ObservationResearchQueueItem): List<String> = buildList {
+        if (item.exactCoincidences > 0) add("${item.exactCoincidences} coincidências RAW exatas")
+        if (item.contradictions == 0) add("nenhuma contradição RAW explícita")
+        if (item.rawProvenance.explicitValueEvidence == item.comparableObservations) add("cobertura RAW explícita completa")
+        if (item.totalExcess <= item.comparableObservations) add("excesso baixo")
+        if (item.background.classification == ObservationResearchTriage.BackgroundDiscrimination.BROADLY_PRESENT.name) {
+            add("requer experimento de discriminação")
+        }
+    }.take(4)
+
+    private fun controlledEvidenceProgress(
+        observations: List<ControlledObservation>,
+        matches: Map<MatchId, CanonicalMatch>,
+    ): ControlledEvidenceProgress {
+        val results = observations.map { observation ->
+            val player = matches[observation.matchId]?.let { perspectivePlayer(it, observation.playerId) }
+            val histogram = player?.rawEventAggregates?.let { parseHistogram(aggregateSlot(it, observation.aggregateIndex)) }
+            val rawValue = histogram?.get(observation.code)
+            val result = when {
+                rawValue == null -> "INCONCLUSIVE"
+                observation.completeness == ObservationCompleteness.EXACT && rawValue == observation.observedCount -> "EXACT"
+                observation.completeness == ObservationCompleteness.AT_LEAST && rawValue == observation.observedCount -> "EXACT"
+                observation.completeness == ObservationCompleteness.AT_LEAST && rawValue >= observation.observedCount -> "COMPATIBLE"
+                else -> "CONTRADICTION"
+            }
+            Triple(observation, rawValue, result)
+        }
+        val exact = results.count { it.third == "EXACT" }
+        val compatible = results.count { it.third == "COMPATIBLE" }
+        val supports = exact + compatible
+        // A compatible (AT_LEAST) result is useful but one of the first two
+        // requires a third clean match before a provisional association.
+        val required = if (supports >= 2 && exact < 2) 3 else 2
+        val last = results.maxByOrNull { it.first.createdAt ?: java.time.Instant.EPOCH }
+        return ControlledEvidenceProgress(
+            supportingMatches = supports,
+            requiredSupportingMatches = required,
+            exactMatches = exact,
+            compatibleMatches = compatible,
+            contradictions = results.count { it.third == "CONTRADICTION" },
+            inconclusive = results.count { it.third == "INCONCLUSIVE" },
+            lastResult = last?.third,
+            lastObservedCount = last?.first?.observedCount,
+            lastRawValue = last?.second,
+        )
+    }
+
+    private fun isProvisionallyValidated(progress: ControlledEvidenceProgress): Boolean =
+        progress.contradictions == 0 &&
+            progress.supportingMatches >= progress.requiredSupportingMatches &&
+            (progress.exactMatches >= 2 || progress.supportingMatches >= 3)
+
     private fun queueSectionOrder(section: String): Int = when (ObservationResearchTriage.QueueSection.valueOf(section)) {
         ObservationResearchTriage.QueueSection.READY_FOR_CONTROLLED_TEST -> 0
         ObservationResearchTriage.QueueSection.PROMISING_CONTINUE_COLLECTING -> 1
@@ -1735,7 +1891,8 @@ class AdvancedStatsExplorerService(
         const val RESEARCH_QUEUE_IDENTITY_LIMIT = 40
         const val RESEARCH_QUEUE_CANONICAL_MATCH_LIMIT = 50
         const val RESEARCH_QUEUE_OBSERVATIONS_PER_IDENTITY_LIMIT = 20
-        const val RESEARCH_QUEUE_MAX_ITEMS = 24
+        const val RESEARCH_QUEUE_TOP_HYPOTHESES = 5
+        const val CONTROLLED_EVIDENCE_PER_CANDIDATE_LIMIT = 4
         const val RESEARCH_IDENTITY_DIAGNOSTIC_CANDIDATE_LIMIT = 3
         const val HIDDEN_RESEARCH_QUEUE_SECTION = "HIDDEN"
         val RAW_CONTEXT_FIELD_NAMES = setOf("gameTime", "realtimegame", "realtimeidle", "archetypeid")

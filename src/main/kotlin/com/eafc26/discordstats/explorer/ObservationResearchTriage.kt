@@ -124,6 +124,7 @@ class ObservationResearchTriage {
         val trustworthyContradictions: Int,
         val evidenceTruncated: Boolean,
         val hasMeaningfulVariation: Boolean = true,
+        val independentPositiveMatches: Int = explicitEvidence.supportiveObservations,
     )
 
     data class Result(
@@ -150,15 +151,14 @@ class ObservationResearchTriage {
         val association = feedbackAssociationStatus(input)
         val integrityLimited = input.evidenceTruncated || input.provenance.hasIntegrityLimitation
         val readyForControlledTest =
-            (association == FeedbackAssociationStatus.STRONG || directStatus == DirectCounterStatus.PROMISING) &&
-                input.explicitEvidence.comparableObservations >= READY_MIN_EXPLICIT_COMPARABLE &&
-                input.hasMeaningfulVariation &&
-                !integrityLimited &&
-                input.background.classification != BackgroundDiscrimination.BROADLY_PRESENT
+            (association != FeedbackAssociationStatus.INSUFFICIENT || directStatus == DirectCounterStatus.PROMISING) &&
+                input.explicitEvidence.comparableObservations >= EMERGING_MIN_EXPLICIT_COMPARABLE &&
+                input.explicitEvidence.supportiveObservations >= EMERGING_MIN_SUPPORTIVE &&
+                input.hasMeaningfulVariation
 
         val state = when {
             readyForControlledTest -> ResearchState.READY_FOR_CONTROLLED_TEST
-            integrityLimited && hasUsefulSignal(directStatus, association) -> ResearchState.VALIDATION_BLOCKED
+            integrityLimited && !readyForControlledTest && hasUsefulSignal(directStatus, association) -> ResearchState.VALIDATION_BLOCKED
             directStatus == DirectCounterStatus.REFUTED && association == FeedbackAssociationStatus.STRONG ->
                 ResearchState.ASSOCIATED_BUT_NOT_DIRECT
             directStatus == DirectCounterStatus.PROMISING -> ResearchState.PROMISING_DIRECT_COUNTER
@@ -207,11 +207,10 @@ class ObservationResearchTriage {
 
         val contradictionsAllowedForStrong = maxOf(2, evidence.comparableObservations / 3)
         val strong =
-            evidence.comparableObservations >= STRONG_MIN_EXPLICIT_COMPARABLE &&
+                evidence.comparableObservations >= STRONG_MIN_EXPLICIT_COMPARABLE &&
                 evidence.exactCoincidences >= STRONG_MIN_EXACT &&
                 evidence.supportRatePercent >= STRONG_MIN_SUPPORT_PERCENT &&
-                evidence.explicitContradictions <= contradictionsAllowedForStrong &&
-                input.background.classification != BackgroundDiscrimination.BROADLY_PRESENT
+                evidence.explicitContradictions <= contradictionsAllowedForStrong
         return if (strong) FeedbackAssociationStatus.STRONG else FeedbackAssociationStatus.EMERGING
     }
 
@@ -276,27 +275,31 @@ class ObservationResearchTriage {
     ): Int {
         val evidence = input.explicitEvidence
         val base = when (state) {
-            ResearchState.READY_FOR_CONTROLLED_TEST -> 600
-            ResearchState.VALIDATION_BLOCKED -> 500
-            ResearchState.ASSOCIATED_BUT_NOT_DIRECT -> 460
-            ResearchState.PROMISING_DIRECT_COUNTER -> 440
-            ResearchState.COLLECT_MORE -> 300
-            ResearchState.DIRECT_COUNTER_REFUTED -> 180
+            ResearchState.READY_FOR_CONTROLLED_TEST -> 100
+            ResearchState.VALIDATION_BLOCKED -> 30
+            ResearchState.ASSOCIATED_BUT_NOT_DIRECT -> 55
+            ResearchState.PROMISING_DIRECT_COUNTER -> 75
+            ResearchState.COLLECT_MORE -> 0
+            ResearchState.DIRECT_COUNTER_REFUTED -> -40
         }
         val associationBonus = when (association) {
             FeedbackAssociationStatus.STRONG -> 80
             FeedbackAssociationStatus.EMERGING -> 35
             FeedbackAssociationStatus.INSUFFICIENT -> 0
         }
-        val backgroundPenalty = if (input.background.classification == BackgroundDiscrimination.BROADLY_PRESENT) 40 else 0
+        val backgroundPenalty = if (input.background.classification == BackgroundDiscrimination.BROADLY_PRESENT) 20 else 0
         return base +
-            evidence.comparableObservations * 4 +
-            evidence.exactCoincidences * 5 +
-            evidence.compatibleObservations * 2 +
+            evidence.comparableObservations * 8 +
+            evidence.exactCoincidences * 24 +
+            evidence.compatibleObservations * 8 +
+            input.independentPositiveMatches * 8 +
             associationBonus -
-            evidence.explicitContradictions * 10 -
-            input.candidate.totalExcess.coerceAtMost(50) -
-            input.candidate.candidateCollisions.size * 10 -
+            evidence.explicitContradictions * 100 -
+            input.candidate.totalExcess.coerceAtMost(80) * 4 -
+            input.provenance.codeAbsentAssumedZeroEvidence * 18 -
+            input.provenance.aggregateUnavailableEvidence * 20 -
+            (if (input.evidenceTruncated) 35 else 0) -
+            input.candidate.candidateCollisions.size * 6 -
             backgroundPenalty
     }
 
@@ -306,7 +309,8 @@ class ObservationResearchTriage {
         association: FeedbackAssociationStatus,
         input: CandidateInput,
     ): Pair<NextActionType, String> = when {
-        state == ResearchState.READY_FOR_CONTROLLED_TEST && directStatus == DirectCounterStatus.REFUTED ->
+        state == ResearchState.READY_FOR_CONTROLLED_TEST &&
+            (directStatus == DirectCounterStatus.REFUTED || input.background.classification == BackgroundDiscrimination.BROADLY_PRESENT) ->
             NextActionType.CONTROLLED_DISCRIMINATION_TARGET to
                 "Experimento de discriminação: teste a associação com “${input.phrase}”; não teste igualdade 1:1."
         state == ResearchState.READY_FOR_CONTROLLED_TEST ->
@@ -341,7 +345,6 @@ class ObservationResearchTriage {
         const val STRONG_MIN_SUPPORT_PERCENT = 60
         const val PROMISING_MIN_EXPLICIT_COMPARABLE = 4
         const val PROMISING_MIN_EXACT = 3
-        const val READY_MIN_EXPLICIT_COMPARABLE = 8
         const val MIN_BACKGROUND_OBSERVATIONS = 4
         const val BROAD_BACKGROUND_PERCENT = 75
     }

@@ -237,6 +237,7 @@ export type PositionObservation = { matchId: string; playedAt: string; opponentN
 export type PositionObservationsData = { coverage: string; observations: PositionObservation[]; distribution: { eaPositionCode: string | null; candidate: PositionObservation["candidate"]; observations: number }[]; distinctCodes: number };
 
 type View = "matches" | "players" | "detail" | "compare" | "discovery" | "anchor" | "novel" | "position" | "researchQueue";
+type ValidationTarget = { phrase: string; aggregateIndex: number; code: number; experimentType: "COUNT_MATCH" | "DISCRIMINATION" };
 
 export function AdvancedStatsExplorer() {
   const [clubId, setClubId] = useState("");
@@ -279,6 +280,7 @@ export function AdvancedStatsExplorer() {
   const [novelDetail, setNovelDetail] = useState<NovelDetail | null>(null);
   const [positionObservations, setPositionObservations] = useState<PositionObservationsData | null>(null);
   const [researchQueue, setResearchQueue] = useState<ObservationResearchQueue | null>(null);
+  const [validationTarget, setValidationTarget] = useState<ValidationTarget | null>(null);
 
   const fetchJson = useCallback(async (url: string) => {
     const res = await fetch(url, { cache: "no-store" });
@@ -718,9 +720,9 @@ export function AdvancedStatsExplorer() {
 
       {view === "novel" && <NovelMetricsView data={novel} detail={novelDetail} loading={loading} onRun={loadNovel} onInspect={loadNovelDetail} onCloseDetail={() => setNovelDetail(null)} onBack={() => setView("matches")} />}
       {view === "position" && <PositionObservationsView data={positionObservations} onBack={() => setView("detail")} />}
-      {view === "researchQueue" && <ObservationResearchQueueView data={researchQueue} clubId={activeClubId} onBack={() => setView("matches")} />}
+      {view === "researchQueue" && <ObservationResearchQueueView data={researchQueue} clubId={activeClubId} onBack={() => setView("matches")} onStartValidation={(target) => { setValidationTarget(target); setView("matches"); }} />}
 
-      {activeClubId && <LiveCollector clubId={activeClubId} onSaved={() => { void refreshResearchQueue(); if (playerData) { /* detail reload handled by parent state */ } }} />}
+      {activeClubId && <LiveCollector clubId={activeClubId} validationTarget={validationTarget} onValidationConsumed={() => setValidationTarget(null)} onSaved={() => { void refreshResearchQueue(); if (playerData) { /* detail reload handled by parent state */ } }} />}
     </div>
   );
 }
@@ -947,7 +949,7 @@ export type ObservationResearchQueueItem = {
   queueSection: "READY_FOR_CONTROLLED_TEST" | "PROMISING_CONTINUE_COLLECTING" | "ASSOCIATED_NOT_DIRECT" | "NEEDS_AUDIT";
   directCounterStatus: "INSUFFICIENT" | "PROMISING" | "REFUTED" | "CONTROLLED_CONFIRMED";
   feedbackAssociationStatus: "INSUFFICIENT" | "EMERGING" | "STRONG";
-  validationStatus: "NOT_VALIDATED" | "PROVISIONAL_VALIDATED" | "VALIDATED_DIRECT_COUNTER";
+  validationStatus: "NOT_VALIDATED" | "PROVISIONAL_VALIDATED_FEEDBACK_ASSOCIATION";
   directCounterValidity: "NOT_REFUTED" | "REFUTED" | "INTEGRITY_LIMITED";
   associationInterest: "NONE" | "LOW" | "MEDIUM" | "HIGH";
   researchPriority: "P1" | "P2" | "P3" | "P4";
@@ -965,6 +967,9 @@ export type ObservationResearchQueueItem = {
   auditMatchId: string | null;
   nextActionType: string;
   nextAction: string;
+  experimentType?: "COUNT_MATCH" | "DISCRIMINATION";
+  rankingReasons?: string[];
+  controlledEvidence?: { supportingMatches: number; requiredSupportingMatches: number; exactMatches: number; compatibleMatches: number; contradictions: number; inconclusive: number; lastResult: "EXACT" | "COMPATIBLE" | "CONTRADICTION" | "INCONCLUSIVE" | null; lastObservedCount: number | null; lastRawValue: number | null };
 };
 
 export type ObservationResearchQueue = {
@@ -983,6 +988,8 @@ export type ObservationResearchQueue = {
     directCounterRefutedWithAssociation: number;
     readyForControlledTest: number;
     provisionalValidations: number;
+    validationsInProgress?: number;
+    hypothesesNeedingAudit?: number;
   };
   items: ObservationResearchQueueItem[];
 };
@@ -1287,9 +1294,11 @@ function clearDraft() {
   try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch {}
 }
 
-function LiveCollector({ clubId, onSaved }: {
+function LiveCollector({ clubId, onSaved, validationTarget, onValidationConsumed }: {
   clubId: string;
   onSaved: () => void;
+  validationTarget: ValidationTarget | null;
+  onValidationConsumed: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<CollectorDraft | null>(null);
@@ -1316,6 +1325,22 @@ function LiveCollector({ clubId, onSaved }: {
       setPhraseOrder(Object.keys(existing.phrases));
     }
   }, []);
+
+  // A target is transient UI state, never part of the local passive draft.
+  // It opens the existing collector and adds only the exact literal phrase.
+  useEffect(() => {
+    if (!validationTarget) return;
+    setOpen(true);
+    setPhase("collect");
+    setDraft((previous) => {
+      const base = previous?.clubId === clubId ? previous : createLiveCollectorDraft(clubId);
+      const next = { ...base, phrases: { ...base.phrases, [validationTarget.phrase]: base.phrases[validationTarget.phrase] ?? 0 } };
+      writeDraft(next);
+      return next;
+    });
+    setPhraseOrder((current) => uniqueExactPhrases([...current, validationTarget.phrase]));
+    setError(null);
+  }, [clubId, validationTarget]);
 
   // Load phrase palette only after this collection explicitly selects a player.
   const palettePlayerId = draft?.playerId;
@@ -1523,6 +1548,9 @@ function LiveCollector({ clubId, onSaved }: {
       return;
     }
     const observations = buildLiveCollectorObservationInputs(draft);
+    if (validationTarget && !(validationTarget.phrase in draft.phrases && (draft.phrases[validationTarget.phrase] ?? 0) > 0)) {
+      setError("A validação exige uma contagem maior que zero da frase alvo."); return;
+    }
     if (observations.length === 0) { setError("No observations with count > 0"); return; }
     setLoading(true); setError(null);
     try {
@@ -1553,6 +1581,16 @@ function LiveCollector({ clubId, onSaved }: {
       });
       if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.message ?? `HTTP ${response.status}`); }
       const result: ImportResult = await response.json();
+      if (validationTarget) {
+        const targetObservation = observations.find((observation) => observation.phrase === validationTarget.phrase);
+        if (!targetObservation) throw new Error("A observação alvo da validação não foi encontrada.");
+        const controlled = await fetch(`/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/controlled-observations`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...targetObservation, aggregateIndex: validationTarget.aggregateIndex, code: validationTarget.code, experimentType: validationTarget.experimentType }),
+        });
+        if (!controlled.ok) { const body = await controlled.json().catch(() => null); throw new Error(body?.message ?? `HTTP ${controlled.status}`); }
+        onValidationConsumed();
+      }
       setSaveResult(result);
       clearDraft();
       setDraft(null);
@@ -1606,7 +1644,9 @@ function LiveCollector({ clubId, onSaved }: {
 
   // SAVE phase
   if (phase === "save" && preview) {
-    const canImport = hasCurrentAssociation && preview.conflictCount === 0 && preview.invalidCount === 0 && preview.newCount > 0;
+    // A controlled-validation retry may find its passive literal observation
+    // already saved after a transient controlled-provenance failure.
+    const canImport = hasCurrentAssociation && preview.conflictCount === 0 && preview.invalidCount === 0 && (preview.newCount > 0 || Boolean(validationTarget));
     return <div style={{ marginTop: 12, padding: 16, border: "1px solid #30363d", borderRadius: 8, background: "#161b22" }}>
       <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: "0 0 8px" }}>Revisão do import</h4>
       <div style={{ display: "flex", gap: 16, fontSize: 13, color: "#c9d1d9", marginBottom: 8, flexWrap: "wrap" }}>
@@ -1634,6 +1674,7 @@ function LiveCollector({ clubId, onSaved }: {
   if (phase === "associate") {
     return <div style={{ marginTop: 12, padding: 16, border: "1px solid #30363d", borderRadius: 8, background: "#161b22" }}>
       <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: "0 0 8px" }}>Associar partida e jogador</h4>
+      {validationTarget && <p style={{ color: "#79c0ff", fontSize: 12, margin: "0 0 8px" }}>VALIDATING · {validationTarget.phrase} · agg{validationTarget.aggregateIndex}[{validationTarget.code}]</p>}
       <p style={{ color: "#8b949e", fontSize: 12 }}>Selecione a partida canônica e o jogador para esta coleta.</p>
       {draft.opponentName && <p style={{ color: "#8b949e", fontSize: 12, margin: "0 0 8px" }}>Coleta: vs. {draft.opponentName}</p>}
       {error && <p style={{ color: "#f85149", fontSize: 12 }}>{error}</p>}
@@ -1678,6 +1719,7 @@ function LiveCollector({ clubId, onSaved }: {
     const entries = Object.entries(draft.phrases).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]);
     return <div style={{ marginTop: 12, padding: 16, border: "1px solid #30363d", borderRadius: 8, background: "#161b22" }}>
       <h4 style={{ color: "#c9d1d9", fontSize: 14, margin: "0 0 8px" }}>Revisão da coleta</h4>
+      {validationTarget && <p style={{ color: "#79c0ff", fontSize: 12, margin: "0 0 8px" }}>VALIDATING · {validationTarget.phrase} · agg{validationTarget.aggregateIndex}[{validationTarget.code}]</p>}
       <p style={{ color: "#8b949e", fontSize: 12, margin: "0 0 8px" }}>{totalCount} feedback{totalCount !== 1 ? "s" : ""} · {activeCount} frase{activeCount !== 1 ? "s" : ""}</p>
       {draft.opponentName && <p style={{ color: "#8b949e", fontSize: 12, margin: "0 0 8px" }}>Coleta: vs. {draft.opponentName}</p>}
       {hasCurrentAssociation && <p style={{ color: "#8b949e", fontSize: 11 }}>Partida: {draft.matchId.slice(-8)} · Jogador: {draft.playerName ?? draft.playerId?.slice(-8)}</p>}
@@ -1743,6 +1785,12 @@ function LiveCollector({ clubId, onSaved }: {
       </div>
       <button onClick={() => setOpen(false)} style={{ ...btnStyle, fontSize: 10 }}>Minimizar</button>
     </div>
+
+    {validationTarget && <div style={{ borderLeft: "3px solid #1f6feb", padding: "8px 10px", marginBottom: 10, color: "#c9d1d9", fontSize: 12 }}>
+      <strong>VALIDATING</strong><br />
+      Frase: {validationTarget.phrase} · Candidato: agg{validationTarget.aggregateIndex}[{validationTarget.code}] · Experimento: {validationTarget.experimentType}<br />
+      Conte cuidadosamente apenas esta frase; a associação à partida canônica continuará manual.
+    </div>}
 
     <label className="live-collector-opponent">
       <span>Adversário (lembrete local)</span>
@@ -1814,10 +1862,12 @@ export function ObservationResearchQueueView({
   data,
   clubId,
   onBack,
+  onStartValidation = () => {},
 }: {
   data: ObservationResearchQueue | null;
   clubId: string;
   onBack: () => void;
+  onStartValidation?: (target: ValidationTarget) => void;
 }) {
   const [audit, setAudit] = useState<{ key: string; data: ObservationEvidenceAudit } | null>(null);
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
@@ -1845,24 +1895,18 @@ export function ObservationResearchQueueView({
 
   if (!data) return <div><button onClick={onBack} style={{ ...btnStyle, marginBottom: 12, fontSize: 12 }}>← Back to matches</button><p style={{ color: "#8b949e", fontSize: 12 }}>Carregando fila de pesquisa…</p></div>;
 
-  const sections: { title: string; queueSection: ObservationResearchQueueItem["queueSection"]; empty: string }[] = [
-    { title: "PRONTOS PARA EXPERIMENTO CONTROLADO", queueSection: "READY_FOR_CONTROLLED_TEST", empty: "Nenhum candidato pronto para experimento controlado." },
-    { title: "PROMISSORES — CONTINUE COLETANDO", queueSection: "PROMISING_CONTINUE_COLLECTING", empty: "Nenhum sinal emergente com ação de coleta." },
-    { title: "ASSOCIAÇÕES FORTES — NÃO DIRETAS", queueSection: "ASSOCIATED_NOT_DIRECT", empty: "Nenhuma associação forte já refutada como contador direto." },
-    { title: "PRECISAM DE AUDITORIA", queueSection: "NEEDS_AUDIT", empty: "Nenhuma evidência relevante aguardando auditoria." },
-  ];
-
-  const renderItem = (item: ObservationResearchQueueItem) => {
+  const renderItem = (item: ObservationResearchQueueItem, index: number) => {
     const key = `${item.playerId}-${item.phrase}-${item.aggregateIndex}-${item.code}-${item.auditMatchId ?? "none"}`;
+    const controlled = item.controlledEvidence ?? { supportingMatches: 0, requiredSupportingMatches: 2, exactMatches: 0, compatibleMatches: 0, contradictions: 0, inconclusive: 0, lastResult: null, lastObservedCount: null, lastRawValue: null };
+    const experimentType = item.experimentType ?? "COUNT_MATCH";
     return <article key={key} style={{ borderTop: "1px solid #30363d", padding: "12px 0" }}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
         <strong style={{ fontSize: 13 }}>{item.phrase}</strong>
         <span style={{ color: "#f0c674", fontSize: 11 }}>agg{item.aggregateIndex}[{item.code}]</span>
-        <span style={{ color: "#79c0ff", fontSize: 10 }}>{item.researchState}</span>
-        <span style={{ color: "#8b949e", fontSize: 10 }}>Prioridade {item.researchPriority}</span>
+        <span style={{ color: "#79c0ff", fontSize: 10 }}>#{index + 1}</span>
       </div>
       <p style={{ color: "#8b949e", fontSize: 11, margin: "6px 0" }}>
-        Jogador: {item.playerName ?? item.playerId} · Contador direto: {item.directCounterStatus} · Associação com feedback EA: {item.feedbackAssociationStatus} · Validação: {item.validationStatus}
+        Jogador: {item.playerName ?? item.playerId} · Contador direto: {item.directCounterStatus} · Associação com feedback EA: {item.feedbackAssociationStatus}
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 5, marginBottom: 8 }}>
         <StatChip label="Comparáveis" value={item.comparableObservations} />
@@ -1874,13 +1918,15 @@ export function ObservationResearchQueueView({
         <StatChip label="RAW explícito" value={item.rawProvenance.explicitValueEvidence} />
         <StatChip label="RAW zero assumido" value={item.rawProvenance.codeAbsentAssumedZeroEvidence} warn={item.rawProvenance.codeAbsentAssumedZeroEvidence > 0} />
         <StatChip label="RAW indisponível" value={item.rawProvenance.aggregateUnavailableEvidence} warn={item.rawProvenance.aggregateUnavailableEvidence > 0} />
-        <StatChip label="Background" value={item.background.classification} warn={item.background.classification === "BROADLY_PRESENT"} />
+        <StatChip label="Experimento" value={experimentType} />
       </div>
       {item.collisionCandidates.length > 0 && <p style={{ color: "#f0883e", fontSize: 11, margin: "5px 0" }}>
         Colisão de candidato: {item.collisionCandidates.map((collision) => `agg${collision.aggregateIndex}[${collision.code}]`).join(", ")}
       </p>}
-      {item.evidenceTruncated && <p style={{ color: "#f0883e", fontSize: 11, margin: "5px 0" }}>Janela limitada: esta evidência não pode receber maturidade máxima.</p>}
+      <p style={{ color: "#c9d1d9", fontSize: 11, margin: "8px 0" }}><strong>Por que foi selecionada:</strong> {item.rankingReasons?.join(" · ") || "melhor evidência disponível"}</p>
       <p style={{ color: "#c9d1d9", fontSize: 11, margin: "8px 0" }}><strong>Próxima ação:</strong> {item.nextAction}</p>
+      <p style={{ color: "#79c0ff", fontSize: 11, margin: "8px 0" }}>Validação controlada: {controlled.supportingMatches}/{controlled.requiredSupportingMatches} com suporte · {controlled.exactMatches} exata(s) · {controlled.compatibleMatches} compatível(is) · {controlled.contradictions} contradição(ões){controlled.lastResult ? ` · Último: ${controlled.lastResult}` : ""}</p>
+      {item.validationStatus !== "PROVISIONAL_VALIDATED_FEEDBACK_ASSOCIATION" && <button onClick={() => onStartValidation({ phrase: item.phrase, aggregateIndex: item.aggregateIndex, code: item.code, experimentType })} style={{ ...btnStyle, background: "#1f6feb", borderColor: "#388bfd", fontSize: 12, padding: "6px 10px", marginRight: 8 }}>Start validation</button>}
       {item.auditMatchId && <button onClick={() => void loadAudit(item)} disabled={loadingKey === key} style={{ ...btnStyle, fontSize: 11, padding: "2px 8px" }}>
         {loadingKey === key ? "Carregando…" : audit?.key === key ? "Ocultar auditoria" : "Auditar evidência"}
       </button>}
@@ -1892,28 +1938,24 @@ export function ObservationResearchQueueView({
   return <div>
     <button onClick={onBack} style={{ ...btnStyle, marginBottom: 12, fontSize: 12 }}>← Back to matches</button>
     <h2 style={h2Style}>Research Queue</h2>
-    <p style={{ color: "#f0883e", fontSize: 12 }}>Triagem derivada de observações humanas e RAW. Não cria mapeamento esportivo nem valida uma métrica.</p>
+    <p style={{ color: "#f0883e", fontSize: 12 }}>Hipóteses curtas para validar com observação humana direcionada. Nenhuma cria uma métrica esportiva pública.</p>
     <p style={{ color: "#8b949e", fontSize: 11 }}>
       {data.researchIdentitiesRead}/{data.researchIdentityLimit} identidades de pesquisa · {data.observationsRead} observações carregadas · {data.canonicalMatchesRead}/{data.canonicalMatchLimit} partidas canônicas · até {data.observationsPerIdentityLimit} observações por identidade.
     </p>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "10px 0 4px" }}>
-      <StatChip label="Associações fortes" value={data.summary.strongFeedbackAssociations} />
-      <StatChip label="Associações emergentes" value={data.summary.emergingFeedbackAssociations} />
-      <StatChip label="Candidatos diretos" value={data.summary.directCounterCandidates} />
-      <StatChip label="Diretos refutados com associação" value={data.summary.directCounterRefutedWithAssociation} />
-      <StatChip label="Prontos para experimento" value={data.summary.readyForControlledTest} />
-      <StatChip label="Validações provisórias" value={data.summary.provisionalValidations} />
+      <StatChip label="Top hipóteses" value={data.items.length} />
+      <StatChip label="Em validação" value={data.summary.validationsInProgress ?? 0} />
+      <StatChip label="Validadas provisoriamente" value={data.summary.provisionalValidations} />
+      <StatChip label="Precisam de auditoria" value={data.summary.hypothesesNeedingAudit ?? 0} />
     </div>
     {(data.identityWindowTruncated || data.canonicalWindowTruncated) && <p style={{ color: "#f0883e", fontSize: 11 }}>
-      A fila usa leitura limitada. Apenas identidades com histórico próprio incompleto ficam impedidas de receber maturidade máxima.
+      A fila usa leitura limitada; a limitação reduz prioridade, mas não obriga coleta passiva indefinida antes de um teste direcionado.
     </p>}
-    {sections.map((section) => {
-      const items = data.items.filter((item) => item.queueSection === section.queueSection);
-      return <section key={section.title} style={{ marginTop: 18, border: "1px solid #30363d", borderRadius: 6, padding: "10px 12px" }}>
-        <h3 style={{ ...h3Style, marginBottom: 8 }}>{section.title}</h3>
-        {items.length === 0 ? <p style={{ color: "#8b949e", fontSize: 11, margin: 0 }}>{section.empty}</p> : items.map(renderItem)}
-      </section>;
-    })}
+    <section style={{ marginTop: 18, border: "1px solid #30363d", borderRadius: 6, padding: "10px 12px" }}>
+      <h3 style={{ ...h3Style, marginBottom: 8 }}>TOP HYPOTHESES TO VALIDATE NOW</h3>
+      {data.items.length === 0 ? <p style={{ color: "#8b949e", fontSize: 11, margin: 0 }}>Ainda não há evidência explícita suficiente para um teste direcionado.</p> : data.items.map(renderItem)}
+    </section>
+    <details style={{ marginTop: 12, color: "#8b949e", fontSize: 11 }}><summary>Advanced analysis</summary><p>Diagnóstico técnico: {data.summary.emergingFeedbackAssociations} associações emergentes; {data.summary.directCounterRefutedWithAssociation} hipóteses diretas refutadas com associação.</p></details>
   </div>;
 }
 

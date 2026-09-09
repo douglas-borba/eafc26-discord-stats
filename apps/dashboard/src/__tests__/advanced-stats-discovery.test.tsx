@@ -246,12 +246,11 @@ describe("Advanced Stats Explorer investigation surfaces", () => {
 
     const html = renderToStaticMarkup(<ObservationResearchQueueView data={queue} clubId="club-1" onBack={() => {}} />);
 
-    expect(html).toContain("PRONTOS PARA EXPERIMENTO CONTROLADO");
-    expect(html).toContain("ASSOCIAÇÕES FORTES — NÃO DIRETAS");
+    expect(html).toContain("TOP HYPOTHESES TO VALIDATE NOW");
+    expect(html).toContain("Start validation");
     expect(html).toContain("agg0[183]");
-    expect(html).toContain("ASSOCIATED_BUT_NOT_DIRECT");
     expect(html).toContain("Contador direto: REFUTED");
-    expect(html).toContain("Associações fortes");
+    expect(html).toContain("Advanced analysis");
     expect(html).toContain("6");
     expect(html).toContain("Auditar evidência");
     expect(html).not.toContain("timing metric");
@@ -278,7 +277,7 @@ describe("Advanced Stats Explorer investigation surfaces", () => {
     const html = renderToStaticMarkup(<ObservationResearchQueueView data={queue} clubId="club-1" onBack={() => {}} />);
 
     expect(html).toContain("Sinal emergente");
-    expect(html).toContain("PRECISAM DE AUDITORIA");
+    expect(html).toContain("TOP HYPOTHESES TO VALIDATE NOW");
     expect(html).toContain("até 20 observações por identidade");
     expect(html).not.toContain("BLOQUEADOS POR INTEGRIDADE");
   });
