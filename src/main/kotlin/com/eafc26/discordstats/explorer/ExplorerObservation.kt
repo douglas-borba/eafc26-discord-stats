@@ -116,6 +116,15 @@ interface ExplorerObservationRepository {
     fun findForPlayer(clubId: ClubId, playerId: String, limit: Int): List<ExplorerObservation>
 
     /**
+     * Bounded, newest-first club evidence window for the research queue. This
+     * intentionally avoids a phrase-by-phrase scan when the queue is derived.
+     */
+    fun findRecentForClub(clubId: ClubId, limit: Int): List<ExplorerObservation> {
+        require(limit in 1..201) { "limit must be 1-201" }
+        throw UnsupportedOperationException("Research queue requires a bounded club observation query")
+    }
+
+    /**
      * Batch lookup by identity keys. Returns existing observations matching any
      * of the supplied (clubId, matchId, playerId, phrase) tuples. The input
      * collection must not exceed 50 entries.
@@ -229,6 +238,14 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
         require(limit in 1..50) { "limit must be 1-50" }
         return observations.values.filter { it.clubId == clubId && it.playerId == playerId }
             .sortedWith(compareByDescending<ExplorerObservation> { it.updatedAt }.thenByDescending { it.createdAt })
+            .take(limit)
+    }
+
+    override fun findRecentForClub(clubId: ClubId, limit: Int): List<ExplorerObservation> {
+        require(limit in 1..201) { "limit must be 1-201" }
+        return observations.values
+            .filter { it.clubId == clubId }
+            .sortedWith(compareByDescending<ExplorerObservation> { it.updatedAt }.thenByDescending { it.createdAt }.thenBy { it.matchId.value }.thenBy { it.playerId }.thenBy { it.phrase })
             .take(limit)
     }
 

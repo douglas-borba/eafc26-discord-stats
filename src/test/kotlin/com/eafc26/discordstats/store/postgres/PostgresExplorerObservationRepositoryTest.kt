@@ -63,6 +63,17 @@ class PostgresExplorerObservationRepositoryTest {
         assertThat(observations.single().clubId).isEqualTo(ClubId("club-a"))
     }
 
+    @Test fun `loads a bounded newest club-wide evidence window without leaking another club`() {
+        repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-a"), "player-a", "Frase A", 1))
+        repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-b"), "player-b", "Frase B", 2))
+        repository.save(ExplorerObservation(ClubId("club-b"), MatchId("match-c"), "player-c", "Frase C", 3))
+
+        val observations = repository.findRecentForClub(ClubId("club-a"), 1)
+
+        assertThat(observations).hasSize(1)
+        assertThat(observations).allSatisfy { assertThat(it.clubId).isEqualTo(ClubId("club-a")) }
+    }
+
     @Test fun `loads a bounded same player match vector without leaking other identities`() {
         repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-a"), "player-a", "Alpha", 1))
         repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-a"), "player-a", "Beta", 2))

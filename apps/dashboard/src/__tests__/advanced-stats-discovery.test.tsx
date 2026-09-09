@@ -2,7 +2,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { DiscoveryView, EvidenceAuditDetails, NovelMetricsView, ObservationComparisonView, PositionObservationsView, type DiscoveryData, type NovelResult, type ObservationComparison, type ObservationEvidenceAudit, type PositionObservationsData } from "@/components/admin/advanced-stats-explorer";
+import { DiscoveryView, EvidenceAuditDetails, NovelMetricsView, ObservationComparisonView, ObservationResearchQueueView, PositionObservationsView, type DiscoveryData, type NovelResult, type ObservationComparison, type ObservationEvidenceAudit, type ObservationResearchQueue, type PositionObservationsData } from "@/components/admin/advanced-stats-explorer";
 
 const base: DiscoveryData = {
   analysis: {
@@ -214,5 +214,44 @@ describe("Advanced Stats Explorer investigation surfaces", () => {
     expect(html).toContain("FULL");
     expect(html).toContain("UNVERIFIED_EXTERNAL_MAPPING");
     expect(html).toContain("does not claim actual played position");
+  });
+
+  it("renders research triage facts without promoting a refuted direct candidate", () => {
+    const queue: ObservationResearchQueue = {
+      observationWindowLimit: 200, canonicalMatchLimit: 50, phraseLimit: 40, observationsPerPhraseLimit: 20,
+      observationsRead: 11, canonicalMatchesRead: 11,
+      observationWindowTruncated: false, canonicalWindowTruncated: false, phrasesExcludedByLimit: 0,
+      items: [
+        {
+          playerId: "player-1", playerName: "Player", phrase: "Melhore seu tempo de bola", aggregateIndex: 0, code: 183,
+          researchState: "ASSOCIATED_BUT_NOT_DIRECT", directCounterValidity: "REFUTED", associationInterest: "HIGH",
+          researchPriority: "P3", researchPriorityScore: 390, comparableObservations: 11, exactCoincidences: 6,
+          compatibleObservations: 3, contradictions: 2, trustworthyContradictions: 2, totalExcess: 5,
+          collisionCandidates: [], rawProvenance: { explicitValueEvidence: 11, codeAbsentAssumedZeroEvidence: 0, aggregateUnavailableEvidence: 0 },
+          evidenceTruncated: false, auditMatchId: "tumultua", nextActionType: "RETAIN_ASSOCIATION_ONLY",
+          nextAction: "Não teste este código como contador direto. Retenha-o apenas para pesquisa observacional futura.",
+        },
+        {
+          playerId: "player-1", playerName: "Player", phrase: "Ótima interceptação", aggregateIndex: 0, code: 110,
+          researchState: "READY_FOR_CONTROLLED_TEST", directCounterValidity: "NOT_REFUTED", associationInterest: "NONE",
+          researchPriority: "P1", researchPriorityScore: 650, comparableObservations: 12, exactCoincidences: 9,
+          compatibleObservations: 3, contradictions: 0, trustworthyContradictions: 0, totalExcess: 2,
+          collisionCandidates: [], rawProvenance: { explicitValueEvidence: 12, codeAbsentAssumedZeroEvidence: 0, aggregateUnavailableEvidence: 0 },
+          evidenceTruncated: false, auditMatchId: "match-2", nextActionType: "CONTROLLED_HIGH_COUNT_TARGET",
+          nextAction: "Experimento direcionado: registre uma partida com várias ocorrências observadas de “Ótima interceptação” .",
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(<ObservationResearchQueueView data={queue} clubId="club-1" onBack={() => {}} />);
+
+    expect(html).toContain("PRONTOS PARA EXPERIMENTO CONTROLADO");
+    expect(html).toContain("ASSOCIADOS, MAS NÃO SÃO CONTADORES DIRETOS");
+    expect(html).toContain("agg0[183]");
+    expect(html).toContain("ASSOCIATED_BUT_NOT_DIRECT");
+    expect(html).toContain("Direto: REFUTED");
+    expect(html).toContain("6");
+    expect(html).toContain("Auditar evidência");
+    expect(html).not.toContain("timing metric");
   });
 });

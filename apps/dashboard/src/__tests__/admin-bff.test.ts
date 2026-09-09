@@ -22,6 +22,7 @@ import { GET as getExplorerObservations, POST as saveExplorerObservation } from 
 import { POST as reconcileExplorerObservation } from "@/app/api/admin/explorer/clubs/[clubId]/matches/[matchId]/players/[playerId]/observations/reconcile/route";
 import { GET as compareExplorerObservations } from "@/app/api/admin/explorer/clubs/[clubId]/players/[playerId]/observation-comparison/route";
 import { GET as auditExplorerObservationEvidence } from "@/app/api/admin/explorer/clubs/[clubId]/players/[playerId]/observation-evidence/[matchId]/route";
+import { GET as observationResearchQueue } from "@/app/api/admin/explorer/clubs/[clubId]/observation-research-queue/route";
 import { POST as previewImport } from "@/app/api/admin/explorer/clubs/[clubId]/observations/preview/route";
 import { POST as executeImport } from "@/app/api/admin/explorer/clubs/[clubId]/observations/import/route";
 
@@ -205,6 +206,26 @@ describe("administrative BFF", () => {
     expect(responseBody).not.toContain("test-admin-token");
   });
 
+  it("loads the bounded observation research queue through the authenticated BFF", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json({
+      observationWindowLimit: 200, canonicalMatchLimit: 50, phraseLimit: 40, observationsPerPhraseLimit: 20,
+      observationsRead: 2, canonicalMatchesRead: 2, observationWindowTruncated: false, canonicalWindowTruncated: false,
+      phrasesExcludedByLimit: 0, items: [],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await observationResearchQueue(
+      new Request("https://dashboard.test/api/admin/explorer/clubs/8874106/observation-research-queue"),
+      explorerContext,
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "https://spring.example.test/api/admin/explorer/clubs/8874106/observation-research-queue",
+    );
+    expect((fetchMock.mock.calls[0][1].headers as Headers).get("Authorization")).toBe("Bearer test-admin-token");
+  });
+
   it("reconciles one explicit observation phrase through the server-side CSRF boundary", async () => {
     const body = JSON.stringify({ sourcePhrase: "otimo emepenho ofensivo", targetPhrase: "Ótimo empenho ofensivo" });
     const fetchMock = vi.fn()
@@ -341,6 +362,20 @@ describe("administrative BFF", () => {
     const response = await auditExplorerObservationEvidence(
       new Request("https://dashboard.test/api/admin/explorer/clubs/8874106/players/player-1/observation-evidence/match-1?phrase=x&aggregateIndex=0&code=183"),
       auditExplorerContext,
+    );
+
+    expect(response.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unauthenticated research queue read before contacting Spring", async () => {
+    vi.mocked(requireAdmin).mockResolvedValueOnce({ kind: "anonymous" });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await observationResearchQueue(
+      new Request("https://dashboard.test/api/admin/explorer/clubs/8874106/observation-research-queue"),
+      explorerContext,
     );
 
     expect(response.status).toBe(401);

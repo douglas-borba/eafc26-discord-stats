@@ -575,6 +575,64 @@ class AdvancedStatsExplorerServiceTest {
     }
 
     @Test
+    fun `research queue uses one bounded observation query and one batch canonical lookup without audit reads`() {
+        val stored = InMemoryExplorerObservationRepository()
+        stored.save(ExplorerObservation(clubId, MatchId("one"), "player-1", "Ação", 1))
+        stored.save(ExplorerObservation(clubId, MatchId("two"), "player-1", "Ação", 2))
+        var clubObservationReads = 0
+        var canonicalBatchReads = 0
+        val queueRepository = object : ExplorerObservationRepository by stored {
+            override fun findRecentForClub(clubId: ClubId, limit: Int): List<ExplorerObservation> {
+                clubObservationReads++
+                return stored.findRecentForClub(clubId, limit)
+            }
+
+            override fun findForPlayerPhrase(clubId: ClubId, playerId: String, phrase: String, limit: Int): List<ExplorerObservation> =
+                error("Queue must not query one phrase at a time")
+
+            override fun findForPlayer(clubId: ClubId, playerId: String, limit: Int): List<ExplorerObservation> =
+                error("Queue must not query one player at a time")
+
+            override fun findForPlayerMatchLimited(clubId: ClubId, matchId: MatchId, playerId: String, limit: Int): List<ExplorerObservation> =
+                error("Queue must not eagerly load audit vectors")
+        }
+        val service = AdvancedStatsExplorerService(
+            fakeRepo(
+                listOf(
+                    buildCanonical(rawAgg0 = "183:1", rawAgg1 = "", id = "one"),
+                    buildCanonical(rawAgg0 = "183:2", rawAgg1 = "", id = "two"),
+                ),
+            ) { canonicalBatchReads++ },
+            observationRepository = queueRepository,
+        )
+
+        val queue = service.observationResearchQueue(clubId)
+
+        assertThat(clubObservationReads).isEqualTo(1)
+        assertThat(canonicalBatchReads).isEqualTo(1)
+        assertThat(queue.items).anySatisfy {
+            assertThat(it.aggregateIndex to it.code).isEqualTo(0 to 183)
+            assertThat(it.researchState).isEqualTo("COLLECT_MORE")
+        }
+    }
+
+    @Test
+    fun `research queue keeps aggregate identities separate and excludes known controls from unknown promotion`() {
+        val observations = InMemoryExplorerObservationRepository()
+        observations.save(ExplorerObservation(clubId, MatchId("one"), "player-1", "Ótima interceptação", 1))
+        val service = AdvancedStatsExplorerService(
+            fakeRepo(buildCanonical(rawAgg0 = "110:1,112:1", rawAgg1 = "110:1", id = "one")),
+            observationRepository = observations,
+        )
+
+        val items = service.observationResearchQueue(clubId).items
+
+        assertThat(items.map { it.aggregateIndex to it.code }).contains(0 to 110, 1 to 110)
+        assertThat(items.map { it.aggregateIndex to it.code }).doesNotContain(0 to 112)
+        assertThat(items).allSatisfy { assertThat(it.researchState).isNotEqualTo("READY_FOR_CONTROLLED_TEST") }
+    }
+
+    @Test
     fun `evidence audit keeps the exact persisted identity and same player match vector`() {
         val observations = InMemoryExplorerObservationRepository()
         observations.save(

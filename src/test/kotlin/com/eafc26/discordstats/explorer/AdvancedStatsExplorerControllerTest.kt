@@ -153,4 +153,27 @@ class AdvancedStatsExplorerControllerTest {
             ClubId("club-1"), MatchId("match-1"), "player-1", "Melhore seu tempo de bola", 0, 183,
         )
     }
+
+    @Test
+    fun `research queue endpoint remains a club scoped read-only explorer API`() {
+        val queue = AdvancedStatsExplorerService.ObservationResearchQueueData(
+            observationWindowLimit = 200,
+            canonicalMatchLimit = 50,
+            phraseLimit = 40,
+            observationsPerPhraseLimit = 20,
+            observationsRead = 0,
+            canonicalMatchesRead = 0,
+            observationWindowTruncated = false,
+            canonicalWindowTruncated = false,
+            phrasesExcludedByLimit = 0,
+            items = emptyList(),
+        )
+        whenever(explorerService.observationResearchQueue(ClubId("club-1"))).thenReturn(queue)
+
+        val response = AdvancedStatsExplorerController(explorerService).observationResearchQueue("club-1")
+
+        assertThat(response.statusCode.value()).isEqualTo(200)
+        assertThat(response.body?.observationWindowLimit).isEqualTo(200)
+        verify(explorerService).observationResearchQueue(ClubId("club-1"))
+    }
 }

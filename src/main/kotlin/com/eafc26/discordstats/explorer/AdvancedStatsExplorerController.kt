@@ -195,6 +195,13 @@ class AdvancedStatsExplorerController(
         return ResponseEntity.ok(explorerService.compareObservations(ClubId(clubId), playerId, phrase, limit))
     }
 
+    /** Read-only, bounded research triage for persisted human evidence. */
+    @GetMapping("/clubs/{clubId}/observation-research-queue")
+    fun observationResearchQueue(
+        @PathVariable clubId: String,
+    ): ResponseEntity<AdvancedStatsExplorerService.ObservationResearchQueueData> =
+        ResponseEntity.ok(explorerService.observationResearchQueue(ClubId(clubId)))
+
     @GetMapping("/clubs/{clubId}/players/{playerId}/observation-evidence/{matchId}")
     fun observationEvidenceAudit(
         @PathVariable clubId: String,

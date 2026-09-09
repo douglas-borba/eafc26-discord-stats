@@ -175,6 +175,21 @@ class PostgresExplorerObservationRepository(
         )
     }
 
+    override fun findRecentForClub(clubId: ClubId, limit: Int): List<ExplorerObservation> {
+        require(limit in 1..201) { "limit must be 1-201" }
+        return jdbcTemplate.query(
+            """
+            SELECT club_id, match_id, player_id, phrase, observed_count, completeness, note, observed_position_context, created_at, updated_at
+            FROM explorer_observations
+            WHERE club_id = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT ?
+            """.trimIndent(),
+            { rs, _ -> read(rs) },
+            clubId.value, limit,
+        )
+    }
+
     override fun findByIdentities(clubId: ClubId, keys: Collection<ObservationIdentityKey>): List<ExplorerObservation> {
         require(keys.size <= 50) { "batch lookup limited to 50 keys" }
         if (keys.isEmpty()) return emptyList()

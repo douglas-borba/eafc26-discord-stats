@@ -236,7 +236,7 @@ export type NovelDetail = { candidate: NovelCandidate; knownRelations: NovelKnow
 export type PositionObservation = { matchId: string; playedAt: string; opponentName: string | null; playerId: string; playerName: string | null; eaPositionCode: string | null; candidate: { rawCode: string | null; candidateLabel: string | null; classification: string; semanticStatus: string }; completion: string; rating: string | null };
 export type PositionObservationsData = { coverage: string; observations: PositionObservation[]; distribution: { eaPositionCode: string | null; candidate: PositionObservation["candidate"]; observations: number }[]; distinctCodes: number };
 
-type View = "matches" | "players" | "detail" | "compare" | "discovery" | "anchor" | "novel" | "position";
+type View = "matches" | "players" | "detail" | "compare" | "discovery" | "anchor" | "novel" | "position" | "researchQueue";
 
 export function AdvancedStatsExplorer() {
   const [clubId, setClubId] = useState("");
@@ -278,6 +278,7 @@ export function AdvancedStatsExplorer() {
   const [novel, setNovel] = useState<NovelResult | null>(null);
   const [novelDetail, setNovelDetail] = useState<NovelDetail | null>(null);
   const [positionObservations, setPositionObservations] = useState<PositionObservationsData | null>(null);
+  const [researchQueue, setResearchQueue] = useState<ObservationResearchQueue | null>(null);
 
   const fetchJson = useCallback(async (url: string) => {
     const res = await fetch(url, { cache: "no-store" });
@@ -285,13 +286,25 @@ export function AdvancedStatsExplorer() {
     return res.json();
   }, []);
 
+  const refreshResearchQueue = useCallback(async () => {
+    if (!activeClubId) return;
+    const data = await fetchJson(`/api/admin/explorer/clubs/${activeClubId}/observation-research-queue`);
+    setResearchQueue(data);
+  }, [activeClubId, fetchJson]);
+
   const loadMatches = useCallback(async () => {
     if (!clubId.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchJson(`/api/admin/explorer/clubs/${clubId}/matches?limit=20`);
+      const [data, queue] = await Promise.all([
+        fetchJson(`/api/admin/explorer/clubs/${clubId}/matches?limit=20`),
+        // The queue is research-only. A transient queue failure must not make
+        // the existing match explorer unavailable.
+        fetchJson(`/api/admin/explorer/clubs/${clubId}/observation-research-queue`).catch(() => null),
+      ]);
       setMatches(data);
+      setResearchQueue(queue);
       setActiveClubId(clubId);
       setView("matches");
       setSelectedMatch(null);
@@ -305,6 +318,20 @@ export function AdvancedStatsExplorer() {
       setLoading(false);
     }
   }, [clubId, fetchJson]);
+
+  const openResearchQueue = useCallback(async () => {
+    if (!activeClubId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await refreshResearchQueue();
+      setView("researchQueue");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível atualizar a fila de pesquisa");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeClubId, refreshResearchQueue]);
 
   const loadPlayers = useCallback(async (match: MatchSummary) => {
     setLoading(true);
@@ -513,6 +540,7 @@ export function AdvancedStatsExplorer() {
           <>
             <button onClick={() => exportData("json")} style={btnStyle}>Export JSON</button>
             <button onClick={() => exportData("csv")} style={btnStyle}>Export CSV</button>
+            <button onClick={openResearchQueue} disabled={loading} style={btnStyle}>Research Queue</button>
             <button onClick={loadDiscovery} disabled={loading} style={btnStyle}>Discovery</button>
             <button onClick={loadNovel} disabled={loading} style={btnStyle}>Novel Metrics</button>
             <button onClick={() => setView("anchor")} style={btnStyle}>Anchor</button>
@@ -620,6 +648,7 @@ export function AdvancedStatsExplorer() {
           onToggleZeros={() => setShowZeros(!showZeros)}
           onToggleRaw={() => setShowRaw(!showRaw)}
           onPositionObservations={loadPositionObservations}
+          onObservationSaved={() => { void refreshResearchQueue(); }}
           onBack={() => setView("players")}
         />
       )}
@@ -689,8 +718,9 @@ export function AdvancedStatsExplorer() {
 
       {view === "novel" && <NovelMetricsView data={novel} detail={novelDetail} loading={loading} onRun={loadNovel} onInspect={loadNovelDetail} onCloseDetail={() => setNovelDetail(null)} onBack={() => setView("matches")} />}
       {view === "position" && <PositionObservationsView data={positionObservations} onBack={() => setView("detail")} />}
+      {view === "researchQueue" && <ObservationResearchQueueView data={researchQueue} clubId={activeClubId} onBack={() => setView("matches")} />}
 
-      {activeClubId && <LiveCollector clubId={activeClubId} onSaved={() => { if (playerData) { /* detail reload handled by parent state */ } }} />}
+      {activeClubId && <LiveCollector clubId={activeClubId} onSaved={() => { void refreshResearchQueue(); if (playerData) { /* detail reload handled by parent state */ } }} />}
     </div>
   );
 }
@@ -703,6 +733,7 @@ function PlayerDetailView({
   onToggleZeros,
   onToggleRaw,
   onPositionObservations,
+  onObservationSaved,
   onBack,
 }: {
   data: PlayerExplorerData;
@@ -712,6 +743,7 @@ function PlayerDetailView({
   onToggleZeros: () => void;
   onToggleRaw: () => void;
   onPositionObservations: () => void;
+  onObservationSaved: () => void;
   onBack: () => void;
 }) {
   const entries = showZeros ? data.aggregateEntries : data.aggregateEntries.filter((e) => e.value !== 0);
@@ -730,7 +762,7 @@ function PlayerDetailView({
         <button onClick={onPositionObservations} style={{ ...btnStyle, fontSize: 12 }}>Inspect this player across matches</button>
       </section>
 
-      <ObservationPanel clubId={clubId} data={data} />
+      <ObservationPanel clubId={clubId} data={data} onSaved={onObservationSaved} />
 
       {/* Known stats */}
       <h3 style={h3Style}>Known Stats (ground truth)</h3>
@@ -905,7 +937,45 @@ export type ObservationEvidenceAudit = {
   };
 };
 
-function ObservationPanel({ clubId, data }: { clubId: string; data: PlayerExplorerData }) {
+export type ObservationResearchQueueItem = {
+  playerId: string;
+  playerName: string | null;
+  phrase: string;
+  aggregateIndex: number;
+  code: number;
+  researchState: "COLLECT_MORE" | "PROMISING_DIRECT_COUNTER" | "READY_FOR_CONTROLLED_TEST" | "ASSOCIATED_BUT_NOT_DIRECT" | "DIRECT_COUNTER_REFUTED" | "VALIDATION_BLOCKED";
+  directCounterValidity: "NOT_REFUTED" | "REFUTED" | "INTEGRITY_LIMITED";
+  associationInterest: "NONE" | "LOW" | "MEDIUM" | "HIGH";
+  researchPriority: "P1" | "P2" | "P3" | "P4";
+  researchPriorityScore: number;
+  comparableObservations: number;
+  exactCoincidences: number;
+  compatibleObservations: number;
+  contradictions: number;
+  trustworthyContradictions: number;
+  totalExcess: number;
+  collisionCandidates: ObservationCandidate["candidateCollisions"];
+  rawProvenance: { explicitValueEvidence: number; codeAbsentAssumedZeroEvidence: number; aggregateUnavailableEvidence: number };
+  evidenceTruncated: boolean;
+  auditMatchId: string | null;
+  nextActionType: string;
+  nextAction: string;
+};
+
+export type ObservationResearchQueue = {
+  observationWindowLimit: number;
+  canonicalMatchLimit: number;
+  phraseLimit: number;
+  observationsPerPhraseLimit: number;
+  observationsRead: number;
+  canonicalMatchesRead: number;
+  observationWindowTruncated: boolean;
+  canonicalWindowTruncated: boolean;
+  phrasesExcludedByLimit: number;
+  items: ObservationResearchQueueItem[];
+};
+
+function ObservationPanel({ clubId, data, onSaved }: { clubId: string; data: PlayerExplorerData; onSaved: () => void }) {
   const [phrase, setPhrase] = useState("");
   const [count, setCount] = useState("0");
   const [completeness, setCompleteness] = useState<"AT_LEAST" | "EXACT">("AT_LEAST");
@@ -936,6 +1006,7 @@ function ObservationPanel({ clubId, data }: { clubId: string; data: PlayerExplor
       const saved = await response.json() as ExplorerObservation;
       setItems((previous) => [...previous.filter((item) => item.phrase !== saved.phrase), saved].sort((a, b) => a.phrase.localeCompare(b.phrase)));
       setPhrase(""); setCount("0"); setNote(""); setPositionContext(""); setComparison(null);
+      onSaved();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to save observation"); }
     finally { setLoading(false); }
   };
@@ -1015,7 +1086,7 @@ function ObservationPanel({ clubId, data }: { clubId: string; data: PlayerExplor
       <button onClick={() => setPendingReconciliation(null)} disabled={reconciling} style={{ ...btnStyle, marginLeft: 6, fontSize: 11 }}>Cancelar</button>
     </div>}
     {comparison && <ObservationComparisonView comparison={comparison} clubId={clubId} playerId={data.playerId} />}
-    <ObservationImportPanel clubId={clubId} onImported={() => { load(); }} />
+    <ObservationImportPanel clubId={clubId} onImported={() => { void load(); onSaved(); }} />
   </section>;
 }
 
@@ -1719,6 +1790,109 @@ function LiveCollector({ clubId, onSaved }: {
         Finalizar coleta
       </button>
     </div>
+  </div>;
+}
+
+/**
+ * Read-only work queue derived from exact persisted observations. It never
+ * assigns sporting meaning; detailed evidence remains lazy and uses the same
+ * audit endpoint as the candidate comparison view.
+ */
+export function ObservationResearchQueueView({
+  data,
+  clubId,
+  onBack,
+}: {
+  data: ObservationResearchQueue | null;
+  clubId: string;
+  onBack: () => void;
+}) {
+  const [audit, setAudit] = useState<{ key: string; data: ObservationEvidenceAudit } | null>(null);
+  const [loadingKey, setLoadingKey] = useState<string | null>(null);
+  const [auditError, setAuditError] = useState<{ key: string; message: string } | null>(null);
+
+  const loadAudit = async (item: ObservationResearchQueueItem) => {
+    if (!item.auditMatchId) return;
+    const key = `${item.playerId}-${item.phrase}-${item.aggregateIndex}-${item.code}-${item.auditMatchId}`;
+    if (audit?.key === key) { setAudit(null); setAuditError(null); return; }
+    setLoadingKey(key);
+    setAuditError(null);
+    try {
+      const response = await fetch(
+        `/api/admin/explorer/clubs/${encodeURIComponent(clubId)}/players/${encodeURIComponent(item.playerId)}/observation-evidence/${encodeURIComponent(item.auditMatchId)}?phrase=${encodeURIComponent(item.phrase)}&aggregateIndex=${item.aggregateIndex}&code=${item.code}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setAudit({ key, data: await response.json() as ObservationEvidenceAudit });
+    } catch (cause) {
+      setAuditError({ key, message: cause instanceof Error ? cause.message : "Não foi possível carregar a auditoria." });
+    } finally {
+      setLoadingKey(null);
+    }
+  };
+
+  if (!data) return <div><button onClick={onBack} style={{ ...btnStyle, marginBottom: 12, fontSize: 12 }}>← Back to matches</button><p style={{ color: "#8b949e", fontSize: 12 }}>Carregando fila de pesquisa…</p></div>;
+
+  const sections: { title: string; states: ObservationResearchQueueItem["researchState"][]; empty: string }[] = [
+    { title: "PRONTOS PARA EXPERIMENTO CONTROLADO", states: ["READY_FOR_CONTROLLED_TEST"], empty: "Nenhum candidato pronto para experimento controlado." },
+    { title: "PROMISSORES — CONTINUE COLETANDO", states: ["PROMISING_DIRECT_COUNTER", "COLLECT_MORE"], empty: "Nenhum candidato promissor aguardando mais coleta." },
+    { title: "ASSOCIADOS, MAS NÃO SÃO CONTADORES DIRETOS", states: ["ASSOCIATED_BUT_NOT_DIRECT", "DIRECT_COUNTER_REFUTED"], empty: "Nenhum candidato refutado ou associado nesta janela." },
+    { title: "BLOQUEADOS POR INTEGRIDADE", states: ["VALIDATION_BLOCKED"], empty: "Nenhum candidato bloqueado por integridade." },
+  ];
+
+  const renderItem = (item: ObservationResearchQueueItem) => {
+    const key = `${item.playerId}-${item.phrase}-${item.aggregateIndex}-${item.code}-${item.auditMatchId ?? "none"}`;
+    return <article key={key} style={{ borderTop: "1px solid #30363d", padding: "12px 0" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
+        <strong style={{ fontSize: 13 }}>{item.phrase}</strong>
+        <span style={{ color: "#f0c674", fontSize: 11 }}>agg{item.aggregateIndex}[{item.code}]</span>
+        <span style={{ color: "#79c0ff", fontSize: 10 }}>{item.researchState}</span>
+        <span style={{ color: "#8b949e", fontSize: 10 }}>Prioridade {item.researchPriority}</span>
+      </div>
+      <p style={{ color: "#8b949e", fontSize: 11, margin: "6px 0" }}>
+        Jogador: {item.playerName ?? item.playerId} · Direto: {item.directCounterValidity} · Interesse observacional: {item.associationInterest}
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 5, marginBottom: 8 }}>
+        <StatChip label="Comparáveis" value={item.comparableObservations} />
+        <StatChip label="Exatas" value={item.exactCoincidences} />
+        <StatChip label="Compatíveis" value={item.compatibleObservations} />
+        <StatChip label="Contradições" value={item.contradictions} warn={item.contradictions > 0} />
+        <StatChip label="Contradições RAW explícitas" value={item.trustworthyContradictions} warn={item.trustworthyContradictions > 0} />
+        <StatChip label="Excesso" value={`+${item.totalExcess}`} />
+        <StatChip label="RAW explícito" value={item.rawProvenance.explicitValueEvidence} />
+        <StatChip label="RAW zero assumido" value={item.rawProvenance.codeAbsentAssumedZeroEvidence} warn={item.rawProvenance.codeAbsentAssumedZeroEvidence > 0} />
+        <StatChip label="RAW indisponível" value={item.rawProvenance.aggregateUnavailableEvidence} warn={item.rawProvenance.aggregateUnavailableEvidence > 0} />
+      </div>
+      {item.collisionCandidates.length > 0 && <p style={{ color: "#f0883e", fontSize: 11, margin: "5px 0" }}>
+        Colisão de candidato: {item.collisionCandidates.map((collision) => `agg${collision.aggregateIndex}[${collision.code}]`).join(", ")}
+      </p>}
+      {item.evidenceTruncated && <p style={{ color: "#f0883e", fontSize: 11, margin: "5px 0" }}>Janela limitada: esta evidência não pode receber maturidade máxima.</p>}
+      <p style={{ color: "#c9d1d9", fontSize: 11, margin: "8px 0" }}><strong>Próxima ação:</strong> {item.nextAction}</p>
+      {item.auditMatchId && <button onClick={() => void loadAudit(item)} disabled={loadingKey === key} style={{ ...btnStyle, fontSize: 11, padding: "2px 8px" }}>
+        {loadingKey === key ? "Carregando…" : audit?.key === key ? "Ocultar auditoria" : "Auditar evidência"}
+      </button>}
+      {auditError?.key === key && <p style={{ color: "#f85149", fontSize: 11 }}>{auditError.message}</p>}
+      {audit?.key === key && <div style={{ marginTop: 10 }}><EvidenceAuditDetails audit={audit.data} /></div>}
+    </article>;
+  };
+
+  return <div>
+    <button onClick={onBack} style={{ ...btnStyle, marginBottom: 12, fontSize: 12 }}>← Back to matches</button>
+    <h2 style={h2Style}>Research Queue</h2>
+    <p style={{ color: "#f0883e", fontSize: 12 }}>Triagem derivada de observações humanas e RAW. Não cria mapeamento esportivo nem valida uma métrica.</p>
+    <p style={{ color: "#8b949e", fontSize: 11 }}>
+      {data.observationsRead}/{data.observationWindowLimit} observações · {data.canonicalMatchesRead}/{data.canonicalMatchLimit} partidas canônicas · até {data.phraseLimit} frases · até {data.observationsPerPhraseLimit} observações por frase.
+    </p>
+    {(data.observationWindowTruncated || data.canonicalWindowTruncated || data.phrasesExcludedByLimit > 0) && <p style={{ color: "#f0883e", fontSize: 11 }}>
+      A fila possui janela limitada; candidatos afetados não são apresentados como prontos para validação.
+    </p>}
+    {sections.map((section) => {
+      const items = data.items.filter((item) => section.states.includes(item.researchState));
+      return <section key={section.title} style={{ marginTop: 18, border: "1px solid #30363d", borderRadius: 6, padding: "10px 12px" }}>
+        <h3 style={{ ...h3Style, marginBottom: 8 }}>{section.title}</h3>
+        {items.length === 0 ? <p style={{ color: "#8b949e", fontSize: 11, margin: 0 }}>{section.empty}</p> : items.map(renderItem)}
+      </section>;
+    })}
   </div>;
 }
 
