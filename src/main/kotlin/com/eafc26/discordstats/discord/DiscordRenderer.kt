@@ -2,6 +2,7 @@ package com.eafc26.discordstats.discord
 
 import com.eafc26.discordstats.domain.interpretation.MatchInterpretation
 import com.eafc26.discordstats.domain.interpretation.MatchOutcome
+import com.eafc26.discordstats.domain.match.FootballMatch
 import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
 import com.eafc26.discordstats.domain.match.PlayerRole

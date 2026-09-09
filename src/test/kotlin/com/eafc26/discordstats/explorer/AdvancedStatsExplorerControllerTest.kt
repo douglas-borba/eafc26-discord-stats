@@ -170,10 +170,11 @@ class AdvancedStatsExplorerControllerTest {
         )
         whenever(explorerService.observationResearchQueue(ClubId("club-1"))).thenReturn(queue)
 
-        val response = AdvancedStatsExplorerController(explorerService).observationResearchQueue("club-1")
-
-        assertThat(response.statusCode.value()).isEqualTo(200)
-        assertThat(response.body?.observationWindowLimit).isEqualTo(200)
+        client.get().uri("/api/admin/explorer/clubs/club-1/observation-research-queue")
+            .exchange()
+            .expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.observationWindowLimit").isEqualTo(200)
         verify(explorerService).observationResearchQueue(ClubId("club-1"))
     }
 }
