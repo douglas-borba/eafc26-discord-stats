@@ -944,6 +944,7 @@ export type ObservationResearchQueueItem = {
   aggregateIndex: number;
   code: number;
   researchState: "COLLECT_MORE" | "PROMISING_DIRECT_COUNTER" | "READY_FOR_CONTROLLED_TEST" | "ASSOCIATED_BUT_NOT_DIRECT" | "DIRECT_COUNTER_REFUTED" | "VALIDATION_BLOCKED";
+  queueSection: "READY_FOR_CONTROLLED_TEST" | "PROMISING_CONTINUE_COLLECTING" | "ASSOCIATED_NOT_DIRECT" | "NEEDS_AUDIT";
   directCounterValidity: "NOT_REFUTED" | "REFUTED" | "INTEGRITY_LIMITED";
   associationInterest: "NONE" | "LOW" | "MEDIUM" | "HIGH";
   researchPriority: "P1" | "P2" | "P3" | "P4";
@@ -963,15 +964,14 @@ export type ObservationResearchQueueItem = {
 };
 
 export type ObservationResearchQueue = {
-  observationWindowLimit: number;
+  researchIdentityLimit: number;
   canonicalMatchLimit: number;
-  phraseLimit: number;
-  observationsPerPhraseLimit: number;
+  observationsPerIdentityLimit: number;
+  researchIdentitiesRead: number;
   observationsRead: number;
   canonicalMatchesRead: number;
-  observationWindowTruncated: boolean;
+  identityWindowTruncated: boolean;
   canonicalWindowTruncated: boolean;
-  phrasesExcludedByLimit: number;
   items: ObservationResearchQueueItem[];
 };
 
@@ -1833,11 +1833,11 @@ export function ObservationResearchQueueView({
 
   if (!data) return <div><button onClick={onBack} style={{ ...btnStyle, marginBottom: 12, fontSize: 12 }}>← Back to matches</button><p style={{ color: "#8b949e", fontSize: 12 }}>Carregando fila de pesquisa…</p></div>;
 
-  const sections: { title: string; states: ObservationResearchQueueItem["researchState"][]; empty: string }[] = [
-    { title: "PRONTOS PARA EXPERIMENTO CONTROLADO", states: ["READY_FOR_CONTROLLED_TEST"], empty: "Nenhum candidato pronto para experimento controlado." },
-    { title: "PROMISSORES — CONTINUE COLETANDO", states: ["PROMISING_DIRECT_COUNTER", "COLLECT_MORE"], empty: "Nenhum candidato promissor aguardando mais coleta." },
-    { title: "ASSOCIADOS, MAS NÃO SÃO CONTADORES DIRETOS", states: ["ASSOCIATED_BUT_NOT_DIRECT", "DIRECT_COUNTER_REFUTED"], empty: "Nenhum candidato refutado ou associado nesta janela." },
-    { title: "BLOQUEADOS POR INTEGRIDADE", states: ["VALIDATION_BLOCKED"], empty: "Nenhum candidato bloqueado por integridade." },
+  const sections: { title: string; queueSection: ObservationResearchQueueItem["queueSection"]; empty: string }[] = [
+    { title: "PRONTOS PARA EXPERIMENTO CONTROLADO", queueSection: "READY_FOR_CONTROLLED_TEST", empty: "Nenhum candidato pronto para experimento controlado." },
+    { title: "PROMISSORES — CONTINUE COLETANDO", queueSection: "PROMISING_CONTINUE_COLLECTING", empty: "Nenhum sinal emergente com ação de coleta." },
+    { title: "ASSOCIADOS, MAS NÃO SÃO CONTADORES DIRETOS", queueSection: "ASSOCIATED_NOT_DIRECT", empty: "Nenhuma associação forte já refutada como contador direto." },
+    { title: "PRECISAM DE AUDITORIA", queueSection: "NEEDS_AUDIT", empty: "Nenhuma evidência relevante aguardando auditoria." },
   ];
 
   const renderItem = (item: ObservationResearchQueueItem) => {
@@ -1881,13 +1881,13 @@ export function ObservationResearchQueueView({
     <h2 style={h2Style}>Research Queue</h2>
     <p style={{ color: "#f0883e", fontSize: 12 }}>Triagem derivada de observações humanas e RAW. Não cria mapeamento esportivo nem valida uma métrica.</p>
     <p style={{ color: "#8b949e", fontSize: 11 }}>
-      {data.observationsRead}/{data.observationWindowLimit} observações · {data.canonicalMatchesRead}/{data.canonicalMatchLimit} partidas canônicas · até {data.phraseLimit} frases · até {data.observationsPerPhraseLimit} observações por frase.
+      {data.researchIdentitiesRead}/{data.researchIdentityLimit} identidades de pesquisa · {data.observationsRead} observações carregadas · {data.canonicalMatchesRead}/{data.canonicalMatchLimit} partidas canônicas · até {data.observationsPerIdentityLimit} observações por identidade.
     </p>
-    {(data.observationWindowTruncated || data.canonicalWindowTruncated || data.phrasesExcludedByLimit > 0) && <p style={{ color: "#f0883e", fontSize: 11 }}>
-      A fila possui janela limitada; candidatos afetados não são apresentados como prontos para validação.
+    {(data.identityWindowTruncated || data.canonicalWindowTruncated) && <p style={{ color: "#f0883e", fontSize: 11 }}>
+      A fila usa leitura limitada. Apenas identidades com histórico próprio incompleto ficam impedidas de receber maturidade máxima.
     </p>}
     {sections.map((section) => {
-      const items = data.items.filter((item) => section.states.includes(item.researchState));
+      const items = data.items.filter((item) => item.queueSection === section.queueSection);
       return <section key={section.title} style={{ marginTop: 18, border: "1px solid #30363d", borderRadius: 6, padding: "10px 12px" }}>
         <h3 style={{ ...h3Style, marginBottom: 8 }}>{section.title}</h3>
         {items.length === 0 ? <p style={{ color: "#8b949e", fontSize: 11, margin: 0 }}>{section.empty}</p> : items.map(renderItem)}

@@ -218,13 +218,13 @@ describe("Advanced Stats Explorer investigation surfaces", () => {
 
   it("renders research triage facts without promoting a refuted direct candidate", () => {
     const queue: ObservationResearchQueue = {
-      observationWindowLimit: 200, canonicalMatchLimit: 50, phraseLimit: 40, observationsPerPhraseLimit: 20,
-      observationsRead: 11, canonicalMatchesRead: 11,
-      observationWindowTruncated: false, canonicalWindowTruncated: false, phrasesExcludedByLimit: 0,
+      researchIdentityLimit: 40, canonicalMatchLimit: 50, observationsPerIdentityLimit: 20,
+      researchIdentitiesRead: 2, observationsRead: 11, canonicalMatchesRead: 11,
+      identityWindowTruncated: false, canonicalWindowTruncated: false,
       items: [
         {
           playerId: "player-1", playerName: "Player", phrase: "Melhore seu tempo de bola", aggregateIndex: 0, code: 183,
-          researchState: "ASSOCIATED_BUT_NOT_DIRECT", directCounterValidity: "REFUTED", associationInterest: "HIGH",
+          researchState: "ASSOCIATED_BUT_NOT_DIRECT", queueSection: "ASSOCIATED_NOT_DIRECT", directCounterValidity: "REFUTED", associationInterest: "HIGH",
           researchPriority: "P3", researchPriorityScore: 390, comparableObservations: 11, exactCoincidences: 6,
           compatibleObservations: 3, contradictions: 2, trustworthyContradictions: 2, totalExcess: 5,
           collisionCandidates: [], rawProvenance: { explicitValueEvidence: 11, codeAbsentAssumedZeroEvidence: 0, aggregateUnavailableEvidence: 0 },
@@ -233,7 +233,7 @@ describe("Advanced Stats Explorer investigation surfaces", () => {
         },
         {
           playerId: "player-1", playerName: "Player", phrase: "Ótima interceptação", aggregateIndex: 0, code: 110,
-          researchState: "READY_FOR_CONTROLLED_TEST", directCounterValidity: "NOT_REFUTED", associationInterest: "NONE",
+          researchState: "READY_FOR_CONTROLLED_TEST", queueSection: "READY_FOR_CONTROLLED_TEST", directCounterValidity: "NOT_REFUTED", associationInterest: "NONE",
           researchPriority: "P1", researchPriorityScore: 650, comparableObservations: 12, exactCoincidences: 9,
           compatibleObservations: 3, contradictions: 0, trustworthyContradictions: 0, totalExcess: 2,
           collisionCandidates: [], rawProvenance: { explicitValueEvidence: 12, codeAbsentAssumedZeroEvidence: 0, aggregateUnavailableEvidence: 0 },
@@ -253,5 +253,30 @@ describe("Advanced Stats Explorer investigation surfaces", () => {
     expect(html).toContain("6");
     expect(html).toContain("Auditar evidência");
     expect(html).not.toContain("timing metric");
+  });
+
+  it("renders only backend-selected actionable queue sections", () => {
+    const queue: ObservationResearchQueue = {
+      researchIdentityLimit: 40, canonicalMatchLimit: 50, observationsPerIdentityLimit: 20,
+      researchIdentitiesRead: 1, observationsRead: 4, canonicalMatchesRead: 4,
+      identityWindowTruncated: false, canonicalWindowTruncated: false,
+      items: [{
+        playerId: "player-1", playerName: "Player", phrase: "Sinal emergente", aggregateIndex: 0, code: 183,
+        researchState: "COLLECT_MORE", queueSection: "PROMISING_CONTINUE_COLLECTING",
+        directCounterValidity: "NOT_REFUTED", associationInterest: "NONE", researchPriority: "P3", researchPriorityScore: 280,
+        comparableObservations: 4, exactCoincidences: 2, compatibleObservations: 1, contradictions: 0,
+        trustworthyContradictions: 0, totalExcess: 1, collisionCandidates: [],
+        rawProvenance: { explicitValueEvidence: 4, codeAbsentAssumedZeroEvidence: 0, aggregateUnavailableEvidence: 0 },
+        evidenceTruncated: false, auditMatchId: "match-1", nextActionType: "CONTINUE_PASSIVE_COLLECTION",
+        nextAction: "Continue a coleta normal desta frase para aumentar a evidência independente.",
+      }],
+    };
+
+    const html = renderToStaticMarkup(<ObservationResearchQueueView data={queue} clubId="club-1" onBack={() => {}} />);
+
+    expect(html).toContain("Sinal emergente");
+    expect(html).toContain("PRECISAM DE AUDITORIA");
+    expect(html).toContain("até 20 observações por identidade");
+    expect(html).not.toContain("BLOQUEADOS POR INTEGRIDADE");
   });
 });

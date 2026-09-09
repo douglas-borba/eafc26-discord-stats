@@ -41,6 +41,7 @@ class ObservationResearchTriageTest {
         assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.ASSOCIATED_BUT_NOT_DIRECT)
         assertThat(result.directCounterValidity).isEqualTo(ObservationResearchTriage.DirectCounterValidity.REFUTED)
         assertThat(result.associationInterest).isEqualTo(ObservationResearchTriage.AssociationInterest.HIGH)
+        assertThat(result.queueSection).isEqualTo(ObservationResearchTriage.QueueSection.ASSOCIATED_NOT_DIRECT)
         assertThat(result.nextAction).isEqualTo(ObservationResearchTriage.NextActionType.RETAIN_ASSOCIATION_ONLY)
     }
 
@@ -88,6 +89,56 @@ class ObservationResearchTriageTest {
         assertThat(result.nextActionText).contains("agg0[183]").contains("agg1[183]")
     }
 
+    @Test
+    fun `assumed zero noise is not promoted into the research queue`() {
+        val result = triage.triage(
+            input(
+                candidate(comparable = 15, contradictions = 14),
+                explicit = 1,
+                assumed = 14,
+            ),
+        )
+
+        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.COLLECT_MORE)
+        assertThat(result.directCounterValidity).isEqualTo(ObservationResearchTriage.DirectCounterValidity.INTEGRITY_LIMITED)
+        assertThat(result.associationInterest).isEqualTo(ObservationResearchTriage.AssociationInterest.NONE)
+        assertThat(result.queueSection).isNull()
+    }
+
+    @Test
+    fun `one compatible assumed zero background candidate is not a queue item`() {
+        val result = triage.triage(
+            input(
+                candidate(comparable = 15, compatible = 1, contradictions = 14),
+                explicit = 1,
+                assumed = 14,
+            ),
+        )
+
+        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.COLLECT_MORE)
+        assertThat(result.queueSection).isNull()
+    }
+
+    @Test
+    fun `repeated explicit emerging pattern is visible before direct maturity`() {
+        val result = triage.triage(
+            input(candidate(comparable = 5, exact = 2, compatible = 1), explicit = 5),
+        )
+
+        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.COLLECT_MORE)
+        assertThat(result.queueSection).isEqualTo(ObservationResearchTriage.QueueSection.PROMISING_CONTINUE_COLLECTING)
+    }
+
+    @Test
+    fun `truncated but otherwise meaningful pattern is an audit action not ready`() {
+        val result = triage.triage(
+            input(candidate(comparable = 8, exact = 6, compatible = 2, excess = 2), explicit = 8, truncated = true),
+        )
+
+        assertThat(result.state).isEqualTo(ObservationResearchTriage.ResearchState.VALIDATION_BLOCKED)
+        assertThat(result.queueSection).isEqualTo(ObservationResearchTriage.QueueSection.NEEDS_AUDIT)
+    }
+
     private fun input(
         candidate: ObservationCandidateAnalyzer.CandidateAnalysis,
         explicit: Int,
@@ -95,10 +146,17 @@ class ObservationResearchTriageTest {
         unavailable: Int = 0,
         trustworthyContradictions: Int = 0,
         truncated: Boolean = false,
+        explicitExact: Int = candidate.exactSupportingEvidence,
+        explicitCompatible: Int = candidate.atLeastCompatibleCases,
     ) = ObservationResearchTriage.CandidateInput(
         phrase = "Frase literal",
         candidate = candidate,
         provenance = ObservationResearchTriage.RawProvenanceSummary(explicit, assumed, unavailable),
+        explicitEvidence = ObservationResearchTriage.ExplicitEvidenceSummary(
+            comparableObservations = explicit,
+            exactCoincidences = explicitExact,
+            compatibleObservations = explicitCompatible,
+        ),
         trustworthyContradictions = trustworthyContradictions,
         evidenceTruncated = truncated,
     )

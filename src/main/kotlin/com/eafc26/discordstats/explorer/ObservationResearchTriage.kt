@@ -46,6 +46,18 @@ class ObservationResearchTriage {
         NO_DIRECT_COUNTER_FOLLOW_UP,
     }
 
+    /**
+     * A deliberate work queue section, not a restatement of every internal
+     * research state. A null section means the candidate remains available in
+     * the detailed Explorer but has no concrete action in the queue.
+     */
+    enum class QueueSection {
+        READY_FOR_CONTROLLED_TEST,
+        PROMISING_CONTINUE_COLLECTING,
+        ASSOCIATED_NOT_DIRECT,
+        NEEDS_AUDIT,
+    }
+
     data class RawProvenanceSummary(
         val explicitValueEvidence: Int,
         val codeAbsentAssumedZeroEvidence: Int,
@@ -59,9 +71,24 @@ class ObservationResearchTriage {
         val phrase: String,
         val candidate: ObservationCandidateAnalyzer.CandidateAnalysis,
         val provenance: RawProvenanceSummary,
+        val explicitEvidence: ExplicitEvidenceSummary,
         val trustworthyContradictions: Int,
         val evidenceTruncated: Boolean,
     )
+
+    /**
+     * Counts only candidate rows whose RAW code was explicitly present. It
+     * prevents sparse-code zero assumptions from being promoted as positive or
+     * negative research evidence.
+     */
+    data class ExplicitEvidenceSummary(
+        val comparableObservations: Int,
+        val exactCoincidences: Int,
+        val compatibleObservations: Int,
+    ) {
+        val supportiveObservations: Int
+            get() = exactCoincidences + compatibleObservations
+    }
 
     data class Result(
         val state: ResearchState,
@@ -75,6 +102,7 @@ class ObservationResearchTriage {
         val priorityScore: Int,
         val nextAction: NextActionType,
         val nextActionText: String,
+        val queueSection: QueueSection?,
     )
 
     fun triage(input: CandidateInput): Result {
@@ -87,7 +115,7 @@ class ObservationResearchTriage {
         val supportive = candidate.exactSupportingEvidence + candidate.atLeastCompatibleCases
         val directRefuted = input.trustworthyContradictions > 0
         val integrityLimited = input.evidenceTruncated || input.provenance.hasIntegrityLimitation
-        val associationInterest = associationInterest(candidate, supportive, directRefuted)
+        val associationInterest = associationInterest(input.explicitEvidence, directRefuted)
         val directValidity = when {
             directRefuted -> DirectCounterValidity.REFUTED
             integrityLimited -> DirectCounterValidity.INTEGRITY_LIMITED
@@ -121,6 +149,7 @@ class ObservationResearchTriage {
         val priority = priorityFor(state, associationInterest)
         val score = priorityScore(state, candidate, input.trustworthyContradictions, associationInterest)
         val action = nextAction(state, input.phrase, candidate)
+        val queueSection = queueSection(state, input)
         return Result(
             state = state,
             directCounterValidity = directValidity,
@@ -129,22 +158,63 @@ class ObservationResearchTriage {
             priorityScore = score,
             nextAction = action.first,
             nextActionText = action.second,
+            queueSection = queueSection,
         )
     }
 
     private fun associationInterest(
-        candidate: ObservationCandidateAnalyzer.CandidateAnalysis,
-        supportive: Int,
+        explicitEvidence: ExplicitEvidenceSummary,
         directRefuted: Boolean,
     ): AssociationInterest {
         if (!directRefuted) return AssociationInterest.NONE
-        val comparable = candidate.comparableObservations
+        val comparable = explicitEvidence.comparableObservations
+        val supportive = explicitEvidence.supportiveObservations
         if (comparable == 0 || supportive == 0) return AssociationInterest.NONE
         return when {
-            comparable >= 8 && candidate.exactSupportingEvidence >= 4 && supportive * 100 >= comparable * 60 -> AssociationInterest.HIGH
-            comparable >= 5 && candidate.exactSupportingEvidence >= 3 && supportive * 100 >= comparable * 50 -> AssociationInterest.MEDIUM
+            comparable >= 8 && explicitEvidence.exactCoincidences >= 4 && supportive * 100 >= comparable * 60 -> AssociationInterest.HIGH
+            comparable >= 5 && explicitEvidence.exactCoincidences >= 3 && supportive * 100 >= comparable * 50 -> AssociationInterest.MEDIUM
             else -> AssociationInterest.LOW
         }
+    }
+
+    private fun queueSection(state: ResearchState, input: CandidateInput): QueueSection? = when (state) {
+        ResearchState.READY_FOR_CONTROLLED_TEST -> QueueSection.READY_FOR_CONTROLLED_TEST
+        ResearchState.PROMISING_DIRECT_COUNTER -> QueueSection.PROMISING_CONTINUE_COLLECTING
+        ResearchState.ASSOCIATED_BUT_NOT_DIRECT -> QueueSection.ASSOCIATED_NOT_DIRECT
+        ResearchState.VALIDATION_BLOCKED ->
+            if (hasConcreteAuditSignal(input)) QueueSection.NEEDS_AUDIT else null
+        ResearchState.COLLECT_MORE ->
+            if (hasEmergingExplicitSignal(input)) QueueSection.PROMISING_CONTINUE_COLLECTING else null
+        ResearchState.DIRECT_COUNTER_REFUTED -> null
+    }
+
+    /**
+     * A background candidate needs at least repeated, explicitly-present RAW
+     * support before it creates a human work item. This is intentionally more
+     * conservative than the internal COLLECT_MORE state.
+     */
+    private fun hasEmergingExplicitSignal(input: CandidateInput): Boolean {
+        val evidence = input.explicitEvidence
+        return !input.provenance.hasIntegrityLimitation &&
+            !input.evidenceTruncated &&
+            input.trustworthyContradictions == 0 &&
+            input.candidate.contradictions == 0 &&
+            evidence.comparableObservations >= PROMISING_MIN_COMPARABLE &&
+            evidence.supportiveObservations >= 3 &&
+            (evidence.exactCoincidences >= 2 || evidence.compatibleObservations >= 3)
+    }
+
+    /**
+     * Integrity is actionable only when explicit evidence already establishes
+     * a repeated pattern. An assumed zero by itself is not an audit queue item.
+     */
+    private fun hasConcreteAuditSignal(input: CandidateInput): Boolean {
+        val evidence = input.explicitEvidence
+        return input.trustworthyContradictions == 0 &&
+            input.candidate.contradictions == 0 &&
+            evidence.comparableObservations >= 3 &&
+            evidence.supportiveObservations >= 2 &&
+            (evidence.exactCoincidences >= 2 || evidence.compatibleObservations >= 2)
     }
 
     private fun priorityFor(state: ResearchState, associationInterest: AssociationInterest): ResearchPriority = when (state) {

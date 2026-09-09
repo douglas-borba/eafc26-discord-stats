@@ -208,9 +208,9 @@ describe("administrative BFF", () => {
 
   it("loads the bounded observation research queue through the authenticated BFF", async () => {
     const fetchMock = vi.fn().mockResolvedValue(json({
-      observationWindowLimit: 200, canonicalMatchLimit: 50, phraseLimit: 40, observationsPerPhraseLimit: 20,
-      observationsRead: 2, canonicalMatchesRead: 2, observationWindowTruncated: false, canonicalWindowTruncated: false,
-      phrasesExcludedByLimit: 0, items: [],
+      researchIdentityLimit: 40, canonicalMatchLimit: 50, observationsPerIdentityLimit: 20,
+      researchIdentitiesRead: 2, observationsRead: 2, canonicalMatchesRead: 2,
+      identityWindowTruncated: false, canonicalWindowTruncated: false, items: [],
     }));
     vi.stubGlobal("fetch", fetchMock);
 

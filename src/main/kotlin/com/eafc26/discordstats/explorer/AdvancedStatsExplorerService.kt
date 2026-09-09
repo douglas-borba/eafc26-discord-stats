@@ -159,15 +159,14 @@ class AdvancedStatsExplorerService(
      * mapping.
      */
     data class ObservationResearchQueueData(
-        val observationWindowLimit: Int,
+        val researchIdentityLimit: Int,
         val canonicalMatchLimit: Int,
-        val phraseLimit: Int,
-        val observationsPerPhraseLimit: Int,
+        val observationsPerIdentityLimit: Int,
+        val researchIdentitiesRead: Int,
         val observationsRead: Int,
         val canonicalMatchesRead: Int,
-        val observationWindowTruncated: Boolean,
+        val identityWindowTruncated: Boolean,
         val canonicalWindowTruncated: Boolean,
-        val phrasesExcludedByLimit: Int,
         val items: List<ObservationResearchQueueItem>,
     )
 
@@ -178,6 +177,7 @@ class AdvancedStatsExplorerService(
         val aggregateIndex: Int,
         val code: Int,
         val researchState: String,
+        val queueSection: String,
         val directCounterValidity: String,
         val associationInterest: String,
         val researchPriority: String,
@@ -806,25 +806,27 @@ class AdvancedStatsExplorerService(
     }
 
     /**
-     * Derives a club-scoped research queue from a bounded persisted observation
-     * window. It performs one observation query and one batch canonical lookup;
+     * Derives a club-scoped research queue from bounded exact-identity evidence.
+     * Identity discovery and evidence loading are deliberately separate: a
+     * global newest-row slice is not a trustworthy history for a phrase. It
+     * performs two bounded observation reads and one batch canonical lookup;
      * it never calls EA, persists a queue state, or eagerly loads audit detail.
      */
     fun observationResearchQueue(clubId: ClubId): ObservationResearchQueueData {
-        val withSentinel = observationRepository.findRecentForClub(clubId, RESEARCH_QUEUE_OBSERVATION_LIMIT + 1)
-        val observationWindowTruncated = withSentinel.size > RESEARCH_QUEUE_OBSERVATION_LIMIT
-        val observations = withSentinel.take(RESEARCH_QUEUE_OBSERVATION_LIMIT)
-        val grouped = observations.groupBy { it.playerId to it.phrase }
-            .entries
-            .sortedWith(
-                compareByDescending<Map.Entry<Pair<String, String>, List<ExplorerObservation>>> { entry ->
-                    entry.value.maxOfOrNull { it.updatedAt?.toEpochMilli() ?: Long.MIN_VALUE } ?: Long.MIN_VALUE
-                }.thenBy { it.key.first }.thenBy { it.key.second },
+        val identitiesWithSentinel = observationRepository.findRecentResearchIdentities(
+            clubId,
+            RESEARCH_QUEUE_IDENTITY_LIMIT + 1,
         )
-        val selectedGroups = grouped.take(RESEARCH_QUEUE_PHRASE_LIMIT)
-        val phrasesExcludedByLimit = (grouped.size - selectedGroups.size).coerceAtLeast(0)
-        val selectedGroupObservations = selectedGroups.associate { entry ->
-            entry.key to entry.value.take(RESEARCH_QUEUE_OBSERVATIONS_PER_PHRASE_LIMIT)
+        val identityWindowTruncated = identitiesWithSentinel.size > RESEARCH_QUEUE_IDENTITY_LIMIT
+        val selectedIdentities = identitiesWithSentinel.take(RESEARCH_QUEUE_IDENTITY_LIMIT)
+        val evidenceWithSentinel = observationRepository.findRecentForResearchIdentities(
+            clubId,
+            selectedIdentities,
+            RESEARCH_QUEUE_OBSERVATIONS_PER_IDENTITY_LIMIT + 1,
+        )
+        val evidenceByIdentity = evidenceWithSentinel.groupBy { ObservationResearchIdentity(it.playerId, it.phrase) }
+        val selectedGroupObservations = selectedIdentities.associateWith { identity ->
+            evidenceByIdentity[identity].orEmpty().take(RESEARCH_QUEUE_OBSERVATIONS_PER_IDENTITY_LIMIT)
         }
         val queueObservations = selectedGroupObservations.values.flatten()
             .sortedWith(compareByDescending<ExplorerObservation> { it.updatedAt }.thenByDescending { it.createdAt }.thenBy { it.matchId.value }.thenBy { it.playerId }.thenBy { it.phrase })
@@ -835,9 +837,10 @@ class AdvancedStatsExplorerService(
         val canonicalWindowTruncated = queueObservations.any { it.matchId !in selectedMatchIds }
         val matchesById = matchRepository.findByIds(clubId, selectedMatchIds).associateBy { it.matchId }
         val triage = ObservationResearchTriage()
-        val items = selectedGroups.flatMap { (identity, allPhraseObservations) ->
-            val playerId = identity.first
-            val phrase = identity.second
+        val items = selectedIdentities.flatMap { identity ->
+            val playerId = identity.playerId
+            val phrase = identity.phrase
+            val allPhraseObservations = evidenceByIdentity[identity].orEmpty()
             val phraseObservations = selectedGroupObservations.getValue(identity)
             val sources = phraseObservations.map { observation ->
                 researchSource(observation, matchesById[observation.matchId], playerId)
@@ -870,36 +873,35 @@ class AdvancedStatsExplorerService(
                 .toList()
             val analysis = ObservationCandidateAnalyzer().analyze(phrase, inputs, allPlayerObservations)
             val groupCanonicalTruncated = phraseObservations.any { it.matchId !in selectedMatchIds }
-            val phraseWindowTruncated = allPhraseObservations.size > RESEARCH_QUEUE_OBSERVATIONS_PER_PHRASE_LIMIT
+            val phraseWindowTruncated = allPhraseObservations.size > RESEARCH_QUEUE_OBSERVATIONS_PER_IDENTITY_LIMIT
             analysis.candidates.asSequence()
                 .filter { it.candidateKind == ObservationCandidateAnalyzer.CandidateKind.UNKNOWN_CANDIDATE.name }
                 .map { candidate ->
                     val provenance = researchProvenance(sources, candidate.aggregateIndex, candidate.code)
+                    val explicitEvidence = explicitResearchEvidence(sources, candidate)
                     val trustworthyContradictions = candidate.evidence.count { evidence ->
                         val source = sources.firstOrNull { it.observation.matchId.value == evidence.matchId }
                         source?.provenance(candidate.aggregateIndex, candidate.code) == RawAggregateProvenance.EXPLICIT_VALUE &&
                             isTrustworthyDirectContradiction(evidence)
                     }
-                    // Collision analysis is based on the same bounded snapshot.
-                    // If either the source observation window, another phrase, or
-                    // a canonical match was excluded, do not promote the result
-                    // to direct-counter maturity from incomplete evidence.
+                    // Only truncation of this exact identity or of its selected
+                    // canonical facts affects its maturity. Deferred identities
+                    // do not silently turn a complete phrase history into a
+                    // globally incomplete one.
                     val evidenceTruncated =
-                        observationWindowTruncated ||
-                            canonicalWindowTruncated ||
-                            phrasesExcludedByLimit > 0 ||
-                            groupCanonicalTruncated ||
+                        groupCanonicalTruncated ||
                             phraseWindowTruncated
                     val result = triage.triage(
                         ObservationResearchTriage.CandidateInput(
                             phrase = phrase,
                             candidate = candidate,
                             provenance = provenance,
+                            explicitEvidence = explicitEvidence,
                             trustworthyContradictions = trustworthyContradictions,
                             evidenceTruncated = evidenceTruncated,
                         ),
                     )
-                    ObservationResearchQueueItem(
+                    result.queueSection?.let { queueSection -> ObservationResearchQueueItem(
                         playerId = playerId,
                         playerName = sources.firstNotNullOfOrNull { source ->
                             source.player?.player?.platformName?.value ?: source.player?.player?.proName?.value
@@ -908,6 +910,7 @@ class AdvancedStatsExplorerService(
                         aggregateIndex = candidate.aggregateIndex,
                         code = candidate.code,
                         researchState = result.state.name,
+                        queueSection = queueSection.name,
                         directCounterValidity = result.directCounterValidity.name,
                         associationInterest = result.associationInterest.name,
                         researchPriority = result.priority.name,
@@ -932,11 +935,12 @@ class AdvancedStatsExplorerService(
                         }?.matchId ?: candidate.evidence.firstOrNull()?.matchId,
                         nextActionType = result.nextAction.name,
                         nextAction = result.nextActionText,
-                    )
+                    ) }
                 }
+                .filterNotNull()
                 .toList()
         }.sortedWith(
-            compareBy<ObservationResearchQueueItem> { researchStateOrder(it.researchState) }
+            compareBy<ObservationResearchQueueItem> { queueSectionOrder(it.queueSection) }
                 .thenBy { priorityOrder(it.researchPriority) }
                 .thenByDescending { it.researchPriorityScore }
                 .thenByDescending { it.comparableObservations }
@@ -946,15 +950,14 @@ class AdvancedStatsExplorerService(
         ).take(RESEARCH_QUEUE_MAX_ITEMS)
 
         return ObservationResearchQueueData(
-            observationWindowLimit = RESEARCH_QUEUE_OBSERVATION_LIMIT,
+            researchIdentityLimit = RESEARCH_QUEUE_IDENTITY_LIMIT,
             canonicalMatchLimit = RESEARCH_QUEUE_CANONICAL_MATCH_LIMIT,
-            phraseLimit = RESEARCH_QUEUE_PHRASE_LIMIT,
-            observationsPerPhraseLimit = RESEARCH_QUEUE_OBSERVATIONS_PER_PHRASE_LIMIT,
-            observationsRead = observations.size,
+            observationsPerIdentityLimit = RESEARCH_QUEUE_OBSERVATIONS_PER_IDENTITY_LIMIT,
+            researchIdentitiesRead = selectedIdentities.size,
+            observationsRead = queueObservations.size,
             canonicalMatchesRead = matchesById.size,
-            observationWindowTruncated = observationWindowTruncated,
+            identityWindowTruncated = identityWindowTruncated,
             canonicalWindowTruncated = canonicalWindowTruncated,
-            phrasesExcludedByLimit = phrasesExcludedByLimit,
             items = items,
         )
     }
@@ -1364,6 +1367,26 @@ class AdvancedStatsExplorerService(
         return ObservationResearchTriage.RawProvenanceSummary(explicit, assumed, unavailable)
     }
 
+    private fun explicitResearchEvidence(
+        sources: List<ResearchObservationSource>,
+        candidate: ObservationCandidateAnalyzer.CandidateAnalysis,
+    ): ObservationResearchTriage.ExplicitEvidenceSummary {
+        val sourceByMatchId = sources.associateBy { it.observation.matchId.value }
+        val explicitEvidence = candidate.evidence.filter { evidence ->
+            sourceByMatchId[evidence.matchId]
+                ?.provenance(candidate.aggregateIndex, candidate.code) == RawAggregateProvenance.EXPLICIT_VALUE
+        }
+        return ObservationResearchTriage.ExplicitEvidenceSummary(
+            comparableObservations = explicitEvidence.size,
+            exactCoincidences = explicitEvidence.count {
+                it.comparison == ObservationCandidateAnalyzer.EvidenceComparison.EXACT_COINCIDENCE.name
+            },
+            compatibleObservations = explicitEvidence.count {
+                it.comparison == ObservationCandidateAnalyzer.EvidenceComparison.AT_LEAST_COMPATIBLE.name
+            },
+        )
+    }
+
     private fun isTrustworthyDirectContradiction(evidence: ObservationCandidateAnalyzer.Evidence): Boolean {
         if (evidence.comparison != ObservationCandidateAnalyzer.EvidenceComparison.CONTRADICTED.name) return false
         return when (ObservationCompleteness.valueOf(evidence.completeness)) {
@@ -1372,13 +1395,11 @@ class AdvancedStatsExplorerService(
         }
     }
 
-    private fun researchStateOrder(state: String): Int = when (ObservationResearchTriage.ResearchState.valueOf(state)) {
-        ObservationResearchTriage.ResearchState.READY_FOR_CONTROLLED_TEST -> 0
-        ObservationResearchTriage.ResearchState.PROMISING_DIRECT_COUNTER -> 1
-        ObservationResearchTriage.ResearchState.VALIDATION_BLOCKED -> 2
-        ObservationResearchTriage.ResearchState.ASSOCIATED_BUT_NOT_DIRECT -> 3
-        ObservationResearchTriage.ResearchState.COLLECT_MORE -> 4
-        ObservationResearchTriage.ResearchState.DIRECT_COUNTER_REFUTED -> 5
+    private fun queueSectionOrder(section: String): Int = when (ObservationResearchTriage.QueueSection.valueOf(section)) {
+        ObservationResearchTriage.QueueSection.READY_FOR_CONTROLLED_TEST -> 0
+        ObservationResearchTriage.QueueSection.PROMISING_CONTINUE_COLLECTING -> 1
+        ObservationResearchTriage.QueueSection.ASSOCIATED_NOT_DIRECT -> 2
+        ObservationResearchTriage.QueueSection.NEEDS_AUDIT -> 3
     }
 
     private fun priorityOrder(priority: String): Int = when (ObservationResearchTriage.ResearchPriority.valueOf(priority)) {
@@ -1516,11 +1537,10 @@ class AdvancedStatsExplorerService(
         const val AUDIT_RAW_ENTRY_LIMIT = 100
         const val DISCOVERY_SCAN_MULTIPLIER = 2
         const val MAX_DISCOVERY_CANONICAL_MATCHES = 20
-        const val RESEARCH_QUEUE_OBSERVATION_LIMIT = 200
+        const val RESEARCH_QUEUE_IDENTITY_LIMIT = 40
         const val RESEARCH_QUEUE_CANONICAL_MATCH_LIMIT = 50
-        const val RESEARCH_QUEUE_PHRASE_LIMIT = 40
-        const val RESEARCH_QUEUE_OBSERVATIONS_PER_PHRASE_LIMIT = 20
-        const val RESEARCH_QUEUE_MAX_ITEMS = 60
+        const val RESEARCH_QUEUE_OBSERVATIONS_PER_IDENTITY_LIMIT = 20
+        const val RESEARCH_QUEUE_MAX_ITEMS = 24
         val RAW_CONTEXT_FIELD_NAMES = setOf("gameTime", "realtimegame", "realtimeidle", "archetypeid")
     }
 }

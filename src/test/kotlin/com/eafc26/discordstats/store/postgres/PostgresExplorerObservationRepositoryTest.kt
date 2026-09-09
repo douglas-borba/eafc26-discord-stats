@@ -63,15 +63,36 @@ class PostgresExplorerObservationRepositoryTest {
         assertThat(observations.single().clubId).isEqualTo(ClubId("club-a"))
     }
 
-    @Test fun `loads a bounded newest club-wide evidence window without leaking another club`() {
+    @Test fun `discovers bounded literal research identities without leaking another club`() {
         repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-a"), "player-a", "Frase A", 1))
         repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-b"), "player-b", "Frase B", 2))
         repository.save(ExplorerObservation(ClubId("club-b"), MatchId("match-c"), "player-c", "Frase C", 3))
 
-        val observations = repository.findRecentForClub(ClubId("club-a"), 1)
+        val identities = repository.findRecentResearchIdentities(ClubId("club-a"), 1)
 
-        assertThat(observations).hasSize(1)
+        assertThat(identities).hasSize(1)
+        assertThat(identities.single().playerId).isIn("player-a", "player-b")
+        assertThat(identities.single().playerId).isNotEqualTo("player-c")
+    }
+
+    @Test fun `loads bounded evidence histories for requested identities in one batch`() {
+        repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-a"), "player-a", "Frase A", 1))
+        repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-b"), "player-a", "Frase A", 2))
+        repository.save(ExplorerObservation(ClubId("club-a"), MatchId("match-c"), "player-b", "Frase B", 3))
+        repository.save(ExplorerObservation(ClubId("club-b"), MatchId("match-d"), "player-a", "Frase A", 4))
+
+        val observations = repository.findRecentForResearchIdentities(
+            ClubId("club-a"),
+            listOf(
+                com.eafc26.discordstats.explorer.ObservationResearchIdentity("player-a", "Frase A"),
+                com.eafc26.discordstats.explorer.ObservationResearchIdentity("player-b", "Frase B"),
+            ),
+            1,
+        )
+
+        assertThat(observations).hasSize(2)
         assertThat(observations).allSatisfy { assertThat(it.clubId).isEqualTo(ClubId("club-a")) }
+        assertThat(observations.map { it.playerId to it.phrase }).containsExactlyInAnyOrder("player-a" to "Frase A", "player-b" to "Frase B")
     }
 
     @Test fun `loads a bounded same player match vector without leaking other identities`() {

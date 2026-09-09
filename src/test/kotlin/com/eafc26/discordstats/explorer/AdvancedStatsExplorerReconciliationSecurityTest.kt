@@ -32,15 +32,14 @@ class AdvancedStatsExplorerReconciliationSecurityTest {
     @Test
     fun `research queue exact route requires the internal BFF token and resolves when authenticated`() {
         val queue = AdvancedStatsExplorerService.ObservationResearchQueueData(
-            observationWindowLimit = 200,
+            researchIdentityLimit = 40,
             canonicalMatchLimit = 50,
-            phraseLimit = 40,
-            observationsPerPhraseLimit = 20,
+            observationsPerIdentityLimit = 20,
+            researchIdentitiesRead = 0,
             observationsRead = 0,
             canonicalMatchesRead = 0,
-            observationWindowTruncated = false,
+            identityWindowTruncated = false,
             canonicalWindowTruncated = false,
-            phrasesExcludedByLimit = 0,
             items = emptyList(),
         )
         whenever(explorerService.observationResearchQueue(ClubId("club-1"))).thenReturn(queue)
@@ -51,7 +50,7 @@ class AdvancedStatsExplorerReconciliationSecurityTest {
         client.mutate().defaultHeader("Authorization", "Bearer test-admin-token").build()
             .get().uri(researchQueuePath)
             .exchange().expectStatus().isOk
-            .expectBody().jsonPath("$.observationWindowLimit").isEqualTo(200)
+            .expectBody().jsonPath("$.researchIdentityLimit").isEqualTo(40)
 
         verify(explorerService).observationResearchQueue(ClubId("club-1"))
     }

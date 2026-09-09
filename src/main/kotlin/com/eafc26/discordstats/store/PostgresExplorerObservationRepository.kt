@@ -8,6 +8,7 @@ import com.eafc26.discordstats.explorer.ObservationCompleteness
 import com.eafc26.discordstats.explorer.ObservationIdentityKey
 import com.eafc26.discordstats.explorer.ObservationPhraseReconciliationResult
 import com.eafc26.discordstats.explorer.ObservationPhraseReconciliationStatus
+import com.eafc26.discordstats.explorer.ObservationResearchIdentity
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.transaction.support.TransactionTemplate
@@ -175,18 +176,70 @@ class PostgresExplorerObservationRepository(
         )
     }
 
-    override fun findRecentForClub(clubId: ClubId, limit: Int): List<ExplorerObservation> {
-        require(limit in 1..201) { "limit must be 1-201" }
+    override fun findRecentResearchIdentities(clubId: ClubId, limit: Int): List<ObservationResearchIdentity> {
+        require(limit in 1..41) { "limit must be 1-41" }
         return jdbcTemplate.query(
             """
-            SELECT club_id, match_id, player_id, phrase, observed_count, completeness, note, observed_position_context, created_at, updated_at
+            SELECT player_id, phrase
             FROM explorer_observations
             WHERE club_id = ?
-            ORDER BY updated_at DESC, id DESC
+            GROUP BY player_id, phrase
+            ORDER BY MAX(updated_at) DESC, player_id ASC, phrase ASC
             LIMIT ?
             """.trimIndent(),
-            { rs, _ -> read(rs) },
+            { rs, _ -> ObservationResearchIdentity(rs.getString("player_id"), rs.getString("phrase")) },
             clubId.value, limit,
+        )
+    }
+
+    override fun findRecentForResearchIdentities(
+        clubId: ClubId,
+        identities: Collection<ObservationResearchIdentity>,
+        limit: Int,
+    ): List<ExplorerObservation> {
+        require(identities.size <= 40) { "research identity batch limited to 40" }
+        require(limit in 1..21) { "per-identity research evidence limit must be 1-21" }
+        if (identities.isEmpty()) return emptyList()
+        val uniqueIdentities = identities.toSet()
+        val values = uniqueIdentities.joinToString(", ") { "(?, ?)" }
+        val parameters = mutableListOf<Any>()
+        uniqueIdentities.forEach { identity -> parameters.addAll(listOf(identity.playerId, identity.phrase)) }
+        parameters += clubId.value
+        parameters += limit
+        return jdbcTemplate.query(
+            """
+            WITH requested(player_id, phrase) AS (
+                VALUES $values
+            ), ranked AS (
+                SELECT
+                    eo.club_id,
+                    eo.match_id,
+                    eo.player_id,
+                    eo.phrase,
+                    eo.observed_count,
+                    eo.completeness,
+                    eo.note,
+                    eo.observed_position_context,
+                    eo.created_at,
+                    eo.updated_at,
+                    eo.id AS row_id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY eo.player_id, eo.phrase
+                        ORDER BY eo.updated_at DESC, eo.id DESC
+                    ) AS evidence_rank
+                FROM explorer_observations eo
+                INNER JOIN requested requested_identity
+                    ON requested_identity.player_id = eo.player_id
+                   AND requested_identity.phrase = eo.phrase
+                WHERE eo.club_id = ?
+            )
+            SELECT club_id, match_id, player_id, phrase, observed_count, completeness, note, observed_position_context, created_at, updated_at
+            FROM ranked
+            WHERE evidence_rank <= ?
+            ORDER BY player_id ASC, phrase ASC, updated_at DESC, row_id DESC
+            """.trimIndent(),
+            { rs, _ -> read(rs) },
+            *parameters.toTypedArray(),
         )
     }
 

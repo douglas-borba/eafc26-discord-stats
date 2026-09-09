@@ -116,12 +116,29 @@ interface ExplorerObservationRepository {
     fun findForPlayer(clubId: ClubId, playerId: String, limit: Int): List<ExplorerObservation>
 
     /**
-     * Bounded, newest-first club evidence window for the research queue. This
-     * intentionally avoids a phrase-by-phrase scan when the queue is derived.
+     * Discovers recent exact research identities before their evidence is
+     * loaded. This keeps a bounded queue from treating a global newest-row
+     * slice as a complete history for any phrase.
      */
-    fun findRecentForClub(clubId: ClubId, limit: Int): List<ExplorerObservation> {
-        require(limit in 1..201) { "limit must be 1-201" }
-        throw UnsupportedOperationException("Research queue requires a bounded club observation query")
+    fun findRecentResearchIdentities(clubId: ClubId, limit: Int): List<ObservationResearchIdentity> {
+        require(limit in 1..41) { "limit must be 1-41" }
+        throw UnsupportedOperationException("Research queue requires bounded identity discovery")
+    }
+
+    /**
+     * Loads bounded newest-first evidence for several exact research
+     * identities in one repository operation. Implementations must apply the
+     * per-identity [limit] before returning rows and must not issue one query
+     * per identity.
+     */
+    fun findRecentForResearchIdentities(
+        clubId: ClubId,
+        identities: Collection<ObservationResearchIdentity>,
+        limit: Int,
+    ): List<ExplorerObservation> {
+        require(identities.size <= 40) { "research identity batch limited to 40" }
+        require(limit in 1..21) { "per-identity research evidence limit must be 1-21" }
+        throw UnsupportedOperationException("Research queue requires bounded batch evidence loading")
     }
 
     /**
@@ -152,6 +169,15 @@ interface ExplorerObservationRepository {
 
 data class ObservationIdentityKey(
     val matchId: MatchId,
+    val playerId: String,
+    val phrase: String,
+)
+
+/**
+ * Literal research identity. Phrase text is deliberately not normalized or
+ * merged: club, player and exact phrase remain independent evidence streams.
+ */
+data class ObservationResearchIdentity(
     val playerId: String,
     val phrase: String,
 )
@@ -241,12 +267,42 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
             .take(limit)
     }
 
-    override fun findRecentForClub(clubId: ClubId, limit: Int): List<ExplorerObservation> {
-        require(limit in 1..201) { "limit must be 1-201" }
+    override fun findRecentResearchIdentities(clubId: ClubId, limit: Int): List<ObservationResearchIdentity> {
+        require(limit in 1..41) { "limit must be 1-41" }
         return observations.values
             .filter { it.clubId == clubId }
-            .sortedWith(compareByDescending<ExplorerObservation> { it.updatedAt }.thenByDescending { it.createdAt }.thenBy { it.matchId.value }.thenBy { it.playerId }.thenBy { it.phrase })
+            .groupBy { ObservationResearchIdentity(it.playerId, it.phrase) }
+            .entries
+            .sortedWith(
+                compareByDescending<Map.Entry<ObservationResearchIdentity, List<ExplorerObservation>>> { entry ->
+                    entry.value.maxOfOrNull { it.updatedAt?.toEpochMilli() ?: Long.MIN_VALUE } ?: Long.MIN_VALUE
+                }.thenBy { it.key.playerId }.thenBy { it.key.phrase },
+            )
+            .map { it.key }
             .take(limit)
+    }
+
+    override fun findRecentForResearchIdentities(
+        clubId: ClubId,
+        identities: Collection<ObservationResearchIdentity>,
+        limit: Int,
+    ): List<ExplorerObservation> {
+        require(identities.size <= 40) { "research identity batch limited to 40" }
+        require(limit in 1..21) { "per-identity research evidence limit must be 1-21" }
+        if (identities.isEmpty()) return emptyList()
+        val requested = identities.toSet()
+        return observations.values
+            .filter { it.clubId == clubId && ObservationResearchIdentity(it.playerId, it.phrase) in requested }
+            .groupBy { ObservationResearchIdentity(it.playerId, it.phrase) }
+            .toSortedMap(compareBy<ObservationResearchIdentity> { it.playerId }.thenBy { it.phrase })
+            .values
+            .flatMap { rows ->
+                rows.sortedWith(
+                    compareByDescending<ExplorerObservation> { it.updatedAt }
+                        .thenByDescending { it.createdAt }
+                        .thenByDescending { it.matchId.value },
+                ).take(limit)
+            }
     }
 
     override fun insertIfAbsent(clubId: ClubId, observations: List<ExplorerObservation>): Int {
