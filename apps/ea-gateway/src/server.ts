@@ -55,9 +55,13 @@ class EaPayloadError extends Error {
   }
 }
 
-function send(res: ServerResponse, status: number, body: unknown): void {
+function send(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
   const json = JSON.stringify(body);
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(json) });
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": Buffer.byteLength(json),
+    ...headers,
+  });
   res.end(json);
 }
 
@@ -228,7 +232,10 @@ export function createGatewayServer(config: GatewayConfig) {
         mergedMatchIds: matchIds(merged),
       });
       console.log(`[req] 200 OK ${merged.length} merged matches (${Date.now() - start}ms)`);
-      return send(res, 200, merged);
+      return send(res, 200, merged, {
+        "X-EA-League-Match-Count": String(league.length),
+        "X-EA-Playoff-Match-Count": String(playoff.length),
+      });
     } catch (error) {
       const { kind, detail } = classifyError(error);
       const message = error instanceof Error ? error.message : "EA_GATEWAY_ERROR";

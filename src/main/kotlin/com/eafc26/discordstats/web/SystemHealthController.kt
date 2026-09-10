@@ -5,6 +5,7 @@ import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.scheduler.MatchPollingScheduler
 import com.eafc26.discordstats.scheduler.PollingStatusHolder
 import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnostics
+import com.eafc26.discordstats.ea.EaMatchCoverageTracker
 import com.eafc26.discordstats.llm.LlmProperties
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.PostMapping
@@ -25,19 +26,21 @@ class SystemHealthController(
     private val props: AppProperties,
     private val canonicalReadDiagnostics: CanonicalReadDiagnostics = CanonicalReadDiagnostics(),
     private val llmProperties: LlmProperties = LlmProperties(),
+    private val eaMatchCoverageTracker: EaMatchCoverageTracker = EaMatchCoverageTracker(),
 ) {
     private val startedAt: Instant = Instant.now()
 
     @GetMapping("/health")
     fun health(): Map<String, Any> {
-        val components = mapOf(
+        val coreComponents = mapOf(
             "application" to applicationHealth(),
             "postgres" to postgresHealth(),
             "eaGateway" to eaGatewayHealth(),
             "scheduler" to schedulerHealth(),
         )
-        return components + mapOf(
-            "overall" to overallStatus(components),
+        return coreComponents + mapOf(
+            "eaCoverage" to eaMatchCoverageTracker.snapshot(),
+            "overall" to overallStatus(coreComponents),
             "build" to buildInfo(),
             "canonicalReadDiagnostics" to canonicalReadDiagnostics.snapshot(),
             "runtimeFlags" to mapOf(

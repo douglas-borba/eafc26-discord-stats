@@ -78,6 +78,20 @@ export function SystemHealthView() {
               ...(health.eaGateway.error ? [["Erro", health.eaGateway.error] as const] : []),
             ]}
           />
+            {health.eaCoverage && (
+              <HealthCard
+                title="Cobertura EA"
+                status={health.eaCoverage.status}
+                items={[
+                  ["Clubes observados", String(health.eaCoverage.observedClubCount)],
+                  ["Detalhe", health.eaCoverage.message],
+                  ...health.eaCoverage.clubs.map((club) => [
+                    `Clube ${club.clubId}`,
+                    `Liga ${club.leagueCount} · Playoff ${club.playoffCount} · janela ${club.maxResultCount}`,
+                  ] as const),
+                ]}
+              />
+            )}
             <HealthCard
             title="Scheduler"
             status={health.scheduler.status}
@@ -213,7 +227,7 @@ function statusColor(status: string) {
   switch (status) {
     case "UP": case "HEALTHY": return "bg-win/15 text-win";
     case "DOWN": case "GATEWAY_DOWN": return "bg-loss/15 text-loss";
-    case "STALE": case "EA_UPSTREAM_DOWN": return "bg-yellow-500/15 text-yellow-400";
+    case "STALE": case "EA_UPSTREAM_DOWN": case "PARTIAL": return "bg-yellow-500/15 text-yellow-400";
     default: return "bg-surface-raised text-muted";
   }
 }
@@ -222,7 +236,7 @@ function statusDot(status: string) {
   switch (status) {
     case "UP": case "HEALTHY": return "bg-win";
     case "DOWN": case "GATEWAY_DOWN": return "bg-loss";
-    case "STALE": case "EA_UPSTREAM_DOWN": return "bg-yellow-400";
+    case "STALE": case "EA_UPSTREAM_DOWN": case "PARTIAL": return "bg-yellow-400";
     default: return "bg-muted";
   }
 }

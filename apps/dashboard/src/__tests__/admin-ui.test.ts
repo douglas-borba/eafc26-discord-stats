@@ -22,6 +22,16 @@ describe("admin route group structure", () => {
     expect(formatBytes(1_536)).toBe("1.5 KB");
     expect(formatBytes(2 * 1024 * 1024)).toBe("2.00 MB");
   });
+
+  it("shows partial EA source coverage independently from gateway reachability", () => {
+    const systemHealth = read("components/admin/system-health.tsx");
+    const types = read("lib/admin/types.ts");
+    expect(systemHealth).toContain('title="Cobertura EA"');
+    expect(systemHealth).toContain("health.eaCoverage.status");
+    expect(systemHealth).toContain("Liga ${club.leagueCount} · Playoff ${club.playoffCount}");
+    expect(systemHealth).toContain('case "PARTIAL"');
+    expect(types).toContain('status: "UP" | "PARTIAL" | "NOT_OBSERVED"');
+  });
   it("login page is outside the protected route group and uses password auth", () => {
     const login = read("app/admin/login/page.tsx");
     expect(login).toContain('"use client"');

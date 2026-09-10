@@ -17,6 +17,7 @@ import org.springframework.web.reactive.function.client.WebClient
 class NodeEaClubsGatewayTest {
     private lateinit var server: MockWebServer
     private lateinit var gateway: NodeEaClubsGateway
+    private lateinit var coverageTracker: EaMatchCoverageTracker
 
     @BeforeEach
     fun setUp() {
@@ -25,7 +26,8 @@ class NodeEaClubsGatewayTest {
         val props = AppProperties(ea = EaProperties(gatewayBaseUrl = server.url("/").toString().trimEnd('/'), gatewayInternalToken = "secret"))
         val client = WebClient.builder().baseUrl(props.ea.gatewayBaseUrl)
             .defaultHeader("Authorization", "Bearer ${props.ea.gatewayInternalToken}").build()
-        gateway = NodeEaClubsGateway(client, props, EaResponseParser(jacksonObjectMapper()))
+        coverageTracker = EaMatchCoverageTracker()
+        gateway = NodeEaClubsGateway(client, props, EaResponseParser(jacksonObjectMapper()), coverageTracker)
     }
 
     @AfterEach fun stop() = server.shutdown()
@@ -38,12 +40,28 @@ class NodeEaClubsGatewayTest {
         assertThat(request.getHeader("Authorization")).isEqualTo("Bearer secret")
     }
 
-    @Test fun `matches parse the merged gateway payload`() {
-        server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(fixture("clubs-matches.json")))
+    @Test fun `matches parse the merged gateway payload and retain source coverage`() {
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setHeader("X-EA-League-Match-Count", "1")
+                .setHeader("X-EA-Playoff-Match-Count", "1")
+                .setBody(fixture("clubs-matches.json")),
+        )
         val result = gateway.getLatestMatches("1104972")
         assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
         assertThat((result as EaApiResult.Success).data).hasSize(2)
         assertThat(server.takeRequest().path).isEqualTo("/ea/clubs/1104972/matches?platform=common-gen5&maxResultCount=20")
+        val coverage = coverageTracker.snapshot()
+        assertThat(coverage.status).isEqualTo("UP")
+        assertThat(coverage.observedClubCount).isEqualTo(1)
+        assertThat(coverage.clubs.single()).extracting(
+            ClubMatchCoverage::clubId,
+            ClubMatchCoverage::maxResultCount,
+            ClubMatchCoverage::leagueCount,
+            ClubMatchCoverage::playoffCount,
+            ClubMatchCoverage::status,
+        ).containsExactly("1104972", 20, 1, 1, "UP")
     }
 
     @Test fun `matches accepts an explicit bounded window without changing the configured default`() {
@@ -52,6 +70,28 @@ class NodeEaClubsGatewayTest {
         assertThat(gateway.getLatestMatches("1104972", 5)).isEqualTo(EaApiResult.NoMatches)
 
         assertThat(server.takeRequest().path).isEqualTo("/ea/clubs/1104972/matches?platform=common-gen5&maxResultCount=5")
+    }
+
+    @Test fun `empty playoff source is surfaced as partial coverage without failing league acquisition`() {
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setHeader("X-EA-League-Match-Count", "5")
+                .setHeader("X-EA-Playoff-Match-Count", "0")
+                .setBody(fixture("clubs-matches.json")),
+        )
+
+        assertThat(gateway.getLatestMatches("11262883", 5)).isInstanceOf(EaApiResult.Success::class.java)
+
+        val coverage = coverageTracker.snapshot()
+        assertThat(coverage.status).isEqualTo("PARTIAL")
+        assertThat(coverage.clubs.single()).extracting(
+            ClubMatchCoverage::clubId,
+            ClubMatchCoverage::maxResultCount,
+            ClubMatchCoverage::leagueCount,
+            ClubMatchCoverage::playoffCount,
+            ClubMatchCoverage::status,
+        ).containsExactly("11262883", 5, 5, 0, "PARTIAL")
     }
 
     @Test fun `members parse the EA envelope`() {
@@ -115,7 +155,7 @@ class NodeEaClubsGatewayTest {
 
     private fun configuredGateway(): NodeEaClubsGateway {
         val props = AppProperties(ea = EaProperties(gatewayBaseUrl = server.url("/").toString().trimEnd('/'), gatewayInternalToken = "secret"))
-        return NodeEaClubsGateway(WebClientConfig().eaGatewayWebClient(props), props, EaResponseParser(jacksonObjectMapper()))
+        return NodeEaClubsGateway(WebClientConfig().eaGatewayWebClient(props), props, EaResponseParser(jacksonObjectMapper()), EaMatchCoverageTracker())
     }
 
     private fun sizedMatchesPayload(minimumBytes: Int): String {

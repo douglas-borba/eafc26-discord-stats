@@ -9,6 +9,8 @@ import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnostics
 import com.eafc26.discordstats.diagnostics.CanonicalReadOperation
 import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
 import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnosticsSnapshot
+import com.eafc26.discordstats.ea.EaMatchCoverageSnapshot
+import com.eafc26.discordstats.ea.EaMatchCoverageTracker
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
 import com.eafc26.discordstats.scheduler.PollingStatusHolder
@@ -107,15 +109,31 @@ class SystemHealthControllerTest {
         assertThat(diagnostics.snapshot().total.calls).isZero()
     }
 
+    @Test fun `partial playoff coverage is visible without degrading gateway reachability`() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[]"))
+        val coverage = EaMatchCoverageTracker().also {
+            it.record(clubId = "11262883", maxResultCount = 5, leagueCount = 5, playoffCount = 0)
+        }
+
+        val health = controller(jdbc = healthyJdbc(), coverageTracker = coverage).health()
+
+        assertThat(health["overall"]).isEqualTo("UP")
+        assertThat(health["eaCoverage"] as EaMatchCoverageSnapshot).extracting(
+            EaMatchCoverageSnapshot::status,
+            EaMatchCoverageSnapshot::observedClubCount,
+        ).containsExactly("PARTIAL", 1)
+    }
+
     private fun controller(
         jdbc: JdbcTemplate?,
         clubs: List<MonitoredClub> = emptyList(),
         pollingStatus: PollingStatusHolder = PollingStatusHolder(),
         diagnostics: CanonicalReadDiagnostics = CanonicalReadDiagnostics(),
+        coverageTracker: EaMatchCoverageTracker = EaMatchCoverageTracker(),
     ): SystemHealthController {
         val props = AppProperties(ea = EaProperties(gatewayBaseUrl = server.url("/").toString().trimEnd('/')))
         val probe = EaGatewayHealthProbe(WebClient.builder().baseUrl(props.ea.gatewayBaseUrl).build(), props)
-        return SystemHealthController(jdbc, probe, pollingStatus, repository(clubs), props, diagnostics)
+        return SystemHealthController(jdbc, probe, pollingStatus, repository(clubs), props, diagnostics, eaMatchCoverageTracker = coverageTracker)
     }
 
     private fun healthyJdbc(): JdbcTemplate = mock<JdbcTemplate>().also {

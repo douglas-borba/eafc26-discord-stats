@@ -94,6 +94,19 @@ export interface SystemHealth {
   application: { status: string; startedAt: string; uptimeSeconds: number };
   postgres: { status: string; latencyMs?: number; error?: string };
   eaGateway: { status: string; latencyMs?: number; statusCode?: number; message?: string; error?: string };
+  eaCoverage?: {
+    status: "UP" | "PARTIAL" | "NOT_OBSERVED";
+    observedClubCount: number;
+    message: string;
+    clubs: Array<{
+      clubId: string;
+      maxResultCount: number;
+      leagueCount: number;
+      playoffCount: number;
+      status: "UP" | "PARTIAL";
+      observedAt: string;
+    }>;
+  };
   scheduler: { status: string; mostRecentPollAt?: string; monitoredClubCount?: number; reason?: string };
   build: { commitSha: string | null; branch: string | null };
   canonicalReadDiagnostics?: CanonicalReadDiagnostics;

@@ -17,6 +17,7 @@ class NodeEaClubsGateway(
     private val eaGatewayWebClient: WebClient,
     private val props: AppProperties,
     private val parser: EaResponseParser,
+    private val coverageTracker: EaMatchCoverageTracker,
 ) : WindowedEaClubsGateway {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -27,10 +28,29 @@ class NodeEaClubsGateway(
 
     override fun getLatestMatches(clubId: String) = getLatestMatches(clubId, props.ea.maxResultCount)
 
-    override fun getLatestMatches(clubId: String, maxResultCount: Int) = request(
-        "/ea/clubs/${encode(clubId)}/matches?platform=${encode(props.ea.platform)}&maxResultCount=$maxResultCount",
-        parser::parseMatches,
-    )
+    override fun getLatestMatches(clubId: String, maxResultCount: Int): EaApiResult<List<MatchResponse>> {
+        val path = "/ea/clubs/${encode(clubId)}/matches?platform=${encode(props.ea.platform)}&maxResultCount=$maxResultCount"
+        repeat(MAX_ATTEMPTS) { index ->
+            try {
+                val response = eaGatewayWebClient.get().uri(path).retrieve().toEntity(String::class.java).block()
+                    ?: error("EA gateway returned no response entity")
+                val leagueCount = response.headers.getFirst(LEAGUE_COUNT_HEADER)?.toIntOrNull()
+                val playoffCount = response.headers.getFirst(PLAYOFF_COUNT_HEADER)?.toIntOrNull()
+                if (leagueCount != null && playoffCount != null) {
+                    coverageTracker.record(clubId, maxResultCount, leagueCount, playoffCount)
+                }
+                return parser.parseMatches(response.body ?: "[]")
+            } catch (ex: WebClientResponseException) {
+                // An explicit HTTP response is not a transport/read failure. Never retry 4xx/5xx here.
+                return httpFailure(path, index + 1, ex)
+            } catch (ex: Exception) {
+                if (index == MAX_ATTEMPTS - 1) return unavailableAfterRetries(path, index + 1, ex)
+                log.warn("EA gateway transient read failure: path={}, attempt={}/{}", path, index + 1, MAX_ATTEMPTS, ex)
+                Thread.sleep(RETRY_BACKOFF_MILLIS)
+            }
+        }
+        error("unreachable")
+    }
 
     override fun getMembersStats(clubId: String) = request(
         "/ea/clubs/${encode(clubId)}/members?platform=${encode(props.ea.platform)}",
@@ -86,5 +106,10 @@ class NodeEaClubsGateway(
 
     private fun encode(value: String): String = java.net.URLEncoder.encode(value, Charsets.UTF_8).replace("+", "%20")
 
-    private companion object { const val MAX_ATTEMPTS = 3; const val RETRY_BACKOFF_MILLIS = 400L }
+    private companion object {
+        const val MAX_ATTEMPTS = 3
+        const val RETRY_BACKOFF_MILLIS = 400L
+        const val LEAGUE_COUNT_HEADER = "X-EA-League-Match-Count"
+        const val PLAYOFF_COUNT_HEADER = "X-EA-Playoff-Match-Count"
+    }
 }

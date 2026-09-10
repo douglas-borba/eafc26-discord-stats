@@ -88,6 +88,8 @@ test("matches merge, deduplicate and order league and playoff", async () => {
   });
   const response = await fetch(`${await gateway(ea)}/ea/clubs/1104972/matches`, { headers: auth });
   assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-ea-league-match-count"), "2");
+  assert.equal(response.headers.get("x-ea-playoff-match-count"), "2");
   assert.deepEqual(requested.sort(), ["leagueMatch", "playoffMatch"]);
   assert.deepEqual((await response.json() as Array<{ matchId: string }>).map(it => it.matchId), ["new", "same", "old"]);
 });
