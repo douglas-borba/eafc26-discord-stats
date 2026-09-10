@@ -17,6 +17,7 @@ import com.eafc26.discordstats.service.AcquisitionStateHolder
 import com.eafc26.discordstats.service.CanonicalMatchFactory
 import com.eafc26.discordstats.service.LatestMatchHolder
 import com.eafc26.discordstats.service.MatchAcquisitionService
+import com.eafc26.discordstats.service.NoopAcquisitionTelemetry
 import com.eafc26.discordstats.store.PublishedMatchStore
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
@@ -85,6 +86,7 @@ class DevSimulatorServiceTest {
             CanonicalMatchFactory(),
             editorialPresentationService,
             LlmEditorialService(EditorialContextBuilder(), null, mock(), LlmProperties(enabled = false)),
+            acquisitionTelemetry = NoopAcquisitionTelemetry,
         )
 
         simulatorService = DevSimulatorService(

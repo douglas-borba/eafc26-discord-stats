@@ -26,6 +26,7 @@ import com.eafc26.discordstats.service.CanonicalMatchFactory
 import com.eafc26.discordstats.service.DiscordMatchPublicationService
 import com.eafc26.discordstats.service.LatestMatchHolder
 import com.eafc26.discordstats.service.MatchAcquisitionService
+import com.eafc26.discordstats.service.NoopAcquisitionTelemetry
 import com.eafc26.discordstats.store.JsonCanonicalMatchRepository
 import com.eafc26.discordstats.store.PublicationState
 import com.eafc26.discordstats.store.PublishedMatchStore
@@ -92,6 +93,7 @@ class ClubPollingCoordinatorIntegrationTest {
             CanonicalMatchFactory(),
             null,
             llm,
+            acquisitionTelemetry = NoopAcquisitionTelemetry,
         )
         store.saveIds(clubA, setOf("old-a"))
         store.saveIds(clubB, setOf("old-b"))

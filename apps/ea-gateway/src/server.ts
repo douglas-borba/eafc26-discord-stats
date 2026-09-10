@@ -5,9 +5,55 @@ export interface GatewayConfig {
   token: string;
   eaBaseUrl: string;
   timeoutMs: number;
+  /**
+   * Optional structured diagnostic sink. Production uses the safe JSON logger;
+   * tests use this hook to verify telemetry without asserting rendered logs.
+   */
+  telemetry?: (event: GatewayTelemetry) => void;
 }
 
 type JsonRecord = Record<string, unknown>;
+
+export type GatewayTelemetry = MatchFetchTelemetry | MatchMergeTelemetry;
+
+export type MatchFetchTelemetry = {
+  event: "EA_MATCH_FETCH";
+  gatewayBuildSha: string | null;
+  clubId: string;
+  platform: string;
+  matchType: string;
+  maxResultCount: string;
+  status: number | null;
+  returnedCount: number | null;
+  matchIds: string[];
+  errorKind?: string;
+};
+
+export type MatchMergeTelemetry = {
+  event: "EA_MATCH_MERGE";
+  gatewayBuildSha: string | null;
+  clubId: string;
+  platform: string;
+  maxResultCount: string;
+  leagueCount: number;
+  playoffCount: number;
+  mergedCount: number;
+  mergedMatchIds: string[];
+};
+
+type EaJsonResponse = { payload: unknown; status: number };
+
+class EaHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`EA_HTTP_${status}`);
+  }
+}
+
+class EaPayloadError extends Error {
+  constructor(readonly status: number, code: "EA_INVALID_CONTENT_TYPE" | "EA_INVALID_JSON") {
+    super(code);
+  }
+}
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   const json = JSON.stringify(body);
@@ -46,17 +92,21 @@ const EA_HEADERS: Record<string, string> = {
   Referer: "https://www.ea.com/",
 };
 
-async function eaJson(url: URL, config: GatewayConfig): Promise<unknown> {
+async function eaJson(url: URL, config: GatewayConfig): Promise<EaJsonResponse> {
   const response = await fetch(url, { headers: EA_HEADERS, signal: AbortSignal.timeout(config.timeoutMs) });
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     const preview = body.slice(0, 200);
     console.error(`[upstream] HTTP ${response.status} from ${url.pathname}${url.search}${preview ? ` body=${preview}` : ""}`);
-    throw new Error(`EA_HTTP_${response.status}`);
+    throw new EaHttpError(response.status);
   }
   const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.toLowerCase().includes("application/json")) throw new Error("EA_INVALID_CONTENT_TYPE");
-  return response.json();
+  if (!contentType.toLowerCase().includes("application/json")) throw new EaPayloadError(response.status, "EA_INVALID_CONTENT_TYPE");
+  try {
+    return { payload: await response.json(), status: response.status };
+  } catch {
+    throw new EaPayloadError(response.status, "EA_INVALID_JSON");
+  }
 }
 
 function matches(payload: unknown): JsonRecord[] {
@@ -64,6 +114,25 @@ function matches(payload: unknown): JsonRecord[] {
     throw new Error("EA_INVALID_MATCHES");
   }
   return payload as JsonRecord[];
+}
+
+function gatewayBuildSha(): string | null {
+  return process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GIT_COMMIT_SHA ?? null;
+}
+
+function emitTelemetry(config: GatewayConfig, event: GatewayTelemetry): void {
+  if (config.telemetry) {
+    config.telemetry(event);
+    return;
+  }
+  console.info(JSON.stringify(event));
+}
+
+function matchIds(items: JsonRecord[]): string[] {
+  return items
+    .map(item => item.matchId)
+    .filter((matchId): matchId is string | number => typeof matchId === "string" || typeof matchId === "number")
+    .map(String);
 }
 
 export function createGatewayServer(config: GatewayConfig) {
@@ -83,7 +152,7 @@ export function createGatewayServer(config: GatewayConfig) {
         const upstream = new URL(`${config.eaBaseUrl}/allTimeLeaderboard/search`);
         upstream.search = new URLSearchParams({ platform: url.searchParams.get("platform") ?? "common-gen5", clubName: name }).toString();
         console.log(`[upstream] GET ${upstream.origin}${upstream.pathname}${upstream.search}`);
-        const result = await eaJson(upstream, config);
+        const result = (await eaJson(upstream, config)).payload;
         console.log(`[upstream] 200 OK (${Date.now() - start}ms)`);
         return send(res, 200, result);
       }
@@ -98,7 +167,7 @@ export function createGatewayServer(config: GatewayConfig) {
         const upstream = new URL(`${config.eaBaseUrl}/members/stats`);
         upstream.search = new URLSearchParams({ platform, clubId }).toString();
         console.log(`[upstream] GET ${upstream.origin}${upstream.pathname}${upstream.search}`);
-        const result = await eaJson(upstream, config);
+        const result = (await eaJson(upstream, config)).payload;
         console.log(`[upstream] 200 OK (${Date.now() - start}ms)`);
         return send(res, 200, result);
       }
@@ -107,15 +176,57 @@ export function createGatewayServer(config: GatewayConfig) {
         const upstream = new URL(`${config.eaBaseUrl}/clubs/matches`);
         upstream.search = new URLSearchParams({ platform, clubIds: clubId, matchType, maxResultCount }).toString();
         console.log(`[upstream] GET ${upstream.origin}${upstream.pathname}${upstream.search}`);
-        const result = matches(await eaJson(upstream, config));
-        console.log(`[upstream] ${matchType} 200 OK ${result.length} matches (${Date.now() - start}ms)`);
-        return result;
+        let status: number | null = null;
+        try {
+          const upstreamResponse = await eaJson(upstream, config);
+          status = upstreamResponse.status;
+          const result = matches(upstreamResponse.payload);
+          emitTelemetry(config, {
+            event: "EA_MATCH_FETCH",
+            gatewayBuildSha: gatewayBuildSha(),
+            clubId,
+            platform,
+            matchType,
+            maxResultCount,
+            status,
+            returnedCount: result.length,
+            matchIds: matchIds(result),
+          });
+          console.log(`[upstream] ${matchType} ${status} OK ${result.length} matches (${Date.now() - start}ms)`);
+          return result;
+        } catch (error) {
+          const httpStatus = error instanceof EaHttpError || error instanceof EaPayloadError ? error.status : status;
+          emitTelemetry(config, {
+            event: "EA_MATCH_FETCH",
+            gatewayBuildSha: gatewayBuildSha(),
+            clubId,
+            platform,
+            matchType,
+            maxResultCount,
+            status: httpStatus,
+            returnedCount: null,
+            matchIds: [],
+            errorKind: classifyError(error).kind,
+          });
+          throw error;
+        }
       };
       const [league, playoff] = await Promise.all([load("leagueMatch"), load("playoffMatch")]);
       const merged = [...league, ...playoff]
         .filter(item => typeof item.matchId === "string" || typeof item.matchId === "number")
         .filter((item, index, all) => all.findIndex(candidate => String(candidate.matchId) === String(item.matchId)) === index)
         .sort((a, b) => Number(b.timestamp ?? 0) - Number(a.timestamp ?? 0));
+      emitTelemetry(config, {
+        event: "EA_MATCH_MERGE",
+        gatewayBuildSha: gatewayBuildSha(),
+        clubId,
+        platform,
+        maxResultCount,
+        leagueCount: league.length,
+        playoffCount: playoff.length,
+        mergedCount: merged.length,
+        mergedMatchIds: matchIds(merged),
+      });
       console.log(`[req] 200 OK ${merged.length} merged matches (${Date.now() - start}ms)`);
       return send(res, 200, merged);
     } catch (error) {
@@ -136,6 +247,6 @@ if (process.env.NODE_ENV !== "test") {
     timeoutMs: Number(process.env.EA_GATEWAY_TIMEOUT_MS ?? 30_000),
   });
   server.listen(Number(process.env.PORT ?? 8081), process.env.HOST ?? "127.0.0.1", () => {
-    console.log(`EA gateway listening on port ${process.env.PORT ?? 8081}`);
+    console.log(`EA gateway listening on port ${process.env.PORT ?? 8081}; buildSha=${gatewayBuildSha() ?? "unknown"}`);
   });
 }

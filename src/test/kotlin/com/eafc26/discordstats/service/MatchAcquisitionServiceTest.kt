@@ -27,6 +27,7 @@ import com.eafc26.discordstats.store.PublicationState
 import com.eafc26.discordstats.store.PublishedMatchStore
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -61,6 +62,7 @@ class MatchAcquisitionServiceTest {
     private lateinit var canonicalMatchRepository: CanonicalMatchRepository
     private lateinit var editorialPresentationService: com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationService
     private lateinit var synchronizationGapStore: InMemorySynchronizationGapStore
+    private lateinit var acquisitionTelemetry: RecordingAcquisitionTelemetry
 
     private val clubId = "12345"
 
@@ -91,6 +93,7 @@ class MatchAcquisitionServiceTest {
             editorialPresentationService,
             LlmEditorialService(EditorialContextBuilder(), null, mock(), LlmProperties(enabled = false)),
             synchronizationGapStore = synchronizationGapStore,
+            acquisitionTelemetry = acquisitionTelemetry,
         )
     }
 
@@ -105,6 +108,7 @@ class MatchAcquisitionServiceTest {
         canonicalMatchRepository = mock()
         editorialPresentationService = mock()
         synchronizationGapStore = InMemorySynchronizationGapStore()
+        acquisitionTelemetry = RecordingAcquisitionTelemetry()
         service = makeService()
         stubStore()  // default: empty store = first run
     }
@@ -202,6 +206,16 @@ class MatchAcquisitionServiceTest {
             windows += maxResultCount
             return EaApiResult.Success(responses.getOrElse(index++) { emptyList() })
         }
+    }
+
+    private class RecordingAcquisitionTelemetry : AcquisitionTelemetry {
+        val batches = mutableListOf<AcquisitionBatchTelemetry>()
+        val rejected = mutableListOf<NormalizationRejectedTelemetry>()
+        val persisted = mutableListOf<CanonicalPersistenceTelemetry>()
+
+        override fun batch(event: AcquisitionBatchTelemetry) { batches += event }
+        override fun normalizationRejected(event: NormalizationRejectedTelemetry) { rejected += event }
+        override fun canonicalPersisted(event: CanonicalPersistenceTelemetry) { persisted += event }
     }
 
     @Nested
@@ -314,6 +328,49 @@ class MatchAcquisitionServiceTest {
             val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
             verify(canonicalMatchRepository).save(saved.capture())
             assertThat(saved.firstValue.matchId.value).isEqualTo("playoff-new")
+        }
+
+        @Test
+        fun `telemetry traces playoff IDs from received batch through canonical persistence`() {
+            val leagueCheckpoint = match("league-checkpoint", 100, matchType = "leagueMatch")
+            val playoffNew = match("playoff-new", 200, matchType = "playoffMatch")
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(leagueCheckpoint.matchId)))
+            stubStore("existing")
+            val windowed = WindowedGateway(listOf(playoffNew, leagueCheckpoint))
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(acquisitionTelemetry.batches).containsExactly(
+                AcquisitionBatchTelemetry(
+                    clubId = clubId,
+                    trigger = AcquisitionTrigger.SCHEDULER.name,
+                    window = 5,
+                    receivedMatchIds = listOf("playoff-new", "league-checkpoint"),
+                    alreadyExistingMatchIds = listOf("league-checkpoint"),
+                    newMatchIds = listOf("playoff-new"),
+                ),
+            )
+            assertThat(acquisitionTelemetry.persisted)
+                .containsExactly(CanonicalPersistenceTelemetry(clubId, "playoff-new"))
+        }
+
+        @Test
+        fun `telemetry identifies a rejected match without changing normalization failure`() {
+            val checkpoint = match("known", 100)
+            val invalid = match("invalid", 200).let { response ->
+                response.copy(clubs = mapOf(clubId to response.clubs.getValue(clubId)))
+            }
+            stubCanonicalHistory(LEGACY_TEST_CLUB, linkedSetOf(MatchId(checkpoint.matchId)))
+            stubStore("existing")
+            val windowed = WindowedGateway(listOf(invalid, checkpoint))
+
+            assertThatThrownBy { service.acquire(AcquisitionTrigger.SCHEDULER, windowed) }
+                .isInstanceOf(IllegalStateException::class.java)
+
+            assertThat(acquisitionTelemetry.rejected).containsExactly(
+                NormalizationRejectedTelemetry(clubId, "invalid", "INSUFFICIENT_CLUBS"),
+            )
+            assertThat(acquisitionTelemetry.persisted).isEmpty()
         }
 
         @Test

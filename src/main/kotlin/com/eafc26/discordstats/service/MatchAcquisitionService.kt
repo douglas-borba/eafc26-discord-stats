@@ -67,6 +67,7 @@ class MatchAcquisitionService(
     private val synchronizationGapStore: SynchronizationGapStore = InMemorySynchronizationGapStore(),
     private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
     private val canonicalPublicationPersistence: CanonicalPublicationPersistence? = null,
+    private val acquisitionTelemetry: AcquisitionTelemetry,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
@@ -204,10 +205,24 @@ class MatchAcquisitionService(
 
         // Canonical storage is independent from presentation and Discord delivery.
         // Development fixtures remain intentionally non-persistent.
-        val canonicalByMatchId = matches
+        val canonicalByMatchId = linkedMapOf<String, CanonicalMatch>()
+        matches
             .sortedWith(compareBy<MatchResponse> { it.timestamp }.thenBy { it.matchId })
-            .associate { match ->
-                match.matchId to canonicalMatchFactory.create(match, clubId.value, proNames)
+            .forEach { match ->
+                try {
+                    canonicalByMatchId[match.matchId] = canonicalMatchFactory.create(match, clubId.value, proNames)
+                } catch (ex: Exception) {
+                    safeTelemetry {
+                        acquisitionTelemetry.normalizationRejected(
+                            NormalizationRejectedTelemetry(
+                                clubId = clubId.value,
+                                matchId = match.matchId,
+                                reason = normalizationRejectionReason(ex),
+                            ),
+                        )
+                    }
+                    throw ex
+                }
             }
         val acceptedCanonical = canonicalByMatchId.values.toList()
         val acceptedIds = acceptedCanonical.mapTo(hashSetOf()) { it.matchId.value }
@@ -221,6 +236,11 @@ class MatchAcquisitionService(
                         canonicalMatchRepository.save(canonical)
                         initialPublication?.let { store.createRecordIfAbsent(clubId, it) } ?: false
                     }
+                safeTelemetry {
+                    acquisitionTelemetry.canonicalPersisted(
+                        CanonicalPersistenceTelemetry(clubId.value, canonical.matchId.value),
+                    )
+                }
                 eventRecorder?.canonicalPersisted(clubId, canonical.matchId.value)
                 if (publicationCreated && initialPublication?.state == PublicationState.PENDING) {
                     eventRecorder?.discordPendingCreated(clubId, canonical.matchId.value)
@@ -295,7 +315,9 @@ class MatchAcquisitionService(
         gateway: EaClubsGateway,
     ): SynchronizationFetch {
         if ((trigger != AcquisitionTrigger.SCHEDULER && trigger != AcquisitionTrigger.ADMIN_POLL && trigger != AcquisitionTrigger.TRIAL_INITIAL) || gateway !is WindowedEaClubsGateway) {
-            return SynchronizationFetch(gateway.getLatestMatches(clubId.value), null, null)
+            val result = gateway.getLatestMatches(clubId.value)
+            traceFetchedBatch(clubId, trigger, window = null, result, emptySet())
+            return SynchronizationFetch(result, null, null)
         }
 
         val latestCanonicalMatchId = readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) {
@@ -303,8 +325,10 @@ class MatchAcquisitionService(
         }
         if (latestCanonicalMatchId == null) {
             val window = props.ea.incrementalMaxWindow
+            val result = gateway.getLatestMatches(clubId.value, window)
+            traceFetchedBatch(clubId, trigger, window, result, emptySet())
             return SynchronizationFetch(
-                gateway.getLatestMatches(clubId.value, window),
+                result,
                 "window=$window matchesReturned=first-run checkpointFound=false newMatches=first-run",
                 null,
             )
@@ -320,6 +344,7 @@ class MatchAcquisitionService(
             val knownIds = readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) {
                 canonicalMatchRepository.findExistingMatchIds(clubId, deduplicated.map { MatchId(it.matchId) })
             }
+            traceFetchedBatch(clubId, trigger, window, EaApiResult.Success(deduplicated), knownIds)
             val checkpointFound = knownIds.isNotEmpty()
             val newMatches = deduplicated.filterNot { MatchId(it.matchId) in knownIds }
             if (checkpointFound) {
@@ -351,6 +376,45 @@ class MatchAcquisitionService(
             val expanded = (window * 2).coerceAtMost(maxWindow)
             eventRecorder?.eaFetchExpanded(clubId, window, expanded, checkpointFound = false)
             window = expanded
+        }
+    }
+
+    private fun traceFetchedBatch(
+        clubId: ClubId,
+        trigger: AcquisitionTrigger,
+        window: Int?,
+        result: EaApiResult<List<MatchResponse>>,
+        knownIds: Set<MatchId>,
+    ) {
+        if (result !is EaApiResult.Success) return
+        val receivedMatchIds = result.data.map { it.matchId }
+        val alreadyExistingMatchIds = receivedMatchIds.filter { MatchId(it) in knownIds }
+        val newMatchIds = receivedMatchIds.filterNot { MatchId(it) in knownIds }
+        safeTelemetry {
+            acquisitionTelemetry.batch(
+                AcquisitionBatchTelemetry(
+                    clubId = clubId.value,
+                    trigger = trigger.name,
+                    window = window,
+                    receivedMatchIds = receivedMatchIds,
+                    alreadyExistingMatchIds = alreadyExistingMatchIds,
+                    newMatchIds = newMatchIds,
+                ),
+            )
+        }
+    }
+
+    private fun normalizationRejectionReason(ex: Exception): String = when {
+        ex.message?.contains("non-blank match ID") == true -> "EMPTY_MATCH_ID"
+        ex.message?.contains("supported Instant range") == true -> "INVALID_TIMESTAMP"
+        ex.message?.contains("at least two clubs") == true -> "INSUFFICIENT_CLUBS"
+        ex.message?.contains("non-blank map key") == true -> "EMPTY_CLUB_ID"
+        else -> "OTHER_VALIDATION_FAILURE"
+    }
+
+    private fun safeTelemetry(action: () -> Unit) {
+        runCatching(action).onFailure { ex ->
+            log.warn("Acquisition telemetry failed: exception={}", ex.javaClass.name)
         }
     }
 

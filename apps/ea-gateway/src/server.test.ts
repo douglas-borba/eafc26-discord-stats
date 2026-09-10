@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { afterEach, test } from "node:test";
-import { createGatewayServer } from "./server.js";
+import { createGatewayServer, type GatewayTelemetry } from "./server.js";
 
 const servers: Server[] = [];
 const token = "test-internal-token";
@@ -27,8 +27,8 @@ async function fixture(handler: (url: URL) => { status?: number; contentType?: s
   }));
 }
 
-async function gateway(eaBaseUrl: string, timeoutMs = 1_000) {
-  return listen(createGatewayServer({ token, eaBaseUrl, timeoutMs }));
+async function gateway(eaBaseUrl: string, timeoutMs = 1_000, telemetry?: (event: GatewayTelemetry) => void) {
+  return listen(createGatewayServer({ token, eaBaseUrl, timeoutMs, telemetry }));
 }
 
 const auth = { Authorization: `Bearer ${token}` };
@@ -90,6 +90,73 @@ test("matches merge, deduplicate and order league and playoff", async () => {
   assert.equal(response.status, 200);
   assert.deepEqual(requested.sort(), ["leagueMatch", "playoffMatch"]);
   assert.deepEqual((await response.json() as Array<{ matchId: string }>).map(it => it.matchId), ["new", "same", "old"]);
+});
+
+test("matches emits safe structured telemetry for each competition and the merged window", async () => {
+  const telemetry: GatewayTelemetry[] = [];
+  const ea = await fixture(url => {
+    const type = url.searchParams.get("matchType");
+    return type === "leagueMatch"
+      ? { body: '[{"matchId":"league-1","timestamp":10}]' }
+      : { body: '[{"matchId":"playoff-1","timestamp":20},{"matchId":"league-1","timestamp":10}]' };
+  });
+
+  const response = await fetch(
+    `${await gateway(ea, 1_000, event => telemetry.push(event))}/ea/clubs/11262883/matches?platform=common-gen5&maxResultCount=5`,
+    { headers: auth },
+  );
+
+  assert.equal(response.status, 200);
+  const fetches = telemetry.filter((event): event is Extract<GatewayTelemetry, { event: "EA_MATCH_FETCH" }> => event.event === "EA_MATCH_FETCH")
+    .sort((left, right) => left.matchType.localeCompare(right.matchType));
+  assert.deepEqual(fetches, [
+    {
+      event: "EA_MATCH_FETCH", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5",
+      matchType: "leagueMatch", maxResultCount: "5", status: 200, returnedCount: 1, matchIds: ["league-1"],
+    },
+    {
+      event: "EA_MATCH_FETCH", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5",
+      matchType: "playoffMatch", maxResultCount: "5", status: 200, returnedCount: 2, matchIds: ["playoff-1", "league-1"],
+    },
+  ]);
+  assert.deepEqual(telemetry.find((event): event is Extract<GatewayTelemetry, { event: "EA_MATCH_MERGE" }> => event.event === "EA_MATCH_MERGE"), {
+    event: "EA_MATCH_MERGE", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5", maxResultCount: "5",
+    leagueCount: 1, playoffCount: 2, mergedCount: 2, mergedMatchIds: ["playoff-1", "league-1"],
+  });
+  assert.equal(JSON.stringify(telemetry).includes(token), false);
+  assert.equal(JSON.stringify(telemetry).toLowerCase().includes("authorization"), false);
+});
+
+test("matches emits the upstream HTTP status when one competition request fails", async () => {
+  const telemetry: GatewayTelemetry[] = [];
+  const ea = await fixture(url => url.searchParams.get("matchType") === "playoffMatch"
+    ? { status: 503, body: "{}" }
+    : { body: "[]" });
+
+  const response = await fetch(`${await gateway(ea, 1_000, event => telemetry.push(event))}/ea/clubs/11262883/matches`, { headers: auth });
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(telemetry.find((event): event is Extract<GatewayTelemetry, { event: "EA_MATCH_FETCH" }> =>
+    event.event === "EA_MATCH_FETCH" && event.matchType === "playoffMatch"), {
+    event: "EA_MATCH_FETCH", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5",
+    matchType: "playoffMatch", maxResultCount: "20", status: 503, returnedCount: null, matchIds: [], errorKind: "ea_http_error",
+  });
+});
+
+test("matches keeps the HTTP 200 diagnostic when an upstream match payload is invalid", async () => {
+  const telemetry: GatewayTelemetry[] = [];
+  const ea = await fixture(url => url.searchParams.get("matchType") === "playoffMatch"
+    ? { body: "{}" }
+    : { body: "[]" });
+
+  const response = await fetch(`${await gateway(ea, 1_000, event => telemetry.push(event))}/ea/clubs/11262883/matches`, { headers: auth });
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(telemetry.find((event): event is Extract<GatewayTelemetry, { event: "EA_MATCH_FETCH" }> =>
+    event.event === "EA_MATCH_FETCH" && event.matchType === "playoffMatch"), {
+    event: "EA_MATCH_FETCH", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5",
+    matchType: "playoffMatch", maxResultCount: "20", status: 200, returnedCount: null, matchIds: [], errorKind: "ea_invalid_payload",
+  });
 });
 
 test("matches forwards a bounded maxResultCount to both EA competition requests", async () => {
