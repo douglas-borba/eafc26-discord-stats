@@ -103,6 +103,7 @@ export interface SystemHealth {
       maxResultCount: number;
       leagueCount: number;
       playoffCount: number;
+      friendlyCount: number;
       status: "UP" | "PARTIAL";
       observedAt: string;
     }>;

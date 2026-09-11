@@ -87,7 +87,7 @@ export function SystemHealthView() {
                   ["Detalhe", health.eaCoverage.message],
                   ...health.eaCoverage.clubs.map((club) => [
                     `Clube ${club.clubId}`,
-                    `Liga ${club.leagueCount} · Playoff ${club.playoffCount} · janela ${club.maxResultCount}`,
+                    `Liga ${club.leagueCount} · Playoff ${club.playoffCount} · Amistoso ${club.friendlyCount} · janela ${club.maxResultCount}`,
                   ] as const),
                 ]}
               />

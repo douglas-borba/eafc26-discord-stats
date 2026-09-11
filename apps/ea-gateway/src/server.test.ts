@@ -75,7 +75,19 @@ test("matches requests playoffMatch", async () => {
   assert.deepEqual((await response.json() as Array<{ matchId: string }>).map(it => it.matchId), ["playoff"]);
 });
 
-test("matches merge, deduplicate and order league and playoff", async () => {
+test("matches requests friendlyMatch", async () => {
+  const requested: string[] = [];
+  const ea = await fixture(url => {
+    requested.push(url.searchParams.get("matchType") ?? "");
+    return { body: url.searchParams.get("matchType") === "friendlyMatch" ? '[{"matchId":"friendly","timestamp":1}]' : "[]" };
+  });
+  const response = await fetch(`${await gateway(ea)}/ea/clubs/1104972/matches`, { headers: auth });
+  assert.equal(response.status, 200);
+  assert.ok(requested.includes("friendlyMatch"));
+  assert.deepEqual((await response.json() as Array<{ matchId: string }>).map(it => it.matchId), ["friendly"]);
+});
+
+test("matches merge, deduplicate and order league playoff and friendly", async () => {
   const requested: string[] = [];
   const ea = await fixture(url => {
     const type = url.searchParams.get("matchType") ?? "";
@@ -84,14 +96,38 @@ test("matches merge, deduplicate and order league and playoff", async () => {
     assert.equal(url.searchParams.get("maxResultCount"), "20");
     return type === "leagueMatch"
       ? { body: '[{"matchId":"old","timestamp":10},{"matchId":"same","timestamp":20}]' }
-      : { body: '[{"matchId":"new","timestamp":30},{"matchId":"same","timestamp":20}]' };
+      : type === "playoffMatch"
+        ? { body: '[{"matchId":"new","timestamp":30},{"matchId":"same","timestamp":20}]' }
+        : { body: '[{"matchId":"friendly","timestamp":40},{"matchId":"new","timestamp":30}]' };
   });
   const response = await fetch(`${await gateway(ea)}/ea/clubs/1104972/matches`, { headers: auth });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-ea-league-match-count"), "2");
   assert.equal(response.headers.get("x-ea-playoff-match-count"), "2");
-  assert.deepEqual(requested.sort(), ["leagueMatch", "playoffMatch"]);
-  assert.deepEqual((await response.json() as Array<{ matchId: string }>).map(it => it.matchId), ["new", "same", "old"]);
+  assert.equal(response.headers.get("x-ea-friendly-match-count"), "2");
+  assert.deepEqual(requested.sort(), ["friendlyMatch", "leagueMatch", "playoffMatch"]);
+  assert.deepEqual((await response.json() as Array<{ matchId: string }>).map(it => it.matchId), ["friendly", "new", "same", "old"]);
+});
+
+test("empty playoff does not prevent friendly matches from being returned with league matches", async () => {
+  const ea = await fixture(url => {
+    const type = url.searchParams.get("matchType");
+    if (type === "leagueMatch") {
+      return { body: JSON.stringify(Array.from({ length: 5 }, (_, index) => ({ matchId: `league-${index}`, timestamp: index + 1 }))) };
+    }
+    if (type === "friendlyMatch") {
+      return { body: '[{"matchId":"friendly-1","timestamp":6},{"matchId":"friendly-2","timestamp":7}]' };
+    }
+    return { body: "[]" };
+  });
+
+  const response = await fetch(`${await gateway(ea)}/ea/clubs/11262883/matches?maxResultCount=5`, { headers: auth });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-ea-league-match-count"), "5");
+  assert.equal(response.headers.get("x-ea-playoff-match-count"), "0");
+  assert.equal(response.headers.get("x-ea-friendly-match-count"), "2");
+  assert.equal((await response.json() as Array<{ matchId: string }>).length, 7);
 });
 
 test("matches emits safe structured telemetry for each competition and the merged window", async () => {
@@ -100,7 +136,9 @@ test("matches emits safe structured telemetry for each competition and the merge
     const type = url.searchParams.get("matchType");
     return type === "leagueMatch"
       ? { body: '[{"matchId":"league-1","timestamp":10}]' }
-      : { body: '[{"matchId":"playoff-1","timestamp":20},{"matchId":"league-1","timestamp":10}]' };
+      : type === "playoffMatch"
+        ? { body: '[{"matchId":"playoff-1","timestamp":20},{"matchId":"league-1","timestamp":10}]' }
+        : { body: '[{"matchId":"friendly-1","timestamp":30},{"matchId":"playoff-1","timestamp":20}]' };
   });
 
   const response = await fetch(
@@ -114,6 +152,10 @@ test("matches emits safe structured telemetry for each competition and the merge
   assert.deepEqual(fetches, [
     {
       event: "EA_MATCH_FETCH", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5",
+      matchType: "friendlyMatch", maxResultCount: "5", status: 200, returnedCount: 2, matchIds: ["friendly-1", "playoff-1"],
+    },
+    {
+      event: "EA_MATCH_FETCH", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5",
       matchType: "leagueMatch", maxResultCount: "5", status: 200, returnedCount: 1, matchIds: ["league-1"],
     },
     {
@@ -123,7 +165,7 @@ test("matches emits safe structured telemetry for each competition and the merge
   ]);
   assert.deepEqual(telemetry.find((event): event is Extract<GatewayTelemetry, { event: "EA_MATCH_MERGE" }> => event.event === "EA_MATCH_MERGE"), {
     event: "EA_MATCH_MERGE", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5", maxResultCount: "5",
-    leagueCount: 1, playoffCount: 2, mergedCount: 2, mergedMatchIds: ["playoff-1", "league-1"],
+    leagueCount: 1, playoffCount: 2, friendlyCount: 2, mergedCount: 3, mergedMatchIds: ["friendly-1", "playoff-1", "league-1"],
   });
   assert.equal(JSON.stringify(telemetry).includes(token), false);
   assert.equal(JSON.stringify(telemetry).toLowerCase().includes("authorization"), false);
@@ -131,7 +173,7 @@ test("matches emits safe structured telemetry for each competition and the merge
 
 test("matches emits the upstream HTTP status when one competition request fails", async () => {
   const telemetry: GatewayTelemetry[] = [];
-  const ea = await fixture(url => url.searchParams.get("matchType") === "playoffMatch"
+  const ea = await fixture(url => url.searchParams.get("matchType") === "friendlyMatch"
     ? { status: 503, body: "{}" }
     : { body: "[]" });
 
@@ -139,9 +181,9 @@ test("matches emits the upstream HTTP status when one competition request fails"
 
   assert.equal(response.status, 502);
   assert.deepEqual(telemetry.find((event): event is Extract<GatewayTelemetry, { event: "EA_MATCH_FETCH" }> =>
-    event.event === "EA_MATCH_FETCH" && event.matchType === "playoffMatch"), {
+    event.event === "EA_MATCH_FETCH" && event.matchType === "friendlyMatch"), {
     event: "EA_MATCH_FETCH", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5",
-    matchType: "playoffMatch", maxResultCount: "20", status: 503, returnedCount: null, matchIds: [], errorKind: "ea_http_error",
+    matchType: "friendlyMatch", maxResultCount: "20", status: 503, returnedCount: null, matchIds: [], errorKind: "ea_http_error",
   });
 });
 
@@ -161,13 +203,16 @@ test("matches keeps the HTTP 200 diagnostic when an upstream match payload is in
   });
 });
 
-test("matches forwards a bounded maxResultCount to both EA competition requests", async () => {
+test("matches forwards a bounded maxResultCount to all three EA competition requests", async () => {
+  const requested: string[] = [];
   const ea = await fixture(url => {
+    requested.push(url.searchParams.get("matchType") ?? "");
     assert.equal(url.searchParams.get("maxResultCount"), "5");
     return { body: "[]" };
   });
   const response = await fetch(`${await gateway(ea)}/ea/clubs/1104972/matches?maxResultCount=5`, { headers: auth });
   assert.equal(response.status, 200);
+  assert.deepEqual(requested.sort(), ["friendlyMatch", "leagueMatch", "playoffMatch"]);
 });
 
 test("members forwards and returns the EA members envelope", async () => {

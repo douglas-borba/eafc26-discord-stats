@@ -36,8 +36,9 @@ class NodeEaClubsGateway(
                     ?: error("EA gateway returned no response entity")
                 val leagueCount = response.headers.getFirst(LEAGUE_COUNT_HEADER)?.toIntOrNull()
                 val playoffCount = response.headers.getFirst(PLAYOFF_COUNT_HEADER)?.toIntOrNull()
-                if (leagueCount != null && playoffCount != null) {
-                    coverageTracker.record(clubId, maxResultCount, leagueCount, playoffCount)
+                val friendlyCount = response.headers.getFirst(FRIENDLY_COUNT_HEADER)?.toIntOrNull()
+                if (leagueCount != null && playoffCount != null && friendlyCount != null) {
+                    coverageTracker.record(clubId, maxResultCount, leagueCount, playoffCount, friendlyCount)
                 }
                 return parser.parseMatches(response.body ?: "[]")
             } catch (ex: WebClientResponseException) {
@@ -111,5 +112,6 @@ class NodeEaClubsGateway(
         const val RETRY_BACKOFF_MILLIS = 400L
         const val LEAGUE_COUNT_HEADER = "X-EA-League-Match-Count"
         const val PLAYOFF_COUNT_HEADER = "X-EA-Playoff-Match-Count"
+        const val FRIENDLY_COUNT_HEADER = "X-EA-Friendly-Match-Count"
     }
 }

@@ -22,6 +22,12 @@ class EaMatchMapperTest {
 
     private val mapper = EaMatchMapper()
 
+    @Test fun `maps friendlyMatch to friendly competition`() {
+        val normalized = mapper.map(match(matchType = "friendlyMatch")).success().match
+
+        assertThat(normalized.competition).isEqualTo(CompetitionType.FRIENDLY)
+    }
+
     @Test fun `explicit non DNF flags produce completed completion`() {
         val result = mapper.map(match().copy(clubs = linkedMapOf(
             "our-club" to club("Our FC", "3", "1", null, "0"),

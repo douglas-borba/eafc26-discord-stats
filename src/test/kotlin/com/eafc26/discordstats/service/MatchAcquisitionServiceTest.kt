@@ -248,16 +248,18 @@ class MatchAcquisitionServiceTest {
         }
 
         @Test
-        fun `first run retains league and playoff matches from the combined window`() {
+        fun `first run retains league playoff and friendly matches from the combined window`() {
             val league = match("league", 100, matchType = "leagueMatch")
             val playoff = match("playoff", 200, matchType = "playoffMatch")
+            val friendly = match("friendly", 300, matchType = "friendlyMatch")
             stubCanonicalHistory(LEGACY_TEST_CLUB, emptySet())
-            val windowed = WindowedGateway(listOf(playoff, league))
+            val windowed = WindowedGateway(listOf(friendly, playoff, league))
 
             service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
 
             assertThat(windowed.windows).containsExactly(20)
-            verify(canonicalMatchRepository, times(2)).save(any())
+            verify(canonicalMatchRepository, times(3)).save(any())
+            verify(webhookClient).send(any(), any())
         }
 
         @Test
@@ -328,6 +330,31 @@ class MatchAcquisitionServiceTest {
             val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
             verify(canonicalMatchRepository).save(saved.capture())
             assertThat(saved.firstValue.matchId.value).isEqualTo("playoff-new")
+        }
+
+        @Test
+        fun `unknown friendly match is persisted and published once even when league checkpoint is known`() {
+            val leagueCheckpoint = match("league-checkpoint", 100, matchType = "leagueMatch")
+            val friendly = match("friendly-new", 200, matchType = "friendlyMatch")
+            stubCanonicalHistory(
+                LEGACY_TEST_CLUB,
+                linkedSetOf(MatchId(leagueCheckpoint.matchId)),
+                linkedSetOf(MatchId(leagueCheckpoint.matchId), MatchId(friendly.matchId)),
+            )
+            stubStore("existing")
+            val windowed = WindowedGateway(
+                listOf(friendly, leagueCheckpoint),
+                listOf(friendly, leagueCheckpoint),
+            )
+
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+            service.acquire(AcquisitionTrigger.SCHEDULER, windowed)
+
+            assertThat(windowed.windows).containsExactly(5, 5)
+            val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
+            verify(canonicalMatchRepository).save(saved.capture())
+            assertThat(saved.firstValue.matchId.value).isEqualTo("friendly-new")
+            verify(webhookClient, times(1)).send(any(), any())
         }
 
         @Test

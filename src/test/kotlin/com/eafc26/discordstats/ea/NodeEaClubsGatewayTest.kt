@@ -46,6 +46,7 @@ class NodeEaClubsGatewayTest {
                 .setHeader("Content-Type", "application/json")
                 .setHeader("X-EA-League-Match-Count", "1")
                 .setHeader("X-EA-Playoff-Match-Count", "1")
+                .setHeader("X-EA-Friendly-Match-Count", "1")
                 .setBody(fixture("clubs-matches.json")),
         )
         val result = gateway.getLatestMatches("1104972")
@@ -60,8 +61,9 @@ class NodeEaClubsGatewayTest {
             ClubMatchCoverage::maxResultCount,
             ClubMatchCoverage::leagueCount,
             ClubMatchCoverage::playoffCount,
+            ClubMatchCoverage::friendlyCount,
             ClubMatchCoverage::status,
-        ).containsExactly("1104972", 20, 1, 1, "UP")
+        ).containsExactly("1104972", 20, 1, 1, 1, "UP")
     }
 
     @Test fun `matches accepts an explicit bounded window without changing the configured default`() {
@@ -72,12 +74,13 @@ class NodeEaClubsGatewayTest {
         assertThat(server.takeRequest().path).isEqualTo("/ea/clubs/1104972/matches?platform=common-gen5&maxResultCount=5")
     }
 
-    @Test fun `empty playoff source is surfaced as partial coverage without failing league acquisition`() {
+    @Test fun `empty competition source is surfaced as partial coverage without failing merged acquisition`() {
         server.enqueue(
             MockResponse()
                 .setHeader("Content-Type", "application/json")
                 .setHeader("X-EA-League-Match-Count", "5")
                 .setHeader("X-EA-Playoff-Match-Count", "0")
+                .setHeader("X-EA-Friendly-Match-Count", "2")
                 .setBody(fixture("clubs-matches.json")),
         )
 
@@ -90,8 +93,9 @@ class NodeEaClubsGatewayTest {
             ClubMatchCoverage::maxResultCount,
             ClubMatchCoverage::leagueCount,
             ClubMatchCoverage::playoffCount,
+            ClubMatchCoverage::friendlyCount,
             ClubMatchCoverage::status,
-        ).containsExactly("11262883", 5, 5, 0, "PARTIAL")
+        ).containsExactly("11262883", 5, 5, 0, 2, "PARTIAL")
     }
 
     @Test fun `members parse the EA envelope`() {

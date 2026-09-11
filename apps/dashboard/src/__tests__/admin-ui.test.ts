@@ -28,7 +28,7 @@ describe("admin route group structure", () => {
     const types = read("lib/admin/types.ts");
     expect(systemHealth).toContain('title="Cobertura EA"');
     expect(systemHealth).toContain("health.eaCoverage.status");
-    expect(systemHealth).toContain("Liga ${club.leagueCount} · Playoff ${club.playoffCount}");
+    expect(systemHealth).toContain("Liga ${club.leagueCount} · Playoff ${club.playoffCount} · Amistoso ${club.friendlyCount}");
     expect(systemHealth).toContain('case "PARTIAL"');
     expect(types).toContain('status: "UP" | "PARTIAL" | "NOT_OBSERVED"');
   });

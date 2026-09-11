@@ -109,10 +109,10 @@ class SystemHealthControllerTest {
         assertThat(diagnostics.snapshot().total.calls).isZero()
     }
 
-    @Test fun `partial playoff coverage is visible without degrading gateway reachability`() {
+    @Test fun `partial competition coverage is visible without degrading gateway reachability`() {
         server.enqueue(MockResponse().setResponseCode(200).setBody("[]"))
         val coverage = EaMatchCoverageTracker().also {
-            it.record(clubId = "11262883", maxResultCount = 5, leagueCount = 5, playoffCount = 0)
+            it.record(clubId = "11262883", maxResultCount = 5, leagueCount = 5, playoffCount = 0, friendlyCount = 2)
         }
 
         val health = controller(jdbc = healthyJdbc(), coverageTracker = coverage).health()

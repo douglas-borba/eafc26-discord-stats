@@ -37,6 +37,7 @@ export type MatchMergeTelemetry = {
   maxResultCount: string;
   leagueCount: number;
   playoffCount: number;
+  friendlyCount: number;
   mergedCount: number;
   mergedMatchIds: string[];
 };
@@ -215,8 +216,12 @@ export function createGatewayServer(config: GatewayConfig) {
           throw error;
         }
       };
-      const [league, playoff] = await Promise.all([load("leagueMatch"), load("playoffMatch")]);
-      const merged = [...league, ...playoff]
+      const [league, playoff, friendly] = await Promise.all([
+        load("leagueMatch"),
+        load("playoffMatch"),
+        load("friendlyMatch"),
+      ]);
+      const merged = [...league, ...playoff, ...friendly]
         .filter(item => typeof item.matchId === "string" || typeof item.matchId === "number")
         .filter((item, index, all) => all.findIndex(candidate => String(candidate.matchId) === String(item.matchId)) === index)
         .sort((a, b) => Number(b.timestamp ?? 0) - Number(a.timestamp ?? 0));
@@ -228,6 +233,7 @@ export function createGatewayServer(config: GatewayConfig) {
         maxResultCount,
         leagueCount: league.length,
         playoffCount: playoff.length,
+        friendlyCount: friendly.length,
         mergedCount: merged.length,
         mergedMatchIds: matchIds(merged),
       });
@@ -235,6 +241,7 @@ export function createGatewayServer(config: GatewayConfig) {
       return send(res, 200, merged, {
         "X-EA-League-Match-Count": String(league.length),
         "X-EA-Playoff-Match-Count": String(playoff.length),
+        "X-EA-Friendly-Match-Count": String(friendly.length),
       });
     } catch (error) {
       const { kind, detail } = classifyError(error);
