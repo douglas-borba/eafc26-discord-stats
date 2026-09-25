@@ -2,6 +2,7 @@ package com.eafc26.discordstats.application.club
 
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
+import com.eafc26.discordstats.domain.match.GameVersion
 import java.time.Instant
 
 @JvmInline
@@ -35,6 +36,8 @@ data class MonitoredClub(
     val updatedAt: Instant,
     /** Commercial access is deliberately independent from technical monitoring. */
     val accessStatus: ClubAccessStatus = ClubAccessStatus.ACTIVE,
+    /** EA contract era for this official club identity. */
+    val gameVersion: GameVersion = GameVersion.FC26,
 )
 
 enum class ClubAccessStatus {

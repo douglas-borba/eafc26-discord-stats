@@ -2,6 +2,7 @@ export interface AdminClub {
   clubId: string;
   displayName: string;
   platform: string;
+  gameVersion: "FC26" | "FC27";
   accessStatus: "ACTIVE" | "TRIAL";
   monitoringEnabled: boolean;
   discordConfigured: boolean;

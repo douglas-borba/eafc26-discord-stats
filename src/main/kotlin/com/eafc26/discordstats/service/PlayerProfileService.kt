@@ -5,8 +5,10 @@ import com.eafc26.discordstats.domain.interpretation.AwardType
 import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.domain.match.PlayerId
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
 import com.eafc26.discordstats.domain.match.AdvancedStatsCoverage
+import com.eafc26.discordstats.application.club.MonitoredClubRepository
 import com.eafc26.discordstats.application.repository.PlayerProfileReadRepository
 import com.eafc26.discordstats.history.MatchHistoryQuery
 import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
@@ -54,9 +56,11 @@ class PlayerProfileService(
     private val matchHistoryService: MatchHistoryService,
     private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
     private val playerProfileReadRepository: PlayerProfileReadRepository? = null,
+    private val monitoredClubRepository: MonitoredClubRepository? = null,
 ) {
     fun listPlayers(clubId: ClubId): List<PlayerProfileIndexEntry> = readOriginContext.withOrigin(CanonicalReadOrigin.PLAYERS) {
-        playerProfileReadRepository?.findPlayerIndex(clubId) ?: playerIndex(loadAppearances(clubId))
+        val gameVersion = gameVersionFor(clubId)
+        playerProfileReadRepository?.findPlayerIndex(clubId, gameVersion) ?: playerIndex(loadAppearances(clubId, gameVersion))
     }
 
     /** Legacy aggregate collection retained for internal callers. The public
@@ -67,7 +71,7 @@ class PlayerProfileService(
     ): List<PlayerProfile> = readOriginContext.withOrigin(CanonicalReadOrigin.PLAYERS) {
         require(recentMatchLimit > 0) { "Recent match limit must be positive" }
 
-        val appearances = loadAppearances(clubId)
+        val appearances = loadAppearances(clubId, gameVersionFor(clubId))
         playerIndex(appearances).mapNotNull { entry ->
             profileFrom(appearances, entry.playerId, recentMatchLimit)
         }
@@ -80,16 +84,28 @@ class PlayerProfileService(
     ): PlayerProfile? = readOriginContext.withOrigin(CanonicalReadOrigin.PLAYERS) {
         require(recentMatchLimit > 0) { "Recent match limit must be positive" }
 
-        profileFrom(loadAppearances(clubId, playerId), playerId, recentMatchLimit)
+        profileFrom(loadAppearances(clubId, playerId, gameVersionFor(clubId)), playerId, recentMatchLimit)
     }
 
-    private fun loadAppearances(clubId: ClubId): List<PlayerProfileAppearance> =
-        playerProfileReadRepository?.findAppearances(clubId)
-            ?: canonicalAppearances(matchHistoryService.list(clubId))
+    /**
+     * A monitored club's identity is one contract era at a time, but a clubId's
+     * canonical history can legitimately span two (an EA numeric club identity
+     * that survives a game transition). Resolving this once per request and
+     * threading it through every read keeps FC26 and FC27 appearances from
+     * silently blending into the same X-Ray.
+     */
+    private fun gameVersionFor(clubId: ClubId): GameVersion =
+        monitoredClubRepository?.findById(clubId)?.gameVersion ?: GameVersion.FC26
 
-    private fun loadAppearances(clubId: ClubId, playerId: PlayerId): List<PlayerProfileAppearance> =
-        playerProfileReadRepository?.findAppearances(clubId, playerId)
-            ?: canonicalAppearances(matchHistoryService.list(clubId, MatchHistoryQuery(playerId = playerId)))
+    private fun loadAppearances(clubId: ClubId, gameVersion: GameVersion): List<PlayerProfileAppearance> =
+        playerProfileReadRepository?.findAppearances(clubId, gameVersion)
+            ?: canonicalAppearances(matchHistoryService.list(clubId).filter { it.gameVersion == gameVersion })
+
+    private fun loadAppearances(clubId: ClubId, playerId: PlayerId, gameVersion: GameVersion): List<PlayerProfileAppearance> =
+        playerProfileReadRepository?.findAppearances(clubId, playerId, gameVersion)
+            ?: canonicalAppearances(
+                matchHistoryService.list(clubId, MatchHistoryQuery(playerId = playerId)).filter { it.gameVersion == gameVersion },
+            )
 
     private fun playerIndex(appearances: List<PlayerProfileAppearance>): List<PlayerProfileIndexEntry> {
         val accumulated = linkedMapOf<PlayerId, MutablePlayerIndex>()

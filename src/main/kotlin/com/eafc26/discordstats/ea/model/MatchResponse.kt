@@ -35,6 +35,12 @@ data class MatchResponse(
 
     // Keyed by clubId, then by playerId
     @JsonProperty("players") val players: Map<String, Map<String, PlayerEntry>> = emptyMap(),
+
+    /** Gateway-owned endpoint provenance; FC27 omits the legacy root field. */
+    @JsonProperty("sourceMatchType") val sourceMatchType: String? = null,
+
+    /** Gateway-owned provider era; absent payloads are legacy FC26. */
+    @JsonProperty("sourceGameVersion") val sourceGameVersion: String? = null,
 ) {
     /**
      * Captures any JSON properties not declared in this DTO.

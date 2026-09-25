@@ -20,6 +20,7 @@ import com.eafc26.discordstats.domain.match.DisciplineStats
 import com.eafc26.discordstats.domain.match.DisplayName
 import com.eafc26.discordstats.domain.match.EaRecognition
 import com.eafc26.discordstats.domain.match.FootballMatch
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.match.MatchRating
 import com.eafc26.discordstats.domain.match.Participation
@@ -220,6 +221,34 @@ class PlayerProfileServiceTest {
         assertThat(theirs.goals).isZero()
         assertThat(theirs.craques).isZero()
         assertThat(theirs.bagres).isEqualTo(1)
+    }
+
+    @Test
+    fun `same clubId spanning two game generations never blends FC26 and FC27 appearances`() {
+        // A clubId's numeric EA identity can legitimately survive a game transition
+        // (confirmed live for Associação BF / 1104972 across FC26 and FC27). Without
+        // an explicit game-version boundary, one player's X-Ray would silently sum
+        // stats validated under a contract that never claimed continuity with the other.
+        val playerId = PlayerId("dbeng_bass")
+        val fc26Match = canonical(
+            "fc26-match", "2026-05-01T10:00:00Z", playerId, "dbeng_bass", MatchOutcome.WIN, "8.0",
+            5, 2, 0, setOf(AwardType.CRAQUE), gameVersion = GameVersion.FC26,
+        )
+        val fc27Match = canonical(
+            "fc27-match", "2026-09-24T10:00:00Z", playerId, "dbeng_bass", MatchOutcome.LOSS, "6.9",
+            0, 0, 0, emptySet(), gameVersion = GameVersion.FC27,
+        )
+        whenever(history.list(OUR_CLUB, MatchHistoryQuery(playerId = playerId)))
+            .thenReturn(listOf(fc27Match, fc26Match))
+
+        // No MonitoredClubRepository wired: the service must default to the club's
+        // FC26 provenance rather than silently aggregating every era it can see.
+        val profile = service.findById(OUR_CLUB, playerId)!!
+
+        assertThat(profile.matchCount).isEqualTo(1)
+        assertThat(profile.goals).isEqualTo(5)
+        assertThat(profile.craques).isEqualTo(1)
+        assertThat(profile.recentMatches).extracting<String> { it.matchId.value }.containsExactly("fc26-match")
     }
 
     @Test
@@ -661,6 +690,7 @@ class PlayerProfileServiceTest {
         advancedCoverage: AdvancedStatsCoverage = AdvancedStatsCoverage.UNAVAILABLE,
         dribblesCompleted: Int = 0,
         beats: Int = 0,
+        gameVersion: GameVersion = GameVersion.FC26,
     ): CanonicalMatch {
         val player = PlayerMatchPerformance(
             player = PlayerIdentity(playerId, DisplayName(name), proName?.let(::DisplayName)),
@@ -724,6 +754,7 @@ class PlayerProfileServiceTest {
         whenever(canonical.matchId).thenReturn(footballMatch.id)
         whenever(canonical.footballMatch).thenReturn(footballMatch)
         whenever(canonical.interpretation).thenReturn(interpretation)
+        whenever(canonical.gameVersion).thenReturn(gameVersion)
         return canonical
     }
 

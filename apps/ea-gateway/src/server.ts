@@ -23,6 +23,7 @@ export type MatchFetchTelemetry = {
   platform: string;
   matchType: string;
   maxResultCount: string;
+  gameVersion: string;
   status: number | null;
   returnedCount: number | null;
   matchIds: string[];
@@ -35,6 +36,7 @@ export type MatchMergeTelemetry = {
   clubId: string;
   platform: string;
   maxResultCount: string;
+  gameVersion: string;
   leagueCount: number;
   playoffCount: number;
   friendlyCount: number;
@@ -167,6 +169,10 @@ export function createGatewayServer(config: GatewayConfig) {
       const clubId = decodeURIComponent(match[1]);
       const platform = url.searchParams.get("platform") ?? "common-gen5";
       const maxResultCount = url.searchParams.get("maxResultCount") ?? "20";
+      const gameVersion = url.searchParams.get("gameVersion") ?? "FC26";
+      if (gameVersion !== "FC26" && gameVersion !== "FC27") {
+        return send(res, 400, { error: "invalid_game_version" });
+      }
 
       if (match[2] === "members") {
         const upstream = new URL(`${config.eaBaseUrl}/members/stats`);
@@ -193,12 +199,19 @@ export function createGatewayServer(config: GatewayConfig) {
             platform,
             matchType,
             maxResultCount,
+            gameVersion,
             status,
             returnedCount: result.length,
             matchIds: matchIds(result),
           });
           console.log(`[upstream] ${matchType} ${status} OK ${result.length} matches (${Date.now() - start}ms)`);
-          return result;
+          // Preserve the query provenance before the combined response is
+          // deduplicated. FC27 does not expose root matchType in its payload.
+          return result.map((item): JsonRecord => ({
+            ...item,
+            sourceMatchType: matchType,
+            sourceGameVersion: gameVersion,
+          }));
         } catch (error) {
           const httpStatus = error instanceof EaHttpError || error instanceof EaPayloadError ? error.status : status;
           emitTelemetry(config, {
@@ -208,6 +221,7 @@ export function createGatewayServer(config: GatewayConfig) {
             platform,
             matchType,
             maxResultCount,
+            gameVersion,
             status: httpStatus,
             returnedCount: null,
             matchIds: [],
@@ -231,6 +245,7 @@ export function createGatewayServer(config: GatewayConfig) {
         clubId,
         platform,
         maxResultCount,
+        gameVersion,
         leagueCount: league.length,
         playoffCount: playoff.length,
         friendlyCount: friendly.length,

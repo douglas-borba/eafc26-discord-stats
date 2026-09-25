@@ -37,6 +37,7 @@ class AdvancedStatsExplorerServiceTest {
         id: String = "match-1",
         playerId: String = "player-1",
         advancedCoverage: AdvancedStatsCoverage = AdvancedStatsCoverage.FULL,
+        gameVersion: GameVersion = GameVersion.FC26,
     ): CanonicalMatch {
         val player = PlayerMatchPerformance(
             player = PlayerIdentity(PlayerId(playerId), DisplayName("Neymar"), null),
@@ -93,8 +94,23 @@ class AdvancedStatsExplorerServiceTest {
         whenever(canonical.matchId).thenReturn(MatchId(id))
         whenever(canonical.footballMatch).thenReturn(footballMatch)
         whenever(canonical.interpretation).thenReturn(interpretation)
+        whenever(canonical.gameVersion).thenReturn(gameVersion)
 
         return canonical
+    }
+
+    @Test
+    fun `FC27 explorer exposes raw transport without applying FC26 semantic mappings`() {
+        val service = AdvancedStatsExplorerService(
+            fakeRepo(buildCanonical(rawAgg0 = "112:8,115:2", rawAgg1 = "", gameVersion = GameVersion.FC27)),
+        )
+
+        val data = service.playerExplorerData(clubId, matchId, "player-1")!!
+
+        assertThat(data.aggregateEntries).extracting<String> { it.confidence }
+            .containsOnly("UNREVALIDATED")
+        assertThat(data.aggregateEntries.map { it.metricName }).containsOnlyNulls()
+        assertThat(data.aggregateEntries.map { it.evidence }).containsOnlyNulls()
     }
 
     private fun fakeRepo(canonical: CanonicalMatch) = object : CanonicalMatchRepository {
@@ -625,6 +641,7 @@ class AdvancedStatsExplorerServiceTest {
                 matchId: MatchId,
                 playerId: String,
                 limit: Int,
+                gameVersion: GameVersion,
             ): List<ExplorerObservation> = error("Candidate comparison must not load audit vectors")
         }
         val service = AdvancedStatsExplorerService(
@@ -648,27 +665,28 @@ class AdvancedStatsExplorerServiceTest {
         var batchEvidenceReads = 0
         var canonicalBatchReads = 0
         val queueRepository = object : ExplorerObservationRepository by stored {
-            override fun findRecentResearchIdentities(clubId: ClubId, limit: Int): List<ObservationResearchIdentity> {
+            override fun findRecentResearchIdentities(clubId: ClubId, limit: Int, gameVersion: GameVersion): List<ObservationResearchIdentity> {
                 identityDiscoveryReads++
-                return stored.findRecentResearchIdentities(clubId, limit)
+                return stored.findRecentResearchIdentities(clubId, limit, gameVersion)
             }
 
             override fun findRecentForResearchIdentities(
                 clubId: ClubId,
                 identities: Collection<ObservationResearchIdentity>,
                 limit: Int,
+                gameVersion: GameVersion,
             ): List<ExplorerObservation> {
                 batchEvidenceReads++
-                return stored.findRecentForResearchIdentities(clubId, identities, limit)
+                return stored.findRecentForResearchIdentities(clubId, identities, limit, gameVersion)
             }
 
-            override fun findForPlayerPhrase(clubId: ClubId, playerId: String, phrase: String, limit: Int): List<ExplorerObservation> =
+            override fun findForPlayerPhrase(clubId: ClubId, playerId: String, phrase: String, limit: Int, gameVersion: GameVersion): List<ExplorerObservation> =
                 error("Queue must not query one phrase at a time")
 
-            override fun findForPlayer(clubId: ClubId, playerId: String, limit: Int): List<ExplorerObservation> =
+            override fun findForPlayer(clubId: ClubId, playerId: String, limit: Int, gameVersion: GameVersion): List<ExplorerObservation> =
                 error("Queue must not query one player at a time")
 
-            override fun findForPlayerMatchLimited(clubId: ClubId, matchId: MatchId, playerId: String, limit: Int): List<ExplorerObservation> =
+            override fun findForPlayerMatchLimited(clubId: ClubId, matchId: MatchId, playerId: String, limit: Int, gameVersion: GameVersion): List<ExplorerObservation> =
                 error("Queue must not eagerly load audit vectors")
         }
         val service = AdvancedStatsExplorerService(

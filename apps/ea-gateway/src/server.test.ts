@@ -87,6 +87,28 @@ test("matches requests friendlyMatch", async () => {
   assert.deepEqual((await response.json() as Array<{ matchId: string }>).map(it => it.matchId), ["friendly"]);
 });
 
+test("FC27 match responses retain factual endpoint and game provenance before merge", async () => {
+  const ea = await fixture(url => {
+    const type = url.searchParams.get("matchType");
+    return type === "leagueMatch"
+      ? { body: '[{"matchId":"16540167170290","timestamp":1790047539}]' }
+      : { body: "[]" };
+  });
+
+  const response = await fetch(
+    `${await gateway(ea)}/ea/clubs/486460/matches?platform=common-gen5&maxResultCount=1&gameVersion=FC27`,
+    { headers: auth },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), [{
+    matchId: "16540167170290",
+    timestamp: 1790047539,
+    sourceMatchType: "leagueMatch",
+    sourceGameVersion: "FC27",
+  }]);
+});
+
 test("matches merge, deduplicate and order league playoff and friendly", async () => {
   const requested: string[] = [];
   const ea = await fixture(url => {
@@ -152,19 +174,19 @@ test("matches emits safe structured telemetry for each competition and the merge
   assert.deepEqual(fetches, [
     {
       event: "EA_MATCH_FETCH", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5",
-      matchType: "friendlyMatch", maxResultCount: "5", status: 200, returnedCount: 2, matchIds: ["friendly-1", "playoff-1"],
+      matchType: "friendlyMatch", maxResultCount: "5", gameVersion: "FC26", status: 200, returnedCount: 2, matchIds: ["friendly-1", "playoff-1"],
     },
     {
       event: "EA_MATCH_FETCH", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5",
-      matchType: "leagueMatch", maxResultCount: "5", status: 200, returnedCount: 1, matchIds: ["league-1"],
+      matchType: "leagueMatch", maxResultCount: "5", gameVersion: "FC26", status: 200, returnedCount: 1, matchIds: ["league-1"],
     },
     {
       event: "EA_MATCH_FETCH", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5",
-      matchType: "playoffMatch", maxResultCount: "5", status: 200, returnedCount: 2, matchIds: ["playoff-1", "league-1"],
+      matchType: "playoffMatch", maxResultCount: "5", gameVersion: "FC26", status: 200, returnedCount: 2, matchIds: ["playoff-1", "league-1"],
     },
   ]);
   assert.deepEqual(telemetry.find((event): event is Extract<GatewayTelemetry, { event: "EA_MATCH_MERGE" }> => event.event === "EA_MATCH_MERGE"), {
-    event: "EA_MATCH_MERGE", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5", maxResultCount: "5",
+    event: "EA_MATCH_MERGE", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5", maxResultCount: "5", gameVersion: "FC26",
     leagueCount: 1, playoffCount: 2, friendlyCount: 2, mergedCount: 3, mergedMatchIds: ["friendly-1", "playoff-1", "league-1"],
   });
   assert.equal(JSON.stringify(telemetry).includes(token), false);
@@ -183,7 +205,7 @@ test("matches emits the upstream HTTP status when one competition request fails"
   assert.deepEqual(telemetry.find((event): event is Extract<GatewayTelemetry, { event: "EA_MATCH_FETCH" }> =>
     event.event === "EA_MATCH_FETCH" && event.matchType === "friendlyMatch"), {
     event: "EA_MATCH_FETCH", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5",
-    matchType: "friendlyMatch", maxResultCount: "20", status: 503, returnedCount: null, matchIds: [], errorKind: "ea_http_error",
+    matchType: "friendlyMatch", maxResultCount: "20", gameVersion: "FC26", status: 503, returnedCount: null, matchIds: [], errorKind: "ea_http_error",
   });
 });
 
@@ -199,7 +221,7 @@ test("matches keeps the HTTP 200 diagnostic when an upstream match payload is in
   assert.deepEqual(telemetry.find((event): event is Extract<GatewayTelemetry, { event: "EA_MATCH_FETCH" }> =>
     event.event === "EA_MATCH_FETCH" && event.matchType === "playoffMatch"), {
     event: "EA_MATCH_FETCH", gatewayBuildSha: null, clubId: "11262883", platform: "common-gen5",
-    matchType: "playoffMatch", maxResultCount: "20", status: 200, returnedCount: null, matchIds: [], errorKind: "ea_invalid_payload",
+    matchType: "playoffMatch", maxResultCount: "20", gameVersion: "FC26", status: 200, returnedCount: null, matchIds: [], errorKind: "ea_invalid_payload",
   });
 });
 

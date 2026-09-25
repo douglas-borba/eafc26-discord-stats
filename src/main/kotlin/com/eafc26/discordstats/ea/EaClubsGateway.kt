@@ -3,6 +3,7 @@ package com.eafc26.discordstats.ea
 import com.eafc26.discordstats.ea.model.ClubSearchResult
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.MemberStats
+import com.eafc26.discordstats.domain.match.GameVersion
 
 interface EaClubsGateway {
     fun searchClubs(clubName: String): EaApiResult<List<ClubSearchResult>>
@@ -25,4 +26,16 @@ interface EaClubsGateway {
 /** Optional production capability for bounded, recent EA match windows. */
 interface WindowedEaClubsGateway : EaClubsGateway {
     fun getLatestMatches(clubId: String, maxResultCount: Int): EaApiResult<List<MatchResponse>>
+}
+
+/**
+ * Optional provider seam for EA contracts that retain the same transport
+ * endpoint while requiring version-specific provenance and normalization.
+ */
+interface VersionedEaClubsGateway : WindowedEaClubsGateway {
+    fun getLatestMatches(
+        clubId: String,
+        maxResultCount: Int,
+        gameVersion: GameVersion,
+    ): EaApiResult<List<MatchResponse>>
 }

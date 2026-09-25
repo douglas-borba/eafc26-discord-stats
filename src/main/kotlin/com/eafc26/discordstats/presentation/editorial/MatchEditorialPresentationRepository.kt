@@ -2,6 +2,7 @@ package com.eafc26.discordstats.presentation.editorial
 
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.GameVersion
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -23,10 +24,10 @@ class MatchEditorialPresentationRepository(
         jdbcTemplate.update(
             """
             INSERT INTO match_editorial_presentations
-                (club_id, match_id, played_at, schema_version, phrase_bank_version,
+                (game_version, club_id, match_id, played_at, schema_version, phrase_bank_version,
                  presentation, generated_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?)
-            ON CONFLICT (club_id, match_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)
+            ON CONFLICT (game_version, club_id, match_id)
             DO UPDATE SET
                 presentation = EXCLUDED.presentation,
                 phrase_bank_version = EXCLUDED.phrase_bank_version,
@@ -35,6 +36,7 @@ class MatchEditorialPresentationRepository(
             WHERE
                 match_editorial_presentations.schema_version < EXCLUDED.schema_version
             """.trimIndent(),
+            editorial.gameVersion.name,
             editorial.clubId.value,
             editorial.matchId.value,
             Timestamp.from(editorial.playedAt),
@@ -52,16 +54,17 @@ class MatchEditorialPresentationRepository(
         jdbcTemplate.update(
             """
             INSERT INTO match_editorial_presentations
-                (club_id, match_id, played_at, schema_version, phrase_bank_version,
+                (game_version, club_id, match_id, played_at, schema_version, phrase_bank_version,
                  presentation, generated_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?)
-            ON CONFLICT (club_id, match_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)
+            ON CONFLICT (game_version, club_id, match_id)
             DO UPDATE SET
                 presentation = EXCLUDED.presentation,
                 phrase_bank_version = EXCLUDED.phrase_bank_version,
                 schema_version = EXCLUDED.schema_version,
                 updated_at = EXCLUDED.updated_at
             """.trimIndent(),
+            editorial.gameVersion.name,
             editorial.clubId.value,
             editorial.matchId.value,
             Timestamp.from(editorial.playedAt),
@@ -73,41 +76,55 @@ class MatchEditorialPresentationRepository(
         )
     }
 
-    fun findByClubAndMatch(clubId: ClubId, matchId: MatchId): MatchEditorialPresentation? {
+    /** Compatibility path for callers that have not resolved the club's contract era yet. */
+    fun findByClubAndMatch(clubId: ClubId, matchId: MatchId): MatchEditorialPresentation? =
+        findByClubAndMatch(clubId, matchId, GameVersion.FC26)
+
+    fun findByClubAndMatch(clubId: ClubId, matchId: MatchId, gameVersion: GameVersion): MatchEditorialPresentation? {
         val rows = jdbcTemplate.query(
             """
-            SELECT club_id, match_id, played_at, schema_version, phrase_bank_version,
+            SELECT game_version, club_id, match_id, played_at, schema_version, phrase_bank_version,
                    presentation, generated_at, updated_at
             FROM match_editorial_presentations
-            WHERE club_id = ? AND match_id = ?
+            WHERE game_version = ? AND club_id = ? AND match_id = ?
             """.trimIndent(),
             { rs, _ -> mapRow(rs) },
+            gameVersion.name,
             clubId.value,
             matchId.value,
         )
         return rows.firstOrNull()
     }
 
-    fun findByClub(clubId: ClubId, limit: Int = 50): List<MatchEditorialPresentation> {
+    /** Compatibility path for callers that have not resolved the club's contract era yet. */
+    fun findByClub(clubId: ClubId, limit: Int = 50): List<MatchEditorialPresentation> =
+        findByClub(clubId, limit, GameVersion.FC26)
+
+    fun findByClub(clubId: ClubId, limit: Int = 50, gameVersion: GameVersion): List<MatchEditorialPresentation> {
         return jdbcTemplate.query(
             """
-            SELECT club_id, match_id, played_at, schema_version, phrase_bank_version,
+            SELECT game_version, club_id, match_id, played_at, schema_version, phrase_bank_version,
                    presentation, generated_at, updated_at
             FROM match_editorial_presentations
-            WHERE club_id = ?
+            WHERE game_version = ? AND club_id = ?
             ORDER BY played_at DESC
             LIMIT ?
             """.trimIndent(),
             { rs, _ -> mapRow(rs) },
+            gameVersion.name,
             clubId.value,
             limit,
         )
     }
 
-    fun countByClub(clubId: ClubId): Int {
+    /** Compatibility path for callers that have not resolved the club's contract era yet. */
+    fun countByClub(clubId: ClubId): Int = countByClub(clubId, GameVersion.FC26)
+
+    fun countByClub(clubId: ClubId, gameVersion: GameVersion): Int {
         return jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM match_editorial_presentations WHERE club_id = ?",
+            "SELECT COUNT(*) FROM match_editorial_presentations WHERE game_version = ? AND club_id = ?",
             Int::class.java,
+            gameVersion.name,
             clubId.value,
         ) ?: 0
     }
@@ -128,6 +145,7 @@ class MatchEditorialPresentationRepository(
             presentation = presentation,
             generatedAt = rs.getTimestamp("generated_at").toInstant(),
             updatedAt = rs.getTimestamp("updated_at").toInstant(),
+            gameVersion = rs.getString("game_version")?.let(GameVersion::valueOf) ?: GameVersion.FC26,
         )
     }
 }

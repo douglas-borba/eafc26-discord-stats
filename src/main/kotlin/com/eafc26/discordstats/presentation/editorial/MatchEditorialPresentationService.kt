@@ -59,6 +59,7 @@ class MatchEditorialPresentationService(
                 presentation = presentation,
                 generatedAt = clock.instant(),
                 updatedAt = clock.instant(),
+                gameVersion = canonical.gameVersion,
             )
 
             repository.upsertIfNewer(editorial)
@@ -105,6 +106,7 @@ class MatchEditorialPresentationService(
                 presentation = presentation,
                 generatedAt = clock.instant(),
                 updatedAt = clock.instant(),
+                gameVersion = canonical.gameVersion,
             )
 
             repository.forceUpsert(editorial)

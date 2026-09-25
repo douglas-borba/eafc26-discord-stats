@@ -70,7 +70,7 @@ class DiscordMatchPublicationService(
         return publicationLocks.withLock(clubId, matchId) {
             var existing = store.find(clubId, matchId)
             if (existing == null) {
-                val pending = PublicationRecord(matchId, PublicationState.PENDING)
+                val pending = PublicationRecord(matchId, PublicationState.PENDING, gameVersion = canonical.gameVersion)
                 if (store.createRecordIfAbsent(clubId, pending)) {
                     eventRecorder?.discordPendingCreated(clubId, matchId)
                     existing = pending
@@ -276,6 +276,7 @@ class DiscordMatchPublicationService(
             httpStatus = null,
             origin = DiscordPublicationOrigin.AUTOMATIC_RECONCILIATION,
             recoveryAttemptCount = claim.claimed.recoveryAttemptCount,
+            gameVersion = claim.claimed.gameVersion,
         )
         eventRecorder?.discordFailed(
             claim.clubId,
@@ -335,6 +336,7 @@ class DiscordMatchPublicationService(
                     clubId, matchId, PublicationState.FAILED_TRANSIENT,
                     deliveringRecord.attemptCount, requireNotNull(deliveringRecord.lastAttemptAt), send.message, null,
                     origin, deliveringRecord.recoveryAttemptCount,
+                    gameVersion = deliveringRecord.gameVersion,
                 )
                 eventRecorder?.discordFailed(clubId, matchId, null, send.message, origin)
                 DiscordPublicationResult(PublicationOutcome.FAILED_BEFORE_SEND, matchId, errorMessage = send.message)
@@ -346,6 +348,7 @@ class DiscordMatchPublicationService(
                     deliveringRecord.attemptCount, requireNotNull(deliveringRecord.lastAttemptAt),
                     "HTTP ${send.statusCode}: ${send.message}", send.statusCode, origin,
                     deliveringRecord.recoveryAttemptCount, send.retryAfter,
+                    gameVersion = deliveringRecord.gameVersion,
                 )
                 eventRecorder?.discordFailed(clubId, matchId, send.statusCode, send.message, origin)
                 DiscordPublicationResult(
@@ -414,6 +417,7 @@ class DiscordMatchPublicationService(
                 lastError = existing?.lastError,
                 lastHttpStatus = existing?.lastHttpStatus,
                 recoveryAttemptCount = existing?.recoveryAttemptCount ?: 0,
+                gameVersion = canonical.gameVersion,
             )
             try {
                 store.saveRecord(clubId, deliveringRecord)
@@ -437,7 +441,8 @@ class DiscordMatchPublicationService(
                     safePersistFailure(clubId, matchId, PublicationState.FAILED_TRANSIENT,
                         previousAttemptCount + 1, nowEpoch, send.message, null,
                         DiscordPublicationOrigin.FORCE_PUBLISH,
-                        existing?.recoveryAttemptCount ?: 0)
+                        existing?.recoveryAttemptCount ?: 0,
+                        gameVersion = deliveringRecord.gameVersion)
                     eventRecorder?.discordFailed(
                         clubId,
                         matchId,
@@ -455,7 +460,8 @@ class DiscordMatchPublicationService(
                         previousAttemptCount + 1, nowEpoch, "HTTP ${send.statusCode}: ${send.message}", send.statusCode,
                         DiscordPublicationOrigin.FORCE_PUBLISH,
                         existing?.recoveryAttemptCount ?: 0,
-                        send.retryAfter)
+                        send.retryAfter,
+                        gameVersion = deliveringRecord.gameVersion)
                     eventRecorder?.discordFailed(
                         clubId,
                         matchId,
@@ -646,6 +652,7 @@ class DiscordMatchPublicationService(
         origin: DiscordPublicationOrigin? = null,
         recoveryAttemptCount: Int = 0,
         retryAfter: Duration? = null,
+        gameVersion: com.eafc26.discordstats.domain.match.GameVersion = com.eafc26.discordstats.domain.match.GameVersion.FC26,
     ): PublicationState {
         val persistedState = when {
             state == PublicationState.FAILED_TRANSIENT && PublicationRetryPolicy.isRetryExhausted(attemptCount) ->
@@ -668,6 +675,7 @@ class DiscordMatchPublicationService(
                 lastHttpStatus = httpStatus,
                 nextAutomaticAttemptAt = nextAutomaticAttemptAt?.epochSecond,
                 recoveryAttemptCount = recoveryAttemptCount,
+                gameVersion = gameVersion,
             )
         try {
             store.saveRecord(clubId, persistedRecord)

@@ -2,6 +2,7 @@ package com.eafc26.discordstats.llm
 
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.service.MatchHistoryService
 import com.eafc26.discordstats.diagnostics.CanonicalReadOrigin
 import com.eafc26.discordstats.diagnostics.CanonicalReadOriginContext
@@ -41,7 +42,11 @@ class LlmEditorialService(
             val matchIds = recentMatches.map { it.matchId.value }
             val contextKey = computeContextKey(clubId.value, matchIds, PROMPT_VERSION, properties.model)
 
-            val existing = panoramaRepository.findByContextKey(clubId.value, contextKey)
+            val existing = if (canonical.gameVersion == com.eafc26.discordstats.domain.match.GameVersion.FC26) {
+                panoramaRepository.findByContextKey(clubId.value, contextKey)
+            } else {
+                panoramaRepository.findByContextKey(clubId.value, contextKey, canonical.gameVersion)
+            }
             if (existing != null) {
                 // Cache resiliente: validar se o panorama existente é válido
                 if (existing.status == "success" && existing.narrative != null) {
@@ -91,6 +96,7 @@ class LlmEditorialService(
                             status = "failed",
                             errorCategory = "llm_prompt_echo",
                             generatedAt = clock.instant(),
+                            gameVersion = canonical.gameVersion,
                         )
                     } else {
                         log.info(
@@ -113,6 +119,7 @@ class LlmEditorialService(
                             inputTokens = result.metadata.inputTokens,
                             outputTokens = result.metadata.outputTokens,
                             generatedAt = clock.instant(),
+                            gameVersion = canonical.gameVersion,
                         )
                     }
                 }
@@ -133,6 +140,7 @@ class LlmEditorialService(
                         status = "failed",
                         errorCategory = category,
                         generatedAt = clock.instant(),
+                        gameVersion = canonical.gameVersion,
                     )
                 }
             }
@@ -144,7 +152,11 @@ class LlmEditorialService(
         }
     }
 
-    fun getPersistedPanorama(clubId: ClubId): String? {
+    /** Compatibility entry point for the historical FC26 dashboard. */
+    fun getPersistedPanorama(clubId: ClubId): String? =
+        getPersistedPanorama(clubId, GameVersion.FC26)
+
+    fun getPersistedPanorama(clubId: ClubId, gameVersion: GameVersion): String? {
         if (panoramaRepository == null) return null
         
         // Calculate current contextKey based on latest matches
@@ -156,7 +168,7 @@ class LlmEditorialService(
         val contextKey = computeContextKey(clubId.value, matchIds.map { it.value }, PROMPT_VERSION, properties.model)
         
         // Only return panorama if it belongs to the current context
-        return panoramaRepository.findSuccessfulByContextKey(clubId.value, contextKey)?.narrative
+        return panoramaRepository.findSuccessfulByContextKey(clubId.value, contextKey, gameVersion)?.narrative
     }
 
     fun generateMatchNarrative(canonical: CanonicalMatch): String? {

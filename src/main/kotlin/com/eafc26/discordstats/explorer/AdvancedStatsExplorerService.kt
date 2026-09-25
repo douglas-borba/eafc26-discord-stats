@@ -2,6 +2,7 @@ package com.eafc26.discordstats.explorer
 
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.match.PlayerMatchPerformance
 import com.eafc26.discordstats.domain.match.RawEventAggregates
@@ -448,7 +449,7 @@ class AdvancedStatsExplorerService(
             val our = canonical.footballMatch.participants
                 .firstOrNull { it.club.id.value == perspectiveClubId } ?: continue
             for (player in our.players) {
-                val entries = parseAggregateEntries(player)
+                val entries = parseAggregateEntries(player, canonicalGameVersion(canonical).supportsRevalidatedAdvancedStats())
                 if (entries.isEmpty()) {
                     rows.add(buildExportRow(clubId.value, canonical, player, null))
                 } else {
@@ -606,9 +607,11 @@ class AdvancedStatsExplorerService(
     }
 
     fun observationsForPlayerMatch(clubId: ClubId, matchId: MatchId, playerId: String): List<ExplorerObservation> =
-        observationRepository.findForPlayerMatch(clubId, matchId, playerId)
+        observationRepository.findForPlayerMatch(clubId, matchId, playerId, gameVersionForMatch(clubId, matchId))
 
-    fun saveObservation(observation: ExplorerObservation): ExplorerObservation = observationRepository.save(observation)
+    fun saveObservation(observation: ExplorerObservation): ExplorerObservation = observationRepository.save(
+        observation.copy(gameVersion = gameVersionForMatch(observation.clubId, observation.matchId, observation.gameVersion)),
+    )
 
     /**
      * Controlled provenance is only valid when the same literal observation is
@@ -629,11 +632,12 @@ class AdvancedStatsExplorerService(
             observation.matchId,
             observation.playerId,
             observation.phrase,
+            canonicalGameVersion(canonical),
         ) ?: throw IllegalStateException("Save the literal observation before marking it as controlled")
         require(passive.observedCount == observation.observedCount && passive.completeness == observation.completeness) {
             "Controlled evidence must match the saved literal observation"
         }
-        return controlledObservationRepository.saveIfAbsent(observation)
+        return controlledObservationRepository.saveIfAbsent(observation.copy(gameVersion = canonicalGameVersion(canonical)))
     }
 
     /**
@@ -651,11 +655,13 @@ class AdvancedStatsExplorerService(
         if (targetPhrase.isBlank()) {
             return ObservationPhraseReconciliationResult(ObservationPhraseReconciliationStatus.INVALID_TARGET)
         }
-        return observationRepository.reconcilePhrase(clubId, matchId, playerId, sourcePhrase, targetPhrase)
+        return observationRepository.reconcilePhrase(
+            clubId, matchId, playerId, sourcePhrase, targetPhrase, gameVersionForMatch(clubId, matchId),
+        )
     }
 
     fun distinctPhrasesForPlayer(clubId: ClubId, playerId: String, limit: Int = 50): List<String> =
-        observationRepository.findForPlayer(clubId, playerId, limit)
+        observationRepository.findForPlayer(clubId, playerId, limit, gameVersionForClub(clubId))
             .map { it.phrase }
             .distinct()
 
@@ -754,6 +760,9 @@ class AdvancedStatsExplorerService(
         // Phase 3: batch-validate matches and players
         val uniqueMatchIds = deduplicatedInputs.map { (_, inp) -> MatchId(inp.matchId) }.toSet()
         val canonicalMatches = matchRepository.findByIds(clubId, uniqueMatchIds).associateBy { it.matchId }
+        val observationGameVersion = canonicalMatches.values.singleOrNull()?.let(::canonicalGameVersion)
+            ?: canonicalMatches.values.firstOrNull()?.let(::canonicalGameVersion)
+            ?: gameVersionForClub(clubId)
         val matchPlayerSets = mutableMapOf<MatchId, Set<String>>()
         for ((matchId, canonical) in canonicalMatches) {
             val perspective = canonical.interpretation.perspectiveClubId
@@ -786,7 +795,7 @@ class AdvancedStatsExplorerService(
 
         // Phase 5: batch lookup existing observations
         val identityKeys = canonicallyValid.map { (_, inp) -> ObservationIdentityKey(MatchId(inp.matchId), inp.playerId, inp.phrase) }
-        val existingObs = observationRepository.findByIdentities(clubId, identityKeys)
+        val existingObs = observationRepository.findByIdentities(clubId, identityKeys, observationGameVersion)
             .associateBy { Triple(it.matchId.value, it.playerId, it.phrase) }
 
         for ((index, input) in canonicallyValid) {
@@ -836,10 +845,11 @@ class AdvancedStatsExplorerService(
                 completeness = input.completeness,
                 note = input.note,
                 observedPositionContext = input.observedPositionContext,
+                gameVersion = gameVersionForMatch(clubId, MatchId(input.matchId), gameVersionForClub(clubId)),
             )
         }
 
-        val inserted = observationRepository.insertIfAbsent(clubId, toInsert)
+        val inserted = observationRepository.insertIfAbsent(clubId, toInsert, gameVersionForClub(clubId))
         return ObservationImportResult(inserted, preview.alreadyExistsCount, preview.total)
     }
 
@@ -857,9 +867,10 @@ class AdvancedStatsExplorerService(
      * while an absent namespace remains unavailable and is excluded.
      */
     fun compareObservations(clubId: ClubId, playerId: String, phrase: String, limit: Int = 20): ObservationComparisonData {
-        val observations = observationRepository.findForPlayerPhrase(clubId, playerId, phrase, limit)
+        val gameVersion = gameVersionForClub(clubId)
+        val observations = observationRepository.findForPlayerPhrase(clubId, playerId, phrase, limit, gameVersion)
         val matchesById = matchRepository.findByIds(clubId, observations.map { it.matchId }).associateBy { it.matchId }
-        val allPlayerObservations = (observationRepository.findForPlayer(clubId, playerId, limit) + observations)
+        val allPlayerObservations = (observationRepository.findForPlayer(clubId, playerId, limit, gameVersion) + observations)
             .distinctBy { listOf(it.matchId.value, it.phrase, it.observedCount.toString(), it.completeness.name) }
         val inputs = mutableListOf<ObservationCandidateAnalyzer.ObservationInput>()
         var rawUnavailable = 0
@@ -923,9 +934,11 @@ class AdvancedStatsExplorerService(
      * it never calls EA, persists a queue state, or eagerly loads audit detail.
      */
     fun observationResearchQueue(clubId: ClubId): ObservationResearchQueueData {
+        val gameVersion = gameVersionForClub(clubId)
         val identitiesWithSentinel = observationRepository.findRecentResearchIdentities(
             clubId,
             RESEARCH_QUEUE_IDENTITY_LIMIT + 1,
+            gameVersion,
         )
         val identityWindowTruncated = identitiesWithSentinel.size > RESEARCH_QUEUE_IDENTITY_LIMIT
         val selectedIdentities = identitiesWithSentinel.take(RESEARCH_QUEUE_IDENTITY_LIMIT)
@@ -933,6 +946,7 @@ class AdvancedStatsExplorerService(
             clubId,
             selectedIdentities,
             RESEARCH_QUEUE_OBSERVATIONS_PER_IDENTITY_LIMIT + 1,
+            gameVersion,
         )
         val evidenceByIdentity = evidenceWithSentinel.groupBy { ObservationResearchIdentity(it.playerId, it.phrase) }
         val selectedGroupObservations = selectedIdentities.associateWith { identity ->
@@ -1093,6 +1107,7 @@ class AdvancedStatsExplorerService(
             clubId,
             controlledCandidates,
             CONTROLLED_EVIDENCE_PER_CANDIDATE_LIMIT,
+            gameVersion,
         )
         val controlledMatchIds = controlledObservations.map { it.matchId }.filter { it !in matchesById }.toSet()
         val controlledMatches = if (controlledMatchIds.isEmpty()) emptyMap() else
@@ -1207,12 +1222,14 @@ class AdvancedStatsExplorerService(
         require(aggregateIndex in 0..3) { "aggregateIndex must be 0-3" }
         require(code >= 0) { "code must be non-negative" }
 
-        val observation = observationRepository.findExact(clubId, matchId, playerId, phrase) ?: return null
+        val gameVersion = gameVersionForMatch(clubId, matchId)
+        val observation = observationRepository.findExact(clubId, matchId, playerId, phrase, gameVersion) ?: return null
         val vectorWithSentinel = observationRepository.findForPlayerMatchLimited(
             clubId,
             matchId,
             playerId,
             AUDIT_VECTOR_LIMIT + 1,
+            gameVersion,
         )
         val vectorTruncated = vectorWithSentinel.size > AUDIT_VECTOR_LIMIT
         val vector = vectorWithSentinel.take(AUDIT_VECTOR_LIMIT)
@@ -1303,7 +1320,7 @@ class AdvancedStatsExplorerService(
         canonical: CanonicalMatch,
         opponentName: String?,
     ): PlayerExplorerData {
-        val entries = parseAggregateEntries(player)
+        val entries = parseAggregateEntries(player, canonicalGameVersion(canonical).supportsRevalidatedAdvancedStats())
         return PlayerExplorerData(
             playerId = player.player.id.value,
             platformName = player.player.platformName?.value,
@@ -1482,13 +1499,24 @@ class AdvancedStatsExplorerService(
         )
     }
 
-    private fun parseAggregateEntries(player: PlayerMatchPerformance): List<AggregateEntry> {
+    private fun parseAggregateEntries(
+        player: PlayerMatchPerformance,
+        semanticMappingsAreRevalidated: Boolean,
+    ): List<AggregateEntry> {
         val raw = player.rawEventAggregates ?: return emptyList()
         val entries = mutableListOf<AggregateEntry>()
         aggregateSlots(raw).forEach { (aggregateIndex, aggregate) ->
             parseHistogram(aggregate)?.forEach { (code, value) ->
                 val mapping = AdvancedStatsCodeRegistry.lookup(aggregateIndex, code)
-                entries.add(AggregateEntry(aggregateIndex, code, value, mapping.confidence.name, mapping.metricName, mapping.evidence))
+                entries.add(
+                    if (semanticMappingsAreRevalidated) {
+                        AggregateEntry(aggregateIndex, code, value, mapping.confidence.name, mapping.metricName, mapping.evidence)
+                    } else {
+                        // FC27 retains RAW transport, but FC26 code semantics are
+                        // not evidence for the new provider contract.
+                        AggregateEntry(aggregateIndex, code, value, "UNREVALIDATED", null, null)
+                    },
+                )
             }
         }
         entries.sortWith(compareBy({ it.aggregate }, { it.code }))
@@ -1765,6 +1793,24 @@ class AdvancedStatsExplorerService(
             .firstOrNull { it.club.id == canonical.interpretation.perspectiveClubId }
             ?.players
             ?.firstOrNull { it.player.id.value == playerId }
+
+    /**
+     * Human evidence must inherit provenance from canonical data, never from a
+     * browser payload. A club without canonical records still defaults to FC26
+     * solely for legacy read compatibility; no FC27 evidence can be saved until
+     * its FC27 canonical match exists.
+     */
+    private fun gameVersionForClub(clubId: ClubId): GameVersion =
+        matchRepository.findRecent(clubId, 1).firstOrNull()?.let(::canonicalGameVersion) ?: GameVersion.FC26
+
+    private fun gameVersionForMatch(
+        clubId: ClubId,
+        matchId: MatchId,
+        fallback: GameVersion = GameVersion.FC26,
+    ): GameVersion = matchRepository.findById(clubId, matchId)?.let(::canonicalGameVersion) ?: fallback
+
+    private fun canonicalGameVersion(canonical: CanonicalMatch): GameVersion =
+        runCatching { canonical.gameVersion }.getOrNull() ?: GameVersion.FC26
 
     private fun opponentName(canonical: CanonicalMatch): String? = canonical.footballMatch.participants
         .firstOrNull { it.club.id != canonical.interpretation.perspectiveClubId }

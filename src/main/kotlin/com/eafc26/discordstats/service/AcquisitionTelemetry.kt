@@ -15,22 +15,26 @@ interface AcquisitionTelemetry {
 
 data class AcquisitionBatchTelemetry(
     val clubId: String,
+    val gameVersion: String = "FC26",
     val trigger: String,
     val window: Int?,
     val receivedMatchIds: List<String>,
     val alreadyExistingMatchIds: List<String>,
     val newMatchIds: List<String>,
+    val sourceMatchTypes: List<String> = emptyList(),
 )
 
 data class NormalizationRejectedTelemetry(
     val clubId: String,
     val matchId: String,
     val reason: String,
+    val gameVersion: String = "FC26",
 )
 
 data class CanonicalPersistenceTelemetry(
     val clubId: String,
     val matchId: String,
+    val gameVersion: String = "FC26",
 )
 
 @Component
@@ -39,10 +43,12 @@ class Slf4jAcquisitionTelemetry : AcquisitionTelemetry {
 
     override fun batch(event: AcquisitionBatchTelemetry) {
         log.info(
-            "EA_ACQUISITION_BATCH clubId={} trigger={} window={} receivedMatchIds={} alreadyExistingMatchIds={} newMatchIds={}",
+            "EA_ACQUISITION_BATCH clubId={} gameVersion={} trigger={} window={} sourceMatchTypes={} receivedMatchIds={} alreadyExistingMatchIds={} newMatchIds={}",
             event.clubId,
+            event.gameVersion,
             event.trigger,
             event.window,
+            event.sourceMatchTypes,
             event.receivedMatchIds,
             event.alreadyExistingMatchIds,
             event.newMatchIds,
@@ -51,15 +57,16 @@ class Slf4jAcquisitionTelemetry : AcquisitionTelemetry {
 
     override fun normalizationRejected(event: NormalizationRejectedTelemetry) {
         log.warn(
-            "EA_NORMALIZATION_REJECTED clubId={} matchId={} reason={}",
+            "EA_NORMALIZATION_REJECTED clubId={} gameVersion={} matchId={} reason={}",
             event.clubId,
+            event.gameVersion,
             event.matchId,
             event.reason,
         )
     }
 
     override fun canonicalPersisted(event: CanonicalPersistenceTelemetry) {
-        log.info("EA_CANONICAL_PERSISTED clubId={} matchId={}", event.clubId, event.matchId)
+        log.info("EA_CANONICAL_PERSISTED clubId={} gameVersion={} matchId={}", event.clubId, event.gameVersion, event.matchId)
     }
 }
 

@@ -6,6 +6,7 @@ import com.eafc26.discordstats.canonical.EngineVersion
 import com.eafc26.discordstats.domain.interpretation.MatchInterpretation
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.FootballMatch
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.story.MatchStories
 import com.eafc26.discordstats.service.MatchHistoryService
@@ -380,7 +381,7 @@ class LlmEditorialServiceTest {
                 "club1", listOf("m1", "m2", "m3"), "v3", enabledProps.model
             )
             
-            whenever(panoramaRepository.findSuccessfulByContextKey("club1", expectedKey))
+            whenever(panoramaRepository.findSuccessfulByContextKey("club1", expectedKey, GameVersion.FC26))
                 .thenReturn(PanoramaRecord(
                     clubId = "club1", contextKey = expectedKey, matchIds = listOf("m1", "m2", "m3"),
                     narrative = "AI panorama text", provider = "openrouter",
@@ -405,10 +406,43 @@ class LlmEditorialServiceTest {
                 "club1", listOf("m1", "m2", "m3"), "v3", enabledProps.model
             )
             
-            whenever(panoramaRepository.findSuccessfulByContextKey("club1", expectedKey)).thenReturn(null)
+            whenever(panoramaRepository.findSuccessfulByContextKey("club1", expectedKey, GameVersion.FC26)).thenReturn(null)
 
             val result = service.getPersistedPanorama(ClubId("club1"))
             assertThat(result).isNull()
+        }
+
+        @Test
+        fun `FC27 panorama retrieval never reads the FC26 record for the same context`() {
+            val clubId = ClubId("486460")
+            val matchIds = listOf(MatchId("fc27-match"))
+            val contextKey = LlmEditorialService.computeContextKey(
+                clubId.value,
+                matchIds.map { it.value },
+                LlmEditorialService.PROMPT_VERSION,
+                enabledProps.model,
+            )
+            whenever(historyService.latestMatchIds(clubId, LlmEditorialService.PANORAMA_MATCH_COUNT))
+                .thenReturn(matchIds)
+            whenever(panoramaRepository.findSuccessfulByContextKey(clubId.value, contextKey, GameVersion.FC27))
+                .thenReturn(
+                    PanoramaRecord(
+                        clubId = clubId.value,
+                        contextKey = contextKey,
+                        matchIds = matchIds.map { it.value },
+                        narrative = "Panorama FC27",
+                        provider = "test",
+                        model = enabledProps.model,
+                        promptVersion = LlmEditorialService.PROMPT_VERSION,
+                        status = "success",
+                        generatedAt = fixedInstant,
+                        gameVersion = GameVersion.FC27,
+                    ),
+                )
+
+            assertThat(service.getPersistedPanorama(clubId, GameVersion.FC27)).isEqualTo("Panorama FC27")
+            verify(panoramaRepository).findSuccessfulByContextKey(clubId.value, contextKey, GameVersion.FC27)
+            verify(panoramaRepository, never()).findSuccessfulByContextKey(clubId.value, contextKey)
         }
 
         @Test
@@ -429,7 +463,7 @@ class LlmEditorialServiceTest {
             )
             whenever(historyService.latestMatchIds(ClubId("club1"), LlmEditorialService.PANORAMA_MATCH_COUNT))
                 .thenReturn(lightweightIds)
-            whenever(panoramaRepository.findSuccessfulByContextKey("club1", legacyKey))
+            whenever(panoramaRepository.findSuccessfulByContextKey("club1", legacyKey, GameVersion.FC26))
                 .thenReturn(PanoramaRecord(
                     clubId = "club1", contextKey = legacyKey, matchIds = lightweightIds.map { it.value },
                     narrative = "Panorama já persistido", provider = "openrouter", model = enabledProps.model,
@@ -438,7 +472,7 @@ class LlmEditorialServiceTest {
 
             assertThat(lightweightKey).isEqualTo(legacyKey)
             assertThat(service.getPersistedPanorama(ClubId("club1"))).isEqualTo("Panorama já persistido")
-            verify(panoramaRepository).findSuccessfulByContextKey("club1", legacyKey)
+            verify(panoramaRepository).findSuccessfulByContextKey("club1", legacyKey, GameVersion.FC26)
         }
     }
 

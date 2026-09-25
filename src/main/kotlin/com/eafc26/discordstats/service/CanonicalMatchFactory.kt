@@ -4,6 +4,7 @@ import com.eafc26.discordstats.application.interpretation.MatchInterpreter
 import com.eafc26.discordstats.application.story.MatchStoryExtractor
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.ea.mapping.EaMatchMapper
 import com.eafc26.discordstats.ea.mapping.MatchNormalizationResult
 import com.eafc26.discordstats.ea.model.MatchResponse
@@ -27,8 +28,9 @@ class CanonicalMatchFactory(
         source: MatchResponse,
         perspectiveClubId: String,
         proNames: Map<String, String> = emptyMap(),
+        gameVersion: GameVersion = GameVersion.fromGatewayValue(source.sourceGameVersion) ?: GameVersion.FC26,
     ): CanonicalMatch {
-        val normalized = when (val result = eaMatchMapper.map(source, proNames)) {
+        val normalized = when (val result = eaMatchMapper.map(source, proNames, gameVersion)) {
             is MatchNormalizationResult.Success -> result.match
             is MatchNormalizationResult.Rejected -> error(
                 "EA match ${source.matchId} cannot be normalized: " +
@@ -42,6 +44,7 @@ class CanonicalMatchFactory(
             interpretation = interpretation,
             stories = stories,
             generatedAt = Instant.now(clock),
+            gameVersion = gameVersion,
         )
     }
 }

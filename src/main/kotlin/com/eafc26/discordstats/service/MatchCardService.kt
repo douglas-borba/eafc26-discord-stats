@@ -1,7 +1,9 @@
 package com.eafc26.discordstats.service
 
 import com.eafc26.discordstats.presentation.MatchSummaryPresentation
+import com.eafc26.discordstats.application.club.MonitoredClubRepository
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationRepository
 import com.eafc26.discordstats.store.PublishedMatchStore
 import com.eafc26.discordstats.web.PublicationStatus
@@ -13,6 +15,7 @@ class MatchCardService(
     private val latestMatchHolder: LatestMatchHolder,
     private val store: PublishedMatchStore,
     private val editorialRepository: MatchEditorialPresentationRepository?,
+    private val monitoredClubRepository: MonitoredClubRepository? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 

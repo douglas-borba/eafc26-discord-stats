@@ -16,6 +16,7 @@ export function NewClubForm() {
   const [results, setResults] = useState<ClubSearchCandidate[]>([]);
   const [selected, setSelected] = useState<ClubSearchCandidate | null>(null);
   const [monitoringEnabled, setMonitoringEnabled] = useState(true);
+  const [gameVersion, setGameVersion] = useState<"FC26" | "FC27">("FC26");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -72,6 +73,7 @@ export function NewClubForm() {
           displayName: selected.displayName,
           platform: selected.platform,
           monitoringEnabled,
+          gameVersion,
         }),
       });
       if (webhookUrl.trim()) {
@@ -133,6 +135,7 @@ export function NewClubForm() {
                 <div><dt className="text-xs text-muted">Nome</dt><dd className="mt-1 text-text-soft">{selected.displayName}</dd></div>
                 <div><dt className="text-xs text-muted">ClubId</dt><dd className="mt-1 font-mono text-text-soft">{selected.clubId}</dd></div>
                 <div><dt className="text-xs text-muted">Plataforma</dt><dd className="mt-1 text-text-soft">{selected.platform}</dd></div>
+                <label><dt className="text-xs text-muted">Jogo</dt><dd className="mt-1"><select aria-label="Versão do jogo" value={gameVersion} onChange={(event) => setGameVersion(event.target.value as "FC26" | "FC27")} className="rounded border border-border bg-surface-raised px-2 py-1 text-text-soft"><option value="FC26">FC 26</option><option value="FC27">FC 27</option></select></dd></label>
               </dl>
             </div>
             <label className="flex min-h-10 items-center gap-3 text-sm text-text-soft">

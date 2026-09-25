@@ -3,6 +3,7 @@ package com.eafc26.discordstats.ea
 import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.config.EaProperties
 import com.eafc26.discordstats.config.WebClientConfig
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
@@ -52,7 +53,7 @@ class NodeEaClubsGatewayTest {
         val result = gateway.getLatestMatches("1104972")
         assertThat(result).isInstanceOf(EaApiResult.Success::class.java)
         assertThat((result as EaApiResult.Success).data).hasSize(2)
-        assertThat(server.takeRequest().path).isEqualTo("/ea/clubs/1104972/matches?platform=common-gen5&maxResultCount=20")
+        assertThat(server.takeRequest().path).isEqualTo("/ea/clubs/1104972/matches?platform=common-gen5&maxResultCount=20&gameVersion=FC26")
         val coverage = coverageTracker.snapshot()
         assertThat(coverage.status).isEqualTo("UP")
         assertThat(coverage.observedClubCount).isEqualTo(1)
@@ -71,7 +72,16 @@ class NodeEaClubsGatewayTest {
 
         assertThat(gateway.getLatestMatches("1104972", 5)).isEqualTo(EaApiResult.NoMatches)
 
-        assertThat(server.takeRequest().path).isEqualTo("/ea/clubs/1104972/matches?platform=common-gen5&maxResultCount=5")
+        assertThat(server.takeRequest().path).isEqualTo("/ea/clubs/1104972/matches?platform=common-gen5&maxResultCount=5&gameVersion=FC26")
+    }
+
+    @Test fun `explicit FC27 window reaches the gateway with its provider provenance`() {
+        server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody("[]"))
+
+        assertThat(gateway.getLatestMatches("486460", 1, GameVersion.FC27)).isEqualTo(EaApiResult.NoMatches)
+
+        assertThat(server.takeRequest().path)
+            .isEqualTo("/ea/clubs/486460/matches?platform=common-gen5&maxResultCount=1&gameVersion=FC27")
     }
 
     @Test fun `empty competition source is surfaced as partial coverage without failing merged acquisition`() {

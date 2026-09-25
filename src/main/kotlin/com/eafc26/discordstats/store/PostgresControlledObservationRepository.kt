@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.store
 
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.explorer.ControlledCandidateIdentity
 import com.eafc26.discordstats.explorer.ControlledExperimentType
@@ -16,14 +17,14 @@ class PostgresControlledObservationRepository(
     override fun saveIfAbsent(observation: ControlledObservation): ControlledObservation = jdbcTemplate.queryForObject(
         """
         INSERT INTO explorer_controlled_observations
-          (club_id, match_id, player_id, phrase, observed_count, completeness, aggregate_index, code, experiment_type, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, now())
-        ON CONFLICT (club_id, match_id, player_id, phrase, aggregate_index, code) DO UPDATE
+          (game_version, club_id, match_id, player_id, phrase, observed_count, completeness, aggregate_index, code, experiment_type, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+        ON CONFLICT (game_version, club_id, match_id, player_id, phrase, aggregate_index, code) DO UPDATE
           SET experiment_type = explorer_controlled_observations.experiment_type
-        RETURNING club_id, match_id, player_id, phrase, observed_count, completeness, aggregate_index, code, experiment_type, created_at
+        RETURNING game_version, club_id, match_id, player_id, phrase, observed_count, completeness, aggregate_index, code, experiment_type, created_at
         """.trimIndent(),
         { rs, _ -> read(rs) },
-        observation.clubId.value, observation.matchId.value, observation.playerId, observation.phrase,
+        observation.gameVersion.name, observation.clubId.value, observation.matchId.value, observation.playerId, observation.phrase,
         observation.observedCount, observation.completeness.name, observation.aggregateIndex, observation.code, observation.experimentType.name,
     )!!
 
@@ -31,6 +32,7 @@ class PostgresControlledObservationRepository(
         clubId: ClubId,
         candidates: Collection<ControlledCandidateIdentity>,
         limitPerCandidate: Int,
+        gameVersion: GameVersion,
     ): List<ControlledObservation> {
         require(candidates.size <= 10) { "controlled candidate batch limited to 10" }
         require(limitPerCandidate in 1..5) { "controlled evidence limit must be 1-5" }
@@ -39,6 +41,7 @@ class PostgresControlledObservationRepository(
         val values = unique.joinToString(", ") { "(?, ?, ?, ?)" }
         val args = mutableListOf<Any>()
         unique.forEach { args.addAll(listOf(it.playerId, it.phrase, it.aggregateIndex, it.code)) }
+        args.add(gameVersion.name)
         args.add(clubId.value)
         args.add(limitPerCandidate)
         return jdbcTemplate.query(
@@ -50,9 +53,9 @@ class PostgresControlledObservationRepository(
               ) AS row_number
               FROM explorer_controlled_observations co
               JOIN requested r USING (player_id, phrase, aggregate_index, code)
-              WHERE co.club_id = ?
+              WHERE co.game_version = ? AND co.club_id = ?
             )
-            SELECT club_id, match_id, player_id, phrase, observed_count, completeness, aggregate_index, code, experiment_type, created_at
+            SELECT game_version, club_id, match_id, player_id, phrase, observed_count, completeness, aggregate_index, code, experiment_type, created_at
             FROM ranked WHERE row_number <= ?
             ORDER BY created_at DESC, match_id ASC
             """.trimIndent(),
@@ -71,5 +74,6 @@ class PostgresControlledObservationRepository(
         code = rs.getInt("code"),
         experimentType = ControlledExperimentType.valueOf(rs.getString("experiment_type")),
         createdAt = rs.getTimestamp("created_at").toInstant(),
+        gameVersion = rs.getString("game_version")?.let(GameVersion::valueOf) ?: GameVersion.FC26,
     )
 }

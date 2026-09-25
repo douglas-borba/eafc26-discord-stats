@@ -11,6 +11,7 @@ import com.eafc26.discordstats.domain.match.DisciplineStats
 import com.eafc26.discordstats.domain.match.DisplayName
 import com.eafc26.discordstats.domain.match.EaRecognition
 import com.eafc26.discordstats.domain.match.FootballMatch
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.domain.match.GoalkeepingStats
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.match.MatchCompletion
@@ -45,6 +46,7 @@ class EaMatchMapper {
     fun map(
         source: MatchResponse,
         proNames: Map<String, String> = emptyMap(),
+        gameVersion: GameVersion = GameVersion.fromGatewayValue(source.sourceGameVersion) ?: GameVersion.FC26,
     ): MatchNormalizationResult {
         val errors = validateRequiredMatchFacts(source)
         if (errors.isNotEmpty()) return MatchNormalizationResult.Rejected(errors)
@@ -63,6 +65,7 @@ class EaMatchMapper {
                 proNames = proNames,
                 parser = parser,
                 warnings = warnings,
+                gameVersion = gameVersion,
             )
         }
 
@@ -81,7 +84,7 @@ class EaMatchMapper {
             match = FootballMatch(
                 id = MatchId(source.matchId),
                 playedAt = Instant.ofEpochSecond(source.timestamp),
-                competition = mapCompetition(source.matchType, warnings),
+                competition = mapCompetition(source.sourceMatchType, source.matchType, warnings),
                 participants = participants,
                 completion = completion,
             ),
@@ -213,6 +216,7 @@ class EaMatchMapper {
         proNames: Map<String, String>,
         parser: EaStatParser,
         warnings: MutableList<NormalizationWarning>,
+        gameVersion: GameVersion,
     ): ClubMatchPerformance {
         val resolvedName = clubEntry.resolvedName()
             ?.trim()
@@ -234,6 +238,7 @@ class EaMatchMapper {
                 proNames = proNames,
                 parser = parser,
                 warnings = warnings,
+                gameVersion = gameVersion,
             )
         }
 
@@ -256,6 +261,7 @@ class EaMatchMapper {
         proNames: Map<String, String>,
         parser: EaStatParser,
         warnings: MutableList<NormalizationWarning>,
+        gameVersion: GameVersion,
     ): PlayerMatchPerformance {
         val path = "players[$clubId][$sourcePlayerId]"
         val playerId = sourcePlayerId.takeIf { it.isNotBlank() } ?: run {
@@ -287,7 +293,11 @@ class EaMatchMapper {
         val tackleAttempts = parser.nonNegativeInt(source.tackleAttempts, "$path.tackleattempts")
         val tacklesMade = parser.nonNegativeInt(source.tacklesMade, "$path.tacklesmade")
         val normalizedDefending = parser.completedAttempts(tackleAttempts, tacklesMade, "$path.defending")
-        val advanced = EaAdvancedStatsDecoder.decode(source)
+        val advanced = if (gameVersion.supportsRevalidatedAdvancedStats()) {
+            EaAdvancedStatsDecoder.decode(source)
+        } else {
+            com.eafc26.discordstats.domain.match.AdvancedPlayerStats()
+        }
 
         val role = if (source.isGoalkeeper()) PlayerRole.Goalkeeper else PlayerRole.Outfield(position = null)
 
@@ -326,7 +336,11 @@ class EaMatchMapper {
                 manOfTheMatch = parser.booleanFlag(source.manOfTheMatch, "$path.mom"),
             ),
             advanced = advanced,
-            advancedCoverage = EaAdvancedStatsDecoder.coverage(source),
+            advancedCoverage = if (gameVersion.supportsRevalidatedAdvancedStats()) {
+                EaAdvancedStatsDecoder.coverage(source)
+            } else {
+                com.eafc26.discordstats.domain.match.AdvancedStatsCoverage.UNAVAILABLE
+            },
             rawEventAggregates = RawEventAggregates(
                 aggregate0 = source.matchEventAggregate0,
                 aggregate1 = source.matchEventAggregate1,
@@ -358,10 +372,21 @@ class EaMatchMapper {
     )
 
     private fun mapCompetition(
-        raw: String?,
+        sourceMatchType: String?,
+        legacyRootMatchType: String?,
         warnings: MutableList<NormalizationWarning>,
     ): CompetitionType? {
-        if (raw == null) return null
+        // FC27 omits root matchType. The gateway knows exactly which endpoint
+        // returned the record, so sourceMatchType is factual and takes precedence.
+        if (sourceMatchType != null) return parseCompetition(sourceMatchType, "sourceMatchType", warnings)
+        return legacyRootMatchType?.let { parseCompetition(it, "matchType", warnings) }
+    }
+
+    private fun parseCompetition(
+        raw: String,
+        path: String,
+        warnings: MutableList<NormalizationWarning>,
+    ): CompetitionType? {
         return when (raw.trim().lowercase()) {
             "friendlymatch" -> CompetitionType.FRIENDLY
             "leaguematch" -> CompetitionType.LEAGUE
@@ -369,7 +394,7 @@ class EaMatchMapper {
             else -> {
                 warnings += NormalizationWarning(
                     code = NormalizationIssueCode.INVALID_COMPETITION_TYPE,
-                    path = "matchType",
+                    path = path,
                     message = "Unknown match type treated as absent",
                     rawValue = raw,
                 )

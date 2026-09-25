@@ -48,9 +48,13 @@ class CanonicalClubScopeMigrationTest {
         )
         val beforeHash = sha256(beforePayload)
 
+        // This regression is scoped to V9's own effect (club-scoped compound identity).
+        // A later migration (V21) further widens these same primary keys with
+        // game_version; that is covered separately by GameVersionProvenanceMigrationTest.
         Flyway.configure()
             .dataSource(dataSource)
             .locations("classpath:db/migration")
+            .target(MigrationVersion.fromVersion("9"))
             .load()
             .migrate()
 

@@ -2,6 +2,7 @@ package com.eafc26.discordstats.canonical
 
 import com.eafc26.discordstats.domain.interpretation.MatchInterpretation
 import com.eafc26.discordstats.domain.match.FootballMatch
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.story.MatchStories
 import java.time.Instant
@@ -16,6 +17,8 @@ data class CanonicalMatch(
     val footballMatch: FootballMatch,
     val interpretation: MatchInterpretation,
     val stories: MatchStories,
+    /** Provider contract provenance. Legacy canonical payloads deserialize as FC26. */
+    val gameVersion: GameVersion = GameVersion.FC26,
 ) {
     val matchId: MatchId
         get() = footballMatch.id
@@ -35,6 +38,7 @@ data class CanonicalMatch(
             interpretation: MatchInterpretation,
             stories: MatchStories,
             generatedAt: Instant,
+            gameVersion: GameVersion = GameVersion.FC26,
         ) = CanonicalMatch(
             schemaVersion = CURRENT_SCHEMA_VERSION,
             engineVersion = CURRENT_ENGINE_VERSION,
@@ -42,6 +46,7 @@ data class CanonicalMatch(
             footballMatch = footballMatch,
             interpretation = interpretation,
             stories = stories,
+            gameVersion = gameVersion,
         )
     }
 }

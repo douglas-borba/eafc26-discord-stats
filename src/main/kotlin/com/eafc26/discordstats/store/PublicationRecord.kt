@@ -1,5 +1,7 @@
 package com.eafc26.discordstats.store
 
+import com.eafc26.discordstats.domain.match.GameVersion
+
 /**
  * Persistent record of a single match's Discord delivery state.
  *
@@ -59,6 +61,8 @@ data class PublicationRecord(
     val nextAutomaticAttemptAt: Long? = null,
     /** Number of low-frequency recovery attempts made after the immediate retry budget. */
     val recoveryAttemptCount: Int = 0,
+    /** Contract provenance for a delivery record; legacy rows are FC26. */
+    val gameVersion: GameVersion = GameVersion.FC26,
 )
 
 /**

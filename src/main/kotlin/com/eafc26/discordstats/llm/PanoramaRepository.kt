@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 import java.sql.ResultSet
 import java.time.Instant
+import com.eafc26.discordstats.domain.match.GameVersion
 
 @Repository
 @ConditionalOnProperty(name = ["app.postgres.mirror-enabled"], havingValue = "true")
@@ -13,16 +14,21 @@ class PanoramaRepository(
     private val jdbcTemplate: JdbcTemplate,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-    fun findByContextKey(clubId: String, contextKey: String): PanoramaRecord? {
+    /** Compatibility path for historical FC26 callers. */
+    fun findByContextKey(clubId: String, contextKey: String): PanoramaRecord? =
+        findByContextKey(clubId, contextKey, GameVersion.FC26)
+
+    fun findByContextKey(clubId: String, contextKey: String, gameVersion: GameVersion): PanoramaRecord? {
         val rows = jdbcTemplate.query(
             """
-            SELECT id, club_id, context_key, match_ids, narrative, provider, model,
+            SELECT id, game_version, club_id, context_key, match_ids, narrative, provider, model,
                    prompt_version, status, error_category, input_tokens, output_tokens,
                    generated_at, created_at
             FROM editorial_panoramas
-            WHERE club_id = ? AND context_key = ?
+            WHERE game_version = ? AND club_id = ? AND context_key = ?
             """.trimIndent(),
             { rs, _ -> mapRow(rs) },
+            gameVersion.name,
             clubId,
             contextKey,
         )
@@ -34,17 +40,22 @@ class PanoramaRepository(
      * Only returns panoramas that belong to the exact context (same 10 matches).
      * Does NOT return successful panoramas from different contexts.
      */
-    fun findSuccessfulByContextKey(clubId: String, contextKey: String): PanoramaRecord? {
+    /** Compatibility path for historical FC26 callers. */
+    fun findSuccessfulByContextKey(clubId: String, contextKey: String): PanoramaRecord? =
+        findSuccessfulByContextKey(clubId, contextKey, GameVersion.FC26)
+
+    fun findSuccessfulByContextKey(clubId: String, contextKey: String, gameVersion: GameVersion): PanoramaRecord? {
         val rows = jdbcTemplate.query(
             """
-            SELECT id, club_id, context_key, match_ids, narrative, provider, model,
+            SELECT id, game_version, club_id, context_key, match_ids, narrative, provider, model,
                    prompt_version, status, error_category, input_tokens, output_tokens,
                    generated_at, created_at
             FROM editorial_panoramas
-            WHERE club_id = ? AND context_key = ? AND status = 'success' AND narrative IS NOT NULL
+            WHERE game_version = ? AND club_id = ? AND context_key = ? AND status = 'success' AND narrative IS NOT NULL
             LIMIT 1
             """.trimIndent(),
             { rs, _ -> mapRow(rs) },
+            gameVersion.name,
             clubId,
             contextKey,
         )
@@ -55,11 +66,11 @@ class PanoramaRepository(
         jdbcTemplate.update(
             """
             INSERT INTO editorial_panoramas
-                (club_id, context_key, match_ids, narrative, provider, model,
+                (game_version, club_id, context_key, match_ids, narrative, provider, model,
                  prompt_version, status, error_category, input_tokens, output_tokens,
                  generated_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (club_id, context_key)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (game_version, club_id, context_key)
             DO UPDATE SET
                 narrative = EXCLUDED.narrative,
                 provider = EXCLUDED.provider,
@@ -70,6 +81,7 @@ class PanoramaRepository(
                 output_tokens = EXCLUDED.output_tokens,
                 generated_at = EXCLUDED.generated_at
             """.trimIndent(),
+            record.gameVersion.name,
             record.clubId,
             record.contextKey,
             record.matchIds.toTypedArray(),
@@ -105,6 +117,7 @@ class PanoramaRepository(
             outputTokens = rs.getObject("output_tokens") as? Int,
             generatedAt = rs.getTimestamp("generated_at").toInstant(),
             createdAt = rs.getTimestamp("created_at").toInstant(),
+            gameVersion = rs.getString("game_version")?.let(GameVersion::valueOf) ?: GameVersion.FC26,
         )
     }
 }
@@ -124,4 +137,5 @@ data class PanoramaRecord(
     val outputTokens: Int? = null,
     val generatedAt: Instant,
     val createdAt: Instant = Instant.now(),
+    val gameVersion: GameVersion = GameVersion.FC26,
 )

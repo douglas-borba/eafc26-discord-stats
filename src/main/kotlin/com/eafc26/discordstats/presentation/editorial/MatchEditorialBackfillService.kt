@@ -68,6 +68,7 @@ class MatchEditorialBackfillService(
                 val existing = editorialRepository.findByClubAndMatch(
                     canonical.interpretation.perspectiveClubId,
                     canonical.matchId,
+                    canonical.gameVersion,
                 )
 
                 if (existing != null) {

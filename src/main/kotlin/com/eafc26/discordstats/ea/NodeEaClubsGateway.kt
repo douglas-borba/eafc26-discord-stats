@@ -4,6 +4,7 @@ import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.ea.model.ClubSearchResult
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.MemberStats
+import com.eafc26.discordstats.domain.match.GameVersion
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
@@ -18,7 +19,7 @@ class NodeEaClubsGateway(
     private val props: AppProperties,
     private val parser: EaResponseParser,
     private val coverageTracker: EaMatchCoverageTracker,
-) : WindowedEaClubsGateway {
+) : VersionedEaClubsGateway {
     private val log = LoggerFactory.getLogger(javaClass)
 
     override fun searchClubs(clubName: String) = request(
@@ -26,10 +27,17 @@ class NodeEaClubsGateway(
         parser::parseSearch,
     ) { eaGatewayWebClient.get().uri { builder -> builder.path("/ea/clubs/search").queryParam("name", clubName).queryParam("platform", props.ea.platform).build() } }
 
-    override fun getLatestMatches(clubId: String) = getLatestMatches(clubId, props.ea.maxResultCount)
+    override fun getLatestMatches(clubId: String) = getLatestMatches(clubId, props.ea.maxResultCount, GameVersion.FC26)
 
-    override fun getLatestMatches(clubId: String, maxResultCount: Int): EaApiResult<List<MatchResponse>> {
-        val path = "/ea/clubs/${encode(clubId)}/matches?platform=${encode(props.ea.platform)}&maxResultCount=$maxResultCount"
+    override fun getLatestMatches(clubId: String, maxResultCount: Int) =
+        getLatestMatches(clubId, maxResultCount, GameVersion.FC26)
+
+    override fun getLatestMatches(
+        clubId: String,
+        maxResultCount: Int,
+        gameVersion: GameVersion,
+    ): EaApiResult<List<MatchResponse>> {
+        val path = "/ea/clubs/${encode(clubId)}/matches?platform=${encode(props.ea.platform)}&maxResultCount=$maxResultCount&gameVersion=${gameVersion.name}"
         repeat(MAX_ATTEMPTS) { index ->
             try {
                 val response = eaGatewayWebClient.get().uri(path).retrieve().toEntity(String::class.java).block()

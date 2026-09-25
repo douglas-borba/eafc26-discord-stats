@@ -2,6 +2,7 @@ package com.eafc26.discordstats.explorer
 
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.GameVersion
 import java.time.Instant
 
 /**
@@ -19,6 +20,8 @@ data class ExplorerObservation(
     val observedPositionContext: String? = null,
     val createdAt: Instant? = null,
     val updatedAt: Instant? = null,
+    /** Provider era of the canonical player-match this evidence annotates. */
+    val gameVersion: GameVersion = GameVersion.FC26,
 ) {
     init {
         require(phrase.isNotBlank()) { "phrase must not be blank" }
@@ -65,6 +68,7 @@ interface ExplorerObservationRepository {
         clubId: ClubId,
         matchId: MatchId,
         playerId: String,
+        gameVersion: GameVersion = GameVersion.FC26,
     ): List<ExplorerObservation>
 
     /**
@@ -78,9 +82,10 @@ interface ExplorerObservationRepository {
         matchId: MatchId,
         playerId: String,
         limit: Int,
+        gameVersion: GameVersion = GameVersion.FC26,
     ): List<ExplorerObservation> {
         require(limit in 1..101) { "limit must be 1-101" }
-        return findForPlayerMatch(clubId, matchId, playerId).take(limit)
+        return findForPlayerMatch(clubId, matchId, playerId, gameVersion).take(limit)
     }
 
     /** One exact persisted evidence identity, without phrase normalization. */
@@ -89,8 +94,9 @@ interface ExplorerObservationRepository {
         matchId: MatchId,
         playerId: String,
         phrase: String,
+        gameVersion: GameVersion = GameVersion.FC26,
     ): ExplorerObservation? =
-        findForPlayerMatch(clubId, matchId, playerId).firstOrNull { it.phrase == phrase }
+        findForPlayerMatch(clubId, matchId, playerId, gameVersion).firstOrNull { it.phrase == phrase }
 
     /**
      * Changes only one exact phrase identity for one player-match. Implementations
@@ -103,24 +109,25 @@ interface ExplorerObservationRepository {
         playerId: String,
         sourcePhrase: String,
         targetPhrase: String,
+        gameVersion: GameVersion = GameVersion.FC26,
     ): ObservationPhraseReconciliationResult
 
     /** A bounded annotated investigation set, never a full canonical scan. */
-    fun findForPlayerPhrase(clubId: ClubId, playerId: String, phrase: String, limit: Int): List<ExplorerObservation>
+    fun findForPlayerPhrase(clubId: ClubId, playerId: String, phrase: String, limit: Int, gameVersion: GameVersion = GameVersion.FC26): List<ExplorerObservation>
 
     /**
      * Bounded cross-phrase evidence for one player. This supports mechanical
      * collision analysis without scanning canonical history or querying one
      * phrase at a time.
      */
-    fun findForPlayer(clubId: ClubId, playerId: String, limit: Int): List<ExplorerObservation>
+    fun findForPlayer(clubId: ClubId, playerId: String, limit: Int, gameVersion: GameVersion = GameVersion.FC26): List<ExplorerObservation>
 
     /**
      * Discovers recent exact research identities before their evidence is
      * loaded. This keeps a bounded queue from treating a global newest-row
      * slice as a complete history for any phrase.
      */
-    fun findRecentResearchIdentities(clubId: ClubId, limit: Int): List<ObservationResearchIdentity> {
+    fun findRecentResearchIdentities(clubId: ClubId, limit: Int, gameVersion: GameVersion = GameVersion.FC26): List<ObservationResearchIdentity> {
         require(limit in 1..41) { "limit must be 1-41" }
         throw UnsupportedOperationException("Research queue requires bounded identity discovery")
     }
@@ -135,6 +142,7 @@ interface ExplorerObservationRepository {
         clubId: ClubId,
         identities: Collection<ObservationResearchIdentity>,
         limit: Int,
+        gameVersion: GameVersion = GameVersion.FC26,
     ): List<ExplorerObservation> {
         require(identities.size <= 40) { "research identity batch limited to 40" }
         require(limit in 1..21) { "per-identity research evidence limit must be 1-21" }
@@ -146,9 +154,9 @@ interface ExplorerObservationRepository {
      * of the supplied (clubId, matchId, playerId, phrase) tuples. The input
      * collection must not exceed 50 entries.
      */
-    fun findByIdentities(clubId: ClubId, keys: Collection<ObservationIdentityKey>): List<ExplorerObservation> {
+    fun findByIdentities(clubId: ClubId, keys: Collection<ObservationIdentityKey>, gameVersion: GameVersion = GameVersion.FC26): List<ExplorerObservation> {
         require(keys.size <= 50) { "batch lookup limited to 50 keys" }
-        return keys.flatMap { key -> findForPlayerMatch(clubId, key.matchId, key.playerId).filter { it.phrase == key.phrase } }
+        return keys.flatMap { key -> findForPlayerMatch(clubId, key.matchId, key.playerId, gameVersion).filter { it.phrase == key.phrase } }
     }
 
     /**
@@ -159,10 +167,10 @@ interface ExplorerObservationRepository {
      * must use a single atomic transaction with INSERT ... ON CONFLICT DO NOTHING
      * and verify all expected rows were inserted.
      */
-    fun insertIfAbsent(clubId: ClubId, observations: List<ExplorerObservation>): Int {
+    fun insertIfAbsent(clubId: ClubId, observations: List<ExplorerObservation>, gameVersion: GameVersion = GameVersion.FC26): Int {
         require(observations.size <= 50) { "batch insert limited to 50 observations" }
         require(observations.all { it.clubId == clubId }) { "all observations must belong to the same club" }
-        observations.forEach { save(it) }
+        observations.forEach { save(it.copy(gameVersion = gameVersion)) }
         return observations.size
     }
 }
@@ -187,7 +195,7 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
     private val observations = linkedMapOf<List<String>, ExplorerObservation>()
 
     override fun save(observation: ExplorerObservation): ExplorerObservation {
-        val key = listOf(observation.clubId.value, observation.matchId.value, observation.playerId, observation.phrase)
+        val key = listOf(observation.gameVersion.name, observation.clubId.value, observation.matchId.value, observation.playerId, observation.phrase)
         val previous = observations[key]
         val stored = observation.copy(
             createdAt = previous?.createdAt ?: observation.createdAt ?: Instant.now(),
@@ -201,8 +209,9 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
         clubId: ClubId,
         matchId: MatchId,
         playerId: String,
+        gameVersion: GameVersion,
     ): List<ExplorerObservation> {
-        return observations.values.filter { it.clubId == clubId && it.matchId == matchId && it.playerId == playerId }
+        return observations.values.filter { it.gameVersion == gameVersion && it.clubId == clubId && it.matchId == matchId && it.playerId == playerId }
             .sortedBy { it.phrase }
     }
 
@@ -211,9 +220,10 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
         matchId: MatchId,
         playerId: String,
         limit: Int,
+        gameVersion: GameVersion,
     ): List<ExplorerObservation> {
         require(limit in 1..101) { "limit must be 1-101" }
-        return findForPlayerMatch(clubId, matchId, playerId).take(limit)
+        return findForPlayerMatch(clubId, matchId, playerId, gameVersion).take(limit)
     }
 
     override fun findExact(
@@ -221,7 +231,10 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
         matchId: MatchId,
         playerId: String,
         phrase: String,
-    ): ExplorerObservation? = observations[listOf(clubId.value, matchId.value, playerId, phrase)]
+        gameVersion: GameVersion,
+    ): ExplorerObservation? = observations.values.firstOrNull {
+        it.gameVersion == gameVersion && it.clubId == clubId && it.matchId == matchId && it.playerId == playerId && it.phrase == phrase
+    }
 
     @Synchronized
     override fun reconcilePhrase(
@@ -230,14 +243,15 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
         playerId: String,
         sourcePhrase: String,
         targetPhrase: String,
+        gameVersion: GameVersion,
     ): ObservationPhraseReconciliationResult {
-        val sourceKey = listOf(clubId.value, matchId.value, playerId, sourcePhrase)
+        val sourceKey = listOf(gameVersion.name, clubId.value, matchId.value, playerId, sourcePhrase)
         val source = observations[sourceKey]
             ?: return ObservationPhraseReconciliationResult(ObservationPhraseReconciliationStatus.SOURCE_NOT_FOUND)
         if (sourcePhrase == targetPhrase) {
             return ObservationPhraseReconciliationResult(ObservationPhraseReconciliationStatus.NO_CHANGE, observation = source)
         }
-        val targetKey = listOf(clubId.value, matchId.value, playerId, targetPhrase)
+        val targetKey = listOf(gameVersion.name, clubId.value, matchId.value, playerId, targetPhrase)
         val target = observations[targetKey]
         if (target != null) {
             return ObservationPhraseReconciliationResult(
@@ -255,22 +269,22 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
         )
     }
 
-    override fun findForPlayerPhrase(clubId: ClubId, playerId: String, phrase: String, limit: Int): List<ExplorerObservation> =
-        observations.values.filter { it.clubId == clubId && it.playerId == playerId && it.phrase == phrase }
+    override fun findForPlayerPhrase(clubId: ClubId, playerId: String, phrase: String, limit: Int, gameVersion: GameVersion): List<ExplorerObservation> =
+        observations.values.filter { it.gameVersion == gameVersion && it.clubId == clubId && it.playerId == playerId && it.phrase == phrase }
             .sortedByDescending { it.updatedAt }
             .take(limit)
 
-    override fun findForPlayer(clubId: ClubId, playerId: String, limit: Int): List<ExplorerObservation> {
+    override fun findForPlayer(clubId: ClubId, playerId: String, limit: Int, gameVersion: GameVersion): List<ExplorerObservation> {
         require(limit in 1..50) { "limit must be 1-50" }
-        return observations.values.filter { it.clubId == clubId && it.playerId == playerId }
+        return observations.values.filter { it.gameVersion == gameVersion && it.clubId == clubId && it.playerId == playerId }
             .sortedWith(compareByDescending<ExplorerObservation> { it.updatedAt }.thenByDescending { it.createdAt })
             .take(limit)
     }
 
-    override fun findRecentResearchIdentities(clubId: ClubId, limit: Int): List<ObservationResearchIdentity> {
+    override fun findRecentResearchIdentities(clubId: ClubId, limit: Int, gameVersion: GameVersion): List<ObservationResearchIdentity> {
         require(limit in 1..41) { "limit must be 1-41" }
         return observations.values
-            .filter { it.clubId == clubId }
+            .filter { it.gameVersion == gameVersion && it.clubId == clubId }
             .groupBy { ObservationResearchIdentity(it.playerId, it.phrase) }
             .entries
             .sortedWith(
@@ -286,13 +300,14 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
         clubId: ClubId,
         identities: Collection<ObservationResearchIdentity>,
         limit: Int,
+        gameVersion: GameVersion,
     ): List<ExplorerObservation> {
         require(identities.size <= 40) { "research identity batch limited to 40" }
         require(limit in 1..21) { "per-identity research evidence limit must be 1-21" }
         if (identities.isEmpty()) return emptyList()
         val requested = identities.toSet()
         return observations.values
-            .filter { it.clubId == clubId && ObservationResearchIdentity(it.playerId, it.phrase) in requested }
+            .filter { it.gameVersion == gameVersion && it.clubId == clubId && ObservationResearchIdentity(it.playerId, it.phrase) in requested }
             .groupBy { ObservationResearchIdentity(it.playerId, it.phrase) }
             .toSortedMap(compareBy<ObservationResearchIdentity> { it.playerId }.thenBy { it.phrase })
             .values
@@ -305,12 +320,12 @@ class InMemoryExplorerObservationRepository : ExplorerObservationRepository {
             }
     }
 
-    override fun insertIfAbsent(clubId: ClubId, observations: List<ExplorerObservation>): Int {
+    override fun insertIfAbsent(clubId: ClubId, observations: List<ExplorerObservation>, gameVersion: GameVersion): Int {
         require(observations.size <= 50) { "batch insert limited to 50 observations" }
         require(observations.all { it.clubId == clubId }) { "all observations must belong to the same club" }
         var inserted = 0
-        for (observation in observations) {
-            val key = listOf(observation.clubId.value, observation.matchId.value, observation.playerId, observation.phrase)
+        for (observation in observations.map { it.copy(gameVersion = gameVersion) }) {
+            val key = listOf(observation.gameVersion.name, observation.clubId.value, observation.matchId.value, observation.playerId, observation.phrase)
             if (key !in this.observations) {
                 val stored = observation.copy(
                     createdAt = observation.createdAt ?: Instant.now(),

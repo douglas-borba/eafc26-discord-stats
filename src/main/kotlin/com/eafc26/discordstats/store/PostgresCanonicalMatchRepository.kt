@@ -37,6 +37,7 @@ class PostgresCanonicalMatchRepository(
         val perspectiveClubId = match.interpretation.perspectiveClubId.value
         val opponentClubId = match.interpretation.result.opponentClub.value
         val matchType = match.footballMatch.competition?.name
+        val gameVersion = match.gameVersion.name
         val now = Instant.now()
         val result = match.interpretation.result
 
@@ -46,11 +47,11 @@ class PostgresCanonicalMatchRepository(
         jdbcTemplate.update(
             """
             INSERT INTO canonical_matches
-                (match_id, club_id, opponent_club_id, played_at, match_type,
+                (game_version, match_id, club_id, opponent_club_id, played_at, match_type,
                  canonical_schema_version, payload, created_at, updated_at,
                  outcome, our_score, opponent_score, our_club_name, opponent_club_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (club_id, match_id) DO UPDATE SET
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (game_version, club_id, match_id) DO UPDATE SET
                 opponent_club_id = EXCLUDED.opponent_club_id,
                 played_at = EXCLUDED.played_at,
                 match_type = EXCLUDED.match_type,
@@ -63,6 +64,7 @@ class PostgresCanonicalMatchRepository(
                 our_club_name = EXCLUDED.our_club_name,
                 opponent_club_name = EXCLUDED.opponent_club_name
             """.trimIndent(),
+            gameVersion,
             match.matchId.value,
             perspectiveClubId,
             opponentClubId,
@@ -87,7 +89,8 @@ class PostgresCanonicalMatchRepository(
             ?: return
 
         jdbcTemplate.update(
-            "DELETE FROM player_match_stats WHERE club_id = ? AND match_id = ?",
+            "DELETE FROM player_match_stats WHERE game_version = ? AND club_id = ? AND match_id = ?",
+            match.gameVersion.name,
             perspectiveClubId,
             match.matchId.value,
         )
@@ -96,12 +99,13 @@ class PostgresCanonicalMatchRepository(
             jdbcTemplate.update(
                 """
                 INSERT INTO player_match_stats
-                    (club_id, match_id, player_id, platform_name, pro_name, rating,
+                    (game_version, club_id, match_id, player_id, platform_name, pro_name, rating,
                      goals, assists, shots, passes_completed, passes_attempted,
                      tackles_completed, tackles_attempted, red_cards, man_of_the_match, played_at,
                      advanced_coverage, advanced_dribbles_completed, advanced_beats, duration_seconds)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent(),
+                match.gameVersion.name,
                 perspectiveClubId,
                 match.matchId.value,
                 playerPerf.player.id.value,

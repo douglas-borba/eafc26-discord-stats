@@ -4,11 +4,14 @@ import com.eafc26.discordstats.config.AppProperties
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.WindowedEaClubsGateway
+import com.eafc26.discordstats.ea.VersionedEaClubsGateway
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.GameVersion
+import com.eafc26.discordstats.application.club.MonitoredClubRepository
 import com.eafc26.discordstats.llm.LlmEditorialService
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationService
@@ -68,6 +71,7 @@ class MatchAcquisitionService(
     private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
     private val canonicalPublicationPersistence: CanonicalPublicationPersistence? = null,
     private val acquisitionTelemetry: AcquisitionTelemetry,
+    private val monitoredClubRepository: MonitoredClubRepository? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val lock = AcquisitionLock()
@@ -129,13 +133,14 @@ class MatchAcquisitionService(
         trigger: AcquisitionTrigger,
         gateway: EaClubsGateway,
     ): AcquisitionResult {
+        val gameVersion = monitoredClubRepository?.findById(clubId)?.gameVersion ?: GameVersion.FC26
         // Phase: FETCHING
         stateHolder.enterPhase(clubId, AcquisitionPhase.FETCHING, "Consultando a EA...")
 
         // Step 1: Fetch a bounded EA window. Scheduler polling uses canonical_matches
         // as its acquisition checkpoint; all other triggers retain their existing mode.
         val eaFetchStartedAtMs = System.currentTimeMillis()
-        val synchronization = fetchMatches(clubId, trigger, gateway)
+        val synchronization = fetchMatches(clubId, gameVersion, trigger, gateway)
         val matches = when (val result = synchronization.result) {
             is EaApiResult.Success -> {
                 fetchMetrics[clubId] = AcquisitionFetchMetrics(
@@ -201,7 +206,7 @@ class MatchAcquisitionService(
         // Phase: PROCESSING
         stateHolder.enterPhase(clubId, AcquisitionPhase.PROCESSING, "Processando partidas...")
 
-        val publicationPlan = publicationPlan(clubId, trigger, matches)
+        val publicationPlan = publicationPlan(clubId, gameVersion, trigger, matches)
 
         // Canonical storage is independent from presentation and Discord delivery.
         // Development fixtures remain intentionally non-persistent.
@@ -210,7 +215,7 @@ class MatchAcquisitionService(
             .sortedWith(compareBy<MatchResponse> { it.timestamp }.thenBy { it.matchId })
             .forEach { match ->
                 try {
-                    canonicalByMatchId[match.matchId] = canonicalMatchFactory.create(match, clubId.value, proNames)
+                    canonicalByMatchId[match.matchId] = canonicalMatchFactory.create(match, clubId.value, proNames, gameVersion)
                 } catch (ex: Exception) {
                     safeTelemetry {
                         acquisitionTelemetry.normalizationRejected(
@@ -218,6 +223,7 @@ class MatchAcquisitionService(
                                 clubId = clubId.value,
                                 matchId = match.matchId,
                                 reason = normalizationRejectionReason(ex),
+                                gameVersion = gameVersion.name,
                             ),
                         )
                     }
@@ -238,7 +244,7 @@ class MatchAcquisitionService(
                     }
                 safeTelemetry {
                     acquisitionTelemetry.canonicalPersisted(
-                        CanonicalPersistenceTelemetry(clubId.value, canonical.matchId.value),
+                        CanonicalPersistenceTelemetry(clubId.value, canonical.matchId.value, canonical.gameVersion.name),
                     )
                 }
                 eventRecorder?.canonicalPersisted(clubId, canonical.matchId.value)
@@ -311,12 +317,13 @@ class MatchAcquisitionService(
      */
     private fun fetchMatches(
         clubId: ClubId,
+        gameVersion: GameVersion,
         trigger: AcquisitionTrigger,
         gateway: EaClubsGateway,
     ): SynchronizationFetch {
         if ((trigger != AcquisitionTrigger.SCHEDULER && trigger != AcquisitionTrigger.ADMIN_POLL && trigger != AcquisitionTrigger.TRIAL_INITIAL) || gateway !is WindowedEaClubsGateway) {
-            val result = gateway.getLatestMatches(clubId.value)
-            traceFetchedBatch(clubId, trigger, window = null, result, emptySet())
+            val result = gateway.latestMatchesFor(gameVersion, clubId.value, null)
+            traceFetchedBatch(clubId, gameVersion, trigger, window = null, result, emptySet())
             return SynchronizationFetch(result, null, null)
         }
 
@@ -325,8 +332,8 @@ class MatchAcquisitionService(
         }
         if (latestCanonicalMatchId == null) {
             val window = props.ea.incrementalMaxWindow
-            val result = gateway.getLatestMatches(clubId.value, window)
-            traceFetchedBatch(clubId, trigger, window, result, emptySet())
+            val result = gateway.latestMatchesFor(gameVersion, clubId.value, window)
+            traceFetchedBatch(clubId, gameVersion, trigger, window, result, emptySet())
             return SynchronizationFetch(
                 result,
                 "window=$window matchesReturned=first-run checkpointFound=false newMatches=first-run",
@@ -337,14 +344,14 @@ class MatchAcquisitionService(
         var window = props.ea.incrementalInitialWindow.coerceAtLeast(1)
         val maxWindow = props.ea.incrementalMaxWindow.coerceAtLeast(window)
         while (true) {
-            val result = gateway.getLatestMatches(clubId.value, window)
+            val result = gateway.latestMatchesFor(gameVersion, clubId.value, window)
             if (result !is EaApiResult.Success) return SynchronizationFetch(result, "window=$window", null)
 
             val deduplicated = result.data.distinctBy { it.matchId }
             val knownIds = readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) {
                 canonicalMatchRepository.findExistingMatchIds(clubId, deduplicated.map { MatchId(it.matchId) })
             }
-            traceFetchedBatch(clubId, trigger, window, EaApiResult.Success(deduplicated), knownIds)
+            traceFetchedBatch(clubId, gameVersion, trigger, window, EaApiResult.Success(deduplicated), knownIds)
             val checkpointFound = knownIds.isNotEmpty()
             val newMatches = deduplicated.filterNot { MatchId(it.matchId) in knownIds }
             if (checkpointFound) {
@@ -361,6 +368,7 @@ class MatchAcquisitionService(
                         clubId = clubId,
                         anchorMatchId = latestCanonicalMatchId.value,
                         firstObservableMatchId = deduplicated.minByOrNull { it.timestamp }?.matchId,
+                        gameVersion = gameVersion,
                     ),
                 )
                 log.warn(
@@ -379,8 +387,27 @@ class MatchAcquisitionService(
         }
     }
 
+    /**
+     * Version-aware providers receive the club's contract era explicitly. Legacy
+     * fixtures remain valid and continue to behave as FC26 test sources.
+     */
+    private fun EaClubsGateway.latestMatchesFor(
+        gameVersion: GameVersion,
+        clubId: String,
+        window: Int?,
+    ): EaApiResult<List<MatchResponse>> = when (this) {
+        is VersionedEaClubsGateway -> getLatestMatches(
+            clubId,
+            window ?: props.ea.maxResultCount,
+            gameVersion,
+        )
+        is WindowedEaClubsGateway -> window?.let { getLatestMatches(clubId, it) } ?: getLatestMatches(clubId)
+        else -> getLatestMatches(clubId)
+    }
+
     private fun traceFetchedBatch(
         clubId: ClubId,
+        gameVersion: GameVersion,
         trigger: AcquisitionTrigger,
         window: Int?,
         result: EaApiResult<List<MatchResponse>>,
@@ -394,11 +421,13 @@ class MatchAcquisitionService(
             acquisitionTelemetry.batch(
                 AcquisitionBatchTelemetry(
                     clubId = clubId.value,
+                    gameVersion = gameVersion.name,
                     trigger = trigger.name,
                     window = window,
                     receivedMatchIds = receivedMatchIds,
                     alreadyExistingMatchIds = alreadyExistingMatchIds,
                     newMatchIds = newMatchIds,
+                    sourceMatchTypes = result.data.mapNotNull { it.sourceMatchType }.distinct().sorted(),
                 ),
             )
         }
@@ -436,6 +465,7 @@ class MatchAcquisitionService(
      */
     private fun publicationPlan(
         clubId: ClubId,
+        gameVersion: GameVersion,
         trigger: AcquisitionTrigger,
         matches: List<MatchResponse>,
     ): PublicationIntentPlan {
@@ -445,9 +475,9 @@ class MatchAcquisitionService(
         val records = when (trigger) {
             AcquisitionTrigger.SCHEDULER, AcquisitionTrigger.ADMIN_POLL -> matches.associate { match ->
                 match.matchId to if (firstRun && match.matchId != latestMatchId) {
-                    PublicationRecord(match.matchId, PublicationState.BASELINED, baselineReason = BaselineReason.FIRST_RUN)
+                    PublicationRecord(match.matchId, PublicationState.BASELINED, baselineReason = BaselineReason.FIRST_RUN, gameVersion = gameVersion)
                 } else {
-                    PublicationRecord(match.matchId, PublicationState.PENDING)
+                    PublicationRecord(match.matchId, PublicationState.PENDING, gameVersion = gameVersion)
                 }
             }
             AcquisitionTrigger.MANUAL, AcquisitionTrigger.CLI -> if (firstRun) {
@@ -456,10 +486,11 @@ class MatchAcquisitionService(
                         match.matchId,
                         PublicationState.BASELINED,
                         baselineReason = BaselineReason.FIRST_RUN,
+                        gameVersion = gameVersion,
                     )
                 }
             } else {
-                latestMatchId?.let { mapOf(it to PublicationRecord(it, PublicationState.PENDING)) } ?: emptyMap()
+                latestMatchId?.let { mapOf(it to PublicationRecord(it, PublicationState.PENDING, gameVersion = gameVersion)) } ?: emptyMap()
             }
             else -> emptyMap()
         }

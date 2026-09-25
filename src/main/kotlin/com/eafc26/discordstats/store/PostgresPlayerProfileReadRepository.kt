@@ -8,6 +8,7 @@ import com.eafc26.discordstats.domain.interpretation.AwardType
 import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.CompetitionType
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.MatchCompletionStatus
 import com.eafc26.discordstats.domain.match.MatchId
@@ -30,7 +31,7 @@ class PostgresPlayerProfileReadRepository(
     private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
 ) : PlayerProfileReadRepository {
 
-    override fun findPlayerIndex(clubId: ClubId): List<PlayerProfileIndexEntry> {
+    override fun findPlayerIndex(clubId: ClubId, gameVersion: GameVersion): List<PlayerProfileIndexEntry> {
         val rows = jdbcTemplate.query(
             """
             SELECT
@@ -46,9 +47,11 @@ class PostgresPlayerProfileReadRepository(
                 COUNT(ps.rating) AS rated_match_count
             FROM player_match_stats ps
             JOIN canonical_matches cm
-              ON cm.club_id = ps.club_id
+              ON cm.game_version = ps.game_version
+             AND cm.club_id = ps.club_id
              AND cm.match_id = ps.match_id
-            WHERE ps.club_id = ?
+            WHERE ps.game_version = ?
+              AND ps.club_id = ?
               AND COALESCE(cm.payload #>> '{footballMatch,completion,status}', 'UNKNOWN') <> 'DNF'
             GROUP BY ps.player_id
             ORDER BY MAX(ps.played_at) DESC, display_name ASC, ps.player_id ASC
@@ -63,6 +66,7 @@ class PostgresPlayerProfileReadRepository(
                     ratedMatchCount = rs.getInt("rated_match_count"),
                 )
             },
+            gameVersion.name,
             clubId.value,
         )
         readDiagnostics.record(
@@ -74,14 +78,16 @@ class PostgresPlayerProfileReadRepository(
         return rows
     }
 
-    override fun findAppearances(clubId: ClubId): List<PlayerProfileAppearance> = query(clubId)
+    override fun findAppearances(clubId: ClubId, gameVersion: GameVersion): List<PlayerProfileAppearance> =
+        query(clubId, gameVersion = gameVersion)
 
-    override fun findAppearances(clubId: ClubId, playerId: PlayerId): List<PlayerProfileAppearance> =
-        query(clubId, playerId)
+    override fun findAppearances(clubId: ClubId, playerId: PlayerId, gameVersion: GameVersion): List<PlayerProfileAppearance> =
+        query(clubId, playerId, gameVersion)
 
-    private fun query(clubId: ClubId, playerId: PlayerId? = null): List<PlayerProfileAppearance> {
+    private fun query(clubId: ClubId, playerId: PlayerId? = null, gameVersion: GameVersion): List<PlayerProfileAppearance> {
         val playerFilter = if (playerId == null) "" else "AND ps.player_id = ?"
         val parameters = buildList {
+            add(gameVersion.name)
             add(clubId.value)
             playerId?.let { add(it.value) }
         }.toTypedArray()
@@ -122,7 +128,8 @@ class PostgresPlayerProfileReadRepository(
                 canonical_player.stats #>> '{attacking,assists}' AS canonical_assists
             FROM player_match_stats ps
             JOIN canonical_matches cm
-              ON cm.club_id = ps.club_id
+              ON cm.game_version = ps.game_version
+             AND cm.club_id = ps.club_id
              AND cm.match_id = ps.match_id
             LEFT JOIN LATERAL (
                 SELECT player.stats, player.ordinal
@@ -132,7 +139,8 @@ class PostgresPlayerProfileReadRepository(
                   AND player.stats #>> '{player,id}' = ps.player_id
                 LIMIT 1
             ) canonical_player ON TRUE
-            WHERE ps.club_id = ?
+            WHERE ps.game_version = ?
+              AND ps.club_id = ?
             $playerFilter
             ORDER BY ps.played_at DESC, ps.match_id ASC, canonical_player.ordinal ASC NULLS LAST, ps.player_id ASC
             """.trimIndent(),

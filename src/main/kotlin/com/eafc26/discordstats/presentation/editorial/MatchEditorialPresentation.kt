@@ -2,6 +2,7 @@ package com.eafc26.discordstats.presentation.editorial
 
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.presentation.MatchSummaryPresentation
 import java.time.Instant
 
@@ -25,6 +26,7 @@ data class MatchEditorialPresentation(
     val presentation: MatchSummaryPresentation,
     val generatedAt: Instant,
     val updatedAt: Instant,
+    val gameVersion: GameVersion = GameVersion.FC26,
 ) {
     companion object {
         const val CURRENT_SCHEMA_VERSION = 1

@@ -14,6 +14,7 @@ import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
 import com.eafc26.discordstats.domain.match.CompetitionType
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.domain.match.PlayerId
@@ -113,6 +114,20 @@ class ClubSportsControllerTest {
         verify(history).recentOverview(club.clubId, 10)
         verify(history, never()).recent(club.clubId, 10)
         verify(history, never()).list(club.clubId)
+    }
+
+    @Test
+    fun `panorama reads the monitored club game version`() {
+        val club = club("486460", "Worshipers FC").copy(gameVersion = GameVersion.FC27)
+        whenever(clubs.find(club.clubId)).thenReturn(club)
+        whenever(editorial.getPersistedPanorama(club.clubId, GameVersion.FC27)).thenReturn("Panorama FC27")
+
+        val response = controller.panorama(club.clubId.value)
+
+        assertThat(response.status).isEqualTo("success")
+        assertThat(response.text).isEqualTo("Panorama FC27")
+        verify(editorial).getPersistedPanorama(club.clubId, GameVersion.FC27)
+        verify(editorial, never()).getPersistedPanorama(club.clubId)
     }
 
     @Test

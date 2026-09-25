@@ -52,7 +52,7 @@ class ClubSportsController(
 ) {
     @GetMapping
     fun club(@PathVariable clubId: String): SportsClubResponse = requireClub(clubId).let {
-        SportsClubResponse(it.clubId.value, it.displayName.value, it.platform.value, it.monitoringEnabled, it.accessStatus.name)
+        SportsClubResponse(it.clubId.value, it.displayName.value, it.platform.value, it.monitoringEnabled, it.accessStatus.name, it.gameVersion.name)
     }
 
     @GetMapping("/history/matches")
@@ -138,7 +138,9 @@ class ClubSportsController(
 
     @GetMapping("/panorama")
     fun panorama(@PathVariable clubId: String): PanoramaResponse = scope(clubId, ClubDashboardCapability.OVERVIEW) { id ->
-        val text = editorial.getPersistedPanorama(id)
+        val gameVersion = monitoredClubs.find(id)?.gameVersion
+            ?: com.eafc26.discordstats.domain.match.GameVersion.FC26
+        val text = editorial.getPersistedPanorama(id, gameVersion)
         PanoramaResponse(if (text == null) "unavailable" else "success", text)
     }
 
@@ -175,5 +177,6 @@ data class SportsClubResponse(
     val platform: String,
     val monitoringEnabled: Boolean,
     val accessStatus: String = "ACTIVE",
+    val gameVersion: String = "FC26",
 )
 data class SportsPlayerListResponse(val status: String, val players: List<com.eafc26.discordstats.presentation.profile.PlayerProfileListItem>)

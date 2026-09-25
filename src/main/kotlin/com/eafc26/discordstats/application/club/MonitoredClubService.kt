@@ -2,6 +2,7 @@ package com.eafc26.discordstats.application.club
 
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
+import com.eafc26.discordstats.domain.match.GameVersion
 import java.time.Clock
 import java.time.Instant
 
@@ -14,6 +15,7 @@ class MonitoredClubService(
         displayName: ClubName,
         platform: EaPlatform,
         monitoringEnabled: Boolean = true,
+        gameVersion: GameVersion = GameVersion.FC26,
     ): MonitoredClub {
         repository.findById(clubId)?.let { return it }
         val now = Instant.now(clock)
@@ -22,6 +24,7 @@ class MonitoredClubService(
                 clubId = clubId,
                 displayName = displayName,
                 platform = platform,
+                gameVersion = gameVersion,
                 monitoringEnabled = monitoringEnabled,
                 discordWebhookSecretReference = null,
                 createdAt = now,

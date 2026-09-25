@@ -9,6 +9,7 @@ import com.eafc26.discordstats.application.club.MonitoredClubService
 import com.eafc26.discordstats.discord.DiscordWebhookSecretStore
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationRepository
 import com.eafc26.discordstats.scheduler.PollingStatusHolder
 import com.eafc26.discordstats.service.AcquisitionPhase
@@ -76,6 +77,7 @@ class ClubAdministrationController(
                 ClubName(request.displayName),
                 EaPlatform(request.platform),
                 request.monitoringEnabled,
+                request.gameVersion,
             ),
         )
 
@@ -159,7 +161,7 @@ class ClubAdministrationController(
 
         if (latestMatchId == null && editorialRepository != null) {
             try {
-                val persisted = editorialRepository.findByClub(club.clubId, limit = 1).firstOrNull()
+                val persisted = editorialRepository.findByClub(club.clubId, limit = 1, gameVersion = club.gameVersion).firstOrNull()
                 if (persisted != null) {
                     latestMatchId = persisted.matchId.value
                     latestMatchTimestamp = persisted.playedAt.toString()
@@ -279,6 +281,7 @@ class ClubAdministrationController(
         clubId = club.clubId.value,
         displayName = club.displayName.value,
         platform = club.platform.value,
+        gameVersion = club.gameVersion.name,
         accessStatus = club.accessStatus.name,
         monitoringEnabled = club.monitoringEnabled,
         discordConfigured = destinationResolvable,
@@ -309,6 +312,7 @@ data class RegisterClubRequest(
     val displayName: String,
     val platform: String,
     val monitoringEnabled: Boolean = true,
+    val gameVersion: GameVersion = GameVersion.FC26,
 )
 
 data class MonitoringRequest(val enabled: Boolean)
@@ -318,6 +322,7 @@ data class AdminClubResponse(
     val clubId: String,
     val displayName: String,
     val platform: String,
+    val gameVersion: String,
     val accessStatus: String,
     val monitoringEnabled: Boolean,
     val discordConfigured: Boolean,

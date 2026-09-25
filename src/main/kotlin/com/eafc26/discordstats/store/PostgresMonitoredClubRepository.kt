@@ -7,6 +7,7 @@ import com.eafc26.discordstats.application.club.MonitoredClubRepository
 import com.eafc26.discordstats.application.club.ClubAccessStatus
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
+import com.eafc26.discordstats.domain.match.GameVersion
 import org.springframework.jdbc.core.JdbcTemplate
 import java.sql.ResultSet
 import java.sql.Timestamp
@@ -18,12 +19,13 @@ class PostgresMonitoredClubRepository(
         jdbcTemplate.update(
             """
             INSERT INTO monitored_clubs
-                (club_id, display_name, platform, monitoring_enabled,
+                (club_id, display_name, platform, game_version, monitoring_enabled,
                  discord_webhook_secret_ref, access_status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (club_id) DO UPDATE SET
                 display_name = EXCLUDED.display_name,
                 platform = EXCLUDED.platform,
+                game_version = EXCLUDED.game_version,
                 monitoring_enabled = EXCLUDED.monitoring_enabled,
                 discord_webhook_secret_ref = EXCLUDED.discord_webhook_secret_ref,
                 access_status = EXCLUDED.access_status,
@@ -32,6 +34,7 @@ class PostgresMonitoredClubRepository(
             club.clubId.value,
             club.displayName.value,
             club.platform.value,
+            club.gameVersion.name,
             club.monitoringEnabled,
             club.discordWebhookSecretReference?.value,
             club.accessStatus.name,
@@ -65,6 +68,7 @@ class PostgresMonitoredClubRepository(
         clubId = ClubId(rs.getString("club_id")),
         displayName = ClubName(rs.getString("display_name")),
         platform = EaPlatform(rs.getString("platform")),
+        gameVersion = rs.getString("game_version")?.let(GameVersion::valueOf) ?: GameVersion.FC26,
         monitoringEnabled = rs.getBoolean("monitoring_enabled"),
         discordWebhookSecretReference = rs.getString("discord_webhook_secret_ref")
             ?.let(::DiscordWebhookSecretReference),

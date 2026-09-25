@@ -2,6 +2,7 @@ package com.eafc26.discordstats.explorer
 
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.GameVersion
 import java.time.Instant
 
 /**
@@ -20,6 +21,7 @@ data class ControlledObservation(
     val code: Int,
     val experimentType: ControlledExperimentType,
     val createdAt: Instant? = null,
+    val gameVersion: GameVersion = GameVersion.FC26,
 ) {
     init {
         require(phrase.isNotBlank()) { "phrase must not be blank" }
@@ -46,6 +48,7 @@ interface ControlledObservationRepository {
         clubId: ClubId,
         candidates: Collection<ControlledCandidateIdentity>,
         limitPerCandidate: Int,
+        gameVersion: GameVersion = GameVersion.FC26,
     ): List<ControlledObservation>
 }
 
@@ -54,6 +57,7 @@ class InMemoryControlledObservationRepository : ControlledObservationRepository 
 
     override fun saveIfAbsent(observation: ControlledObservation): ControlledObservation {
         val key = listOf(
+            observation.gameVersion.name,
             observation.clubId.value,
             observation.matchId.value,
             observation.playerId,
@@ -68,12 +72,13 @@ class InMemoryControlledObservationRepository : ControlledObservationRepository 
         clubId: ClubId,
         candidates: Collection<ControlledCandidateIdentity>,
         limitPerCandidate: Int,
+        gameVersion: GameVersion,
     ): List<ControlledObservation> {
         require(candidates.size <= 10) { "controlled candidate batch limited to 10" }
         require(limitPerCandidate in 1..5) { "controlled evidence limit must be 1-5" }
         val requested = candidates.toSet()
         return observations.values.filter {
-            it.clubId == clubId && ControlledCandidateIdentity(it.playerId, it.phrase, it.aggregateIndex, it.code) in requested
+            it.gameVersion == gameVersion && it.clubId == clubId && ControlledCandidateIdentity(it.playerId, it.phrase, it.aggregateIndex, it.code) in requested
         }.groupBy { ControlledCandidateIdentity(it.playerId, it.phrase, it.aggregateIndex, it.code) }
             .values.flatMap { rows -> rows.sortedByDescending { it.createdAt }.take(limitPerCandidate) }
     }

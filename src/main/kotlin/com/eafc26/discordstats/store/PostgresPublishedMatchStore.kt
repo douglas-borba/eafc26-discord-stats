@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.store
 
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.GameVersion
 import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.RowMapper
@@ -28,6 +29,7 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
             baselineReason = rs.getString("baseline_reason")?.let { BaselineReason.valueOf(it) },
             nextAutomaticAttemptAt = rs.getTimestamp("next_automatic_attempt_at")?.toInstant()?.epochSecond,
             recoveryAttemptCount = rs.getInt("recovery_attempt_count"),
+            gameVersion = rs.getString("game_version")?.let(GameVersion::valueOf) ?: GameVersion.FC26,
         )
     }
 
@@ -54,10 +56,10 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
         jdbcTemplate.update(
             """
             INSERT INTO discord_publication_state
-                (club_id, match_id, state, attempt_count, last_attempt_at, last_error, last_http_status, baseline_reason,
+                (game_version, club_id, match_id, state, attempt_count, last_attempt_at, last_error, last_http_status, baseline_reason,
                  next_automatic_attempt_at, recovery_attempt_count, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
-            ON CONFLICT (club_id, match_id) DO UPDATE SET
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+            ON CONFLICT (game_version, club_id, match_id) DO UPDATE SET
                 state = EXCLUDED.state,
                 attempt_count = EXCLUDED.attempt_count,
                 last_attempt_at = EXCLUDED.last_attempt_at,
@@ -68,6 +70,7 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
                 recovery_attempt_count = EXCLUDED.recovery_attempt_count,
                 updated_at = now()
             """.trimIndent(),
+            record.gameVersion.name,
             clubId.value,
             record.matchId,
             record.state.name,
@@ -86,11 +89,12 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
         val inserted = jdbcTemplate.update(
             """
             INSERT INTO discord_publication_state
-                (club_id, match_id, state, attempt_count, last_attempt_at, last_error, last_http_status, baseline_reason,
+                (game_version, club_id, match_id, state, attempt_count, last_attempt_at, last_error, last_http_status, baseline_reason,
                  next_automatic_attempt_at, recovery_attempt_count, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
-            ON CONFLICT (club_id, match_id) DO NOTHING
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+            ON CONFLICT (game_version, club_id, match_id) DO NOTHING
             """.trimIndent(),
+            record.gameVersion.name,
             clubId.value,
             record.matchId,
             record.state.name,
@@ -127,12 +131,13 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
                 updated_at = now()
             WHERE club_id = ?
               AND match_id = ?
+              AND game_version = ?
               AND state = ?
               AND attempt_count = ?
               AND baseline_reason IS NOT DISTINCT FROM ?
               AND next_automatic_attempt_at IS NOT DISTINCT FROM ?
               AND recovery_attempt_count = ?
-            RETURNING match_id, state, updated_at, attempt_count, last_attempt_at,
+            RETURNING game_version, match_id, state, updated_at, attempt_count, last_attempt_at,
                       last_error, last_http_status, baseline_reason, next_automatic_attempt_at, recovery_attempt_count
             """.trimIndent(),
             rowMapper,
@@ -141,6 +146,7 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
             PublicationState.RETRY_EXHAUSTED.name,
             clubId.value,
             expected.matchId,
+            expected.gameVersion.name,
             expected.state.name,
             expected.attemptCount,
             expected.baselineReason?.name,
@@ -164,13 +170,13 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
         require(limit > 0) { "limit must be positive" }
         return jdbcTemplate.query(
             """
-            SELECT ps.club_id, ps.match_id, ps.state, ps.updated_at, ps.attempt_count,
+            SELECT ps.game_version, ps.club_id, ps.match_id, ps.state, ps.updated_at, ps.attempt_count,
                    ps.last_attempt_at, ps.last_error, ps.last_http_status, ps.baseline_reason,
                    ps.next_automatic_attempt_at, ps.recovery_attempt_count,
                    cm.played_at
             FROM discord_publication_state ps
             JOIN canonical_matches cm
-              ON cm.club_id = ps.club_id AND cm.match_id = ps.match_id
+              ON cm.game_version = ps.game_version AND cm.club_id = ps.club_id AND cm.match_id = ps.match_id
             WHERE ps.state = ?
                OR (ps.state = ? AND ps.next_automatic_attempt_at <= ?)
                OR (ps.state = ? AND ps.next_automatic_attempt_at <= ?)
@@ -231,10 +237,11 @@ class PostgresPublishedMatchStore(private val jdbcTemplate: JdbcTemplate) : Publ
             jdbcTemplate.update(
                 """
                 INSERT INTO discord_publication_state
-                    (club_id, match_id, state, attempt_count, baseline_reason, updated_at)
-                VALUES (?, ?, ?, 0, ?, now())
-                ON CONFLICT (club_id, match_id) DO NOTHING
+                    (game_version, club_id, match_id, state, attempt_count, baseline_reason, updated_at)
+                VALUES (?, ?, ?, ?, 0, ?, now())
+                ON CONFLICT (game_version, club_id, match_id) DO NOTHING
                 """.trimIndent(),
+                GameVersion.FC26.name,
                 clubId.value,
                 matchId,
                 PublicationState.BASELINED.name,
