@@ -6,7 +6,7 @@ server:
 app:
   ea:
     platform: common-gen5
-    club-id: "1104972"
+    club-id: "457048"
     club-name: "Associação BF"
     match-type: leagueMatch   # friendlyMatch | leagueMatch | playoffMatch
     max-result-count: 20
