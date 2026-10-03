@@ -210,12 +210,20 @@ class ClubAdministrationController(
 
         var lastDiscordSuccess: String? = null
         var lastDiscordError: String? = null
+        var lastDiscordSuccessInstant: java.time.Instant? = null
+        var lastDiscordFailureEventAt: java.time.Instant? = null
         if (eventRepository != null) {
             try {
                 val discordEvents = eventRepository.findByClub(club.clubId, limit = 50)
                     .filter { it.eventType == "DISCORD" }
-                lastDiscordSuccess = discordEvents.firstOrNull { it.status == EventStatus.SUCCESS }?.createdAt?.toString()
-                lastDiscordError = discordEvents.firstOrNull { it.status == EventStatus.FAILURE }?.message
+                discordEvents.firstOrNull { it.status == EventStatus.SUCCESS }?.let {
+                    lastDiscordSuccessInstant = it.createdAt
+                    lastDiscordSuccess = it.createdAt.toString()
+                }
+                discordEvents.firstOrNull { it.status == EventStatus.FAILURE }?.let {
+                    lastDiscordFailureEventAt = it.createdAt
+                    lastDiscordError = it.message
+                }
             } catch (_: Exception) { /* discord event fallback unavailable */ }
         }
 
@@ -237,14 +245,29 @@ class ClubAdministrationController(
                     it.state == PublicationState.RETRY_EXHAUSTED
             }
             .maxByOrNull(PublicationRecord::updatedAt)
+        val discordSuccessInstant = lastDiscordSuccessInstant
+        val discordFailureEventAt = lastDiscordFailureEventAt
+        val discordSuccessEpochSecond = discordSuccessInstant?.epochSecond
+        val activeUncertainDelivery = latestUncertainDelivery?.takeIf { record ->
+            discordSuccessEpochSecond == null || record.updatedAt > discordSuccessEpochSecond
+        }
+        val activeConfirmedDiscordFailure = latestConfirmedDiscordFailure?.takeIf { record ->
+            discordSuccessEpochSecond == null || record.updatedAt > discordSuccessEpochSecond
+        }
+        val activeDiscordEventError = lastDiscordError?.takeIf {
+            discordSuccessInstant == null ||
+                discordFailureEventAt == null ||
+                discordFailureEventAt.isAfter(discordSuccessInstant)
+        }
+        lastDiscordError = activeDiscordEventError
         if (lastDiscordError == null) {
-            lastDiscordError = latestConfirmedDiscordFailure?.lastError?.let(::sanitizeDiscordDiagnostic)
+            lastDiscordError = activeConfirmedDiscordFailure?.lastError?.let(::sanitizeDiscordDiagnostic)
         }
         val discordHealthReason = when {
-            latestUncertainDelivery != null -> "Entrega Discord incerta"
-            latestConfirmedDiscordFailure?.state == PublicationState.FAILED_TRANSIENT -> "Publicação Discord em nova tentativa"
-            latestConfirmedDiscordFailure?.state == PublicationState.FAILED_PERMANENT -> "Falha permanente no Discord"
-            latestConfirmedDiscordFailure?.state == PublicationState.RETRY_EXHAUSTED -> "Publicação Discord aguardando recuperação automática"
+            activeUncertainDelivery != null -> "Entrega Discord incerta"
+            activeConfirmedDiscordFailure?.state == PublicationState.FAILED_TRANSIENT -> "Publicação Discord em nova tentativa"
+            activeConfirmedDiscordFailure?.state == PublicationState.FAILED_PERMANENT -> "Falha permanente no Discord"
+            activeConfirmedDiscordFailure?.state == PublicationState.RETRY_EXHAUSTED -> "Publicação Discord aguardando recuperação automática"
             else -> null
         }
 
@@ -272,8 +295,8 @@ class ClubAdministrationController(
             discordConfigured = isDiscordDestinationResolvable(club),
             lastDiscordSuccess = lastDiscordSuccess,
             lastDiscordError = lastDiscordError,
-            lastDiscordUncertain = latestUncertainDelivery?.asDiscordUncertainDeliveryResponse(),
-            lastDiscordFailure = latestConfirmedDiscordFailure?.asDiscordPublicationFailureResponse(),
+            lastDiscordUncertain = activeUncertainDelivery?.asDiscordUncertainDeliveryResponse(),
+            lastDiscordFailure = activeConfirmedDiscordFailure?.asDiscordPublicationFailureResponse(),
             healthReason = discordHealthReason,
             healthIndicator = healthIndicator,
         )

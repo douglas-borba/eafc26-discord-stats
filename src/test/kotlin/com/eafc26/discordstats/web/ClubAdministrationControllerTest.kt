@@ -395,6 +395,55 @@ class ClubAdministrationControllerTest {
     }
 
     @Test
+    fun `status clears Discord warning after a later successful delivery`() {
+        val successAt = Instant.parse("2026-08-21T03:03:00Z")
+        whenever(acquisitionState.current(association.clubId)).thenReturn(com.eafc26.discordstats.service.AcquisitionState.idle())
+        whenever(pollingStatus.current(association.clubId)).thenReturn(
+            com.eafc26.discordstats.scheduler.PollingStatus(lastCheck = successAt),
+        )
+        whenever(latestMatch.presentation(association.clubId)).thenReturn(null)
+        whenever(eventRepository.findByClub(association.clubId, 50)).thenReturn(listOf(
+            OperationalEvent(
+                clubId = association.clubId,
+                matchId = "new-match",
+                eventType = "DISCORD",
+                phase = "DELIVERED",
+                status = EventStatus.SUCCESS,
+                createdAt = successAt,
+            ),
+            OperationalEvent(
+                clubId = association.clubId,
+                matchId = "old-match",
+                eventType = "DISCORD",
+                phase = "FAILED",
+                status = EventStatus.FAILURE,
+                message = "Origem: aquisição automática; HTTP 429",
+                createdAt = successAt.minusSeconds(60),
+            ),
+        ))
+        whenever(eventRepository.findLatestByClubAndType(association.clubId, "POLLING")).thenReturn(null)
+        whenever(publicationStore.loadRecords(association.clubId)).thenReturn(mapOf(
+            "old-match" to PublicationRecord(
+                matchId = "old-match",
+                state = PublicationState.RETRY_EXHAUSTED,
+                updatedAt = successAt.epochSecond - 60,
+                attemptCount = 5,
+                lastError = "HTTP 429: Too Many Requests",
+                lastHttpStatus = 429,
+            ),
+        ))
+
+        client.get().uri("/api/admin/clubs/1104972/status").exchange().expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.healthIndicator").isEqualTo("healthy")
+            .jsonPath("$.healthReason").doesNotExist()
+            .jsonPath("$.lastDiscordSuccess").isEqualTo(successAt.toString())
+            .jsonPath("$.lastDiscordError").doesNotExist()
+            .jsonPath("$.lastDiscordFailure").doesNotExist()
+            .jsonPath("$.lastDiscordUncertain").doesNotExist()
+    }
+
+    @Test
     fun `status redacts legacy webhook material from persisted publication diagnostics`() {
         whenever(acquisitionState.current(association.clubId)).thenReturn(com.eafc26.discordstats.service.AcquisitionState.idle())
         whenever(pollingStatus.current(association.clubId)).thenReturn(
