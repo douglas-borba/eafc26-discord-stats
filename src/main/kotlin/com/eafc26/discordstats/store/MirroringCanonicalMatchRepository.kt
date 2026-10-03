@@ -6,12 +6,14 @@ import com.eafc26.discordstats.application.repository.CanonicalRepositoryMetadat
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.GameVersion
+import com.eafc26.discordstats.application.repository.VersionedCanonicalMatchRepository
 import org.slf4j.LoggerFactory
 
 class MirroringCanonicalMatchRepository(
     private val primary: CanonicalMatchRepository,
     private val secondary: CanonicalMatchRepository,
-) : CanonicalMatchRepository {
+) : CanonicalMatchRepository, VersionedCanonicalMatchRepository {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -37,8 +39,20 @@ class MirroringCanonicalMatchRepository(
 
     override fun findLatestMatchId(clubId: ClubId): MatchId? = primary.findLatestMatchId(clubId)
 
+    override fun findLatestMatchId(clubId: ClubId, gameVersion: GameVersion): MatchId? =
+        (primary as? VersionedCanonicalMatchRepository)?.findLatestMatchId(clubId, gameVersion)
+            ?: primary.findLatestMatchId(clubId)
+
     override fun findExistingMatchIds(clubId: ClubId, candidateMatchIds: Collection<MatchId>): Set<MatchId> =
         primary.findExistingMatchIds(clubId, candidateMatchIds)
+
+    override fun findExistingMatchIds(
+        clubId: ClubId,
+        candidateMatchIds: Collection<MatchId>,
+        gameVersion: GameVersion,
+    ): Set<MatchId> =
+        (primary as? VersionedCanonicalMatchRepository)?.findExistingMatchIds(clubId, candidateMatchIds, gameVersion)
+            ?: primary.findExistingMatchIds(clubId, candidateMatchIds)
 
     override fun findRecentMatchIds(clubId: ClubId, limit: Int): List<MatchId> =
         primary.findRecentMatchIds(clubId, limit)

@@ -7,6 +7,7 @@ import com.eafc26.discordstats.ea.WindowedEaClubsGateway
 import com.eafc26.discordstats.ea.VersionedEaClubsGateway
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.application.repository.VersionedCanonicalMatchRepository
 import com.eafc26.discordstats.canonical.CanonicalMatch
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.MatchId
@@ -328,7 +329,9 @@ class MatchAcquisitionService(
         }
 
         val latestCanonicalMatchId = readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) {
-            canonicalMatchRepository.findLatestMatchId(clubId)
+            (canonicalMatchRepository as? VersionedCanonicalMatchRepository)
+                ?.findLatestMatchId(clubId, gameVersion)
+                ?: canonicalMatchRepository.findLatestMatchId(clubId)
         }
         if (latestCanonicalMatchId == null) {
             val window = props.ea.incrementalMaxWindow
@@ -349,7 +352,10 @@ class MatchAcquisitionService(
 
             val deduplicated = result.data.distinctBy { it.matchId }
             val knownIds = readOriginContext.withOrigin(CanonicalReadOrigin.POLLING_CHECKPOINT) {
-                canonicalMatchRepository.findExistingMatchIds(clubId, deduplicated.map { MatchId(it.matchId) })
+                val candidateIds = deduplicated.map { MatchId(it.matchId) }
+                (canonicalMatchRepository as? VersionedCanonicalMatchRepository)
+                    ?.findExistingMatchIds(clubId, candidateIds, gameVersion)
+                    ?: canonicalMatchRepository.findExistingMatchIds(clubId, candidateIds)
             }
             traceFetchedBatch(clubId, gameVersion, trigger, window, EaApiResult.Success(deduplicated), knownIds)
             val checkpointFound = knownIds.isNotEmpty()

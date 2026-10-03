@@ -90,6 +90,21 @@ class ClubAdministrationController(
         return present(monitoredClubs.setMonitoring(ClubId(clubId), request.enabled))
     }
 
+    @PatchMapping("/{clubId}/game-version", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun transitionGameVersion(
+        @PathVariable clubId: String,
+        @RequestBody request: GameVersionTransitionRequest,
+    ): AdminClubResponse {
+        requireClub(clubId)
+        val target = request.gameVersion
+            ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "gameVersion must be FC26 or FC27")
+        return try {
+            present(monitoredClubs.transitionGameVersion(ClubId(clubId), target))
+        } catch (exception: IllegalArgumentException) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, exception.message ?: "Invalid game version transition")
+        }
+    }
+
     @PutMapping("/{clubId}/discord", consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun configureDiscord(
         @PathVariable clubId: String,
@@ -316,6 +331,7 @@ data class RegisterClubRequest(
 )
 
 data class MonitoringRequest(val enabled: Boolean)
+data class GameVersionTransitionRequest(val gameVersion: GameVersion? = null)
 data class DiscordWebhookRequest(val webhookUrl: String)
 
 data class AdminClubResponse(

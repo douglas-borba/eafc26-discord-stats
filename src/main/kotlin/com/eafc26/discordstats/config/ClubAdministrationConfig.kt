@@ -91,6 +91,8 @@ private class LegacyLocalMonitoredClubRepository(initialClub: MonitoredClub) : M
     private val clubs = linkedMapOf(initialClub.clubId to initialClub)
 
     override fun save(club: MonitoredClub): MonitoredClub = club.also { clubs[it.clubId] = it }
+    override fun updateGameVersion(clubId: ClubId, gameVersion: com.eafc26.discordstats.domain.match.GameVersion, updatedAt: Instant): MonitoredClub? =
+        clubs[clubId]?.copy(gameVersion = gameVersion, updatedAt = updatedAt)?.also { clubs[clubId] = it }
     override fun findById(clubId: ClubId): MonitoredClub? = clubs[clubId]
     override fun findAll(): List<MonitoredClub> = clubs.values.toList()
     override fun existsById(clubId: ClubId): Boolean = clubId in clubs

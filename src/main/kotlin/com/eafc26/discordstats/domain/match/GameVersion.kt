@@ -11,6 +11,22 @@ enum class GameVersion {
     FC27,
     ;
 
+    /** The next supported EA contract generation, if one exists. */
+    fun nextGeneration(): GameVersion? = entries.getOrNull(ordinal + 1)
+
+    /**
+     * Validates an operational generation transition. The admin operation is
+     * intentionally forward-only so a downgrade cannot silently route future
+     * acquisitions back to an older EA contract.
+     */
+    fun transitionTo(target: GameVersion): GameVersion {
+        if (target == this) return this
+        require(target == nextGeneration()) {
+            "Game version transition from $name to ${target.name} is not allowed"
+        }
+        return target
+    }
+
     /** FC27 transport is known, but its FC26 advanced-code semantics are not. */
     fun supportsRevalidatedAdvancedStats(): Boolean = this == FC26
 

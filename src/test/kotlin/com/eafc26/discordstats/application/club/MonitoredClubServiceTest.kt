@@ -2,6 +2,7 @@ package com.eafc26.discordstats.application.club
 
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
+import com.eafc26.discordstats.domain.match.GameVersion
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -63,6 +64,43 @@ class MonitoredClubServiceTest {
     fun `raw webhook URLs cannot become persistent references`() {
         assertThatThrownBy { DiscordWebhookSecretReference("https://discord.com/api/webhooks/id/token") }
             .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `forward game version transition changes only operational version`() {
+        val original = service.register(
+            ClubId("1104972"),
+            ClubName("Associação BF"),
+            EaPlatform("common-gen5"),
+            monitoringEnabled = false,
+            gameVersion = GameVersion.FC26,
+        )
+        val configured = service.configureWebhook(original.clubId, DiscordWebhookSecretReference("vault:association"))
+            .copy(accessStatus = ClubAccessStatus.TRIAL)
+            .also(repository::save)
+
+        val transitioned = service.transitionGameVersion(configured.clubId, GameVersion.FC27)
+
+        assertThat(transitioned.gameVersion).isEqualTo(GameVersion.FC27)
+        assertThat(transitioned.clubId).isEqualTo(configured.clubId)
+        assertThat(transitioned.displayName).isEqualTo(configured.displayName)
+        assertThat(transitioned.platform).isEqualTo(configured.platform)
+        assertThat(transitioned.monitoringEnabled).isEqualTo(configured.monitoringEnabled)
+        assertThat(transitioned.discordWebhookSecretReference).isEqualTo(configured.discordWebhookSecretReference)
+        assertThat(transitioned.accessStatus).isEqualTo(configured.accessStatus)
+        assertThat(transitioned.createdAt).isEqualTo(configured.createdAt)
+        assertThat(transitioned.updatedAt).isEqualTo(instant)
+    }
+
+    @Test
+    fun `downgrade is rejected and unknown club is not created`() {
+        val club = service.register(ClubId("1104972"), ClubName("Associação BF"), EaPlatform("common-gen5"), gameVersion = GameVersion.FC27)
+
+        assertThatThrownBy { service.transitionGameVersion(club.clubId, GameVersion.FC26) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { service.transitionGameVersion(ClubId("missing"), GameVersion.FC27) }
+            .isInstanceOf(NoSuchElementException::class.java)
+        assertThat(repository.findAll()).containsExactly(club)
     }
 }
 

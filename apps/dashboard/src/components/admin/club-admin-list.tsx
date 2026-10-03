@@ -121,6 +121,7 @@ export function ClubAdminList() {
                 </div>
                 <dl className="grid grid-cols-2 gap-3 text-sm">
                   <div><dt className="text-xs text-muted">Discord</dt><dd className="mt-0.5 text-text-soft">{discordStatusLabel(club)}</dd></div>
+                  <div><dt className="text-xs text-muted">Versão operacional</dt><dd className="mt-0.5 text-text-soft">{club.gameVersion}</dd></div>
                   <div><dt className="text-xs text-muted">Monitoramento</dt><dd className="mt-0.5 text-text-soft">{monitoringLabel(club)}</dd></div>
                   <div><dt className="text-xs text-muted">Última aquisição</dt><dd className={`mt-0.5 ${status?.acquisitionStatus === "FAILED" ? "text-loss" : "text-text-soft"}`}>{status ? acquisitionLabel(status.acquisitionStatus) : "Carregando…"}</dd></div>
                   <div className="col-span-2"><dt className="text-xs text-muted">Última atividade</dt><dd className="mt-0.5 text-text-soft">{formatActivity(status)}</dd></div>

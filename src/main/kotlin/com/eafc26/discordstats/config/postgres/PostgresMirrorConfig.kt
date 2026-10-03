@@ -154,10 +154,12 @@ class PostgresMirrorConfig {
         canonicalMatchRepository: CanonicalMatchRepository,
         explorerObservationRepository: ExplorerObservationRepository,
         controlledObservationRepository: ControlledObservationRepository,
+        monitoredClubRepository: MonitoredClubRepository,
     ): AdvancedStatsExplorerService = AdvancedStatsExplorerService(
         canonicalMatchRepository,
         observationRepository = explorerObservationRepository,
         controlledObservationRepository = controlledObservationRepository,
+        monitoredClubRepository = monitoredClubRepository,
     )
 
     @Bean

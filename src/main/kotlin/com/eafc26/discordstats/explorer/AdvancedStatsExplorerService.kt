@@ -1,6 +1,7 @@
 package com.eafc26.discordstats.explorer
 
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.application.club.MonitoredClubRepository
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.domain.match.MatchId
@@ -19,6 +20,7 @@ class AdvancedStatsExplorerService(
     private val objectMapper: ObjectMapper = jacksonObjectMapper(),
     private val observationRepository: ExplorerObservationRepository = InMemoryExplorerObservationRepository(),
     private val controlledObservationRepository: ControlledObservationRepository = InMemoryControlledObservationRepository(),
+    private val monitoredClubRepository: MonitoredClubRepository? = null,
 ) {
 
     data class MatchSummary(
@@ -389,7 +391,7 @@ class AdvancedStatsExplorerService(
     )
 
     fun recentMatches(clubId: ClubId, limit: Int = 20): List<MatchSummary> {
-        val matches = matchRepository.findRecent(clubId, limit)
+        val matches = operationalRecent(clubId, limit)
         return matches.map { canonical ->
             val perspectiveClubId = canonical.interpretation.perspectiveClubId.value
             val opponent = canonical.footballMatch.participants
@@ -442,7 +444,7 @@ class AdvancedStatsExplorerService(
     }
 
     fun exportData(clubId: ClubId, limit: Int = 20): List<Map<String, Any?>> {
-        val matches = matchRepository.findRecent(clubId, limit)
+        val matches = operationalRecent(clubId, limit)
         val rows = mutableListOf<Map<String, Any?>>()
         for (canonical in matches) {
             val perspectiveClubId = canonical.interpretation.perspectiveClubId.value
@@ -468,7 +470,7 @@ class AdvancedStatsExplorerService(
      * EMPTY remain distinguishable from PRESENT.
      */
     fun exportUnknownFieldsCsvData(clubId: ClubId, limit: Int = 20): List<Map<String, Any?>> {
-        val matches = matchRepository.findRecent(clubId, limit)
+        val matches = operationalRecent(clubId, limit)
         val rows = mutableListOf<Map<String, Any?>>()
         for (canonical in matches) {
             val perspectiveClubId = canonical.interpretation.perspectiveClubId.value
@@ -529,7 +531,7 @@ class AdvancedStatsExplorerService(
     ): DiscoveryData {
         // Scan at most twice the requested RAW window. Historical records with
         // no RAW transport data are excluded, but never treated as zeroes.
-        val matches = matchRepository.findRecent(clubId, (limit * DISCOVERY_SCAN_MULTIPLIER).coerceAtMost(MAX_DISCOVERY_CANONICAL_MATCHES))
+        val matches = operationalRecent(clubId, (limit * DISCOVERY_SCAN_MULTIPLIER).coerceAtMost(MAX_DISCOVERY_CANONICAL_MATCHES))
             .filter(::hasRawAggregateCoverage)
             .take(limit)
         val samples = matches.flatMap { canonical -> discoverySamples(clubId, canonical) }
@@ -583,7 +585,7 @@ class AdvancedStatsExplorerService(
         NovelMetricDiscoveryEngine().detail(boundedDiscoverySamples(clubId, limit), aggregateIndex, code)
 
     fun positionObservations(clubId: ClubId, playerId: String, limit: Int = 20): PositionObservationsData {
-        val rows = matchRepository.findRecent(clubId, limit).mapNotNull { canonical ->
+        val rows = operationalRecent(clubId, limit).mapNotNull { canonical ->
             val perspective = canonical.interpretation.perspectiveClubId
             val player = canonical.footballMatch.participants.firstOrNull { it.club.id == perspective }
                 ?.players?.firstOrNull { it.player.id.value == playerId } ?: return@mapNotNull null
@@ -1432,7 +1434,7 @@ class AdvancedStatsExplorerService(
     }
 
     private fun boundedDiscoverySamples(clubId: ClubId, limit: Int): List<AdvancedStatsDiscoveryEngine.AggregateSample> {
-        val matches = matchRepository.findRecent(clubId, (limit * DISCOVERY_SCAN_MULTIPLIER).coerceAtMost(MAX_DISCOVERY_CANONICAL_MATCHES))
+        val matches = operationalRecent(clubId, (limit * DISCOVERY_SCAN_MULTIPLIER).coerceAtMost(MAX_DISCOVERY_CANONICAL_MATCHES))
             .filter(::hasRawAggregateCoverage)
             .take(limit)
         return matches.flatMap { canonical -> discoverySamples(clubId, canonical) }
@@ -1801,7 +1803,18 @@ class AdvancedStatsExplorerService(
      * its FC27 canonical match exists.
      */
     private fun gameVersionForClub(clubId: ClubId): GameVersion =
-        matchRepository.findRecent(clubId, 1).firstOrNull()?.let(::canonicalGameVersion) ?: GameVersion.FC26
+        monitoredClubRepository?.findById(clubId)?.gameVersion
+            ?: matchRepository.findRecent(clubId, 1).firstOrNull()?.let(::canonicalGameVersion)
+            ?: GameVersion.FC26
+
+    /** Explorer reads are operationally scoped; FC26 evidence is not a fallback for FC27. */
+    private fun operationalRecent(clubId: ClubId, limit: Int): List<CanonicalMatch> {
+        require(limit >= 0) { "limit must be non-negative" }
+        val gameVersion = gameVersionForClub(clubId)
+        return matchRepository.findRecent(clubId, limit)
+            .filter { canonicalGameVersion(it) == gameVersion }
+            .take(limit)
+    }
 
     private fun gameVersionForMatch(
         clubId: ClubId,

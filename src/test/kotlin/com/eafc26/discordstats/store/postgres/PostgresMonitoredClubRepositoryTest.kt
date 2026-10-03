@@ -9,6 +9,7 @@ import com.eafc26.discordstats.application.club.MonitoredClub
 import com.eafc26.discordstats.application.club.MonitoredClubService
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.store.PostgresMonitoredClubRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
@@ -107,6 +108,26 @@ class PostgresMonitoredClubRepositoryTest {
 
         assertThat(repository.findById(original.clubId)).isEqualTo(updated)
         assertThat(repository.findAll()).hasSize(1)
+    }
+
+    @Test
+    fun `game version transition updates only monitored club operational context`() {
+        val original = club("1104972", "Associação BF", enabled = false, reference = "vault:association")
+            .copy(accessStatus = com.eafc26.discordstats.application.club.ClubAccessStatus.TRIAL)
+        repository.save(original)
+        val changedAt = Instant.parse("2026-08-09T12:05:00Z")
+
+        val transitioned = repository.updateGameVersion(original.clubId, GameVersion.FC27, changedAt)!!
+
+        assertThat(transitioned.gameVersion).isEqualTo(GameVersion.FC27)
+        assertThat(transitioned.clubId).isEqualTo(original.clubId)
+        assertThat(transitioned.displayName).isEqualTo(original.displayName)
+        assertThat(transitioned.platform).isEqualTo(original.platform)
+        assertThat(transitioned.monitoringEnabled).isEqualTo(original.monitoringEnabled)
+        assertThat(transitioned.discordWebhookSecretReference).isEqualTo(original.discordWebhookSecretReference)
+        assertThat(transitioned.accessStatus).isEqualTo(original.accessStatus)
+        assertThat(transitioned.createdAt).isEqualTo(original.createdAt)
+        assertThat(transitioned.updatedAt).isEqualTo(changedAt)
     }
 
     private fun club(id: String, name: String, enabled: Boolean, reference: String?) = MonitoredClub(

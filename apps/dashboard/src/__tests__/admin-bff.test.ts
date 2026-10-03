@@ -6,6 +6,7 @@ import { GET as listClubs, POST as createClub } from "@/app/api/admin/clubs/rout
 import { GET as searchClubs } from "@/app/api/admin/clubs/search/route";
 import { GET as getClub, DELETE as deleteClub } from "@/app/api/admin/clubs/[clubId]/route";
 import { PATCH as updateMonitoring } from "@/app/api/admin/clubs/[clubId]/monitoring/route";
+import { PATCH as updateGameVersion } from "@/app/api/admin/clubs/[clubId]/game-version/route";
 import { PUT as configureDiscord, DELETE as removeDiscord } from "@/app/api/admin/clubs/[clubId]/discord/route";
 import { GET as getStatus } from "@/app/api/admin/clubs/[clubId]/status/route";
 import { GET as getSystemHealth } from "@/app/api/admin/system/health/route";
@@ -99,6 +100,22 @@ describe("administrative BFF", () => {
 
     expect(response.status).toBe(200);
     expect(fetchMock.mock.calls[1][0]).toBe("https://spring.example.test/api/admin/clubs/8874106/monitoring");
+    expect((fetchMock.mock.calls[1][1].headers as Headers).get("X-XSRF-TOKEN")).toBe("server-token");
+  });
+
+  it("proxies the explicit game-version transition with CSRF", async () => {
+    const body = '{"gameVersion":"FC27"}';
+    const fetchMock = vi.fn().mockResolvedValueOnce(csrf()).mockResolvedValueOnce(json({ clubId: "1104972", gameVersion: "FC27" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await updateGameVersion(new Request("https://dashboard.test", { method: "PATCH", body }), {
+      params: Promise.resolve({ clubId: "1104972" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(fetchMock.mock.calls[1][0]).toBe("https://spring.example.test/api/admin/clubs/1104972/game-version");
+    expect(fetchMock.mock.calls[1][1].method).toBe("PATCH");
+    expect(fetchMock.mock.calls[1][1].body).toBe(body);
     expect((fetchMock.mock.calls[1][1].headers as Headers).get("X-XSRF-TOKEN")).toBe("server-token");
   });
 

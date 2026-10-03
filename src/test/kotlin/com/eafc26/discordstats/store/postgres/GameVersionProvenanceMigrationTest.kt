@@ -118,6 +118,22 @@ class GameVersionProvenanceMigrationTest {
             ),
         ).isEqualTo("FC26")
 
+        // The operational transition is deliberately independent from the
+        // provenance already stored in every historical table.
+        jdbc.update("UPDATE monitored_clubs SET game_version = 'FC27' WHERE club_id = ?", "11262883")
+        assertThat(
+            jdbc.queryForObject("SELECT game_version FROM monitored_clubs WHERE club_id = ?", String::class.java, "11262883"),
+        ).isEqualTo("FC27")
+        assertThat(
+            jdbc.queryForObject("SELECT game_version FROM canonical_matches WHERE club_id = ? AND match_id = ?", String::class.java, "11262883", "legacy-match"),
+        ).isEqualTo("FC26")
+        assertThat(
+            jdbc.queryForObject("SELECT game_version FROM player_match_stats WHERE club_id = ? AND match_id = ?", String::class.java, "11262883", "legacy-match"),
+        ).isEqualTo("FC26")
+        assertThat(
+            jdbc.queryForObject("SELECT game_version FROM explorer_observations WHERE club_id = ? AND match_id = ?", String::class.java, "11262883", "legacy-match"),
+        ).isEqualTo("FC26")
+
         assertThat(primaryKeyColumns(jdbc, "canonical_matches"))
             .containsExactly("game_version", "club_id", "match_id")
         assertThat(primaryKeyColumns(jdbc, "player_match_stats"))

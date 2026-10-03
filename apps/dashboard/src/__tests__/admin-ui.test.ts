@@ -127,6 +127,17 @@ describe("multi-club administration UI", () => {
     expect(detail).toContain("acquisitionLabel(status?.acquisitionStatus)");
   });
 
+  it("offers a confirmed forward-only game-version transition and preserves historical provenance in the copy", () => {
+    const detail = read("components/admin/club-admin-detail.tsx");
+    expect(detail).toContain('label="Versão operacional"');
+    expect(detail).toContain("Migrar para FC27");
+    expect(detail).toContain("setConfirmGameVersionTransition(true)");
+    expect(detail).toContain('method: "PATCH"');
+    expect(detail).toContain('gameVersion: "FC27"');
+    expect(detail).toContain("As partidas históricas FC26 serão preservadas");
+    expect(detail).toContain("não oferece downgrade");
+  });
+
   it("keeps uncertain Discord delivery visible and explains warning health locally", () => {
     const detail = read("components/admin/club-admin-detail.tsx");
     const types = read("lib/admin/types.ts");

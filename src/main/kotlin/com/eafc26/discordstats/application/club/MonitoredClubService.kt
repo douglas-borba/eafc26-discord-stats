@@ -46,6 +46,18 @@ class MonitoredClubService(
     fun removeWebhook(clubId: ClubId): MonitoredClub =
         update(clubId) { current -> current.copy(discordWebhookSecretReference = null) }
 
+    /**
+     * Changes only the operational EA contract for future acquisitions.
+     * Historical records are keyed by their own provenance and are untouched.
+     */
+    fun transitionGameVersion(clubId: ClubId, targetGameVersion: GameVersion): MonitoredClub {
+        val current = repository.findById(clubId) ?: throw NoSuchElementException("Monitored club not found")
+        val validatedTarget = current.gameVersion.transitionTo(targetGameVersion)
+        if (validatedTarget == current.gameVersion) return current
+        return repository.updateGameVersion(clubId, validatedTarget, Instant.now(clock))
+            ?: throw NoSuchElementException("Monitored club not found")
+    }
+
     fun remove(clubId: ClubId): MonitoredClub {
         val club = repository.findById(clubId) ?: throw NoSuchElementException("Monitored club not found")
         repository.deleteById(clubId)

@@ -5,6 +5,9 @@ import com.eafc26.discordstats.config.EaProperties
 import com.eafc26.discordstats.config.PhraseBank
 import com.eafc26.discordstats.config.PollingProperties
 import com.eafc26.discordstats.application.repository.CanonicalMatchRepository
+import com.eafc26.discordstats.application.club.MonitoredClub
+import com.eafc26.discordstats.application.club.MonitoredClubRepository
+import com.eafc26.discordstats.application.club.EaPlatform
 import com.eafc26.discordstats.discord.DiscordDeliveryException
 import com.eafc26.discordstats.discord.DiscordRenderer
 import com.eafc26.discordstats.discord.DiscordWebhookClient
@@ -14,12 +17,15 @@ import com.eafc26.discordstats.llm.LlmProperties
 import com.eafc26.discordstats.ea.EaApiResult
 import com.eafc26.discordstats.ea.EaClubsGateway
 import com.eafc26.discordstats.ea.WindowedEaClubsGateway
+import com.eafc26.discordstats.ea.VersionedEaClubsGateway
 import com.eafc26.discordstats.ea.model.ClubDetails
 import com.eafc26.discordstats.ea.model.ClubMatchEntry
 import com.eafc26.discordstats.ea.model.MatchResponse
 import com.eafc26.discordstats.ea.model.MemberStats
 import com.eafc26.discordstats.ea.model.PlayerEntry
 import com.eafc26.discordstats.domain.match.ClubId
+import com.eafc26.discordstats.domain.match.ClubName
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.domain.match.MatchId
 import com.eafc26.discordstats.presentation.MatchSummaryBuilder
 import com.eafc26.discordstats.store.PublicationRecord
@@ -49,6 +55,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import java.time.Instant
 
 class MatchAcquisitionServiceTest {
 
@@ -63,6 +70,7 @@ class MatchAcquisitionServiceTest {
     private lateinit var editorialPresentationService: com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationService
     private lateinit var synchronizationGapStore: InMemorySynchronizationGapStore
     private lateinit var acquisitionTelemetry: RecordingAcquisitionTelemetry
+    private var monitoredClubRepository: MonitoredClubRepository? = null
 
     private val clubId = "12345"
 
@@ -94,6 +102,7 @@ class MatchAcquisitionServiceTest {
             LlmEditorialService(EditorialContextBuilder(), null, mock(), LlmProperties(enabled = false)),
             synchronizationGapStore = synchronizationGapStore,
             acquisitionTelemetry = acquisitionTelemetry,
+            monitoredClubRepository = monitoredClubRepository,
         )
     }
 
@@ -208,6 +217,17 @@ class MatchAcquisitionServiceTest {
         }
     }
 
+    private class VersionedWindowedGateway(private val response: List<MatchResponse>) : VersionedEaClubsGateway {
+        val versions = mutableListOf<GameVersion>()
+        override fun searchClubs(clubName: String) = EaApiResult.Success(emptyList<com.eafc26.discordstats.ea.model.ClubSearchResult>())
+        override fun getLatestMatches(clubId: String): EaApiResult<List<MatchResponse>> = error("version is required")
+        override fun getLatestMatches(clubId: String, maxResultCount: Int): EaApiResult<List<MatchResponse>> = error("version is required")
+        override fun getLatestMatches(clubId: String, maxResultCount: Int, gameVersion: GameVersion): EaApiResult<List<MatchResponse>> {
+            versions += gameVersion
+            return EaApiResult.Success(response)
+        }
+    }
+
     private class RecordingAcquisitionTelemetry : AcquisitionTelemetry {
         val batches = mutableListOf<AcquisitionBatchTelemetry>()
         val rejected = mutableListOf<NormalizationRejectedTelemetry>()
@@ -220,6 +240,33 @@ class MatchAcquisitionServiceTest {
 
     @Nested
     inner class IncrementalSchedulerSynchronization {
+        @Test
+        fun `transitioned monitored club sends FC27 to gateway and stores FC27 provenance`() {
+            val activeClub = MonitoredClub(
+                clubId = LEGACY_TEST_CLUB,
+                displayName = ClubName("Associação BF"),
+                platform = EaPlatform("common-gen5"),
+                monitoringEnabled = true,
+                discordWebhookSecretReference = null,
+                createdAt = Instant.parse("2026-08-09T12:00:00Z"),
+                updatedAt = Instant.parse("2026-08-09T12:05:00Z"),
+                gameVersion = GameVersion.FC27,
+            )
+            monitoredClubRepository = mock()
+            whenever(monitoredClubRepository!!.findById(LEGACY_TEST_CLUB)).thenReturn(activeClub)
+            service = makeService()
+            stubStore()
+            stubCanonicalHistory(LEGACY_TEST_CLUB, emptySet())
+            val gateway = VersionedWindowedGateway(listOf(match("fc27-new", 200, ownerClubId = LEGACY_TEST_CLUB.value)))
+
+            service.acquire(LEGACY_TEST_CLUB, AcquisitionTrigger.SCHEDULER, gateway)
+
+            assertThat(gateway.versions).containsExactly(GameVersion.FC27)
+            val saved = argumentCaptor<com.eafc26.discordstats.canonical.CanonicalMatch>()
+            verify(canonicalMatchRepository).save(saved.capture())
+            assertThat(saved.firstValue.gameVersion).isEqualTo(GameVersion.FC27)
+        }
+
         @Test
         fun `canonical empty preserves first run window semantics`() {
             val latest = match("latest", 200)

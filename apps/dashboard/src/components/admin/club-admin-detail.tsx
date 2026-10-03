@@ -35,6 +35,7 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
   );
   const [refreshing, setRefreshing] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmGameVersionTransition, setConfirmGameVersionTransition] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showEvents, setShowEvents] = useState(false);
   const [recentMatches, setRecentMatches] = useState<AdminMatchSummary[]>([]);
@@ -107,6 +108,17 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
       setError(reason instanceof Error ? reason.message : "Não foi possível remover o clube.");
       setBusy(false);
     }
+  }
+
+  async function transitionGameVersion() {
+    setConfirmGameVersionTransition(false);
+    await mutate(async () => {
+      await adminRequest<AdminClub>(`/api/admin/clubs/${clubId}/game-version`, {
+        method: "PATCH",
+        body: JSON.stringify({ gameVersion: "FC27" }),
+      });
+      setSuccess("Clube migrado para FC27. O histórico FC26 foi preservado.");
+    });
   }
 
   async function mutate(operation: () => Promise<void>) {
@@ -225,6 +237,28 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
         </div>
       )}
 
+      {confirmGameVersionTransition && club.gameVersion === "FC26" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Panel className="w-full max-w-md space-y-4">
+            <h2 className="text-lg font-semibold text-text-primary">Migrar para FC27</h2>
+            <p className="text-sm text-text-soft">
+              Migrar <strong>{club.displayName}</strong> de FC26 para FC27?
+            </p>
+            <p className="text-sm text-muted">
+              As partidas históricas FC26 serão preservadas. Novas aquisições deste clube serão registradas como FC27.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={() => setConfirmGameVersionTransition(false)} className="min-h-10 flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-soft hover:bg-surface-raised">
+                Cancelar
+              </button>
+              <button type="button" disabled={busy} onClick={() => void transitionGameVersion()} className="min-h-10 flex-1 rounded-lg bg-accent-strong px-4 py-2 text-sm font-semibold text-white hover:bg-accent disabled:opacity-50">
+                {busy ? "Migrando…" : "Migrar para FC27"}
+              </button>
+            </div>
+          </Panel>
+        </div>
+      )}
+
       {confirmPublication && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <Panel className="w-full max-w-md space-y-4">
@@ -246,6 +280,7 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
           <h2 className="font-semibold text-text-primary">Operação</h2>
           <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
             <Status label="Monitoramento" value={monitoringLabel(club)} />
+            <Status label="Versão operacional" value={club.gameVersion} />
             <Status label="Polling" value={pollingLabel(status?.pollingStatus)} />
             <Status label="Última aquisição" value={acquisitionLabel(status?.acquisitionStatus)} tone={status?.acquisitionStatus === "FAILED" ? "error" : undefined} />
             <Status label="Último polling" value={formatDate(status?.lastPollAt)} />
@@ -286,6 +321,23 @@ export function ClubAdminDetail({ clubId }: { clubId: string }) {
           <p className="mt-4 text-xs text-muted">O webhook atual nunca é exibido. Para trocar, informe uma nova URL.</p>
         </Panel>
       </div>
+
+      <Panel className="mt-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="font-semibold text-text-primary">Geração do jogo</h2>
+            <p className="mt-1 text-sm text-muted">
+              A versão define a origem das próximas aquisições. O histórico já persistido mantém sua própria proveniência.
+            </p>
+          </div>
+          {club.gameVersion === "FC26" && (
+            <button type="button" disabled={busy} onClick={() => setConfirmGameVersionTransition(true)} className="min-h-10 shrink-0 rounded-lg border border-accent/50 px-4 py-2 text-sm font-semibold text-accent hover:bg-accent/10 disabled:opacity-50">
+              Migrar para FC27
+            </button>
+          )}
+        </div>
+        {club.gameVersion === "FC27" && <p className="mt-3 text-xs text-muted">FC27 é a versão operacional atual. A operação normal não oferece downgrade.</p>}
+      </Panel>
 
       <Panel className="mt-6">
         <h2 className="font-semibold text-text-primary">Operações</h2>

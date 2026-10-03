@@ -9,6 +9,7 @@ import com.eafc26.discordstats.domain.match.ClubName
 import com.eafc26.discordstats.domain.match.CompetitionType
 import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.domain.match.Score
 import java.time.Instant
 
@@ -100,6 +101,16 @@ interface CanonicalMatchRepository {
     }
 
     fun metadata(clubId: ClubId): CanonicalRepositoryMetadata
+}
+
+/** Optional persistence capability for operational reads that must stay inside one EA contract era. */
+interface VersionedCanonicalMatchRepository {
+    fun findLatestMatchId(clubId: ClubId, gameVersion: GameVersion): MatchId?
+    fun findExistingMatchIds(
+        clubId: ClubId,
+        candidateMatchIds: Collection<MatchId>,
+        gameVersion: GameVersion,
+    ): Set<MatchId>
 }
 
 data class CanonicalRepositoryMetadata(

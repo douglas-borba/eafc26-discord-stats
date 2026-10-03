@@ -12,6 +12,8 @@ import com.eafc26.discordstats.domain.match.CompetitionType
 import com.eafc26.discordstats.domain.match.MatchCompletion
 import com.eafc26.discordstats.domain.match.MatchCompletionStatus
 import com.eafc26.discordstats.domain.match.MatchId
+import com.eafc26.discordstats.domain.match.GameVersion
+import com.eafc26.discordstats.application.repository.VersionedCanonicalMatchRepository
 import com.eafc26.discordstats.domain.match.Score
 import com.eafc26.discordstats.domain.interpretation.MatchOutcome
 import com.eafc26.discordstats.diagnostics.CanonicalReadDiagnostics
@@ -28,7 +30,7 @@ class PostgresCanonicalMatchRepository(
     sourceMapper: ObjectMapper,
     private val readDiagnostics: CanonicalReadDiagnostics = CanonicalReadDiagnostics(),
     private val readOriginContext: CanonicalReadOriginContext = CanonicalReadOriginContext(),
-) : CanonicalMatchRepository {
+) : CanonicalMatchRepository, VersionedCanonicalMatchRepository {
 
     private val objectMapper = CanonicalObjectMapperFactory.create(sourceMapper)
 
@@ -198,6 +200,13 @@ class PostgresCanonicalMatchRepository(
         return results.firstOrNull()?.let(::MatchId)
     }
 
+    override fun findLatestMatchId(clubId: ClubId, gameVersion: GameVersion): MatchId? = jdbcTemplate.query(
+        "SELECT match_id FROM canonical_matches WHERE game_version = ? AND club_id = ? ORDER BY played_at DESC, match_id ASC LIMIT 1",
+        { rs, _ -> rs.getString("match_id") },
+        gameVersion.name,
+        clubId.value,
+    ).firstOrNull()?.let(::MatchId)
+
     override fun findExistingMatchIds(clubId: ClubId, candidateMatchIds: Collection<MatchId>): Set<MatchId> {
         val candidates = candidateMatchIds.map { it.value }.distinct()
         if (candidates.isEmpty()) {
@@ -226,6 +235,25 @@ class PostgresCanonicalMatchRepository(
         return candidateMatchIds.asSequence()
             .distinct()
             .filter { it.value in existing }
+            .toCollection(linkedSetOf())
+    }
+
+    override fun findExistingMatchIds(
+        clubId: ClubId,
+        candidateMatchIds: Collection<MatchId>,
+        gameVersion: GameVersion,
+    ): Set<MatchId> {
+        val candidates = candidateMatchIds.map { it.value }.distinct()
+        if (candidates.isEmpty()) return emptySet()
+        val placeholders = candidates.joinToString(", ") { "?" }
+        val results = jdbcTemplate.query(
+            "SELECT match_id FROM canonical_matches WHERE game_version = ? AND club_id = ? AND match_id IN ($placeholders)",
+            { rs, _ -> rs.getString("match_id") },
+            *arrayOf(gameVersion.name, clubId.value, *candidates.toTypedArray()),
+        ).toSet()
+        return candidateMatchIds.asSequence()
+            .distinct()
+            .filter { it.value in results }
             .toCollection(linkedSetOf())
     }
 

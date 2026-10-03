@@ -11,11 +11,12 @@ webhook URLs and opaque secret references are never returned.
 | GET | `/api/admin/clubs/search?query=...` | — | EA selection candidates | `400` blank query, `502` EA unavailable |
 | POST | `/api/admin/clubs` | `clubId`, `displayName`, `platform`, optional `monitoringEnabled` | idempotent club summary | `400` invalid body, `403` missing CSRF |
 | PATCH | `/api/admin/clubs/{clubId}/monitoring` | `enabled` | updated summary | `404`, `403` |
+| PATCH | `/api/admin/clubs/{clubId}/game-version` | `gameVersion` (`FC27`) | updated summary | `400`, `404`, `409`, `403` |
 | PUT | `/api/admin/clubs/{clubId}/discord` | `webhookUrl` | updated summary | `400` invalid URL, `404`, `403` |
 | DELETE | `/api/admin/clubs/{clubId}/discord` | — | updated summary | `404`, `403` |
 | GET | `/api/admin/clubs/{clubId}/status` | — | scoped operational status | `404` unknown club |
 
-Club summaries contain `clubId`, `displayName`, `platform`, `monitoringEnabled`
+Club summaries contain `clubId`, `displayName`, `platform`, `gameVersion`, `monitoringEnabled`
 and `discordConfigured`. Search candidates additionally contain the optional EA
 `currentDivision`. Operational status combines the existing polling, acquisition
 and latest-match in-memory states without adding a second status persistence.
@@ -23,6 +24,13 @@ and latest-match in-memory states without adding a second status persistence.
 Mutations use the existing cookie-based CSRF mechanism (`XSRF-TOKEN` cookie and
 `X-XSRF-TOKEN` header). Registration and monitoring changes are observed by the
 next coordinator cycle; no process restart or environment change is required.
+
+Game-version changes are explicit forward-only transitions. The current supported
+transition is `FC26 → FC27`; a downgrade is rejected with `409 Conflict`. The
+operation updates only `monitored_clubs.game_version` and `updated_at`, preserving
+the club identity, default status, monitoring flag, polling settings and Discord
+secret reference. Canonical matches, player stats, publication state, explorer
+observations and other historical tables are not updated.
 
 Webhook configuration is optional. The raw URL is validated and stored by the
 secret store. `monitored_clubs.discord_webhook_secret_ref` contains only an opaque
@@ -42,6 +50,10 @@ The initial management interface is available at:
 - `/admin/clubs`: deterministic list, operational summary and monitoring toggle;
 - `/admin/clubs/new`: EA search, candidate selection and explicit registration;
 - `/admin/clubs/{clubId}`: scoped status, monitoring and optional Discord setup.
+
+The club detail page shows the operational game version and, while the club is on
+FC26, exposes a confirmed “Migrar para FC27” action. Once migrated, the action is
+not replaced by a casual downgrade control.
 
 The existing webhook is never retrieved. Reconfiguration requires a new URL and
 removal is an explicit operation.

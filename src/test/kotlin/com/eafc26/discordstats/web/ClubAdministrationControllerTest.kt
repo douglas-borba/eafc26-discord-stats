@@ -13,6 +13,7 @@ import com.eafc26.discordstats.discord.DiscordWebhookSecretStore
 import com.eafc26.discordstats.presentation.editorial.MatchEditorialPresentationRepository
 import com.eafc26.discordstats.domain.match.ClubId
 import com.eafc26.discordstats.domain.match.ClubName
+import com.eafc26.discordstats.domain.match.GameVersion
 import com.eafc26.discordstats.scheduler.PollingStatusHolder
 import com.eafc26.discordstats.security.SecurityConfig
 import com.eafc26.discordstats.service.AcquisitionStateHolder
@@ -35,6 +36,7 @@ import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
+import org.springframework.http.HttpStatus
 import org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.csrf
 import org.springframework.test.web.reactive.server.WebTestClient
 import org.springframework.test.context.TestPropertySource
@@ -143,6 +145,36 @@ class ClubAdministrationControllerTest {
             .contentType(MediaType.APPLICATION_JSON).bodyValue(mapOf("enabled" to true))
             .exchange().expectStatus().isNotFound
         verify(monitoredClubs, never()).setMonitoring(ClubId("999"), true)
+    }
+
+    @Test
+    fun `default club can transition to FC27 without losing default identity`() {
+        val transitioned = association.copy(gameVersion = GameVersion.FC27)
+        whenever(monitoredClubs.transitionGameVersion(association.clubId, GameVersion.FC27)).thenReturn(transitioned)
+
+        client.mutateWith(csrf()).patch().uri("/api/admin/clubs/1104972/game-version")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(mapOf("gameVersion" to "FC27"))
+            .exchange().expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.clubId").isEqualTo("1104972")
+            .jsonPath("$.gameVersion").isEqualTo("FC27")
+            .jsonPath("$.isDefault").isEqualTo(true)
+            .jsonPath("$.monitoringEnabled").isEqualTo(true)
+            .jsonPath("$.discordConfigured").isEqualTo(true)
+
+        verify(monitoredClubs).transitionGameVersion(association.clubId, GameVersion.FC27)
+    }
+
+    @Test
+    fun `invalid game version transition returns conflict`() {
+        whenever(monitoredClubs.transitionGameVersion(association.clubId, GameVersion.FC26))
+            .thenThrow(IllegalArgumentException("Game version transition is not allowed"))
+
+        client.mutateWith(csrf()).patch().uri("/api/admin/clubs/1104972/game-version")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(mapOf("gameVersion" to "FC26"))
+            .exchange().expectStatus().isEqualTo(HttpStatus.CONFLICT)
     }
 
     @Test

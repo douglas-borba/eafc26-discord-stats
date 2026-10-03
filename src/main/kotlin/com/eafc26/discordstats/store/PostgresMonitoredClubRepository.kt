@@ -11,6 +11,7 @@ import com.eafc26.discordstats.domain.match.GameVersion
 import org.springframework.jdbc.core.JdbcTemplate
 import java.sql.ResultSet
 import java.sql.Timestamp
+import java.time.Instant
 
 class PostgresMonitoredClubRepository(
     private val jdbcTemplate: JdbcTemplate,
@@ -42,6 +43,16 @@ class PostgresMonitoredClubRepository(
             Timestamp.from(club.updatedAt),
         )
         return findById(club.clubId)!!
+    }
+
+    override fun updateGameVersion(clubId: ClubId, gameVersion: GameVersion, updatedAt: Instant): MonitoredClub? {
+        jdbcTemplate.update(
+            "UPDATE monitored_clubs SET game_version = ?, updated_at = ? WHERE club_id = ?",
+            gameVersion.name,
+            Timestamp.from(updatedAt),
+            clubId.value,
+        )
+        return findById(clubId)
     }
 
     override fun findById(clubId: ClubId): MonitoredClub? =
